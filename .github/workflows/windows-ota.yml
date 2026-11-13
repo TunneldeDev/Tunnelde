@@ -1,0 +1,63 @@
+name: Public Windows in-app update
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: Public source release tag
+        default: v0.37.0
+        required: true
+        type: string
+      to:
+        description: Public target release tag with local CLI support
+        default: v0.38.0-beta.2
+        required: true
+        type: string
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/windows-ota.yml
+      - scripts/qa/windows-upgrade/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ota-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Public signed update and automatic restart
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install pinned CDP client without browsers
+        shell: pwsh
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm install --prefix "$env:RUNNER_TEMP/upgrade-tools" --ignore-scripts --no-audit --no-fund playwright@1.64.1
+      - name: Test release selection
+        run: node --test scripts/qa/windows-upgrade/*.test.mjs
+      - name: Install source, seed data, invoke real updater and verify automatic restart
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPGRADE_FROM: ${{ inputs.from || 'v0.37.0' }}
+          UPGRADE_TO: ${{ inputs.to || 'v0.38.0-beta.2' }}
+          UPGRADE_CHECK_CLI: "true"
+          UPGRADE_IN_APP: "true"
+        run: node scripts/qa/windows-upgrade/run.mjs
+      - name: Upload in-app update evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-in-app-update
+          path: ${{ runner.temp }}/tunnelde-upgrade/evidence
+          if-no-files-found: warn
+          retention-days: 14

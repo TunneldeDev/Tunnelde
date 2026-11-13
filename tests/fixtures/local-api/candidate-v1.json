@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "stability": "experimental",
+  "transport": {
+    "framing": "one-newline-delimited-json-request-per-connection",
+    "authentication": "private-local-capability",
+    "maximumRequestBytes": 32768,
+    "maximumResponseBytes": 4194304
+  },
+  "methods": [
+    {
+      "name": "api.describe",
+      "effect": "read",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "app.info",
+      "effect": "read",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "required": ["version", "apiVersion", "platform", "architecture"],
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "apiVersion": {
+            "const": 1
+          },
+          "platform": {
+            "type": "string"
+          },
+          "architecture": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "hosts.list",
+      "effect": "read",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "required": ["hosts"],
+        "additionalProperties": false,
+        "properties": {
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "groupId",
+                "name",
+                "address",
+                "port",
+                "username",
+                "favorite",
+                "tags"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "groupId": {
+                  "type": ["string", "null"]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "username": {
+                  "type": "string"
+                },
+                "favorite": {
+                  "type": "boolean"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sessions.list",
+      "effect": "read",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "required": ["sessions"],
+        "additionalProperties": false,
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "hostId", "title", "address", "connectedAt", "terminal"],
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "hostId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                },
+                "connectedAt": {
+                  "type": "integer"
+                },
+                "terminal": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "errors": [
+    "invalid_request",
+    "unsupported_version",
+    "unauthorized",
+    "unknown_method",
+    "internal",
+    "response_too_large"
+  ]
+}

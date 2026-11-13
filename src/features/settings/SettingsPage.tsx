@@ -1,6 +1,6 @@
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { AboutPage } from "@/features/about/AboutPage";
-import { RotateCcw, Search } from "lucide-react";
+import { ChevronRight, RotateCcw, Search } from "lucide-react";
 import { SearchField } from "@/components/ui/form/SearchField";
 import { matchesSearch, parseSearchQuery, toggleSearchFilter } from "@/lib/search/query";
 import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
@@ -379,16 +379,20 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
                   </PreferenceSurface>
                 ) : null}
                 {item === "advanced" && showStorage ? (
-                  <div
+                  <details
                     id={`${settingsId}-storage`}
-                    className="settings-preference-group"
+                    className="settings-preference-group settings-preference-group--collapsible"
                     data-settings-group="storage"
+                    open={filtering || undefined}
                   >
-                    <h3 className="settings-preference-group__title">{t("storage.title")}</h3>
+                    <summary>
+                      <ChevronRight size={14} aria-hidden="true" />
+                      <h3 className="settings-preference-group__title">{t("storage.title")}</h3>
+                    </summary>
                     <div className="settings-preference-group__body">
                       <StorageSettings />
                     </div>
-                  </div>
+                  </details>
                 ) : null}
                 {!filtering && item === "advanced" ? (
                   <>

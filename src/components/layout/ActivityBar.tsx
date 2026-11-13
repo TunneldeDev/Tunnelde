@@ -139,7 +139,7 @@ export function ActivityBar() {
           <IconButton
             key={view}
             label={sidebarLabel(view, t)}
-            active={docked ? expanded : activeSidebar === view}
+            active={expanded}
             aria-expanded={expanded}
             aria-controls={`sidebar-${view}`}
             onClick={() => void selectView(view)}

@@ -146,6 +146,35 @@ function resizePointer(type: string, clientX: number, pointerId = 1, button = 0)
   return event;
 }
 
+function columnPositions(pane: HTMLElement) {
+  pane.querySelectorAll<HTMLElement>(".sftp-columns th").forEach((header, index) => {
+    vi.spyOn(header, "getBoundingClientRect").mockReturnValue({
+      left: 100 + index * 100,
+      right: 200 + index * 100,
+      width: 100,
+      top: 0,
+      bottom: 24,
+    } as DOMRect);
+  });
+  vi.spyOn(pane.querySelector(".sftp-columns tr")!, "getBoundingClientRect").mockReturnValue({
+    top: 0,
+    bottom: 24,
+  } as DOMRect);
+  vi.spyOn(pane.querySelector(".sftp-pane__scroll")!, "getBoundingClientRect").mockReturnValue({
+    left: 0,
+    right: 1000,
+  } as DOMRect);
+}
+
+function dragColumn(pane: HTMLElement, from: string, to: string, after = false) {
+  columnPositions(pane);
+  const label = pane.querySelector<HTMLElement>(`.sftp-columns__${from} button`)!;
+  const start = label.closest("th")!.getBoundingClientRect();
+  const target = pane.querySelector(`.sftp-columns__${to}`)!.getBoundingClientRect();
+  fireEvent(label, resizePointer("pointerdown", start.left + start.width / 2));
+  fireEvent(window, resizePointer("pointerup", target.left + (after ? 75 : 25)));
+}
+
 describe("SftpPage", () => {
   it("records the current local path of a standalone panel for workspace restoration", async () => {
     const filePane = {
@@ -288,28 +317,85 @@ describe("SftpPage", () => {
     fireEvent.click(menuItem);
     expect(local.querySelector(".sftp-columns__type")).toBeNull();
     expect(remote.querySelector(".sftp-columns__type")).toBeTruthy();
-    const data = new Map<string, string>();
-    const transfer = {
-      types: ["application/x-tunnelde-file-column"],
-      setData: (k: string, v: string) => data.set(k, v),
-      getData: (k: string) => data.get(k) ?? "",
-      effectAllowed: "move",
-    };
-    fireEvent.dragStart(local.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
-    fireEvent.drop(local.querySelector(".sftp-columns__name")!, { dataTransfer: transfer });
+    dragColumn(local, "size", "name");
     expect([...local.querySelectorAll(".sftp-columns th")].map((el) => el.className)).toEqual([
       "sftp-columns__size",
       "sftp-columns__name",
       "sftp-columns__modified",
     ]);
-    fireEvent.dragStart(local.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
-    fireEvent.drop(local.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
+    dragColumn(local, "size", "size");
     expect([...local.querySelectorAll(".sftp-columns th")].map((el) => el.className)).toEqual([
       "sftp-columns__size",
       "sftp-columns__name",
       "sftp-columns__modified",
     ]);
   });
+
+  it("drags the label without sorting, retains the order on reopen and still sorts on the next click", async () => {
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    const name = pane.querySelector<HTMLElement>(".sftp-columns__name button")!;
+    expect(name.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+    dragColumn(pane, "name", "modified", true);
+    fireEvent.click(name, { detail: 1 });
+    expect(name.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+    expect([...pane.querySelectorAll("th")].map((item) => item.dataset.columnKey)).toEqual([
+      "type",
+      "size",
+      "modified",
+      "name",
+    ]);
+    fireEvent(name, resizePointer("pointerdown", 475));
+    fireEvent(window, resizePointer("pointerup", 477));
+    fireEvent.click(name, { detail: 1 });
+    expect(name.closest("th")?.getAttribute("aria-sort")).toBe("descending");
+    view.unmount();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const reopened = document.querySelector<HTMLElement>(".sftp-pane")!;
+    expect([...reopened.querySelectorAll("th")].map((item) => item.dataset.columnKey)).toEqual([
+      "type",
+      "size",
+      "modified",
+      "name",
+    ]);
+    expect(reopened.querySelector(".sftp-columns__name")?.getAttribute("aria-sort")).toBe(
+      "descending",
+    );
+  });
+
+  it.each(["Escape", "pointercancel", "blur", "outside", "unmount"])(
+    "discards a column reorder on %s and clears its insertion marker",
+    async (reason) => {
+      const view = render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("notes.txt");
+      const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+      columnPositions(pane);
+      const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+      const name = pane.querySelector<HTMLElement>(".sftp-columns__name button")!;
+      fireEvent(name, resizePointer("pointerdown", 150));
+      fireEvent(window, resizePointer("pointermove", 475));
+      act(() => frame.mock.calls[0]![0](0));
+      expect(pane.querySelector("[data-column-drop]")?.getAttribute("data-column-drop")).toBe(
+        "after",
+      );
+      if (reason === "Escape") fireEvent.keyDown(window, { key: "Escape" });
+      else if (reason === "blur") fireEvent(window, new Event("blur"));
+      else if (reason === "unmount") view.unmount();
+      else fireEvent(window, resizePointer(reason === "outside" ? "pointerup" : reason, 1200));
+      expect(pane.querySelector("[data-column-drop], [data-dragging]")).toBeNull();
+      fireEvent(window, resizePointer("pointerup", 475));
+      if (reason !== "unmount") view.unmount();
+      render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("notes.txt");
+      expect(
+        [...document.querySelectorAll(".sftp-pane:first-child th")].map(
+          (item) => (item as HTMLElement).dataset.columnKey,
+        ),
+      ).toEqual(["name", "type", "size", "modified"]);
+    },
+  );
 
   it("drops a header on either side and fits only that panel's column to its rendered text", async () => {
     const createRange = document.createRange.bind(document);
@@ -324,18 +410,13 @@ describe("SftpPage", () => {
     await screen.findByText("notes.txt");
     const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
     const target = pane.querySelector<HTMLElement>(".sftp-columns__modified")!;
-    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ left: 100, width: 150 } as DOMRect);
-    const transfer = {
-      types: ["application/x-tunnelde-file-column"],
-      setData: vi.fn(),
-      getData: () => "name",
-      effectAllowed: "move",
-    };
-    fireEvent.dragOver(target, { dataTransfer: transfer, clientX: 240 });
+    const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+    columnPositions(pane);
+    fireEvent(pane.querySelector(".sftp-columns__name button")!, resizePointer("pointerdown", 150));
+    fireEvent(window, resizePointer("pointermove", 475));
+    act(() => frame.mock.calls[0]![0](0));
     expect(target.dataset.columnDrop).toBe("after");
-    const drop = new MouseEvent("drop", { bubbles: true, clientX: 240 });
-    Object.defineProperty(drop, "dataTransfer", { value: transfer });
-    fireEvent(target, drop);
+    fireEvent(window, resizePointer("pointerup", 475));
     expect([...pane.querySelectorAll("th")].map((node) => node.className)).toEqual([
       "sftp-columns__type",
       "sftp-columns__size",
@@ -489,14 +570,7 @@ describe("SftpPage", () => {
     });
     fireEvent.click(within(pane).getByRole("button", { name: "View options" }));
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Show column: Type" }));
-    const data = new Map<string, string>();
-    const transfer = {
-      types: ["application/x-tunnelde-file-column"],
-      setData: (key: string, value: string) => data.set(key, value),
-      getData: (key: string) => data.get(key) ?? "",
-    };
-    fireEvent.dragStart(pane.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
-    fireEvent.drop(pane.querySelector(".sftp-columns__name")!, { dataTransfer: transfer });
+    dragColumn(pane, "size", "name");
     expect(pane.querySelector("th")?.className).toBe("sftp-columns__size");
     expect(pane.style.getPropertyValue("--sftp-columns")).toContain("206px");
     fireEvent.click(within(pane).getByRole("button", { name: "View options" }));

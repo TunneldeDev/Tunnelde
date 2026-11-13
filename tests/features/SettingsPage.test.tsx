@@ -46,6 +46,25 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("collapses storage locations without unmounting its contents and expands matching search results", () => {
+    useNavigation.setState({ settingsSection: "advanced" });
+    render(<SettingsPage />);
+    const disclosure = document.querySelector<HTMLDetailsElement>(
+      '[data-settings-group="storage"]',
+    )!;
+    const contents = disclosure.querySelector(".settings-preference-group__body");
+    expect(disclosure.open).toBe(false);
+    fireEvent.click(disclosure.querySelector("summary")!);
+    expect(disclosure.open).toBe(true);
+    fireEvent.click(disclosure.querySelector("summary")!);
+    expect(disclosure.open).toBe(false);
+    expect(disclosure.querySelector(".settings-preference-group__body")).toBe(contents);
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
+      target: { value: "@id:storage" },
+    });
+    expect(disclosure.open).toBe(true);
+  });
+
   it("retains filters when activating the settings tab without an explicit category request", () => {
     render(<SettingsPage />);
     const search = screen.getByRole("textbox", { name: "Search settings" }) as HTMLInputElement;

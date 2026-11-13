@@ -43,8 +43,7 @@ export function PreviewFrame({
           className="file-preview"
           footer={
             <>
-              <Button variant="secondary" onClick={onDock}>
-                <PanelRight size={14} />
+              <Button variant="secondary" onClick={onDock} leading={<PanelRight size={14} />}>
                 {t("preview.dock")}
               </Button>
               {actions}

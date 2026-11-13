@@ -1,0 +1,3585 @@
+{
+  "version": 1,
+  "methods": [
+    {
+      "effect": "read",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "preferences.schema",
+      "resultSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "groups": {
+            "const": {
+              "appearance": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "accent": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "colors": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "activityBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "background": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "editor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "panel": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "sidebar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "statusBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "tabBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalBackground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalCursor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalForeground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "titleBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "density": {
+                    "enum": ["comfortable", "compact"],
+                    "type": "string"
+                  },
+                  "fontSize": {
+                    "maximum": 20,
+                    "minimum": 11,
+                    "type": "integer"
+                  },
+                  "monoFont": {
+                    "enum": ["fira-code", "jetbrains-mono", "plex-mono", "system"],
+                    "type": "string"
+                  },
+                  "monoFontSize": {
+                    "maximum": 32,
+                    "minimum": 10,
+                    "type": "integer"
+                  },
+                  "motion": {
+                    "enum": ["system", "reduced", "full"],
+                    "type": "string"
+                  },
+                  "theme": {
+                    "enum": ["system", "dark", "light"],
+                    "type": "string"
+                  },
+                  "titleBarStyle": {
+                    "enum": ["system", "compact"],
+                    "type": "string"
+                  },
+                  "userCss": {
+                    "maxLength": 200000,
+                    "type": "string",
+                    "x-maxBytes": 200000
+                  }
+                },
+                "required": [
+                  "theme",
+                  "accent",
+                  "colors",
+                  "density",
+                  "fontSize",
+                  "monoFontSize",
+                  "monoFont",
+                  "motion",
+                  "userCss",
+                  "titleBarStyle"
+                ],
+                "title": "appearance",
+                "type": "object"
+              },
+              "editor": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "spellCheck": {
+                    "type": "boolean"
+                  },
+                  "tabSize": {
+                    "enum": [2, 4, 8],
+                    "type": "integer"
+                  },
+                  "wordWrap": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["wordWrap", "tabSize", "spellCheck"],
+                "title": "editor",
+                "type": "object"
+              },
+              "files": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "foldersFirst": {
+                    "type": "boolean"
+                  },
+                  "iconTheme": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "preload": {
+                    "type": "boolean"
+                  },
+                  "preloadCount": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "showHidden": {
+                    "type": "boolean"
+                  },
+                  "sortBy": {
+                    "enum": ["name", "size", "modified"],
+                    "type": "string"
+                  },
+                  "sortDirection": {
+                    "enum": ["asc", "desc"],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "showHidden",
+                  "foldersFirst",
+                  "sortBy",
+                  "sortDirection",
+                  "iconTheme",
+                  "preload",
+                  "preloadCount"
+                ],
+                "title": "files",
+                "type": "object"
+              },
+              "general": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "closeToTray": {
+                    "type": "boolean"
+                  },
+                  "language": {
+                    "enum": ["system", "zh-CN", "en-US"],
+                    "type": "string"
+                  },
+                  "lightweightMode": {
+                    "type": "boolean"
+                  },
+                  "releaseWebviewInTray": {
+                    "type": "boolean"
+                  },
+                  "showDockIconInBackground": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "language",
+                  "closeToTray",
+                  "releaseWebviewInTray",
+                  "lightweightMode",
+                  "showDockIconInBackground"
+                ],
+                "title": "general",
+                "type": "object"
+              },
+              "monitoring": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "intervalMs": {
+                    "enum": [1000, 2000, 3000, 5000, 10000, 30000],
+                    "type": "integer"
+                  }
+                },
+                "required": ["intervalMs"],
+                "title": "monitoring",
+                "type": "object"
+              },
+              "network": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "defaultProxy": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "features": {
+                    "additionalProperties": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "maxProperties": 256,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "profiles": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "host": {
+                          "maxLength": 253,
+                          "type": "string"
+                        },
+                        "id": {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "port": {
+                          "maximum": 65535,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "enum": ["http", "socks5"],
+                          "type": "string"
+                        },
+                        "username": {
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "required": ["id", "name", "protocol", "host", "port", "username"],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  }
+                },
+                "required": ["profiles", "defaultProxy", "features"],
+                "title": "network",
+                "type": "object"
+              },
+              "shortcuts": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "bindings": {
+                    "additionalProperties": {
+                      "items": {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
+                    "maxProperties": 128,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rules": {
+                    "additionalProperties": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "priority": {
+                            "maximum": 1000,
+                            "minimum": -1000,
+                            "type": "integer"
+                          },
+                          "propagation": {
+                            "enum": ["consume", "continue", "block"],
+                            "type": "string"
+                          }
+                        },
+                        "required": ["priority", "propagation"],
+                        "type": "object"
+                      },
+                      "maxProperties": 512,
+                      "propertyNames": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "maxProperties": 512,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "showDetails": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["bindings", "rules", "showDetails"],
+                "title": "shortcuts",
+                "type": "object"
+              },
+              "terminal": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "applicationClipboard": {
+                    "type": "boolean"
+                  },
+                  "copyOnSelect": {
+                    "type": "boolean"
+                  },
+                  "cursorBlink": {
+                    "type": "boolean"
+                  },
+                  "cursorStyle": {
+                    "enum": ["block", "bar", "underline"],
+                    "type": "string"
+                  },
+                  "inactiveCursorStyle": {
+                    "enum": ["block", "bar", "underline", "outline", "none"],
+                    "type": "string"
+                  },
+                  "lineHeight": {
+                    "maximum": 1.8,
+                    "minimum": 1,
+                    "multipleOf": 0.1,
+                    "type": "number"
+                  },
+                  "recordHistory": {
+                    "type": "boolean"
+                  },
+                  "renderer": {
+                    "enum": ["auto", "dom"],
+                    "type": "string"
+                  },
+                  "rightClick": {
+                    "enum": ["menu", "copyPaste", "paste"],
+                    "type": "string"
+                  },
+                  "scrollOnInput": {
+                    "type": "boolean"
+                  },
+                  "scrollSensitivity": {
+                    "maximum": 5,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "scrollback": {
+                    "maximum": 100000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "smoothScrolling": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "scrollback",
+                  "lineHeight",
+                  "cursorStyle",
+                  "cursorBlink",
+                  "inactiveCursorStyle",
+                  "scrollSensitivity",
+                  "smoothScrolling",
+                  "scrollOnInput",
+                  "copyOnSelect",
+                  "applicationClipboard",
+                  "rightClick",
+                  "renderer",
+                  "recordHistory"
+                ],
+                "title": "terminal",
+                "type": "object"
+              },
+              "transfers": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "chunkKib": {
+                    "enum": [0, 256, 1024, 4096, 16384],
+                    "type": "integer"
+                  },
+                  "compression": {
+                    "type": "boolean"
+                  },
+                  "concurrency": {
+                    "enum": [0, 1, 2, 4, 8],
+                    "type": "integer"
+                  },
+                  "downloadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "optimization": {
+                    "type": "boolean"
+                  },
+                  "requests": {
+                    "enum": [0, 1, 4, 8, 16, 32],
+                    "type": "integer"
+                  },
+                  "uploadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "optimization",
+                  "compression",
+                  "concurrency",
+                  "chunkKib",
+                  "requests",
+                  "uploadLimitKib",
+                  "downloadLimitKib"
+                ],
+                "title": "transfers",
+                "type": "object"
+              },
+              "updates": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "autoCheck": {
+                    "type": "boolean"
+                  },
+                  "channel": {
+                    "enum": ["stable", "beta"],
+                    "type": "string"
+                  },
+                  "interval": {
+                    "enum": ["startup", "daily", "weekly"],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": ["github", "custom"],
+                    "type": "string"
+                  },
+                  "sourceUrl": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": ["autoCheck", "channel", "source", "sourceUrl", "interval"],
+                "title": "updates",
+                "type": "object"
+              },
+              "workspace": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "properties": {
+                  "hostActivation": {
+                    "enum": ["terminal", "details", "edit"],
+                    "type": "string"
+                  },
+                  "hostDirectConnect": {
+                    "type": "boolean"
+                  },
+                  "hostList": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "order": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "sort": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "direction": {
+                                "enum": ["asc", "desc"],
+                                "type": "string"
+                              },
+                              "key": {
+                                "maxLength": 200,
+                                "type": "string"
+                              }
+                            },
+                            "required": ["key", "direction"],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "view": {
+                        "enum": ["tree", "table"],
+                        "type": "string"
+                      },
+                      "widths": {
+                        "additionalProperties": {
+                          "maximum": 480,
+                          "minimum": 64,
+                          "type": "integer"
+                        },
+                        "maxProperties": 256,
+                        "propertyNames": {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": ["view", "order", "hidden", "widths", "sort"],
+                    "type": "object"
+                  },
+                  "restore": {
+                    "type": "boolean"
+                  },
+                  "rightPanel": {
+                    "type": "boolean"
+                  },
+                  "rightPanelWidth": {
+                    "maximum": 460,
+                    "minimum": 240,
+                    "type": "integer"
+                  },
+                  "showStatusBar": {
+                    "type": "boolean"
+                  },
+                  "sidebarWidth": {
+                    "maximum": 420,
+                    "minimum": 220,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "sidebarWidth",
+                  "rightPanel",
+                  "rightPanelWidth",
+                  "showStatusBar",
+                  "restore",
+                  "hostActivation",
+                  "hostDirectConnect",
+                  "hostList"
+                ],
+                "title": "workspace",
+                "type": "object"
+              }
+            }
+          },
+          "stability": {
+            "const": "experimental"
+          },
+          "version": {
+            "const": 1
+          }
+        },
+        "required": ["version", "stability", "groups"],
+        "type": "object"
+      }
+    },
+    {
+      "effect": "read",
+      "inputSchema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "preferences.snapshot",
+      "resultSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "defaults": {
+            "additionalProperties": false,
+            "properties": {
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "accent": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "colors": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "activityBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "background": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "editor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "panel": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "sidebar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "statusBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "tabBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalBackground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalCursor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalForeground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "titleBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "density": {
+                    "enum": ["comfortable", "compact"],
+                    "type": "string"
+                  },
+                  "fontSize": {
+                    "maximum": 20,
+                    "minimum": 11,
+                    "type": "integer"
+                  },
+                  "monoFont": {
+                    "enum": ["fira-code", "jetbrains-mono", "plex-mono", "system"],
+                    "type": "string"
+                  },
+                  "monoFontSize": {
+                    "maximum": 32,
+                    "minimum": 10,
+                    "type": "integer"
+                  },
+                  "motion": {
+                    "enum": ["system", "reduced", "full"],
+                    "type": "string"
+                  },
+                  "theme": {
+                    "enum": ["system", "dark", "light"],
+                    "type": "string"
+                  },
+                  "titleBarStyle": {
+                    "enum": ["system", "compact"],
+                    "type": "string"
+                  },
+                  "userCss": {
+                    "maxLength": 200000,
+                    "type": "string",
+                    "x-maxBytes": 200000
+                  }
+                },
+                "required": [
+                  "theme",
+                  "accent",
+                  "colors",
+                  "density",
+                  "fontSize",
+                  "monoFontSize",
+                  "monoFont",
+                  "motion",
+                  "userCss",
+                  "titleBarStyle"
+                ],
+                "title": "appearance",
+                "type": "object"
+              },
+              "editor": {
+                "additionalProperties": false,
+                "properties": {
+                  "spellCheck": {
+                    "type": "boolean"
+                  },
+                  "tabSize": {
+                    "enum": [2, 4, 8],
+                    "type": "integer"
+                  },
+                  "wordWrap": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["wordWrap", "tabSize", "spellCheck"],
+                "title": "editor",
+                "type": "object"
+              },
+              "files": {
+                "additionalProperties": false,
+                "properties": {
+                  "foldersFirst": {
+                    "type": "boolean"
+                  },
+                  "iconTheme": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "preload": {
+                    "type": "boolean"
+                  },
+                  "preloadCount": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "showHidden": {
+                    "type": "boolean"
+                  },
+                  "sortBy": {
+                    "enum": ["name", "size", "modified"],
+                    "type": "string"
+                  },
+                  "sortDirection": {
+                    "enum": ["asc", "desc"],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "showHidden",
+                  "foldersFirst",
+                  "sortBy",
+                  "sortDirection",
+                  "iconTheme",
+                  "preload",
+                  "preloadCount"
+                ],
+                "title": "files",
+                "type": "object"
+              },
+              "general": {
+                "additionalProperties": false,
+                "properties": {
+                  "closeToTray": {
+                    "type": "boolean"
+                  },
+                  "language": {
+                    "enum": ["system", "zh-CN", "en-US"],
+                    "type": "string"
+                  },
+                  "lightweightMode": {
+                    "type": "boolean"
+                  },
+                  "releaseWebviewInTray": {
+                    "type": "boolean"
+                  },
+                  "showDockIconInBackground": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "language",
+                  "closeToTray",
+                  "releaseWebviewInTray",
+                  "lightweightMode",
+                  "showDockIconInBackground"
+                ],
+                "title": "general",
+                "type": "object"
+              },
+              "monitoring": {
+                "additionalProperties": false,
+                "properties": {
+                  "intervalMs": {
+                    "enum": [1000, 2000, 3000, 5000, 10000, 30000],
+                    "type": "integer"
+                  }
+                },
+                "required": ["intervalMs"],
+                "title": "monitoring",
+                "type": "object"
+              },
+              "network": {
+                "additionalProperties": false,
+                "properties": {
+                  "defaultProxy": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "features": {
+                    "additionalProperties": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "maxProperties": 256,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "profiles": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "host": {
+                          "maxLength": 253,
+                          "type": "string"
+                        },
+                        "id": {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "port": {
+                          "maximum": 65535,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "enum": ["http", "socks5"],
+                          "type": "string"
+                        },
+                        "username": {
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "required": ["id", "name", "protocol", "host", "port", "username"],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  }
+                },
+                "required": ["profiles", "defaultProxy", "features"],
+                "title": "network",
+                "type": "object"
+              },
+              "shortcuts": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindings": {
+                    "additionalProperties": {
+                      "items": {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
+                    "maxProperties": 128,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rules": {
+                    "additionalProperties": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "priority": {
+                            "maximum": 1000,
+                            "minimum": -1000,
+                            "type": "integer"
+                          },
+                          "propagation": {
+                            "enum": ["consume", "continue", "block"],
+                            "type": "string"
+                          }
+                        },
+                        "required": ["priority", "propagation"],
+                        "type": "object"
+                      },
+                      "maxProperties": 512,
+                      "propertyNames": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "maxProperties": 512,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "showDetails": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["bindings", "rules", "showDetails"],
+                "title": "shortcuts",
+                "type": "object"
+              },
+              "terminal": {
+                "additionalProperties": false,
+                "properties": {
+                  "applicationClipboard": {
+                    "type": "boolean"
+                  },
+                  "copyOnSelect": {
+                    "type": "boolean"
+                  },
+                  "cursorBlink": {
+                    "type": "boolean"
+                  },
+                  "cursorStyle": {
+                    "enum": ["block", "bar", "underline"],
+                    "type": "string"
+                  },
+                  "inactiveCursorStyle": {
+                    "enum": ["block", "bar", "underline", "outline", "none"],
+                    "type": "string"
+                  },
+                  "lineHeight": {
+                    "maximum": 1.8,
+                    "minimum": 1,
+                    "multipleOf": 0.1,
+                    "type": "number"
+                  },
+                  "recordHistory": {
+                    "type": "boolean"
+                  },
+                  "renderer": {
+                    "enum": ["auto", "dom"],
+                    "type": "string"
+                  },
+                  "rightClick": {
+                    "enum": ["menu", "copyPaste", "paste"],
+                    "type": "string"
+                  },
+                  "scrollOnInput": {
+                    "type": "boolean"
+                  },
+                  "scrollSensitivity": {
+                    "maximum": 5,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "scrollback": {
+                    "maximum": 100000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "smoothScrolling": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "scrollback",
+                  "lineHeight",
+                  "cursorStyle",
+                  "cursorBlink",
+                  "inactiveCursorStyle",
+                  "scrollSensitivity",
+                  "smoothScrolling",
+                  "scrollOnInput",
+                  "copyOnSelect",
+                  "applicationClipboard",
+                  "rightClick",
+                  "renderer",
+                  "recordHistory"
+                ],
+                "title": "terminal",
+                "type": "object"
+              },
+              "transfers": {
+                "additionalProperties": false,
+                "properties": {
+                  "chunkKib": {
+                    "enum": [0, 256, 1024, 4096, 16384],
+                    "type": "integer"
+                  },
+                  "compression": {
+                    "type": "boolean"
+                  },
+                  "concurrency": {
+                    "enum": [0, 1, 2, 4, 8],
+                    "type": "integer"
+                  },
+                  "downloadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "optimization": {
+                    "type": "boolean"
+                  },
+                  "requests": {
+                    "enum": [0, 1, 4, 8, 16, 32],
+                    "type": "integer"
+                  },
+                  "uploadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "optimization",
+                  "compression",
+                  "concurrency",
+                  "chunkKib",
+                  "requests",
+                  "uploadLimitKib",
+                  "downloadLimitKib"
+                ],
+                "title": "transfers",
+                "type": "object"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "properties": {
+                  "autoCheck": {
+                    "type": "boolean"
+                  },
+                  "channel": {
+                    "enum": ["stable", "beta"],
+                    "type": "string"
+                  },
+                  "interval": {
+                    "enum": ["startup", "daily", "weekly"],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": ["github", "custom"],
+                    "type": "string"
+                  },
+                  "sourceUrl": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": ["autoCheck", "channel", "source", "sourceUrl", "interval"],
+                "title": "updates",
+                "type": "object"
+              },
+              "workspace": {
+                "additionalProperties": false,
+                "properties": {
+                  "hostActivation": {
+                    "enum": ["terminal", "details", "edit"],
+                    "type": "string"
+                  },
+                  "hostDirectConnect": {
+                    "type": "boolean"
+                  },
+                  "hostList": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "order": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "sort": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "direction": {
+                                "enum": ["asc", "desc"],
+                                "type": "string"
+                              },
+                              "key": {
+                                "maxLength": 200,
+                                "type": "string"
+                              }
+                            },
+                            "required": ["key", "direction"],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "view": {
+                        "enum": ["tree", "table"],
+                        "type": "string"
+                      },
+                      "widths": {
+                        "additionalProperties": {
+                          "maximum": 480,
+                          "minimum": 64,
+                          "type": "integer"
+                        },
+                        "maxProperties": 256,
+                        "propertyNames": {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": ["view", "order", "hidden", "widths", "sort"],
+                    "type": "object"
+                  },
+                  "restore": {
+                    "type": "boolean"
+                  },
+                  "rightPanel": {
+                    "type": "boolean"
+                  },
+                  "rightPanelWidth": {
+                    "maximum": 460,
+                    "minimum": 240,
+                    "type": "integer"
+                  },
+                  "showStatusBar": {
+                    "type": "boolean"
+                  },
+                  "sidebarWidth": {
+                    "maximum": 420,
+                    "minimum": 220,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "sidebarWidth",
+                  "rightPanel",
+                  "rightPanelWidth",
+                  "showStatusBar",
+                  "restore",
+                  "hostActivation",
+                  "hostDirectConnect",
+                  "hostList"
+                ],
+                "title": "workspace",
+                "type": "object"
+              }
+            },
+            "required": [
+              "appearance",
+              "editor",
+              "files",
+              "general",
+              "monitoring",
+              "network",
+              "shortcuts",
+              "terminal",
+              "transfers",
+              "updates",
+              "workspace"
+            ],
+            "type": "object"
+          },
+          "revision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+            "x-maxBytes": 128,
+            "not": {
+              "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+            }
+          },
+          "values": {
+            "additionalProperties": false,
+            "properties": {
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "accent": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "colors": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "activityBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "background": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "editor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "panel": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "sidebar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "statusBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "tabBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalBackground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalCursor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalForeground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "titleBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "density": {
+                    "enum": ["comfortable", "compact"],
+                    "type": "string"
+                  },
+                  "fontSize": {
+                    "maximum": 20,
+                    "minimum": 11,
+                    "type": "integer"
+                  },
+                  "monoFont": {
+                    "enum": ["fira-code", "jetbrains-mono", "plex-mono", "system"],
+                    "type": "string"
+                  },
+                  "monoFontSize": {
+                    "maximum": 32,
+                    "minimum": 10,
+                    "type": "integer"
+                  },
+                  "motion": {
+                    "enum": ["system", "reduced", "full"],
+                    "type": "string"
+                  },
+                  "theme": {
+                    "enum": ["system", "dark", "light"],
+                    "type": "string"
+                  },
+                  "titleBarStyle": {
+                    "enum": ["system", "compact"],
+                    "type": "string"
+                  },
+                  "userCss": {
+                    "maxLength": 200000,
+                    "type": "string",
+                    "x-maxBytes": 200000
+                  }
+                },
+                "required": [
+                  "theme",
+                  "accent",
+                  "colors",
+                  "density",
+                  "fontSize",
+                  "monoFontSize",
+                  "monoFont",
+                  "motion",
+                  "userCss",
+                  "titleBarStyle"
+                ],
+                "title": "appearance",
+                "type": "object"
+              },
+              "editor": {
+                "additionalProperties": false,
+                "properties": {
+                  "spellCheck": {
+                    "type": "boolean"
+                  },
+                  "tabSize": {
+                    "enum": [2, 4, 8],
+                    "type": "integer"
+                  },
+                  "wordWrap": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["wordWrap", "tabSize", "spellCheck"],
+                "title": "editor",
+                "type": "object"
+              },
+              "files": {
+                "additionalProperties": false,
+                "properties": {
+                  "foldersFirst": {
+                    "type": "boolean"
+                  },
+                  "iconTheme": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "preload": {
+                    "type": "boolean"
+                  },
+                  "preloadCount": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "showHidden": {
+                    "type": "boolean"
+                  },
+                  "sortBy": {
+                    "enum": ["name", "size", "modified"],
+                    "type": "string"
+                  },
+                  "sortDirection": {
+                    "enum": ["asc", "desc"],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "showHidden",
+                  "foldersFirst",
+                  "sortBy",
+                  "sortDirection",
+                  "iconTheme",
+                  "preload",
+                  "preloadCount"
+                ],
+                "title": "files",
+                "type": "object"
+              },
+              "general": {
+                "additionalProperties": false,
+                "properties": {
+                  "closeToTray": {
+                    "type": "boolean"
+                  },
+                  "language": {
+                    "enum": ["system", "zh-CN", "en-US"],
+                    "type": "string"
+                  },
+                  "lightweightMode": {
+                    "type": "boolean"
+                  },
+                  "releaseWebviewInTray": {
+                    "type": "boolean"
+                  },
+                  "showDockIconInBackground": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "language",
+                  "closeToTray",
+                  "releaseWebviewInTray",
+                  "lightweightMode",
+                  "showDockIconInBackground"
+                ],
+                "title": "general",
+                "type": "object"
+              },
+              "monitoring": {
+                "additionalProperties": false,
+                "properties": {
+                  "intervalMs": {
+                    "enum": [1000, 2000, 3000, 5000, 10000, 30000],
+                    "type": "integer"
+                  }
+                },
+                "required": ["intervalMs"],
+                "title": "monitoring",
+                "type": "object"
+              },
+              "network": {
+                "additionalProperties": false,
+                "properties": {
+                  "defaultProxy": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "features": {
+                    "additionalProperties": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "maxProperties": 256,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "profiles": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "host": {
+                          "maxLength": 253,
+                          "type": "string"
+                        },
+                        "id": {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "port": {
+                          "maximum": 65535,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "enum": ["http", "socks5"],
+                          "type": "string"
+                        },
+                        "username": {
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "required": ["id", "name", "protocol", "host", "port", "username"],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  }
+                },
+                "required": ["profiles", "defaultProxy", "features"],
+                "title": "network",
+                "type": "object"
+              },
+              "shortcuts": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindings": {
+                    "additionalProperties": {
+                      "items": {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
+                    "maxProperties": 128,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rules": {
+                    "additionalProperties": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "priority": {
+                            "maximum": 1000,
+                            "minimum": -1000,
+                            "type": "integer"
+                          },
+                          "propagation": {
+                            "enum": ["consume", "continue", "block"],
+                            "type": "string"
+                          }
+                        },
+                        "required": ["priority", "propagation"],
+                        "type": "object"
+                      },
+                      "maxProperties": 512,
+                      "propertyNames": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "maxProperties": 512,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "showDetails": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["bindings", "rules", "showDetails"],
+                "title": "shortcuts",
+                "type": "object"
+              },
+              "terminal": {
+                "additionalProperties": false,
+                "properties": {
+                  "applicationClipboard": {
+                    "type": "boolean"
+                  },
+                  "copyOnSelect": {
+                    "type": "boolean"
+                  },
+                  "cursorBlink": {
+                    "type": "boolean"
+                  },
+                  "cursorStyle": {
+                    "enum": ["block", "bar", "underline"],
+                    "type": "string"
+                  },
+                  "inactiveCursorStyle": {
+                    "enum": ["block", "bar", "underline", "outline", "none"],
+                    "type": "string"
+                  },
+                  "lineHeight": {
+                    "maximum": 1.8,
+                    "minimum": 1,
+                    "multipleOf": 0.1,
+                    "type": "number"
+                  },
+                  "recordHistory": {
+                    "type": "boolean"
+                  },
+                  "renderer": {
+                    "enum": ["auto", "dom"],
+                    "type": "string"
+                  },
+                  "rightClick": {
+                    "enum": ["menu", "copyPaste", "paste"],
+                    "type": "string"
+                  },
+                  "scrollOnInput": {
+                    "type": "boolean"
+                  },
+                  "scrollSensitivity": {
+                    "maximum": 5,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "scrollback": {
+                    "maximum": 100000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "smoothScrolling": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "scrollback",
+                  "lineHeight",
+                  "cursorStyle",
+                  "cursorBlink",
+                  "inactiveCursorStyle",
+                  "scrollSensitivity",
+                  "smoothScrolling",
+                  "scrollOnInput",
+                  "copyOnSelect",
+                  "applicationClipboard",
+                  "rightClick",
+                  "renderer",
+                  "recordHistory"
+                ],
+                "title": "terminal",
+                "type": "object"
+              },
+              "transfers": {
+                "additionalProperties": false,
+                "properties": {
+                  "chunkKib": {
+                    "enum": [0, 256, 1024, 4096, 16384],
+                    "type": "integer"
+                  },
+                  "compression": {
+                    "type": "boolean"
+                  },
+                  "concurrency": {
+                    "enum": [0, 1, 2, 4, 8],
+                    "type": "integer"
+                  },
+                  "downloadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "optimization": {
+                    "type": "boolean"
+                  },
+                  "requests": {
+                    "enum": [0, 1, 4, 8, 16, 32],
+                    "type": "integer"
+                  },
+                  "uploadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "optimization",
+                  "compression",
+                  "concurrency",
+                  "chunkKib",
+                  "requests",
+                  "uploadLimitKib",
+                  "downloadLimitKib"
+                ],
+                "title": "transfers",
+                "type": "object"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "properties": {
+                  "autoCheck": {
+                    "type": "boolean"
+                  },
+                  "channel": {
+                    "enum": ["stable", "beta"],
+                    "type": "string"
+                  },
+                  "interval": {
+                    "enum": ["startup", "daily", "weekly"],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": ["github", "custom"],
+                    "type": "string"
+                  },
+                  "sourceUrl": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": ["autoCheck", "channel", "source", "sourceUrl", "interval"],
+                "title": "updates",
+                "type": "object"
+              },
+              "workspace": {
+                "additionalProperties": false,
+                "properties": {
+                  "hostActivation": {
+                    "enum": ["terminal", "details", "edit"],
+                    "type": "string"
+                  },
+                  "hostDirectConnect": {
+                    "type": "boolean"
+                  },
+                  "hostList": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "order": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "sort": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "direction": {
+                                "enum": ["asc", "desc"],
+                                "type": "string"
+                              },
+                              "key": {
+                                "maxLength": 200,
+                                "type": "string"
+                              }
+                            },
+                            "required": ["key", "direction"],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "view": {
+                        "enum": ["tree", "table"],
+                        "type": "string"
+                      },
+                      "widths": {
+                        "additionalProperties": {
+                          "maximum": 480,
+                          "minimum": 64,
+                          "type": "integer"
+                        },
+                        "maxProperties": 256,
+                        "propertyNames": {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": ["view", "order", "hidden", "widths", "sort"],
+                    "type": "object"
+                  },
+                  "restore": {
+                    "type": "boolean"
+                  },
+                  "rightPanel": {
+                    "type": "boolean"
+                  },
+                  "rightPanelWidth": {
+                    "maximum": 460,
+                    "minimum": 240,
+                    "type": "integer"
+                  },
+                  "showStatusBar": {
+                    "type": "boolean"
+                  },
+                  "sidebarWidth": {
+                    "maximum": 420,
+                    "minimum": 220,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "sidebarWidth",
+                  "rightPanel",
+                  "rightPanelWidth",
+                  "showStatusBar",
+                  "restore",
+                  "hostActivation",
+                  "hostDirectConnect",
+                  "hostList"
+                ],
+                "title": "workspace",
+                "type": "object"
+              }
+            },
+            "required": [
+              "appearance",
+              "editor",
+              "files",
+              "general",
+              "monitoring",
+              "network",
+              "shortcuts",
+              "terminal",
+              "transfers",
+              "updates",
+              "workspace"
+            ],
+            "type": "object"
+          },
+          "version": {
+            "const": 1
+          }
+        },
+        "required": ["version", "revision", "values", "defaults"],
+        "type": "object"
+      }
+    },
+    {
+      "effect": "write",
+      "errors": ["stale_revision", "invalid_preferences", "operation_rejected", "internal"],
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "additionalProperties": false,
+            "properties": {
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "accent": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "colors": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "activityBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "background": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "editor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "panel": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "sidebar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "statusBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "tabBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalBackground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalCursor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalForeground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "titleBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "density": {
+                    "enum": ["comfortable", "compact"],
+                    "type": "string"
+                  },
+                  "fontSize": {
+                    "maximum": 20,
+                    "minimum": 11,
+                    "type": "integer"
+                  },
+                  "monoFont": {
+                    "enum": ["fira-code", "jetbrains-mono", "plex-mono", "system"],
+                    "type": "string"
+                  },
+                  "monoFontSize": {
+                    "maximum": 32,
+                    "minimum": 10,
+                    "type": "integer"
+                  },
+                  "motion": {
+                    "enum": ["system", "reduced", "full"],
+                    "type": "string"
+                  },
+                  "theme": {
+                    "enum": ["system", "dark", "light"],
+                    "type": "string"
+                  },
+                  "titleBarStyle": {
+                    "enum": ["system", "compact"],
+                    "type": "string"
+                  },
+                  "userCss": {
+                    "maxLength": 200000,
+                    "type": "string",
+                    "x-maxBytes": 200000
+                  }
+                },
+                "title": "appearance",
+                "type": "object"
+              },
+              "editor": {
+                "additionalProperties": false,
+                "properties": {
+                  "spellCheck": {
+                    "type": "boolean"
+                  },
+                  "tabSize": {
+                    "enum": [2, 4, 8],
+                    "type": "integer"
+                  },
+                  "wordWrap": {
+                    "type": "boolean"
+                  }
+                },
+                "title": "editor",
+                "type": "object"
+              },
+              "files": {
+                "additionalProperties": false,
+                "properties": {
+                  "foldersFirst": {
+                    "type": "boolean"
+                  },
+                  "iconTheme": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "preload": {
+                    "type": "boolean"
+                  },
+                  "preloadCount": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "showHidden": {
+                    "type": "boolean"
+                  },
+                  "sortBy": {
+                    "enum": ["name", "size", "modified"],
+                    "type": "string"
+                  },
+                  "sortDirection": {
+                    "enum": ["asc", "desc"],
+                    "type": "string"
+                  }
+                },
+                "title": "files",
+                "type": "object"
+              },
+              "general": {
+                "additionalProperties": false,
+                "properties": {
+                  "closeToTray": {
+                    "type": "boolean"
+                  },
+                  "language": {
+                    "enum": ["system", "zh-CN", "en-US"],
+                    "type": "string"
+                  },
+                  "lightweightMode": {
+                    "type": "boolean"
+                  },
+                  "releaseWebviewInTray": {
+                    "type": "boolean"
+                  },
+                  "showDockIconInBackground": {
+                    "type": "boolean"
+                  }
+                },
+                "title": "general",
+                "type": "object"
+              },
+              "monitoring": {
+                "additionalProperties": false,
+                "properties": {
+                  "intervalMs": {
+                    "enum": [1000, 2000, 3000, 5000, 10000, 30000],
+                    "type": "integer"
+                  }
+                },
+                "title": "monitoring",
+                "type": "object"
+              },
+              "network": {
+                "additionalProperties": false,
+                "properties": {
+                  "defaultProxy": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "features": {
+                    "additionalProperties": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "maxProperties": 256,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "profiles": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "host": {
+                          "maxLength": 253,
+                          "type": "string"
+                        },
+                        "id": {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "port": {
+                          "maximum": 65535,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "enum": ["http", "socks5"],
+                          "type": "string"
+                        },
+                        "username": {
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "required": ["id", "name", "protocol", "host", "port", "username"],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  }
+                },
+                "title": "network",
+                "type": "object"
+              },
+              "shortcuts": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindings": {
+                    "additionalProperties": {
+                      "items": {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
+                    "maxProperties": 128,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rules": {
+                    "additionalProperties": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "priority": {
+                            "maximum": 1000,
+                            "minimum": -1000,
+                            "type": "integer"
+                          },
+                          "propagation": {
+                            "enum": ["consume", "continue", "block"],
+                            "type": "string"
+                          }
+                        },
+                        "required": ["priority", "propagation"],
+                        "type": "object"
+                      },
+                      "maxProperties": 512,
+                      "propertyNames": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "maxProperties": 512,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "showDetails": {
+                    "type": "boolean"
+                  }
+                },
+                "title": "shortcuts",
+                "type": "object"
+              },
+              "terminal": {
+                "additionalProperties": false,
+                "properties": {
+                  "applicationClipboard": {
+                    "type": "boolean"
+                  },
+                  "copyOnSelect": {
+                    "type": "boolean"
+                  },
+                  "cursorBlink": {
+                    "type": "boolean"
+                  },
+                  "cursorStyle": {
+                    "enum": ["block", "bar", "underline"],
+                    "type": "string"
+                  },
+                  "inactiveCursorStyle": {
+                    "enum": ["block", "bar", "underline", "outline", "none"],
+                    "type": "string"
+                  },
+                  "lineHeight": {
+                    "maximum": 1.8,
+                    "minimum": 1,
+                    "multipleOf": 0.1,
+                    "type": "number"
+                  },
+                  "recordHistory": {
+                    "type": "boolean"
+                  },
+                  "renderer": {
+                    "enum": ["auto", "dom"],
+                    "type": "string"
+                  },
+                  "rightClick": {
+                    "enum": ["menu", "copyPaste", "paste"],
+                    "type": "string"
+                  },
+                  "scrollOnInput": {
+                    "type": "boolean"
+                  },
+                  "scrollSensitivity": {
+                    "maximum": 5,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "scrollback": {
+                    "maximum": 100000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "smoothScrolling": {
+                    "type": "boolean"
+                  }
+                },
+                "title": "terminal",
+                "type": "object"
+              },
+              "transfers": {
+                "additionalProperties": false,
+                "properties": {
+                  "chunkKib": {
+                    "enum": [0, 256, 1024, 4096, 16384],
+                    "type": "integer"
+                  },
+                  "compression": {
+                    "type": "boolean"
+                  },
+                  "concurrency": {
+                    "enum": [0, 1, 2, 4, 8],
+                    "type": "integer"
+                  },
+                  "downloadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "optimization": {
+                    "type": "boolean"
+                  },
+                  "requests": {
+                    "enum": [0, 1, 4, 8, 16, 32],
+                    "type": "integer"
+                  },
+                  "uploadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "title": "transfers",
+                "type": "object"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "properties": {
+                  "autoCheck": {
+                    "type": "boolean"
+                  },
+                  "channel": {
+                    "enum": ["stable", "beta"],
+                    "type": "string"
+                  },
+                  "interval": {
+                    "enum": ["startup", "daily", "weekly"],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": ["github", "custom"],
+                    "type": "string"
+                  },
+                  "sourceUrl": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "title": "updates",
+                "type": "object"
+              },
+              "workspace": {
+                "additionalProperties": false,
+                "properties": {
+                  "hostActivation": {
+                    "enum": ["terminal", "details", "edit"],
+                    "type": "string"
+                  },
+                  "hostDirectConnect": {
+                    "type": "boolean"
+                  },
+                  "hostList": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "order": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "sort": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "direction": {
+                                "enum": ["asc", "desc"],
+                                "type": "string"
+                              },
+                              "key": {
+                                "maxLength": 200,
+                                "type": "string"
+                              }
+                            },
+                            "required": ["key", "direction"],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "view": {
+                        "enum": ["tree", "table"],
+                        "type": "string"
+                      },
+                      "widths": {
+                        "additionalProperties": {
+                          "maximum": 480,
+                          "minimum": 64,
+                          "type": "integer"
+                        },
+                        "maxProperties": 256,
+                        "propertyNames": {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": ["view", "order", "hidden", "widths", "sort"],
+                    "type": "object"
+                  },
+                  "restore": {
+                    "type": "boolean"
+                  },
+                  "rightPanel": {
+                    "type": "boolean"
+                  },
+                  "rightPanelWidth": {
+                    "maximum": 460,
+                    "minimum": 240,
+                    "type": "integer"
+                  },
+                  "showStatusBar": {
+                    "type": "boolean"
+                  },
+                  "sidebarWidth": {
+                    "maximum": 420,
+                    "minimum": 220,
+                    "type": "integer"
+                  }
+                },
+                "title": "workspace",
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "revision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+            "x-maxBytes": 128,
+            "not": {
+              "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+            }
+          }
+        },
+        "required": ["revision", "changes"],
+        "type": "object"
+      },
+      "name": "preferences.update",
+      "resultSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "defaults": {
+            "additionalProperties": false,
+            "properties": {
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "accent": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "colors": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "activityBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "background": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "editor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "panel": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "sidebar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "statusBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "tabBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalBackground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalCursor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalForeground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "titleBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "density": {
+                    "enum": ["comfortable", "compact"],
+                    "type": "string"
+                  },
+                  "fontSize": {
+                    "maximum": 20,
+                    "minimum": 11,
+                    "type": "integer"
+                  },
+                  "monoFont": {
+                    "enum": ["fira-code", "jetbrains-mono", "plex-mono", "system"],
+                    "type": "string"
+                  },
+                  "monoFontSize": {
+                    "maximum": 32,
+                    "minimum": 10,
+                    "type": "integer"
+                  },
+                  "motion": {
+                    "enum": ["system", "reduced", "full"],
+                    "type": "string"
+                  },
+                  "theme": {
+                    "enum": ["system", "dark", "light"],
+                    "type": "string"
+                  },
+                  "titleBarStyle": {
+                    "enum": ["system", "compact"],
+                    "type": "string"
+                  },
+                  "userCss": {
+                    "maxLength": 200000,
+                    "type": "string",
+                    "x-maxBytes": 200000
+                  }
+                },
+                "required": [
+                  "theme",
+                  "accent",
+                  "colors",
+                  "density",
+                  "fontSize",
+                  "monoFontSize",
+                  "monoFont",
+                  "motion",
+                  "userCss",
+                  "titleBarStyle"
+                ],
+                "title": "appearance",
+                "type": "object"
+              },
+              "editor": {
+                "additionalProperties": false,
+                "properties": {
+                  "spellCheck": {
+                    "type": "boolean"
+                  },
+                  "tabSize": {
+                    "enum": [2, 4, 8],
+                    "type": "integer"
+                  },
+                  "wordWrap": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["wordWrap", "tabSize", "spellCheck"],
+                "title": "editor",
+                "type": "object"
+              },
+              "files": {
+                "additionalProperties": false,
+                "properties": {
+                  "foldersFirst": {
+                    "type": "boolean"
+                  },
+                  "iconTheme": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "preload": {
+                    "type": "boolean"
+                  },
+                  "preloadCount": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "showHidden": {
+                    "type": "boolean"
+                  },
+                  "sortBy": {
+                    "enum": ["name", "size", "modified"],
+                    "type": "string"
+                  },
+                  "sortDirection": {
+                    "enum": ["asc", "desc"],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "showHidden",
+                  "foldersFirst",
+                  "sortBy",
+                  "sortDirection",
+                  "iconTheme",
+                  "preload",
+                  "preloadCount"
+                ],
+                "title": "files",
+                "type": "object"
+              },
+              "general": {
+                "additionalProperties": false,
+                "properties": {
+                  "closeToTray": {
+                    "type": "boolean"
+                  },
+                  "language": {
+                    "enum": ["system", "zh-CN", "en-US"],
+                    "type": "string"
+                  },
+                  "lightweightMode": {
+                    "type": "boolean"
+                  },
+                  "releaseWebviewInTray": {
+                    "type": "boolean"
+                  },
+                  "showDockIconInBackground": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "language",
+                  "closeToTray",
+                  "releaseWebviewInTray",
+                  "lightweightMode",
+                  "showDockIconInBackground"
+                ],
+                "title": "general",
+                "type": "object"
+              },
+              "monitoring": {
+                "additionalProperties": false,
+                "properties": {
+                  "intervalMs": {
+                    "enum": [1000, 2000, 3000, 5000, 10000, 30000],
+                    "type": "integer"
+                  }
+                },
+                "required": ["intervalMs"],
+                "title": "monitoring",
+                "type": "object"
+              },
+              "network": {
+                "additionalProperties": false,
+                "properties": {
+                  "defaultProxy": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "features": {
+                    "additionalProperties": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "maxProperties": 256,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "profiles": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "host": {
+                          "maxLength": 253,
+                          "type": "string"
+                        },
+                        "id": {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "port": {
+                          "maximum": 65535,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "enum": ["http", "socks5"],
+                          "type": "string"
+                        },
+                        "username": {
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "required": ["id", "name", "protocol", "host", "port", "username"],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  }
+                },
+                "required": ["profiles", "defaultProxy", "features"],
+                "title": "network",
+                "type": "object"
+              },
+              "shortcuts": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindings": {
+                    "additionalProperties": {
+                      "items": {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
+                    "maxProperties": 128,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rules": {
+                    "additionalProperties": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "priority": {
+                            "maximum": 1000,
+                            "minimum": -1000,
+                            "type": "integer"
+                          },
+                          "propagation": {
+                            "enum": ["consume", "continue", "block"],
+                            "type": "string"
+                          }
+                        },
+                        "required": ["priority", "propagation"],
+                        "type": "object"
+                      },
+                      "maxProperties": 512,
+                      "propertyNames": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "maxProperties": 512,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "showDetails": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["bindings", "rules", "showDetails"],
+                "title": "shortcuts",
+                "type": "object"
+              },
+              "terminal": {
+                "additionalProperties": false,
+                "properties": {
+                  "applicationClipboard": {
+                    "type": "boolean"
+                  },
+                  "copyOnSelect": {
+                    "type": "boolean"
+                  },
+                  "cursorBlink": {
+                    "type": "boolean"
+                  },
+                  "cursorStyle": {
+                    "enum": ["block", "bar", "underline"],
+                    "type": "string"
+                  },
+                  "inactiveCursorStyle": {
+                    "enum": ["block", "bar", "underline", "outline", "none"],
+                    "type": "string"
+                  },
+                  "lineHeight": {
+                    "maximum": 1.8,
+                    "minimum": 1,
+                    "multipleOf": 0.1,
+                    "type": "number"
+                  },
+                  "recordHistory": {
+                    "type": "boolean"
+                  },
+                  "renderer": {
+                    "enum": ["auto", "dom"],
+                    "type": "string"
+                  },
+                  "rightClick": {
+                    "enum": ["menu", "copyPaste", "paste"],
+                    "type": "string"
+                  },
+                  "scrollOnInput": {
+                    "type": "boolean"
+                  },
+                  "scrollSensitivity": {
+                    "maximum": 5,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "scrollback": {
+                    "maximum": 100000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "smoothScrolling": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "scrollback",
+                  "lineHeight",
+                  "cursorStyle",
+                  "cursorBlink",
+                  "inactiveCursorStyle",
+                  "scrollSensitivity",
+                  "smoothScrolling",
+                  "scrollOnInput",
+                  "copyOnSelect",
+                  "applicationClipboard",
+                  "rightClick",
+                  "renderer",
+                  "recordHistory"
+                ],
+                "title": "terminal",
+                "type": "object"
+              },
+              "transfers": {
+                "additionalProperties": false,
+                "properties": {
+                  "chunkKib": {
+                    "enum": [0, 256, 1024, 4096, 16384],
+                    "type": "integer"
+                  },
+                  "compression": {
+                    "type": "boolean"
+                  },
+                  "concurrency": {
+                    "enum": [0, 1, 2, 4, 8],
+                    "type": "integer"
+                  },
+                  "downloadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "optimization": {
+                    "type": "boolean"
+                  },
+                  "requests": {
+                    "enum": [0, 1, 4, 8, 16, 32],
+                    "type": "integer"
+                  },
+                  "uploadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "optimization",
+                  "compression",
+                  "concurrency",
+                  "chunkKib",
+                  "requests",
+                  "uploadLimitKib",
+                  "downloadLimitKib"
+                ],
+                "title": "transfers",
+                "type": "object"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "properties": {
+                  "autoCheck": {
+                    "type": "boolean"
+                  },
+                  "channel": {
+                    "enum": ["stable", "beta"],
+                    "type": "string"
+                  },
+                  "interval": {
+                    "enum": ["startup", "daily", "weekly"],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": ["github", "custom"],
+                    "type": "string"
+                  },
+                  "sourceUrl": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": ["autoCheck", "channel", "source", "sourceUrl", "interval"],
+                "title": "updates",
+                "type": "object"
+              },
+              "workspace": {
+                "additionalProperties": false,
+                "properties": {
+                  "hostActivation": {
+                    "enum": ["terminal", "details", "edit"],
+                    "type": "string"
+                  },
+                  "hostDirectConnect": {
+                    "type": "boolean"
+                  },
+                  "hostList": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "order": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "sort": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "direction": {
+                                "enum": ["asc", "desc"],
+                                "type": "string"
+                              },
+                              "key": {
+                                "maxLength": 200,
+                                "type": "string"
+                              }
+                            },
+                            "required": ["key", "direction"],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "view": {
+                        "enum": ["tree", "table"],
+                        "type": "string"
+                      },
+                      "widths": {
+                        "additionalProperties": {
+                          "maximum": 480,
+                          "minimum": 64,
+                          "type": "integer"
+                        },
+                        "maxProperties": 256,
+                        "propertyNames": {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": ["view", "order", "hidden", "widths", "sort"],
+                    "type": "object"
+                  },
+                  "restore": {
+                    "type": "boolean"
+                  },
+                  "rightPanel": {
+                    "type": "boolean"
+                  },
+                  "rightPanelWidth": {
+                    "maximum": 460,
+                    "minimum": 240,
+                    "type": "integer"
+                  },
+                  "showStatusBar": {
+                    "type": "boolean"
+                  },
+                  "sidebarWidth": {
+                    "maximum": 420,
+                    "minimum": 220,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "sidebarWidth",
+                  "rightPanel",
+                  "rightPanelWidth",
+                  "showStatusBar",
+                  "restore",
+                  "hostActivation",
+                  "hostDirectConnect",
+                  "hostList"
+                ],
+                "title": "workspace",
+                "type": "object"
+              }
+            },
+            "required": [
+              "appearance",
+              "editor",
+              "files",
+              "general",
+              "monitoring",
+              "network",
+              "shortcuts",
+              "terminal",
+              "transfers",
+              "updates",
+              "workspace"
+            ],
+            "type": "object"
+          },
+          "revision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string",
+            "x-maxBytes": 128,
+            "not": {
+              "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+            }
+          },
+          "values": {
+            "additionalProperties": false,
+            "properties": {
+              "appearance": {
+                "additionalProperties": false,
+                "properties": {
+                  "accent": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "colors": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "activityBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "background": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "editor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "panel": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "sidebar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "statusBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "tabBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalBackground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalCursor": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "terminalForeground": {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      "titleBar": {
+                        "maxLength": 7,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "density": {
+                    "enum": ["comfortable", "compact"],
+                    "type": "string"
+                  },
+                  "fontSize": {
+                    "maximum": 20,
+                    "minimum": 11,
+                    "type": "integer"
+                  },
+                  "monoFont": {
+                    "enum": ["fira-code", "jetbrains-mono", "plex-mono", "system"],
+                    "type": "string"
+                  },
+                  "monoFontSize": {
+                    "maximum": 32,
+                    "minimum": 10,
+                    "type": "integer"
+                  },
+                  "motion": {
+                    "enum": ["system", "reduced", "full"],
+                    "type": "string"
+                  },
+                  "theme": {
+                    "enum": ["system", "dark", "light"],
+                    "type": "string"
+                  },
+                  "titleBarStyle": {
+                    "enum": ["system", "compact"],
+                    "type": "string"
+                  },
+                  "userCss": {
+                    "maxLength": 200000,
+                    "type": "string",
+                    "x-maxBytes": 200000
+                  }
+                },
+                "required": [
+                  "theme",
+                  "accent",
+                  "colors",
+                  "density",
+                  "fontSize",
+                  "monoFontSize",
+                  "monoFont",
+                  "motion",
+                  "userCss",
+                  "titleBarStyle"
+                ],
+                "title": "appearance",
+                "type": "object"
+              },
+              "editor": {
+                "additionalProperties": false,
+                "properties": {
+                  "spellCheck": {
+                    "type": "boolean"
+                  },
+                  "tabSize": {
+                    "enum": [2, 4, 8],
+                    "type": "integer"
+                  },
+                  "wordWrap": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["wordWrap", "tabSize", "spellCheck"],
+                "title": "editor",
+                "type": "object"
+              },
+              "files": {
+                "additionalProperties": false,
+                "properties": {
+                  "foldersFirst": {
+                    "type": "boolean"
+                  },
+                  "iconTheme": {
+                    "maxLength": 129,
+                    "type": "string"
+                  },
+                  "preload": {
+                    "type": "boolean"
+                  },
+                  "preloadCount": {
+                    "maximum": 32,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "showHidden": {
+                    "type": "boolean"
+                  },
+                  "sortBy": {
+                    "enum": ["name", "size", "modified"],
+                    "type": "string"
+                  },
+                  "sortDirection": {
+                    "enum": ["asc", "desc"],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "showHidden",
+                  "foldersFirst",
+                  "sortBy",
+                  "sortDirection",
+                  "iconTheme",
+                  "preload",
+                  "preloadCount"
+                ],
+                "title": "files",
+                "type": "object"
+              },
+              "general": {
+                "additionalProperties": false,
+                "properties": {
+                  "closeToTray": {
+                    "type": "boolean"
+                  },
+                  "language": {
+                    "enum": ["system", "zh-CN", "en-US"],
+                    "type": "string"
+                  },
+                  "lightweightMode": {
+                    "type": "boolean"
+                  },
+                  "releaseWebviewInTray": {
+                    "type": "boolean"
+                  },
+                  "showDockIconInBackground": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "language",
+                  "closeToTray",
+                  "releaseWebviewInTray",
+                  "lightweightMode",
+                  "showDockIconInBackground"
+                ],
+                "title": "general",
+                "type": "object"
+              },
+              "monitoring": {
+                "additionalProperties": false,
+                "properties": {
+                  "intervalMs": {
+                    "enum": [1000, 2000, 3000, 5000, 10000, 30000],
+                    "type": "integer"
+                  }
+                },
+                "required": ["intervalMs"],
+                "title": "monitoring",
+                "type": "object"
+              },
+              "network": {
+                "additionalProperties": false,
+                "properties": {
+                  "defaultProxy": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "features": {
+                    "additionalProperties": {
+                      "maxLength": 128,
+                      "type": "string"
+                    },
+                    "maxProperties": 256,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "profiles": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "host": {
+                          "maxLength": 253,
+                          "type": "string"
+                        },
+                        "id": {
+                          "maxLength": 128,
+                          "type": "string"
+                        },
+                        "name": {
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "port": {
+                          "maximum": 65535,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "protocol": {
+                          "enum": ["http", "socks5"],
+                          "type": "string"
+                        },
+                        "username": {
+                          "maxLength": 255,
+                          "type": "string"
+                        }
+                      },
+                      "required": ["id", "name", "protocol", "host", "port", "username"],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  }
+                },
+                "required": ["profiles", "defaultProxy", "features"],
+                "title": "network",
+                "type": "object"
+              },
+              "shortcuts": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindings": {
+                    "additionalProperties": {
+                      "items": {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      "maxItems": 4,
+                      "type": "array"
+                    },
+                    "maxProperties": 128,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rules": {
+                    "additionalProperties": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "priority": {
+                            "maximum": 1000,
+                            "minimum": -1000,
+                            "type": "integer"
+                          },
+                          "propagation": {
+                            "enum": ["consume", "continue", "block"],
+                            "type": "string"
+                          }
+                        },
+                        "required": ["priority", "propagation"],
+                        "type": "object"
+                      },
+                      "maxProperties": 512,
+                      "propertyNames": {
+                        "maxLength": 256,
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "maxProperties": 512,
+                    "propertyNames": {
+                      "maxLength": 256,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "showDetails": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["bindings", "rules", "showDetails"],
+                "title": "shortcuts",
+                "type": "object"
+              },
+              "terminal": {
+                "additionalProperties": false,
+                "properties": {
+                  "applicationClipboard": {
+                    "type": "boolean"
+                  },
+                  "copyOnSelect": {
+                    "type": "boolean"
+                  },
+                  "cursorBlink": {
+                    "type": "boolean"
+                  },
+                  "cursorStyle": {
+                    "enum": ["block", "bar", "underline"],
+                    "type": "string"
+                  },
+                  "inactiveCursorStyle": {
+                    "enum": ["block", "bar", "underline", "outline", "none"],
+                    "type": "string"
+                  },
+                  "lineHeight": {
+                    "maximum": 1.8,
+                    "minimum": 1,
+                    "multipleOf": 0.1,
+                    "type": "number"
+                  },
+                  "recordHistory": {
+                    "type": "boolean"
+                  },
+                  "renderer": {
+                    "enum": ["auto", "dom"],
+                    "type": "string"
+                  },
+                  "rightClick": {
+                    "enum": ["menu", "copyPaste", "paste"],
+                    "type": "string"
+                  },
+                  "scrollOnInput": {
+                    "type": "boolean"
+                  },
+                  "scrollSensitivity": {
+                    "maximum": 5,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "scrollback": {
+                    "maximum": 100000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "smoothScrolling": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "scrollback",
+                  "lineHeight",
+                  "cursorStyle",
+                  "cursorBlink",
+                  "inactiveCursorStyle",
+                  "scrollSensitivity",
+                  "smoothScrolling",
+                  "scrollOnInput",
+                  "copyOnSelect",
+                  "applicationClipboard",
+                  "rightClick",
+                  "renderer",
+                  "recordHistory"
+                ],
+                "title": "terminal",
+                "type": "object"
+              },
+              "transfers": {
+                "additionalProperties": false,
+                "properties": {
+                  "chunkKib": {
+                    "enum": [0, 256, 1024, 4096, 16384],
+                    "type": "integer"
+                  },
+                  "compression": {
+                    "type": "boolean"
+                  },
+                  "concurrency": {
+                    "enum": [0, 1, 2, 4, 8],
+                    "type": "integer"
+                  },
+                  "downloadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "optimization": {
+                    "type": "boolean"
+                  },
+                  "requests": {
+                    "enum": [0, 1, 4, 8, 16, 32],
+                    "type": "integer"
+                  },
+                  "uploadLimitKib": {
+                    "maximum": 1048576,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "optimization",
+                  "compression",
+                  "concurrency",
+                  "chunkKib",
+                  "requests",
+                  "uploadLimitKib",
+                  "downloadLimitKib"
+                ],
+                "title": "transfers",
+                "type": "object"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "properties": {
+                  "autoCheck": {
+                    "type": "boolean"
+                  },
+                  "channel": {
+                    "enum": ["stable", "beta"],
+                    "type": "string"
+                  },
+                  "interval": {
+                    "enum": ["startup", "daily", "weekly"],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": ["github", "custom"],
+                    "type": "string"
+                  },
+                  "sourceUrl": {
+                    "maxLength": 2048,
+                    "type": "string"
+                  }
+                },
+                "required": ["autoCheck", "channel", "source", "sourceUrl", "interval"],
+                "title": "updates",
+                "type": "object"
+              },
+              "workspace": {
+                "additionalProperties": false,
+                "properties": {
+                  "hostActivation": {
+                    "enum": ["terminal", "details", "edit"],
+                    "type": "string"
+                  },
+                  "hostDirectConnect": {
+                    "type": "boolean"
+                  },
+                  "hostList": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "order": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 256,
+                        "type": "array"
+                      },
+                      "sort": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "direction": {
+                                "enum": ["asc", "desc"],
+                                "type": "string"
+                              },
+                              "key": {
+                                "maxLength": 200,
+                                "type": "string"
+                              }
+                            },
+                            "required": ["key", "direction"],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "view": {
+                        "enum": ["tree", "table"],
+                        "type": "string"
+                      },
+                      "widths": {
+                        "additionalProperties": {
+                          "maximum": 480,
+                          "minimum": 64,
+                          "type": "integer"
+                        },
+                        "maxProperties": 256,
+                        "propertyNames": {
+                          "maxLength": 256,
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": ["view", "order", "hidden", "widths", "sort"],
+                    "type": "object"
+                  },
+                  "restore": {
+                    "type": "boolean"
+                  },
+                  "rightPanel": {
+                    "type": "boolean"
+                  },
+                  "rightPanelWidth": {
+                    "maximum": 460,
+                    "minimum": 240,
+                    "type": "integer"
+                  },
+                  "showStatusBar": {
+                    "type": "boolean"
+                  },
+                  "sidebarWidth": {
+                    "maximum": 420,
+                    "minimum": 220,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "sidebarWidth",
+                  "rightPanel",
+                  "rightPanelWidth",
+                  "showStatusBar",
+                  "restore",
+                  "hostActivation",
+                  "hostDirectConnect",
+                  "hostList"
+                ],
+                "title": "workspace",
+                "type": "object"
+              }
+            },
+            "required": [
+              "appearance",
+              "editor",
+              "files",
+              "general",
+              "monitoring",
+              "network",
+              "shortcuts",
+              "terminal",
+              "transfers",
+              "updates",
+              "workspace"
+            ],
+            "type": "object"
+          },
+          "version": {
+            "const": 1
+          }
+        },
+        "required": ["version", "revision", "values", "defaults"],
+        "type": "object"
+      }
+    }
+  ]
+}

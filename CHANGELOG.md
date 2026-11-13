@@ -6,6 +6,63 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.38.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.37.0...v0.38.0) - 2026-11-13
+
+### 更新概览 | Highlights
+
+- **api:** add versioned local automation and desktop CLI
+- **api:** expose revision-checked public preferences through CLI
+- **api:** close local protocol and CLI compatibility contracts
+- **cli:** bound local client requests by an absolute deadline
+- **storage:** make link checks explicit across platforms
+
+<details open>
+<summary>详细变更 | Details (26)</summary>
+
+### 新增 | New
+
+- **api:** add versioned local automation and desktop CLI ([#310](https://github.com/TunneldeDev/Tunnelde/pull/310), [5cb69ee](https://github.com/TunneldeDev/Tunnelde/commit/5cb69ee41c6ef93d38b7227b216d10bd98f7d5e8)) @quyansiyuanwang
+- **api:** expose revision-checked public preferences through CLI ([#312](https://github.com/TunneldeDev/Tunnelde/pull/312), [1fc11a0](https://github.com/TunneldeDev/Tunnelde/commit/1fc11a018441e494512f83969c7153c3d2806dc3)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **api:** close local protocol and CLI compatibility contracts ([#313](https://github.com/TunneldeDev/Tunnelde/pull/313)) @quyansiyuanwang
+- **cli:** bound local client requests by an absolute deadline ([#314](https://github.com/TunneldeDev/Tunnelde/pull/314), [6ce39a6](https://github.com/TunneldeDev/Tunnelde/commit/6ce39a61f085a662410beb78a76bb27d00243f45)) @quyansiyuanwang
+- **storage:** make link checks explicit across platforms ([#314](https://github.com/TunneldeDev/Tunnelde/pull/314)) @quyansiyuanwang
+- **files:** reorder columns by dragging header labels ([#319](https://github.com/TunneldeDev/Tunnelde/pull/319)) @quyansiyuanwang
+- **hosts:** honor tree fields and scroll narrow host tables ([#320](https://github.com/TunneldeDev/Tunnelde/pull/320), [1ba6c92](https://github.com/TunneldeDev/Tunnelde/commit/1ba6c92704aaf0db88307152956c32c66be64650)) @quyansiyuanwang
+- **workspace:** clear activity selection when a panel closes ([#320](https://github.com/TunneldeDev/Tunnelde/pull/320), [d4555ed](https://github.com/TunneldeDev/Tunnelde/commit/d4555ed802023bf4428b70e2c73b5280ca5063f6)) @quyansiyuanwang
+- **settings:** collapse storage locations and align plugin sections ([#320](https://github.com/TunneldeDev/Tunnelde/pull/320), [f32be13](https://github.com/TunneldeDev/Tunnelde/commit/f32be131cca3b41a4db543982e421c593774e462)) @quyansiyuanwang
+- **preview:** align the dock action icon with its label ([#320](https://github.com/TunneldeDev/Tunnelde/pull/320)) @quyansiyuanwang
+- **updates:** avoid blocking Windows updates on language selection ([#321](https://github.com/TunneldeDev/Tunnelde/pull/321)) @quyansiyuanwang
+- **api:** define a finite local discovery result contract ([#322](https://github.com/TunneldeDev/Tunnelde/pull/322), [961f680](https://github.com/TunneldeDev/Tunnelde/commit/961f680ed850782d7e3d7bb4c5d8d58beb6f8144)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **api:** define local contract closure and CLI usage ([#310](https://github.com/TunneldeDev/Tunnelde/pull/310)) @quyansiyuanwang
+- **api:** document preference updates and conflict handling ([#312](https://github.com/TunneldeDev/Tunnelde/pull/312)) @quyansiyuanwang
+- **api:** define finite local compatibility and migration policy ([#316](https://github.com/TunneldeDev/Tunnelde/pull/316)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **release:** verify public Windows installer upgrades ([#315](https://github.com/TunneldeDev/Tunnelde/pull/315), [53f9b81](https://github.com/TunneldeDev/Tunnelde/commit/53f9b8174dc9702d642c10c293aafa06ac1a24f6)) @quyansiyuanwang
+- **release:** capture WebView readiness diagnostics ([#315](https://github.com/TunneldeDev/Tunnelde/pull/315), [74f62d5](https://github.com/TunneldeDev/Tunnelde/commit/74f62d53273819831fbc0227fa8ddb96bb89bbaf)) @quyansiyuanwang
+- **release:** support elevated hosted WebView2 debugging ([#315](https://github.com/TunneldeDev/Tunnelde/pull/315), [7d36ed4](https://github.com/TunneldeDev/Tunnelde/commit/7d36ed459e7cf5ed0013e8fffad620e70551cdf0)) @quyansiyuanwang
+- **api:** verify installed CLI in release upgrade acceptance ([#315](https://github.com/TunneldeDev/Tunnelde/pull/315)) @quyansiyuanwang
+- **cli:** verify public macOS and Linux packages against local services ([#317](https://github.com/TunneldeDev/Tunnelde/pull/317)) @quyansiyuanwang
+- **cli:** verify refined discovery alongside historical contracts ([#322](https://github.com/TunneldeDev/Tunnelde/pull/322)) @quyansiyuanwang
+- **updates:** exercise signed public Windows update and automatic restart ([#318](https://github.com/TunneldeDev/Tunnelde/pull/318), [d7b7cb1](https://github.com/TunneldeDev/Tunnelde/commit/d7b7cb199600bf51003a5d283c50648b53e7379a)) @quyansiyuanwang
+- **updates:** use normal channel discovery for public OTA acceptance ([#318](https://github.com/TunneldeDev/Tunnelde/pull/318), [abf4156](https://github.com/TunneldeDev/Tunnelde/commit/abf4156513449e656600e4382b1a673b9705b023)) @quyansiyuanwang
+- **updates:** retain installer and restart diagnostics after handoff ([#318](https://github.com/TunneldeDev/Tunnelde/pull/318), [7a490ea](https://github.com/TunneldeDev/Tunnelde/commit/7a490ea711ad99b8dd4d8de4129d3d5de43a8f25)) @quyansiyuanwang
+- **updates:** target the unattended public beta installer ([#318](https://github.com/TunneldeDev/Tunnelde/pull/318), [df77396](https://github.com/TunneldeDev/Tunnelde/commit/df77396a9c29b43ee9d728f5ae4513814269f04b)) @quyansiyuanwang
+- **updates:** preserve native profile across installer restart ([#318](https://github.com/TunneldeDev/Tunnelde/pull/318)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.37.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.36.0...v0.37.0) - 2026-11-12
 
 ### 更新概览 | Highlights
