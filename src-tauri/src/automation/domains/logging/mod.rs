@@ -1,13 +1,15 @@
 //! Read-only local adapter to the shared persisted-log service.
-mod lifetime;
 mod schema;
 #[cfg(test)]
 pub(super) mod tests;
 
 use crate::automation::contract::Failure;
+use crate::automation::runtime::blocking;
 use crate::{error::AppError, logs::read, state::AppState};
 use serde_json::Value;
+use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Manager};
+use tokio::sync::Semaphore;
 
 pub(super) use schema::method;
 const OWNER: &str = "local-automation:v1";
@@ -17,7 +19,12 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
         return Err(Failure::new("unknown_method", "Unknown local log method"));
     }
     let request = parse(params)?;
-    let operation = lifetime::Read::admit()?;
+    static CAPACITY: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(4)));
+    let operation = blocking::Read::admit(
+        CAPACITY.clone(),
+        "automation.logs.cancelled",
+        "Log readers are busy; retry after the current reads complete",
+    )?;
     let ticket = operation.ticket();
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {

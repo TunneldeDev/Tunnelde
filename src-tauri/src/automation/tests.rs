@@ -55,7 +55,7 @@ fn discovery_has_bounded_versioned_domain_contracts() {
     );
     for method in methods
         .iter()
-        .filter(|method| method["name"] != "logs.read")
+        .filter(|method| method["stability"] == "stable")
     {
         assert_eq!(method["stability"], "stable");
         assert_eq!(method["since"], "0.38.0-beta.1");

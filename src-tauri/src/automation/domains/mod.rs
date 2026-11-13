@@ -1,4 +1,5 @@
 //! Public projections use shared domain services, never internal tab/layout DTOs.
+mod forwarding;
 mod hosts;
 mod logging;
 mod preferences;
@@ -14,6 +15,9 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
     }
     if method.starts_with("logs.") {
         return logging::call(app, method, params).await;
+    }
+    if method.starts_with("forwards.") {
+        return forwarding::call(app, method, params).await;
     }
     if !params.as_object().is_some_and(|fields| fields.is_empty()) {
         return Err(Failure::new(
@@ -37,6 +41,7 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
 pub(super) fn additional_contracts() -> Vec<Value> {
     let mut methods = preferences::methods();
     methods.push(logging::method());
+    methods.push(forwarding::method());
     methods
 }
 
@@ -63,7 +68,7 @@ mod tests {
             {"method":"app.info", "params":{}, "result":info(env!("CARGO_PKG_VERSION"))},
             {"method":"hosts.list", "params":{}, "result":hosts::list(&db).unwrap()},
             {"method":"sessions.list", "params":{}, "result":sessions::project(vec![crate::ssh::SessionInfo {
-                id:"session-fixture".into(),host_id:host.id,title:"Fixture".into(),address:"user@example.test:22".into(),
+                id:"session-fixture".into(),host_id:host.id.clone(),title:"Fixture".into(),address:"user@example.test:22".into(),
                 cols:80,rows:24,connected_at:1_700_000_000_000,terminal:true,purpose:None,
             }])}
         ]});
@@ -81,7 +86,11 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .extend(logging::tests::samples(&db));
-        assert_eq!(samples["samples"].as_array().unwrap().len(), 9);
+        samples["samples"]
+            .as_array_mut()
+            .unwrap()
+            .extend(forwarding::tests::samples(&db, &host.id));
+        assert_eq!(samples["samples"].as_array().unwrap().len(), 10);
         samples["wireSamples"] = json!(crate::automation::transport::contract_samples().await);
         samples["errorSamples"] = contract::describe()["protocol"]["errors"]
             .as_array().unwrap().iter().map(|entry| {
