@@ -74,6 +74,92 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("applies visible native/plugin columns and their order to every tree level", () => {
+    useHosts.setState({
+      groups: [group("Root")],
+      hosts: [
+        { ...host("a", "alpha", 0), groupId: "Root" },
+        { ...host("b", "beta", 1), favorite: true },
+      ],
+    });
+    useHostColumns.setState({
+      columns: indexHostColumns([
+        {
+          pluginId: "inventory",
+          pluginName: "Inventory",
+          id: "cost",
+          label: "Cost",
+          type: "number",
+          cells: [
+            { hostId: "a", value: 0 },
+            { hostId: "b", value: 10 },
+          ],
+        },
+        {
+          pluginId: "inventory",
+          pluginName: "Inventory",
+          id: "managed",
+          label: "Managed",
+          type: "boolean",
+          cells: [{ hostId: "a", value: false }],
+        },
+      ]),
+    });
+    const preferences = {
+      ...defaultHostListPreferences(),
+      order: ["name", "plugin/inventory/cost", "user", "address"],
+      hidden: ["address", "port", "group"],
+    };
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, hostList: preferences } });
+    render(<HostTree />);
+    const fields = (id: string) =>
+      Array.from(document.querySelectorAll(`[data-host-id="${id}"] [data-host-field]`)).map(
+        (field) => field.getAttribute("data-host-field"),
+      );
+    expect(fields("a")).toEqual(["plugin/inventory/cost", "user", "plugin/inventory/managed"]);
+    expect(fields("b")).toEqual(["plugin/inventory/cost", "user"]);
+    expect(
+      document.querySelector('[data-host-id="a"] [data-host-field="plugin/inventory/cost"]')
+        ?.textContent,
+    ).toContain("0");
+    expect(
+      document.querySelector('[data-host-id="a"] [data-host-field="plugin/inventory/managed"]')
+        ?.textContent,
+    ).toContain("No");
+    act(() =>
+      useSettings.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          hostList: {
+            ...preferences,
+            hidden: ["user", "port", "group", "plugin/inventory/cost", "plugin/inventory/managed"],
+          },
+        },
+      }),
+    );
+    expect(fields("a")).toEqual(["address"]);
+    expect(fields("b")).toEqual(["address"]);
+  });
+
+  it("keeps field visibility after view changes and leaves a name-only tree compact", () => {
+    const preferences = {
+      ...defaultHostListPreferences(),
+      hidden: ["address", "user", "port", "group"],
+    };
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, hostList: preferences } });
+    render(<HostTree />);
+    expect(document.querySelector(".host-row__meta")).toBeNull();
+    act(() =>
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, hostList: { ...preferences, view: "table" } },
+      }),
+    );
+    expect(screen.getAllByRole("columnheader")).toHaveLength(1);
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, hostList: preferences } }));
+    expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+    expect(document.querySelector(".host-row__meta")).toBeNull();
+  });
+
   it("shows source identity and provides connection and save-copy actions without saved-host mutations", () => {
     const discovered: Host = {
       ...host("source:digest", "Dynamic node", 0),
