@@ -90,7 +90,7 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .extend(forwarding::tests::samples(&db, &host.id));
-        assert_eq!(samples["samples"].as_array().unwrap().len(), 16);
+        assert_eq!(samples["samples"].as_array().unwrap().len(), 19);
         samples["wireSamples"] = json!(crate::automation::transport::contract_samples().await);
         samples["errorSamples"] = contract::describe()["protocol"]["errors"]
             .as_array().unwrap().iter().map(|entry| {

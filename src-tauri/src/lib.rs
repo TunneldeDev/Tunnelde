@@ -94,6 +94,7 @@ pub fn run() {
                     .state::<plugins::frontend::Registry>()
                     .clear(window.app_handle());
                 plugins::forwarding::clear(window.app_handle());
+                services::forwarding::start::cancel_pending(window.app_handle());
                 platform::background::destroyed(window.app_handle());
             }
         })
@@ -138,6 +139,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            services::forwarding::start::commands::forwarding_start_pending,
+            services::forwarding::start::commands::forwarding_start_probe,
+            services::forwarding::start::commands::forwarding_start_trust,
+            services::forwarding::start::commands::forwarding_start_connect,
+            services::forwarding::start::commands::forwarding_start_cancel,
+            services::forwarding::start::commands::forwarding_start_release_ui,
             window::main_window_ready,
             platform::restart::app_restart,
             platform::background::main_window_snapshot,

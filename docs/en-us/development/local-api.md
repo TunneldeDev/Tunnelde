@@ -170,10 +170,54 @@ cannot write after the awaiting operation expires. Closing a CLI connection
 alone does not revoke a still-pending desktop confirmation.
 
 These methods accept no credentials, SSH session IDs, runtime IDs, or trust
-override. Public connection startup is a separate planned flow that must retain
+override. Connection startup uses the separate request flow below, retaining
 normal host-key and credential interaction. The installed CLI can use
 `call forwards.save` and the other generic forms too. These three methods remain
 experimental; they do not expand the seven-method stable promise.
+
+## Forwarding startup receipts (experimental)
+
+`forwards.start` accepts `{id, revision, requestId}` and returns immediately with
+a receipt. Generate a new canonical lowercase UUID for `requestId` and use the
+saved rule revision from `forwards.list`. A successful CLI exit means the request
+was accepted; only phase `running` confirms listener admission.
+
+```sh
+tunnelde-cli forwards start --params '{"id":"RULE_ID","revision":"OBSERVED_REVISION","requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+tunnelde-cli forwards start-status --params '{"requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+tunnelde-cli forwards cancel-start --params '{"requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+```
+
+The main application first shows a plain native confirmation containing the
+captured host, jump route, direction, endpoints and exposure warning. After
+confirmation it opens the normal host-key/password dialog. Credentials, session
+IDs and trust overrides are never public parameters. Changing a connection
+destination invalidates the review; the dialog cannot silently retarget a retry.
+Connections are main-application owned, independent of plugin/user-terminal
+sessions. Rules with the same reviewed host/route can share this connection;
+stopping its last rule disposes it after any pending start releases its reference.
+
+Phases are `consent`, `credentials`, `connecting`, `preparing`, then terminal
+`running`, `dismissed`, `cancelled`, `expired` or `failed`. Receipts include the
+original input, `expiresAt` (the pending-request deadline in Unix milliseconds,
+not the receipt-retention deadline), and a fixed diagnostic `error` key or null.
+`running` is a historical admission result; use `forwards.list` for
+current connection health. `cancelStart` revokes only pending work and never
+stops an already admitted instance; use the separately confirmed `forwards.stop`.
+An explicitly approved host-key record committed before cancellation is retained.
+
+There is one pending interaction, a 300-second total request limit, a 120-second
+native-consent limit and a 15-second main-window heartbeat. Closing the dialog,
+document reload/loss, expiry or cancellation fences late trust/admission and
+cleans unpublished resources. Terminal receipts remain in memory for 15 minutes
+after completion; maximum 128 receipts, rejecting new requests rather than
+evicting unexpired receipts. Identical UUID/input retries replay the same receipt;
+different input with the same retained UUID is rejected. Receipts do not survive
+application restart. An unknown receipt is uncertain: inspect `forwards.list`
+before deciding whether to submit with a **new** UUID. Never reuse an unknown UUID.
+Native events and a pending-request query both deliver the credential prompt.
+These three methods are experimental and keep the ordinary 10-second local API
+exchange budget; they do not expand the stable API baseline.
 
 ## Structured log reading (experimental)
 

@@ -41,6 +41,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let (cancel, _) = watch::channel(false);
         let item = ActiveForward {
+            lifetime: None,
             admitted: Arc::new(AtomicBool::new(true)),
             identity: "instance".into(),
             session: "session".into(),
@@ -85,6 +86,7 @@ mod tests {
         registry.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                lifetime: None,
                 admitted: Arc::new(AtomicBool::new(true)),
                 identity: "replacement".into(),
                 session: "session".into(),

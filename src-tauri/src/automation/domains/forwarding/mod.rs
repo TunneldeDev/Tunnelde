@@ -2,6 +2,7 @@
 mod contract;
 mod mutations;
 mod schema;
+mod start;
 #[cfg(test)]
 pub(super) mod tests;
 
@@ -14,6 +15,7 @@ pub(super) use schema::method;
 pub(super) fn methods() -> Vec<Value> {
     let mut methods = vec![method()];
     methods.extend(mutations::methods());
+    methods.extend(start::methods());
     methods
 }
 use serde_json::Value;
@@ -22,6 +24,12 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Semaphore;
 
 pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result<Value, Failure> {
+    if matches!(
+        method,
+        "forwards.start" | "forwards.startStatus" | "forwards.cancelStart"
+    ) {
+        return start::call(app, method, params);
+    }
     if method != "forwards.list" {
         return mutations::call(app, method, params).await;
     }

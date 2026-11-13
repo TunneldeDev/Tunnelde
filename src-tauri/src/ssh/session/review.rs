@@ -42,6 +42,9 @@ pub(crate) fn prepare(app: &AppHandle, displayed: &Host) -> AppResult<Plan> {
 }
 
 impl Target {
+    pub(crate) fn jump_hosts(&self) -> Vec<Host> {
+        self.0.jump_hosts()
+    }
     pub(crate) fn from_displayed(app: &AppHandle, displayed: &Host) -> AppResult<Self> {
         Ok(Self(route::Snapshot::capture(app, displayed)?))
     }
@@ -113,7 +116,7 @@ impl Target {
     }
 
     pub(crate) async fn trust(
-        mut self,
+        self,
         app: &AppHandle,
         fingerprint: &str,
         expected_host_id: &str,
@@ -123,15 +126,35 @@ impl Target {
         if info.fingerprint != fingerprint || info.host_id != expected_host_id {
             return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
         }
+        self.approve(app, info)
+    }
+
+    /// The requester may hold its own synchronous authority guard across the
+    /// final trust write, after probing without locks.
+    pub(crate) fn approve(mut self, app: &AppHandle, info: HostKeyInfo) -> AppResult<Trusted> {
         self.0.approve_reviewed(app, &info)?;
-        Ok(Trusted {
+        Ok(self.trusted(info))
+    }
+
+    pub(crate) fn approve_checked(
+        mut self,
+        app: &AppHandle,
+        info: HostKeyInfo,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<Trusted> {
+        self.0.approve_reviewed_checked(app, &info, check)?;
+        Ok(self.trusted(info))
+    }
+
+    fn trusted(&self, info: HostKeyInfo) -> Trusted {
+        Trusted {
             info: HostKeyInfo {
                 status: HostKeyStatus::Known,
                 known_fingerprint: Some(info.fingerprint.clone()),
                 ..info
             },
             review: self.review(),
-        })
+        }
     }
 
     pub(crate) async fn connect(
@@ -145,5 +168,11 @@ impl Target {
             return Err(changed());
         }
         connect_captured(app, request, password_auth, published, None, &self.0).await
+    }
+}
+
+impl Review {
+    pub(crate) fn identity(&self) -> &str {
+        &self.revision
     }
 }
