@@ -23,6 +23,9 @@ fn actual_process_death_preserves_dispatch_and_rolls_back_partial_transitions() 
         "uncommitted-resume",
         "expanded",
         "uncommitted-expansion",
+        "task-prepared",
+        "task-dispatched",
+        "task-uncommitted",
     ] {
         let fixture = Fixture::new();
         let signal = fixture.root.join("checkpoint.json");
@@ -56,12 +59,26 @@ fn actual_process_death_preserves_dispatch_and_rolls_back_partial_transitions() 
             continue;
         }
         let expected: Claim = serde_json::from_slice(&bytes).unwrap();
+        if phase == "task-uncommitted" {
+            assert!(journal.legacy_claims().unwrap().is_empty());
+            native(&mut journal, "blocked/child").unwrap();
+            continue;
+        }
         assert!(journal.legacy_claims().unwrap() == [expected.clone()]);
+        if phase.starts_with("task-") {
+            let task = expected.transfer_task.as_ref().unwrap();
+            assert_eq!(task.id, expected.owner.id);
+            assert_eq!(task.destination.path, "/workspace/blocked");
+            assert_eq!(task.source.path, "/local/input");
+        }
         assert!(matches!(
             native(&mut journal, "blocked/child"),
             Err(Error::Occupied)
         ));
-        if matches!(phase, "dispatched" | "expanded" | "uncommitted-expansion") {
+        if matches!(
+            phase,
+            "dispatched" | "expanded" | "uncommitted-expansion" | "task-dispatched"
+        ) {
             assert!(journal.retire_unsent_legacy(&expected).is_err());
             assert!(journal.dispatch_legacy(&expected).is_err());
             assert_eq!(
@@ -105,7 +122,10 @@ fn legacy_checkpoint_child() {
         "recoverable",
         "uncommitted-resume",
         "expanded",
-        "uncommitted-expansion"
+        "uncommitted-expansion",
+        "task-prepared",
+        "task-dispatched",
+        "task-uncommitted"
     ]
     .contains(&phase.as_str()));
     let mut journal = Journal::create(&root.join("native-file-saves")).unwrap();
@@ -114,21 +134,45 @@ fn legacy_checkpoint_child() {
         b"{}".to_vec()
     } else {
         journal.enable_admission().unwrap();
-        let mut claim = journal
-            .reserve_legacy(
-                if matches!(phase.as_str(), "expanded" | "uncommitted-expansion") {
-                    Kind::Transfer
-                } else if matches!(phase.as_str(), "recoverable" | "uncommitted-resume") {
-                    Kind::Editor
-                } else {
-                    Kind::Delete
-                },
-                owner(),
-                vec![scope("/workspace/blocked")],
-            )
-            .unwrap();
-        if phase == "dispatched" {
+        let mut claim = if phase.starts_with("task-") {
+            let owner = owner();
+            let task = super::task::task(&owner.id, "/workspace/blocked");
+            journal
+                .reserve_transfer_task(owner, vec![super::task::root("/workspace/blocked")], task)
+                .unwrap()
+        } else {
+            journal
+                .reserve_legacy(
+                    if matches!(phase.as_str(), "expanded" | "uncommitted-expansion") {
+                        Kind::Transfer
+                    } else if matches!(phase.as_str(), "recoverable" | "uncommitted-resume") {
+                        Kind::Editor
+                    } else {
+                        Kind::Delete
+                    },
+                    owner(),
+                    vec![scope("/workspace/blocked")],
+                )
+                .unwrap()
+        };
+        if matches!(phase.as_str(), "dispatched" | "task-dispatched") {
             claim = journal.dispatch_legacy(&claim).unwrap().claim().clone();
+        }
+        if phase == "task-uncommitted" {
+            // Roll back the already-created fixture claim, then leave the same
+            // complete task/claim insertion dirty in an uncommitted transaction.
+            // Process death must preserve neither half of that association.
+            journal.retire_unsent_legacy(&claim).unwrap();
+            let (bytes, digest) = persistence::encode(&claim).unwrap();
+            journal.conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+            journal
+                .conn
+                .execute(
+                    "INSERT INTO legacy_claims VALUES(?1,?2,?3,?4)",
+                    rusqlite::params![claim.id, claim.revision as i64, bytes, digest],
+                )
+                .unwrap();
+            journal.conn.cache_flush().unwrap();
         }
         if matches!(phase.as_str(), "expanded" | "uncommitted-expansion") {
             claim = journal.dispatch_legacy(&claim).unwrap().claim().clone();

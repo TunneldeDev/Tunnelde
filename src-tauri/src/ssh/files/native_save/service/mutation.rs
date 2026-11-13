@@ -54,6 +54,20 @@ impl<S: Secrets + 'static> Service<S> {
         self.blocking(move |storage| storage.journal()?.dispatch_legacy(&claim))
             .await
     }
+
+    pub async fn reserve_transfer_task(
+        &self,
+        owner: journal::Owner,
+        scopes: Vec<Scope>,
+        task: journal::admission::TransferTask,
+    ) -> journal::Result<Claim> {
+        self.blocking(move |storage| {
+            storage
+                .journal()?
+                .reserve_transfer_task(owner, scopes, task)
+        })
+        .await
+    }
     pub async fn retire_unsent_legacy(&self, claim: &Claim) -> journal::Result<()> {
         let claim = claim.clone();
         self.blocking(move |storage| storage.journal()?.retire_unsent_legacy(&claim))

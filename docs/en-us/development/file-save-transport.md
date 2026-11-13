@@ -199,6 +199,16 @@ admission, final authorization and cross-store crash reconciliation remain
 required. Restarting the application does not establish completion of an
 unconfirmed transfer.
 
+The private transfer claim can now bind an immutable task ID and operation intent
+in its creation transaction: both endpoint paths, authenticated remote identities,
+copy/move and overwrite options, and plugin ownership. Generated-path extensions,
+parking and continuation preserve that original intent. A task lookup after
+reopening requires an exact match; historical unbound claims cannot adopt a task
+from application history, and a dispatched claim cannot be replayed. The actual
+transfer run/finish/cleanup integration is still incomplete. An absent claim is
+not a terminal receipt; terminal handoff and crash reconciliation with the
+resettable task projection remain required before production enablement.
+
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
 A crash between the two local stores' updates can still retain a conservative

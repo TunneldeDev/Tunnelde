@@ -43,6 +43,25 @@ impl Journal {
         owner: Owner,
         scopes: Vec<Scope>,
     ) -> Result<Claim> {
+        self.reserve_claim(kind, owner, scopes, None)
+    }
+
+    pub fn reserve_transfer_task(
+        &mut self,
+        owner: Owner,
+        scopes: Vec<Scope>,
+        task: TransferTask,
+    ) -> Result<Claim> {
+        self.reserve_claim(Kind::Transfer, owner, scopes, Some(task))
+    }
+
+    fn reserve_claim(
+        &mut self,
+        kind: Kind,
+        owner: Owner,
+        scopes: Vec<Scope>,
+        task: Option<TransferTask>,
+    ) -> Result<Claim> {
         self.verify()?;
         let claim = Claim {
             journal_id: self.id.clone(),
@@ -52,6 +71,7 @@ impl Journal {
             kind,
             phase: Phase::Prepared,
             transfer_roots: (kind == Kind::Transfer).then(|| scopes.clone()),
+            transfer_task: task,
             scopes,
         };
         let (bytes, digest) = encode(&claim)?;
@@ -70,9 +90,20 @@ impl Journal {
         if native
             .iter()
             .any(|record| record.blocks_target() && claim.overlaps_native(&record.binding))
-            || legacy
-                .iter()
-                .any(|existing| existing.overlaps(&claim.scopes))
+            || legacy.iter().any(|existing| {
+                existing.overlaps(&claim.scopes)
+                    || existing
+                        .transfer_task
+                        .as_ref()
+                        .is_some_and(|task| task.id == claim.owner.id)
+                    || claim.transfer_task.as_ref().is_some_and(|task| {
+                        existing.owner.id == task.id
+                            || existing
+                                .transfer_task
+                                .as_ref()
+                                .is_some_and(|original| original.id == task.id)
+                    })
+            })
         {
             return Err(Error::Occupied);
         }
