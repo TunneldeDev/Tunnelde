@@ -581,14 +581,15 @@ impl<'a> Files<'a> {
     }
 
     pub async fn finish_cancellable(self, interrupted: bool, cancel: &AtomicBool) -> AppResult<()> {
-        if self.unsettled_write.load(Ordering::SeqCst) {
-            // An interrupted WRITE may still mutate the target. Keep the
-            // existing bounded drain rather than trusting its partial length.
+        if self.target_handle.is_some() || self.unsettled_write.load(Ordering::SeqCst) {
+            // A writable OPEN remains owned until its original CLOSE replies,
+            // including when every WRITE acknowledged or cancellation happened
+            // between packets. Skipping CLOSE would make an orderly pause
+            // permanently unknown. Each handle drain has its own five-second
+            // bound; cancellation stops new data, not original completion.
             self.finish(interrupted).await
         } else {
-            // Every destination WRITE has acknowledged (or none was sent).
-            // A delayed CLOSE cannot introduce additional bytes. Do not abort
-            // a data channel shared by other files in this directory transfer.
+            // Read-only source completion does not hold remote write authority.
             interruptible(Some(cancel), self.finish(interrupted)).await
         }
     }

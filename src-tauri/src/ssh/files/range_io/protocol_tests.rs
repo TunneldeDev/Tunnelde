@@ -1,5 +1,6 @@
 use super::*;
 mod authorization;
+mod pause_completion;
 use std::sync::Mutex;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -755,7 +756,7 @@ async fn cancelled_server_copy_drains_shared_destination_before_retiring_task() 
 }
 
 #[tokio::test]
-async fn acknowledged_server_copy_close_is_cancellable_without_aborting_shared_channel() {
+async fn acknowledged_server_copy_drains_original_close_after_cancellation() {
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     let (sessions, state, from, to) = copy_server(
         copy_supported(),
@@ -777,11 +778,12 @@ async fn acknowledged_server_copy_close_is_cancellable_without_aborting_shared_c
         tokio::join!(files.finish_cancellable(false, &cancel), async {
             wait_for(|| state.lock().unwrap().closes == 2).await;
             cancel.store(true, Ordering::SeqCst);
+            gate.add_permits(2);
         })
     })
     .await
-    .expect("acknowledged copy blocked close cancellation");
-    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    .expect("acknowledged copy did not finish original close");
+    result.unwrap();
     assert!(!state.lock().unwrap().disconnected);
     gate.add_permits(4);
     let next = Files::open(&sessions, &from, &to).await.unwrap();
@@ -1243,7 +1245,7 @@ async fn empty_staging_close_cancels_without_duplicate_close_or_disconnecting_me
 }
 
 #[tokio::test]
-async fn acknowledged_writes_allow_prompt_close_cancellation_and_shared_channel_reuse() {
+async fn acknowledged_writes_drain_original_close_and_preserve_shared_channel_reuse() {
     let source_gate = Arc::new(tokio::sync::Semaphore::new(0));
     let target_gate = Arc::new(tokio::sync::Semaphore::new(0));
     let (source, input) = server_with_close(
@@ -1288,11 +1290,13 @@ async fn acknowledged_writes_allow_prompt_close_cancellation_and_shared_channel_
             wait_for(|| input.lock().unwrap().closes == 1 && output.lock().unwrap().closes == 1)
                 .await;
             cancel.store(true, Ordering::SeqCst);
+            source_gate.add_permits(1);
+            target_gate.add_permits(1);
         })
     })
     .await
-    .expect("pause waited for acknowledged data CLOSE");
-    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    .expect("pause did not finish original data CLOSE");
+    result.unwrap();
     assert_eq!(output.lock().unwrap().data, bytes);
     assert!(!input.lock().unwrap().disconnected);
     assert!(!output.lock().unwrap().disconnected);
