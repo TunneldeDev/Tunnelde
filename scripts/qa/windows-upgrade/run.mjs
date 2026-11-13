@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { assertUpgrade, releaseAsset, repository } from "./assets.mjs";
@@ -10,6 +10,7 @@ import { Desktop } from "./desktop.mjs";
 import { seed, verify } from "./data.mjs";
 import { verifyCli } from "./cli.mjs";
 import { cleanupUpdated, quitUpdated, updateInApplication } from "./ota.mjs";
+import { nativeProfileDirectory } from "./profile.mjs";
 
 // Real installers alter per-user registration. Never run on a user's workstation
 // or a self-hosted runner, even when an alternate installation path is supplied.
@@ -39,6 +40,15 @@ const report = {
   exits: [],
 };
 const desktop = new Desktop(chromium, root, report);
+if (inApplication) {
+  desktop.nativeProfile = true;
+  desktop.dataDir = nativeProfileDirectory(process.env);
+  // Never overwrite or delete a profile that this disposable run did not own.
+  await lstat(desktop.dataDir).then(
+    () => assert.fail("Refusing to use an existing native application profile"),
+    (error) => assert.equal(error.code, "ENOENT"),
+  );
+}
 let installedBinary;
 
 async function install(tag) {
@@ -110,7 +120,7 @@ try {
   }
   await verify(desktop, expected);
   if (process.env.UPGRADE_CHECK_CLI === "true") {
-    await verifyCli(after, tags[1].slice(1), root, expected.host.id);
+    await verifyCli(after, tags[1].slice(1), desktop.dataDir, expected.host.id);
     report.checks.push(
       "Actual installed desktop CLI executed offline discovery/version and all seven live methods, including conditional preferences update and restore",
     );
@@ -130,7 +140,9 @@ try {
   await desktop.cleanup();
   if (inApplication && installedBinary) await cleanupUpdated(installedBinary);
   try {
-    await cp(join(root, "data", "logs"), join(evidence, "application-logs"), { recursive: true });
+    await cp(desktop.logDir ?? join(desktop.dataDir, "logs"), join(evidence, "application-logs"), {
+      recursive: true,
+    });
   } catch (error) {
     report.logCollectionError = String(error);
   }

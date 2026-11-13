@@ -6,13 +6,14 @@ import { promisify } from "node:util";
 import { writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { setTimeout as pause } from "node:timers/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { WebViewPolicy } from "./webview-policy.mjs";
 
 export class Desktop {
   constructor(chromium, root, report) {
     Object.assign(this, { chromium, root, report });
     this.policy = new WebViewPolicy();
+    this.dataDir = join(root, "data");
   }
 
   async start(binary, version) {
@@ -24,8 +25,10 @@ export class Desktop {
     const env = { ...process.env };
     delete env.GH_TOKEN;
     delete env.GITHUB_TOKEN;
+    delete env.TUNNELDE_PLUGINS_DIR;
+    if (this.nativeProfile) delete env.TUNNELDE_DATA_DIR;
+    else env.TUNNELDE_DATA_DIR = this.dataDir;
     Object.assign(env, {
-      TUNNELDE_DATA_DIR: join(this.root, "data"),
       WEBVIEW2_USER_DATA_FOLDER: join(this.root, "webview"),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     });
@@ -69,6 +72,17 @@ export class Desktop {
     assert(this.browser && this.page, `WebView readiness failed: ${lastError}`);
     this.page.on("pageerror", (error) => this.report.pageErrors.push(String(error)));
     this.version = version;
+    const storage = await this.invoke("storage_status");
+    const paths = Object.fromEntries(
+      storage.locations.map(({ category, path }) => [category, path]),
+    );
+    assert.equal(
+      resolve(paths.database).toLowerCase(),
+      resolve(this.dataDir).toLowerCase(),
+      "The source and automatically restarted target must use the same data directory",
+    );
+    this.logDir = paths.logs;
+    (this.report.storageLocations ??= []).push({ version, paths });
   }
 
   invoke(cmd, args = {}) {
