@@ -262,6 +262,59 @@ fn installed_and_console_forward_commands_preserve_parameters_pages_and_host_err
 }
 
 #[test]
+fn installed_and_console_start_aliases_preserve_receipts_and_caller_request_ids() {
+    let request_id = "ddc61387-4c72-4cc2-8a1a-5b153769e81b";
+    for (binary, prefix) in [
+        (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
+        (env!("CARGO_BIN_EXE_tunnelde"), vec!["cli"]),
+    ] {
+        for (alias, method, params) in [
+            (
+                "start",
+                "forwards.start",
+                json!({"id":"rule","revision":"observed","requestId":request_id}),
+            ),
+            (
+                "start-status",
+                "forwards.startStatus",
+                json!({"requestId":request_id}),
+            ),
+            (
+                "cancel-start",
+                "forwards.cancelStart",
+                json!({"requestId":request_id}),
+            ),
+        ] {
+            let input = params.to_string();
+            let receipt = json!({"id":"rule","revision":"observed","requestId":request_id,"phase":"consent","expiresAt":1800000000000_i64,"error":null});
+            let (output, request) = fixture_call(
+                binary,
+                &prefix,
+                json!({"version":1,"id":"$request","result":receipt}),
+                &["forwards", alias, "--params", "-"],
+                Some(&input),
+            );
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.stderr.is_empty());
+            assert_eq!(request["method"], method);
+            assert_eq!(request["params"], params);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout).unwrap()["result"],
+                receipt
+            );
+            assert_ne!(
+                request["id"], request_id,
+                "Protocol correlation ID must not replace the caller's idempotency key"
+            );
+        }
+    }
+}
+
+#[test]
 fn installed_and_console_log_commands_preserve_structured_params_and_pages() {
     for (binary, prefix) in [
         (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),

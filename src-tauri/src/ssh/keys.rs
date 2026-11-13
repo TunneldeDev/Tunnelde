@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
-use crate::ssh::session::{connect_with_password, disconnect, SshConnectRequest};
+use crate::ssh::session::{disconnect, review::Target, SshConnectRequest};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,7 +75,12 @@ fn authorized_contents(
     }
 }
 
-async fn append_authorized(app: &AppHandle, session_id: &str, public: &str) -> AppResult<bool> {
+async fn append_authorized(
+    app: &AppHandle,
+    session_id: &str,
+    public: &str,
+    target: &Target,
+) -> AppResult<bool> {
     let handle = app.state::<AppState>().ssh.handle(session_id)?;
     let channel = handle
         .channel_open_session()
@@ -97,6 +102,7 @@ async fn append_authorized(app: &AppHandle, session_id: &str, public: &str) -> A
 
     let mut written = false;
     if let Some(next) = merge_authorized(&existing, public) {
+        target.verify(app)?;
         sftp.write(&file, next.as_bytes())
             .await
             .map_err(|error| AppError::Ssh(format!("sftp.error: {error}")))?;
@@ -115,33 +121,65 @@ pub async fn install(
     password: Option<String>,
     jump_credentials: std::collections::HashMap<String, super::session::HopCredential>,
 ) -> AppResult<InstalledKey> {
+    let host = app
+        .state::<AppState>()
+        .db
+        .with(|conn| db::hosts::find_host(conn, host_id))?;
+    let target = Target::from_displayed(app, &host)?;
+    install_target(app, target, password, jump_credentials).await
+}
+
+/// A cancelled/failed key setup never leaves its private SSH session registered.
+struct SetupSession<'a> {
+    app: &'a AppHandle,
+    id: String,
+}
+impl Drop for SetupSession<'_> {
+    fn drop(&mut self) {
+        let _ = disconnect(self.app, &self.id);
+    }
+}
+
+pub(crate) async fn install_target(
+    app: &AppHandle,
+    target: Target,
+    password: Option<String>,
+    jump_credentials: std::collections::HashMap<String, super::session::HopCredential>,
+) -> AppResult<InstalledKey> {
     let state = app.state::<AppState>();
+    let host_id = target.host_id();
+    target.verify(app)?;
     state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
     let (path, public) = ensure_keypair(state.storage.dir(crate::storage::layout::Category::Keys))?;
 
-    let session = connect_with_password(
-        app.clone(),
-        SshConnectRequest {
-            jump_credentials,
-            host_id: host_id.to_string(),
-            background: false,
-            purpose: None,
-            password,
-            passphrase: None,
-            cols: 80,
-            rows: 24,
-        },
-    )
-    .await?;
+    let session = target
+        .connect(
+            app.clone(),
+            SshConnectRequest {
+                jump_credentials,
+                host_id: host_id.to_string(),
+                background: true,
+                purpose: None,
+                password,
+                passphrase: None,
+                cols: 80,
+                rows: 24,
+            },
+            true,
+            false,
+        )
+        .await?;
 
-    let outcome = append_authorized(app, &session.id, &public).await;
-    let _ = disconnect(app, &session.id);
-    outcome?;
+    let session = SetupSession {
+        app,
+        id: session.id,
+    };
+    append_authorized(app, &session.id, &public, &target).await?;
 
     let key_path = path.to_string_lossy().into_owned();
-    state
-        .db
-        .with(|conn| db::hosts::set_key_auth(conn, host_id, &key_path))?;
+    target.with_current(app, |conn| {
+        db::hosts::set_key_auth(conn, host_id, &key_path)
+    })?;
 
     Ok(InstalledKey {
         public_key: public,

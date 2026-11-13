@@ -576,7 +576,8 @@
       "slow": "Slow connection setup",
       "unstable": "Some attempts failed",
       "unreachable": "Could not establish a connection"
-    }
+    },
+    "reviewChanged": "The connection settings changed. Close and reopen this dialog to review the new destination before trying again."
   },
   "terminal": {
     "connect": "Connect",
@@ -604,6 +605,7 @@
     "timeout": "Connection timed out",
     "hostKeyUntrusted": "Trust this host key first",
     "hostKeyChanged": "The host key changed",
+    "connectionChanged": "The host, jump route, proxy or trusted key changed while connecting. Review the connection and try again.",
     "keyLoad": "The private key could not be read",
     "sessionMissing": "Session is gone",
     "sessionBusy": "The session is busy",
@@ -2056,7 +2058,13 @@
     "stopping": "Stopping…",
     "runningSession": "Running through {{name}}",
     "sessionLabel": "{{name}} (session {{index}})",
-    "copyAddress": "Copy local connection address"
+    "copyAddress": "Copy local connection address",
+    "externalStartHint": "A local program requested forwarding. The reviewed host and route are fixed for this request. Closing this dialog cancels pending startup.",
+    "startExpired": "The forwarding startup request was cancelled or expired. Submit a new request.",
+    "startBusy": "Another forwarding operation is pending. Retry later.",
+    "startUnknown": "Startup receipt unavailable. Check current forwarding state first.",
+    "startReused": "This request ID is already bound to different input.",
+    "startUiChanged": "The window reloaded; pending startup was cancelled."
   },
   "mounts": {
     "dependencies": {

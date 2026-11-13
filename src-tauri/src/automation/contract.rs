@@ -5,6 +5,29 @@ pub(super) const VERSION: u8 = 1;
 pub(super) const MAX_REQUEST: usize = 32 * 1024;
 pub(super) const MAX_RESPONSE: usize = 4 * 1024 * 1024;
 
+/// Only exact, explicitly interactive methods receive a longer execution
+/// window. Framing/unauthenticated connections and existing methods keep10s.
+pub(super) fn execution_budget(method: &str) -> std::time::Duration {
+    std::time::Duration::from_secs(
+        if matches!(
+            method,
+            "forwards.save" | "forwards.remove" | "forwards.stop"
+        ) {
+            135
+        } else {
+            10
+        },
+    )
+}
+pub(super) fn exchange_budget(method: &str) -> std::time::Duration {
+    let execution = execution_budget(method);
+    if execution > std::time::Duration::from_secs(10) {
+        execution + std::time::Duration::from_secs(15)
+    } else {
+        execution
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Request {

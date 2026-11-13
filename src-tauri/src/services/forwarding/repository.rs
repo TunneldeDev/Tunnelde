@@ -27,17 +27,29 @@ fn revision(raw: &str, stored: Option<String>) -> AppResult<String> {
         None => Ok(format!("legacy:{:x}", Sha256::digest(raw.as_bytes()))),
     }
 }
-fn find(conn: &Connection, id: &str) -> AppResult<Option<RevisionedRule>> {
-    let value: Option<(String, Option<String>)> = conn.query_row(
-        "SELECT r.value,v.value FROM settings r LEFT JOIN settings v ON v.key=?2 WHERE r.key=?1",
-        rusqlite::params![key(id), version_key(id)],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    ).optional()?;
+pub(super) fn find(conn: &Connection, id: &str) -> AppResult<Option<RevisionedRule>> {
+    let value: Option<(Option<String>, Option<String>, bool)> = conn
+        .query_row(
+            "SELECT CASE WHEN length(CAST(r.value AS BLOB))<=8192 THEN r.value END,
+         CASE WHEN length(CAST(v.value AS BLOB))<=1024 THEN v.value END, v.key IS NOT NULL
+         FROM settings r LEFT JOIN settings v ON v.key=?2 WHERE r.key=?1",
+            rusqlite::params![key(id), version_key(id)],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
     value
-        .map(|(raw, token)| {
+        .map(|(raw, token, has_token)| {
+            if has_token && token.is_none() {
+                return Err(AppError::validation("forward.invalid"));
+            }
+            let raw = raw.ok_or_else(|| AppError::validation("forward.invalid"))?;
+            let rule: ForwardRule = serde_json::from_str(&raw)?;
+            if rule.id != id {
+                return Err(AppError::validation("forward.invalid"));
+            }
             Ok(RevisionedRule {
                 revision: revision(&raw, token)?,
-                rule: serde_json::from_str(&raw)?,
+                rule,
             })
         })
         .transpose()
@@ -119,8 +131,24 @@ pub(super) fn save(
     rule: &ForwardRule,
     expected: Option<&str>,
 ) -> AppResult<RevisionedRule> {
+    write(db, rule, expected, false)
+}
+/// Public creation is conditional too: a caller-chosen ID must never replace
+/// an existing rule, including after an uncertain reply or concurrent create.
+pub(super) fn create(db: &Database, rule: &ForwardRule) -> AppResult<RevisionedRule> {
+    write(db, rule, None, true)
+}
+fn write(
+    db: &Database,
+    rule: &ForwardRule,
+    expected: Option<&str>,
+    create_only: bool,
+) -> AppResult<RevisionedRule> {
     db.with(|conn| {
         let tx = conn.unchecked_transaction()?;
+        if create_only && find(&tx, &rule.id)?.is_some() {
+            return Err(AppError::validation("forward.changed"));
+        }
         check(&tx, &rule.id, expected)?;
         crate::db::hosts::find_host(&tx, &rule.host_id)?;
         let revision = uuid::Uuid::new_v4().to_string();

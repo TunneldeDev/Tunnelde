@@ -3,9 +3,11 @@
 use crate::{db::Database, error::AppResult, ssh::forward::ForwardRegistry, state::AppState};
 use tauri::{AppHandle, Emitter, Manager};
 pub mod contract;
+pub(crate) mod interaction;
 pub(crate) mod query;
 mod repository;
 mod runtime;
+pub(crate) mod start;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
 pub(crate) use runtime::{prepare_checked, take_checked};
 pub use runtime::{start_checked, stop};
@@ -25,6 +27,29 @@ struct Forwarding<'a> {
     registry: &'a ForwardRegistry,
 }
 impl Forwarding<'_> {
+    fn find(&self, id: &str) -> AppResult<Option<RevisionedInfo>> {
+        self.registry.inspect(|runtime| {
+            self.db.with(|conn| {
+                Ok(repository::find(conn, id)?.map(|entry| query::join(entry, runtime(id))))
+            })
+        })
+    }
+    fn create(&self, rule: ForwardRule) -> AppResult<RevisionedRule> {
+        validate(&rule)?;
+        if rule.id.is_empty() {
+            return Err(crate::error::AppError::validation("forward.invalid"));
+        }
+        self.registry
+            .edit(&rule.id, || repository::create(self.db, &rule))
+    }
+    fn remove_inactive_checked(&self, id: &str, revision: &str) -> AppResult<()> {
+        // An active rule needs a separately approved stop. Keep the runtime
+        // lock across the conditional deletion so a concurrent start cannot
+        // turn a reviewed metadata removal into a network operation.
+        self.registry.edit(id, || {
+            repository::remove(self.db, id, Some(revision)).map(|_| ())
+        })
+    }
     fn rules(&self) -> AppResult<Vec<RevisionedRule>> {
         repository::list(self.db)
     }
@@ -79,6 +104,15 @@ fn service(state: &AppState) -> Forwarding<'_> {
         db: &state.db,
         registry: &state.forwards,
     }
+}
+pub(crate) fn find(app: &AppHandle, id: &str) -> AppResult<Option<RevisionedInfo>> {
+    service(&app.state::<AppState>()).find(id)
+}
+pub(crate) fn create(app: &AppHandle, rule: ForwardRule) -> AppResult<RevisionedRule> {
+    service(&app.state::<AppState>()).create(rule)
+}
+pub(crate) fn remove_inactive_checked(app: &AppHandle, id: &str, revision: &str) -> AppResult<()> {
+    service(&app.state::<AppState>()).remove_inactive_checked(id, revision)
 }
 pub fn list(app: &AppHandle) -> AppResult<Vec<ForwardInfo>> {
     service(&app.state::<AppState>()).list()

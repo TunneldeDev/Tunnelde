@@ -14,6 +14,7 @@ pub struct OpenRequest {
 pub struct Plan {
     /// None means a verified user-owned connection is already available.
     pub host: Option<Host>,
+    pub jump_hosts: Vec<Host>,
 }
 
 #[derive(Serialize)]

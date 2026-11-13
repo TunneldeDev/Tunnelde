@@ -40,6 +40,31 @@ beforeEach(() => {
 });
 
 describe("SSH session lifecycle", () => {
+  it("deduplicates one reviewed prompt without sharing a connection with a different prompt", async () => {
+    let finish!: (session: SshSession) => void;
+    const acquire = vi.fn(
+      () =>
+        new Promise<SshSession>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const next = vi.fn().mockResolvedValue({ ...session, id: "new-prompt" });
+    const first = useSsh
+      .getState()
+      .connect(request, undefined, { key: "first-review", connect: acquire });
+    const duplicate = useSsh
+      .getState()
+      .connect(request, undefined, { key: "first-review", connect: acquire });
+    expect(first).toBe(duplicate);
+    await useSsh.getState().connect(request, undefined, { key: "second-review", connect: next });
+    expect(useSsh.getState().connectingHostIds).toContain(request.hostId);
+    expect(apiMock.sshConnect).not.toHaveBeenCalled();
+    finish(session);
+    await first;
+    expect(acquire).toHaveBeenCalledExactlyOnceWith(request);
+    expect(useSsh.getState().connectingHostIds).toEqual([]);
+    expect(useSsh.getState().sessions.map((session) => session.id)).toContain("new-prompt");
+  });
   it("publishes a native-accepted session synchronously and fences an older refresh", async () => {
     let resolveSnapshot!: (sessions: SshSession[]) => void;
     apiMock.sshSessions.mockImplementationOnce(

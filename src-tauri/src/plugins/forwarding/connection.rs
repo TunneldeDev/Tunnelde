@@ -25,6 +25,7 @@ pub async fn forwarding_provider_connect(
     app: AppHandle,
     origin: Origin,
     mut request: SshConnectRequest,
+    review: Option<crate::ssh::session::review::Review>,
 ) -> AppResult<SessionInfo> {
     let scope = access::resolve(&app, &origin)?;
     if request.host_id != scope.host {
@@ -39,10 +40,15 @@ pub async fn forwarding_provider_connect(
     })?;
     let mut pending = scope
         .guard(state.plugins.security.guard(&scope.lease, async {
-            let session = tokio::time::timeout(
-                std::time::Duration::from_secs(120),
-                crate::ssh::session::connect_unpublished(app.clone(), request),
-            )
+            let session = tokio::time::timeout(std::time::Duration::from_secs(120), async {
+                if let Some(review) = &review {
+                    crate::ssh::session::review::Target::capture(&app, review)?
+                        .connect(app.clone(), request, false, false)
+                        .await
+                } else {
+                    crate::ssh::session::connect_unpublished(app.clone(), request).await
+                }
+            })
             .await
             .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
             Ok(PendingConnection {

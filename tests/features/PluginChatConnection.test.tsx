@@ -15,7 +15,9 @@ const mock = vi.hoisted(() => ({
   sshTrust: vi.fn(),
   credentialStatus: vi.fn(),
   connectionRoute: vi.fn(),
+  invoke: vi.fn(),
 }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mock.invoke }));
 vi.mock("@/lib/api/ipc", () => ({
   api: {
     pluginRun: mock.run,
@@ -86,6 +88,23 @@ beforeEach(async () => {
   mock.sshTrust.mockResolvedValue(known);
   mock.credentialStatus.mockResolvedValue(true);
   mock.connectionRoute.mockResolvedValue({ proxy: "", jumpHosts: [] });
+  mock.invoke.mockReset().mockImplementation(async (command, args) => {
+    if (command === "connection_review_prepare")
+      return { review: { hostId: args.displayed.id, revision: "reviewed-host" }, jumpHosts: [] };
+    if (command === "connection_review_probe")
+      return mock.sshProbe(args.review.hostId, args.credentials);
+    if (command === "connection_review_trust")
+      return {
+        info: await mock.sshTrust(
+          args.review.hostId,
+          args.fingerprint,
+          args.credentials,
+          args.expectedHostId,
+        ),
+        review: { ...args.review, revision: "explicitly-trusted" },
+      };
+    throw new Error(`Unmocked native command: ${command}`);
+  });
 });
 
 async function openSavedHost() {
@@ -122,6 +141,7 @@ describe("assistant connection from execution location", () => {
     expect(mock.connect).toHaveBeenCalledWith(
       expect.objectContaining({ hostId: host.id, background: true }),
       expect.any(Function),
+      expect.objectContaining({ key: expect.any(String), connect: expect.any(Function) }),
     );
     expect(terminal).not.toHaveBeenCalled();
     expect(files).not.toHaveBeenCalled();
@@ -138,7 +158,7 @@ describe("assistant connection from execution location", () => {
     expect(mock.run).not.toHaveBeenCalled();
     fireEvent.click(trust);
     await waitFor(() => expect(mock.run).toHaveBeenCalledOnce());
-    expect(mock.sshTrust).toHaveBeenCalledExactlyOnceWith(host.id, known.fingerprint);
+    expect(mock.sshTrust).toHaveBeenCalledExactlyOnceWith(host.id, known.fingerprint, {}, host.id);
   });
 
   it("keeps the existing target and message draft when connection is cancelled", async () => {

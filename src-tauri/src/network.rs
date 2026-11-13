@@ -19,6 +19,8 @@ use crate::{
 
 pub mod diagnostics;
 pub(crate) mod requests;
+mod transport;
+pub(crate) use transport::TcpRoute;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
@@ -40,7 +42,7 @@ pub struct ProxyProfile {
     pub username: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct ConnectionRoute {
     pub proxy: String,
@@ -318,11 +320,6 @@ fn system_proxy(host: &str, port: u16) -> AppResult<String> {
     Ok(url.to_string())
 }
 
-pub async fn tcp(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<Stream> {
-    let url = tcp_proxy(app, host, port, proxy)?;
-    dial(host, port, &url).await
-}
-
 fn tcp_proxy(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<String> {
     if !valid_host(host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
@@ -462,18 +459,22 @@ async fn dial(host: &str, port: u16, url: &str) -> AppResult<Stream> {
 }
 
 pub fn route(app: &AppHandle, host_id: &str) -> AppResult<ConnectionRoute> {
-    app.state::<AppState>().db.with(|conn| {
-        use rusqlite::OptionalExtension;
-        let raw: Option<String> = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                [format!("route:{host_id}")],
-                |row| row.get(0),
-            )
-            .optional()?;
-        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
-            .unwrap_or_else(|| Ok(ConnectionRoute::default()))
-    })
+    app.state::<AppState>()
+        .db
+        .with(|conn| route_at(conn, host_id))
+}
+
+pub(crate) fn route_at(conn: &rusqlite::Connection, host_id: &str) -> AppResult<ConnectionRoute> {
+    use rusqlite::OptionalExtension;
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [format!("route:{host_id}")],
+            |row| row.get(0),
+        )
+        .optional()?;
+    raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
+        .unwrap_or_else(|| Ok(ConnectionRoute::default()))
 }
 
 #[tauri::command]
@@ -529,7 +530,9 @@ pub async fn proxy_test(app: AppHandle, proxy: String, host: String, port: u16) 
     if !valid_host(&host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
     }
-    let _ = tcp(&app, &host, port, &proxy).await?;
+    let _ = TcpRoute::capture(&app, &host, port, &proxy)?
+        .connect(&host, port)
+        .await?;
     Ok(())
 }
 

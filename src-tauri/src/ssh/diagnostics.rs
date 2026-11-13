@@ -6,7 +6,7 @@ use futures_util::future::{AbortHandle, Abortable};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-use super::session::{probe_route, HopCredential, HostKeyInfo, HostKeyStatus, SshManager};
+use super::session::{HopCredential, HostKeyInfo, HostKeyStatus, ProbeTarget, SshManager};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
@@ -79,6 +79,7 @@ fn fatal(error: &AppError) -> bool {
             "ssh.keyLoad",
             "ssh.keyPathRequired",
             "ssh.hostKeyChanged",
+            "ssh.connectionChanged",
             "ssh.hostKeyUntrusted",
             "ssh.usernameRequired",
             "ssh.agentUnsupported",
@@ -189,12 +190,26 @@ pub async fn test(
 ) -> AppResult<ConnectionQuality> {
     let state = app.state::<AppState>();
     let (_guard, cancellation) = register(&state.ssh, &id, &host_id)?;
+    let target = ProbeTarget::capture(&app, &host_id)?;
     Abortable::new(
-        measure(
-            &host_id,
-            || probe_route(&app, &host_id, credentials.clone()),
-            BUDGET,
-        ),
+        measure(&host_id, || target.probe(&app, &credentials), BUDGET),
+        cancellation,
+    )
+    .await
+    .map_err(|_| AppError::Ssh("ssh.testCancelled".into()))?
+}
+
+pub(crate) async fn test_reviewed(
+    app: AppHandle,
+    id: String,
+    review: super::session::review::Review,
+    credentials: HashMap<String, HopCredential>,
+) -> AppResult<ConnectionQuality> {
+    let state = app.state::<AppState>();
+    let (_guard, cancellation) = register(&state.ssh, &id, &review.host_id)?;
+    let target = super::session::review::Target::capture(&app, &review)?;
+    Abortable::new(
+        measure(&review.host_id, || target.probe(&app, &credentials), BUDGET),
         cancellation,
     )
     .await

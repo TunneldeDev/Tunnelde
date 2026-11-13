@@ -91,6 +91,7 @@ async fn never_retries_authentication_or_proxy_credentials_but_records_transport
         "ssh.authFailed",
         "ssh.passwordRequired",
         "ssh.keyLoad: unreadable",
+        "ssh.connectionChanged",
     ] {
         let mut calls = 0;
         let result = measure(
@@ -137,6 +138,26 @@ async fn never_retries_authentication_or_proxy_credentials_but_records_transport
     assert_eq!(result.successful, 2);
     assert_eq!(result.samples_ms, vec![Some(60), None, Some(60)]);
     assert_eq!(result.last_error.as_deref(), Some("network.timeout"));
+}
+
+#[tokio::test]
+async fn a_configuration_change_after_a_successful_sample_never_retries_a_new_route() {
+    let mut calls = 0;
+    let result = measure(
+        "target",
+        || {
+            calls += 1;
+            std::future::ready(if calls == 1 {
+                Ok(info(20))
+            } else {
+                Err(AppError::Ssh("ssh.connectionChanged".into()))
+            })
+        },
+        BUDGET,
+    )
+    .await;
+    assert_eq!(result.unwrap_err().to_string(), "ssh.connectionChanged");
+    assert_eq!(calls, 2);
 }
 
 #[tokio::test]
