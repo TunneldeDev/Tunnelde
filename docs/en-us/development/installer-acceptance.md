@@ -64,8 +64,9 @@ by the separate workflow above.
 
 The **Public Windows in-app update** workflow installs only the source release,
 seeds the same synthetic data, then invokes the application's real update check
-and install commands. A temporary custom HTTPS source pins the exact public
-target manifest; package and signed-version verification use the application's
+and install commands using the ordinary GitHub source and the target's channel.
+The selected version must exactly match `to`; use the latest release eligible for
+that channel. Package and signed-version verification use the application's
 embedded key. The harness does not install or launch the target itself.
 
 Acceptance requires the old process to exit successfully, the updater to restart
