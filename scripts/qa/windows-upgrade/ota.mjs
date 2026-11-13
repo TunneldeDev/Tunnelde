@@ -104,7 +104,7 @@ export async function quitUpdated(desktop, binary, report) {
   const until = Date.now() + 20000;
   while (Date.now() < until) {
     const running = await installedProcesses(binary);
-    const pointerExists = await access(join(desktop.root, "data", "automation.json")).then(
+    const pointerExists = await access(join(desktop.dataDir, "automation.json")).then(
       () => true,
       () => false,
     );

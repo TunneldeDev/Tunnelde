@@ -60,6 +60,7 @@ registration, Gatekeeper/quarantine, physical hardware or in-app OTA. The harnes
 terminates only its own disposable application process; that cleanup is not
 normal-shutdown acceptance. Windows installer and data retention remain covered
 by the separate workflow above.
+
 ## Application-initiated Windows updates
 
 The **Public Windows in-app update** workflow installs only the source release,
@@ -79,3 +80,9 @@ conditions explicitly. No user workstation or self-hosted runner is allowed.
 Results include update selection, progress, logs, screenshots and startup/data
 checks. This covers the selected Windows public release pair, not macOS/Linux
 OTA, real credentials or every historical migration.
+
+For OTA, data uses the disposable runner's native application profile, which must
+not exist before the test. NSIS restarts through Explorer and does not inherit
+the harness's temporary data-directory environment override. Both processes must
+report the same actual database location; logs are collected from the reported
+location. Installer-only checks continue using a temporary data override.

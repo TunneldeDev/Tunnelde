@@ -44,7 +44,7 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: npm install --prefix "$env:RUNNER_TEMP/upgrade-tools" --ignore-scripts --no-audit --no-fund playwright@1.64.1
       - name: Test release selection
-        run: node --test scripts/qa/windows-upgrade/assets.test.mjs
+        run: node --test scripts/qa/windows-upgrade/*.test.mjs
       - name: Install source, seed data, invoke real updater and verify automatic restart
         env:
           GH_TOKEN: ${{ github.token }}
