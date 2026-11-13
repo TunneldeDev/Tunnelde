@@ -2058,7 +2058,13 @@
     "stopping": "正在停止…",
     "runningSession": "运行于会话 {{name}}",
     "sessionLabel": "{{name}}（会话 {{index}}）",
-    "copyAddress": "复制本机连接地址"
+    "copyAddress": "复制本机连接地址",
+    "externalStartHint": "本机程序请求启动转发。本次请求的主机与跳板已固定；关闭此弹窗将取消待启动请求。",
+    "startExpired": "转发启动请求已取消或过期，请重新发起。",
+    "startBusy": "另一个转发操作正在等待处理，请稍后重试。",
+    "startUnknown": "找不到此启动回执，请先检查转发状态。",
+    "startReused": "此请求编号已用于不同的转发参数。",
+    "startUiChanged": "页面已重新加载，待启动请求已取消。"
   },
   "mounts": {
     "dependencies": {

@@ -8,6 +8,7 @@ import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 import { NodeRuntimeGate } from "@/features/plugins/NodeRuntimeSection";
+import { ForwardStartGate } from "@/features/forwarding/start/ForwardStartGate";
 import {
   PluginPermissionGate,
   PluginRecoveryPrompt,
@@ -70,6 +71,7 @@ export function App() {
       <NodeRuntimeGate />
       <PluginPermissionGate />
       <PluginRecoveryPrompt />
+      <ForwardStartGate />
     </>
   );
 }
