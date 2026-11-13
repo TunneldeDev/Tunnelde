@@ -31,7 +31,10 @@ impl Reference {
             claim_id: claim.id.clone(),
             owner: claim.owner.clone(),
             revision: claim.revision,
-            roots: claim.scopes.clone(),
+            roots: claim
+                .transfer_roots
+                .clone()
+                .ok_or_else(|| AppError::validation("editor.nativeChanged"))?,
         })
     }
 
@@ -61,6 +64,7 @@ impl Reference {
             && self.journal_id == claim.journal_id
             && self.claim_id == claim.id
             && self.owner == claim.owner
+            && claim.transfer_roots.as_ref() == Some(&self.roots)
             && self.roots.len() == claim.scopes.len()
             && self.roots.iter().zip(&claim.scopes).all(|(root, scope)| {
                 root.destination == scope.destination

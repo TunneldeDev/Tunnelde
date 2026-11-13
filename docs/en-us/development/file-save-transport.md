@@ -144,16 +144,23 @@ stored paths; this is not an unbounded directory-transfer inventory. Actual
 transfer, pause/resume and artifact-cleanup integration is still incomplete.
 
 The private transfer continuation retains the journal/claim identity, task owner
-and generation, exact revision and immutable original roots. Generated paths may
-extend a claim but cannot become new task roots. Before parking or settlement,
-the original attempt atomically closes its request epoch, and can do so only
+and generation, exact revision and immutable original roots. The private journal
+stores these roots independently of the caller's continuation reference.
+Generated paths may extend a claim but cannot become new task roots; a caller
+cannot shorten a multi-path task either. Older internal transfer records without
+recorded original roots remain reserved and cannot adopt roots from a new caller.
+Before parking or settlement, the original attempt atomically closes its request
+epoch, and can do so only
 after every observed request and writable handle is settled. Old queued raw,
 buffered and compressed writers are then rejected before submitting a mutation.
 A resumed attempt revalidates the original authenticated endpoints, roots and
 generated-path coverage under a bounded resolution timeout, wins the exact
 durable dispatch revision and receives a fresh request epoch. Preparation or
 cancellation cannot release the parked claim; uncertain original requests keep
-it dispatched. This internal state machine is not yet wired to persisted task
+it dispatched. A temporarily pending reply does not consume the original worker:
+it retains its permit and may park only after observing that reply. A sealed
+attempt cannot extend paths, park or settle a second time. This internal state
+machine is not yet wired to persisted task
 associations or the complete transfer/cleanup lifecycle.
 
 Actual range channels now share one in-memory observation per transfer, including

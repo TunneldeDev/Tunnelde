@@ -30,14 +30,21 @@ impl Receipt {
 
 impl Observation {
     pub(crate) fn begin(&self) -> Option<Receipt> {
-        self.0
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |pending| {
-                pending.checked_add(1).filter(|next| *next < SEALED)
-            })
-            .ok()
-            .map(|_| Receipt {
-                pending: self.0.clone(),
-            })
+        let mut pending = self.0.load(Ordering::Acquire);
+        loop {
+            let next = pending.checked_add(1).filter(|next| *next < SEALED)?;
+            match self
+                .0
+                .compare_exchange_weak(pending, next, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => {
+                    return Some(Receipt {
+                        pending: self.0.clone(),
+                    });
+                }
+                Err(current) => pending = current,
+            }
+        }
     }
 
     /// The final worker closes admission only when every original request and
