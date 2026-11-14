@@ -24,6 +24,7 @@
   flex: 1 1 0;
   min-width: 0;
   width: 0;
+  max-width: none;
   height: 26px;
   padding: 2px 0;
   border: 0;
@@ -34,9 +35,6 @@
 }
 .td-search > input.td-input:focus {
   outline: 0;
-  box-shadow: none;
-}
-.td-search.settings-search:focus-within {
   box-shadow: none;
 }
 .td-search input::-webkit-search-cancel-button {

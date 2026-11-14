@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { SearchField } from "@/components/ui/form/SearchField";
+import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { formatBytes } from "@/lib/text/format";
 import type { RemoteProcess } from "@/lib/api/types";
 import type { FrontendProcessColumn } from "@/lib/extensions/contracts/monitor/processes/query";
@@ -73,35 +73,35 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
 
   return (
     <>
-      <div className="process-toolbar">
-        <SearchField
-          className="process-search"
-          aria-label={t("processes.search")}
-          placeholder={t("processes.search")}
-          value={query}
-          presets={[
-            { key: "name", value: "", label: t("searchUi.name") },
-            { key: "pid", value: "", label: t("searchUi.pid") },
-            { key: "user", value: "", label: t("searchUi.user") },
-            { key: "group", value: "", label: t("searchUi.group") },
-            { key: "cpu", value: ">10", label: t("searchUi.cpu") },
-            { key: "memory", value: ">100MB", label: t("searchUi.memory") },
-          ]}
-          onChange={(value) => {
-            setQuery(value);
-            setPage(0);
-          }}
-        />
-        <span className="process-count">{t("processes.count", { count: filtered.length })}</span>
-        <Button
-          variant="ghost"
-          leading={<Trash2 size={13} />}
-          disabled={!selected || selected.pid <= 1 || selected.startedAtTicks == null || stopping}
-          onClick={kill}
-        >
-          {t("processes.kill")}
-        </Button>
-      </div>
+      <SearchToolbar
+        className="process-toolbar"
+        aria-label={t("processes.search")}
+        placeholder={t("processes.search")}
+        value={query}
+        presets={[
+          { key: "name", value: "", label: t("searchUi.name") },
+          { key: "pid", value: "", label: t("searchUi.pid") },
+          { key: "user", value: "", label: t("searchUi.user") },
+          { key: "group", value: "", label: t("searchUi.group") },
+          { key: "cpu", value: ">10", label: t("searchUi.cpu") },
+          { key: "memory", value: ">100MB", label: t("searchUi.memory") },
+        ]}
+        onChange={(value) => {
+          setQuery(value);
+          setPage(0);
+        }}
+        status={t("processes.count", { count: filtered.length })}
+        actions={
+          <Button
+            variant="ghost"
+            leading={<Trash2 size={13} />}
+            disabled={!selected || selected.pid <= 1 || selected.startedAtTicks == null || stopping}
+            onClick={kill}
+          >
+            {t("processes.kill")}
+          </Button>
+        }
+      />
       <div className="process-scroll" tabIndex={0} aria-label={t("processes.title")}>
         <table className="process-grid" aria-label={t("processes.title")} aria-busy={loading}>
           <thead>

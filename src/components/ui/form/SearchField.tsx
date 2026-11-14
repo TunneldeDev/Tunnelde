@@ -91,7 +91,7 @@ export function SearchFilterMenu({
   );
 }
 
-interface SearchFieldProps extends Omit<
+export interface SearchFieldProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
   "onChange" | "value" | "size"
 > {

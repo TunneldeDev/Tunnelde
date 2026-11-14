@@ -2824,24 +2824,9 @@
 }
 
 .history-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--td-border);
   background: var(--td-panel);
-}
-
-.history-head .td-input {
-  max-width: 320px;
-  height: 26px;
-}
-
-.history-head__count {
-  margin-left: auto;
-  font-family: var(--td-mono);
-  font-size: 10.5px;
-  color: var(--td-faint);
 }
 
 .history-list {
