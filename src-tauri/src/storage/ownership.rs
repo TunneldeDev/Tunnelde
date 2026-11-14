@@ -34,6 +34,9 @@ pub(crate) fn initialize(
     logs: std::path::PathBuf,
     plugins: Option<std::path::PathBuf>,
 ) -> AppResult<(Paths, Ownership)> {
+    // Even creating the home/sentinel can mutate another instance's category.
+    // Reserve it first, then atomically hand off to the complete resource claim.
+    let bootstrap = resources::Claim::home(&home)?;
     std::fs::create_dir_all(&home)?;
     let lease = Lease::acquire(&home).map_err(|error| {
         if error.kind() == io::ErrorKind::WouldBlock {
@@ -48,7 +51,8 @@ pub(crate) fn initialize(
     let (paths, config) = super::prepare(home, logs, plugins)?;
     let pending = resources::pending_roots(&paths, &config);
     let extra = pending.as_deref().unwrap_or_default();
-    let resources = resources::Claim::acquire(&paths, extra, None)?;
+    let resources = resources::Claim::acquire(&paths, extra, Some(&bootstrap))?;
+    drop(bootstrap);
     // A malformed/unavailable destination must retain the old recovery behavior:
     // report the plan error while using current data, without attempting that plan.
     let paths = super::initialize_prepared(paths, config, pending.map(|_| ()))?;
