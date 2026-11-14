@@ -58,11 +58,22 @@ pub(super) fn pending_roots(paths: &layout::Paths, config: &Config) -> AppResult
 }
 
 impl Claim {
+    pub(super) fn home(path: &Path) -> AppResult<Self> {
+        Self::system(&[path.to_owned()], None)
+    }
+
     pub(super) fn acquire(
         paths: &layout::Paths,
         extra: &[PathBuf],
         own: Option<&Self>,
     ) -> AppResult<Self> {
+        let mut roots: Vec<_> = paths.dirs.values().cloned().collect();
+        roots.push(paths.home.clone());
+        roots.extend_from_slice(extra);
+        Self::system(&roots, own)
+    }
+
+    fn system(roots: &[PathBuf], own: Option<&Self>) -> AppResult<Self> {
         #[cfg(unix)]
         let namespace = format!(
             "tunnelde-storage-ownership-v1-{}",
@@ -71,10 +82,7 @@ impl Claim {
         #[cfg(not(unix))]
         let namespace = "tunnelde-storage-ownership-v1";
         let registry = std::env::temp_dir().join(namespace);
-        let mut roots: Vec<_> = paths.dirs.values().cloned().collect();
-        roots.push(paths.home.clone());
-        roots.extend_from_slice(extra);
-        Self::reserve(&registry, &roots, own).map_err(|error| {
+        Self::reserve(&registry, roots, own).map_err(|error| {
             if error.kind() == io::ErrorKind::WouldBlock {
                 AppError::internal("Another Tunnelde process is using an overlapping storage location. Quit it before starting this instance.")
             } else {

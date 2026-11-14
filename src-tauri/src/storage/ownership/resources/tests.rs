@@ -325,6 +325,29 @@ fn independent_homes_can_initialize_while_another_process_is_running() {
 }
 
 #[test]
+fn occupied_categories_cannot_be_mutated_by_creating_a_new_bootstrap_home() {
+    use crate::storage::{config, layout::Category, ownership};
+    let f = Fixture::new();
+    let shared = f.0.join("shared");
+    let first = f.0.join("first-home");
+    let mut config = config::Config::default();
+    config
+        .locations
+        .insert(Category::PluginData, shared.clone());
+    config::save(&first, &config).unwrap();
+    let (_, owner) = ownership::initialize(first, f.0.join("first-logs"), None).unwrap();
+    assert!(!shared.exists());
+    for home in [shared.clone(), shared.join("nested")] {
+        assert!(ownership::initialize(home, f.0.join("other-logs"), None).is_err());
+        assert!(
+            !shared.exists(),
+            "bootstrap created files inside another owner's category"
+        );
+    }
+    drop(owner);
+}
+
+#[test]
 fn failed_migration_retains_destination_claim_until_process_owner_drops() {
     use crate::storage::{config, layout::Category, ownership};
     let f = Fixture::new();
