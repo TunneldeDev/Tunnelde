@@ -125,6 +125,9 @@ impl Manager {
             // retiring it; unknown records cannot be cleared to make room.
             for previous in service.records().await.map_err(errors::app_journal)? {
                 if previous.blocks_target() && previous.binding.overlaps(&binding) {
+                    if service.save_status(&previous.binding).is_some() {
+                        return Err(AppError::validation("editor.nativeBusy"));
+                    }
                     if previous.binding.authority != binding.authority {
                         return Err(AppError::validation("editor.remoteOutcomeUnknown"));
                     }
@@ -161,18 +164,23 @@ impl Manager {
                 .reserve(binding, &prepared)
                 .await
                 .map_err(errors::app_journal)?;
+            let worker = service
+                .observe_save(&record.binding)
+                .map_err(errors::app_journal)?;
             // Do not tie remote worker lifetime to an IPC receiver or WebView.
             return tauri::async_runtime::spawn(async move {
-                let worker = service.observe_legacy_worker(&record.binding.operation_id);
                 let _ = app.emit("editor://cleanup-changed", ());
                 let result = save(
                     service,
+                    worker.cancellation(),
                     record,
                     prepared,
                     client,
-                    &app,
-                    &session,
-                    &destination,
+                    Context {
+                        app: &app,
+                        session: &session,
+                        destination: &destination,
+                    },
                 )
                 .await;
                 drop(worker);
@@ -185,15 +193,24 @@ impl Manager {
         Ok(false)
     }
 }
+struct Context<'a> {
+    app: &'a AppHandle,
+    session: &'a str,
+    destination: &'a SessionIdentity,
+}
 async fn save(
     service: Arc<Service<System>>,
+    mut cancellation: super::super::service::Cancellation,
     record: journal::Record,
     prepared: Prepared,
     client: Client<Ssh>,
-    app: &AppHandle,
-    session: &str,
-    destination: &SessionIdentity,
+    context: Context<'_>,
 ) -> AppResult<()> {
+    let Context {
+        app,
+        session,
+        destination,
+    } = context;
     let authorize = |_: &Binding| {
         if app
             .state::<AppState>()
@@ -207,7 +224,7 @@ async fn save(
         }
     };
     let mut record = service
-        .submit(&record, &prepared, &client, authorize)
+        .submit_cancellable(&record, &prepared, &client, authorize, &mut cancellation)
         .await
         .map_err(errors::app_service)?;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -226,6 +243,7 @@ async fn save(
                 return Ok(());
             }
             return Err(AppError::validation(match receipt.error.as_deref() {
+                _ if receipt.phase == Phase::Cancelled => "editor.saveCancelled",
                 Some("files.save.baselineChanged") => "editor.remoteFileChanged",
                 Some("files.save.displacedBaselineChanged") => "editor.nativePublishedConflict",
                 _ => "editor.remoteOutcomeUnknown",
@@ -241,7 +259,7 @@ async fn save(
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         record = service
-            .recover(&record, &client, authorize)
+            .recover_cancellable(&record, &client, authorize, &mut cancellation)
             .await
             .map_err(errors::app_service)?;
     }

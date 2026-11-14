@@ -165,6 +165,7 @@ pub fn run() {
             ssh::files::durable::durable_transfer_list,
             ssh::files::remote_editor::editor_cleanup_list,
             ssh::files::remote_editor::editor_cleanup_retry,
+            ssh::files::remote_editor::editor_save_cancel,
             ssh::files::durable::durable_transfer_clear,
             ssh::files::durable::durable_transfer_pause,
             ssh::files::durable::durable_transfer_resume,

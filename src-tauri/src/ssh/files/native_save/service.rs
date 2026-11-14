@@ -7,6 +7,8 @@ use super::{
     transport::{self, Exchange},
 };
 use std::sync::{Arc, Mutex};
+mod cancellation;
+pub(super) use cancellation::Cancellation;
 mod mutation;
 pub(super) use mutation::Worker as LegacyWorker;
 mod setup;
@@ -16,6 +18,7 @@ use tokio::sync::Semaphore;
 
 #[derive(Debug)]
 pub(super) enum Error {
+    Cancelled,
     Journal(journal::Error),
     Remote(transport::Failure),
 }
@@ -32,6 +35,7 @@ impl From<transport::Failure> for Error {
 pub(super) struct Service<S> {
     storage: Arc<Storage<S>>,
     requests: Semaphore,
+    saves: cancellation::Registry,
     io: Arc<Semaphore>,
     legacy_workers: Arc<Mutex<std::collections::HashSet<String>>>,
 }
@@ -40,6 +44,7 @@ impl<S: Secrets + 'static> Service<S> {
         Self {
             storage: Arc::new(Storage::new(journal, secrets)),
             requests: Semaphore::new(4),
+            saves: Arc::new(Mutex::new(std::collections::HashMap::new())),
             io: Arc::new(Semaphore::new(4)),
             legacy_workers: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
@@ -87,12 +92,24 @@ impl<S: Secrets + 'static> Service<S> {
         self.blocking(move |storage| storage.finalize(&expected))
             .await
     }
+    #[cfg(test)]
     pub async fn submit<T: Exchange>(
         &self,
         expected: &Record,
         prepared: &Prepared,
         client: &Client<T>,
         authorize: impl FnOnce(&Binding) -> journal::Result<()>,
+    ) -> Result<Record, Error> {
+        self.submit_inner(expected, prepared, client, authorize, None)
+            .await
+    }
+    async fn submit_inner<T: Exchange>(
+        &self,
+        expected: &Record,
+        prepared: &Prepared,
+        client: &Client<T>,
+        authorize: impl FnOnce(&Binding) -> journal::Result<()>,
+        cancellation: Option<&mut Cancellation>,
     ) -> Result<Record, Error> {
         let _request = self
             .requests
@@ -109,7 +126,13 @@ impl<S: Secrets + 'static> Service<S> {
         // revocation during fsync must prevent network mutation as well.
         authorize(&dispatched.binding)?;
         // Persisted unknown remains even if this future, delivery or process disappears.
-        let receipt = client.submit(prepared, permit).await?;
+        let receipt = cancellation::exchange(
+            client,
+            &prepared.control,
+            client.submit(prepared, permit),
+            cancellation,
+        )
+        .await?;
         Ok(self
             .blocking(move |storage| storage.journal()?.observe(&dispatched, receipt))
             .await?)
@@ -119,6 +142,15 @@ impl<S: Secrets + 'static> Service<S> {
         expected: &Record,
         client: &Client<T>,
         authorize: impl FnOnce(&Binding) -> journal::Result<()>,
+    ) -> Result<Record, Error> {
+        self.recover_inner(expected, client, authorize, None).await
+    }
+    async fn recover_inner<T: Exchange>(
+        &self,
+        expected: &Record,
+        client: &Client<T>,
+        authorize: impl FnOnce(&Binding) -> journal::Result<()>,
+        cancellation: Option<&mut Cancellation>,
     ) -> Result<Record, Error> {
         let _request = self
             .requests
@@ -135,12 +167,17 @@ impl<S: Secrets + 'static> Service<S> {
             return Err(journal::Error::Changed.into());
         }
         authorize(&record.binding)?;
-        let observed = client.status(&control, record.observation.as_ref()).await?;
-        // Not found is not proof of nonpublication. Keep the dispatched record intact.
-        let receipt = observed.ok_or(transport::Failure {
-            reason: transport::Reason::MissingOperation,
-            dispatched: true,
-        })?;
+        let request = async {
+            // Not found never proves nonpublication.
+            client
+                .status(&control, record.observation.as_ref())
+                .await?
+                .ok_or(transport::Failure {
+                    reason: transport::Reason::MissingOperation,
+                    dispatched: true,
+                })
+        };
+        let receipt = cancellation::exchange(client, &control, request, cancellation).await?;
         Ok(self
             .blocking(move |storage| storage.journal()?.observe(&record, receipt))
             .await?)

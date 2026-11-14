@@ -113,3 +113,19 @@ confirmation before discarding that original backup. The next save may offer the
 same confirmation. Declining preserves the backup and blocks a conflicting save.
 Release uses the original revision; a lost reply stays query-only. A publication
 conflict is reported distinctly because the new content may already be live.
+
+## Cancelling an active editor save
+
+Background tasks offer **Cancel save** only for a live native editor save owned
+by this application process. The request targets that original operation and
+owner generation; setup tasks, legacy SFTP saves and historical unknown records
+do not gain a cancellation action. The editor keeps its draft until the original
+save is confirmed published. A late cancellation cannot undo publication.
+
+Before the dispatch checkpoint, cancellation retires only the definitely unsent
+reservation. After the checkpoint, the same worker sends the original helper
+control, drains any outstanding submit/status reply and persists a monotonic
+receipt. A missing cancellation reply remains unresolved; reconnect/restart
+recovery queries the original operation without resubmitting or cancelling it.
+Known publication retains its original backup for explicit review. Cancellation
+and recovery use internal desktop adapters and add no public API method.
