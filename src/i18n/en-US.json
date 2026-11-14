@@ -1146,7 +1146,6 @@
     "newHost": "New host",
     "settings": "Settings",
     "recent": "Recent",
-    "hint": "Ctrl+N new host · Ctrl+, settings",
     "empty": "Add a host to get started"
   },
   "palette": {

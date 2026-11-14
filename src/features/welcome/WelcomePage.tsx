@@ -2,8 +2,10 @@ import { Plus, Settings as SettingsIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
+import { bindingsFor, displayShortcut } from "@/lib/keyboard/registry";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
+import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 
 export function WelcomePage() {
@@ -12,6 +14,16 @@ export function WelcomePage() {
   const openPage = useWorkspace((state) => state.openPage);
   const openHost = useWorkspace((state) => state.openHost);
   const hosts = useHosts((state) => state.hosts);
+  const shortcuts = useSettings((state) => state.settings.keyboardShortcuts);
+  const hints = (
+    [
+      ["host.new", "welcome.newHost"],
+      ["page.settings", "welcome.settings"],
+    ] as const
+  ).flatMap(([command, label]) => {
+    const binding = bindingsFor(command, shortcuts)[0];
+    return binding ? [`${displayShortcut(binding)} ${t(label)}`] : [];
+  });
 
   const recent = [...hosts]
     .filter((host) => host.lastUsedAt !== null)
@@ -63,7 +75,7 @@ export function WelcomePage() {
           </div>
         ) : null}
 
-        <p className="welcome__hint">{t("welcome.hint")}</p>
+        {hints.length > 0 ? <p className="welcome__hint">{hints.join(" · ")}</p> : null}
       </div>
     </div>
   );
