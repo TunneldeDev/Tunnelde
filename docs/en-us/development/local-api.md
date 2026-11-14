@@ -57,9 +57,12 @@ tunnelde-cli call api.describe
 Help, CLI version and the CLI's own schema work offline. Live calls use the
 running application's domain services. They do not read its database separately,
 start a webview, execute a shell, or forward arbitrary Tauri invocations. The
-Core discovery, hosts and sessions are read-only. Public preferences also support
-revision-checked updates through the shared settings writer. Saved-host results exclude notes, key paths
-and credentials. They include addresses and usernames; treat output as private.
+core discovery, hosts and sessions are read-only. Public preferences support
+stable revision-checked updates through the shared settings writer. Experimental
+domain methods also provide bounded log reads and separately confirmed forwarding
+changes/startup, as described below; query discovery for their availability and
+individual stability. Saved-host results exclude notes, key paths and credentials.
+They include addresses and usernames; treat output as private.
 Plugin-defined host sources are not part of the saved-host list.
 
 Successful live calls write one JSON object to stdout, with `version`, `id` and
@@ -272,9 +275,11 @@ already running as the same user.
 Use `--endpoint /absolute/path/to/automation.json` or `TUNNELDE_ENDPOINT` for an
 isolated application identifier, `TUNNELDE_DATA_DIR`, or a nonstandard environment. The default path
 uses `dev.tunnelde.app` below APPDATA on Windows, `~/Library/Application Support`
-on macOS, and XDG_DATA_HOME (or `~/.local/share`) on Linux. There is no remote
-listen address or network authentication mode. Loopback addresses are checked
-on both sides. Do not publish or copy capability files to another machine.
+on macOS, and XDG_DATA_HOME (or `~/.local/share`) on Linux. This automation
+endpoint has no remote-listen address or network authentication mode. Loopback
+addresses are checked on both sides. This transport restriction is independent
+of the SSH listeners managed by the experimental forwarding methods above.
+Do not publish or copy capability files to another machine.
 
 The wire protocol allows one newline-terminated JSON request per TCP connection.
 Requests contain `version`, `id`, `token`, `method` and `params`. There are at most
