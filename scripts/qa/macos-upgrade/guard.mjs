@@ -3,6 +3,9 @@ import { lstat, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, parse } from "node:path";
 import { repository, assertUpgrade } from "../windows-upgrade/assets.mjs";
 
+export const runnerHome = join("/Users", "runner");
+const runnerWork = join(runnerHome, "work");
+
 export const workflow = "macos-ota-probe.yml";
 
 // These checks prevent accidental execution. Environment variables are not an
@@ -16,8 +19,8 @@ export function hostedContext({ env, platform, architecture, user, home, cwd }) 
   assert.equal(env.RUNNER_ARCH, architecture === "arm64" ? "ARM64" : "X64");
   assert.equal(user.username, "runner");
   assert(Number.isInteger(user.uid) && user.uid > 0, "Root execution is forbidden");
-  assert.equal(user.homedir, "/Users/runner");
-  assert.equal(home, "/Users/runner");
+  assert.equal(user.homedir, runnerHome);
+  assert.equal(home, runnerHome);
   assert.equal(env.HOME, home);
   assert.equal(env.GITHUB_REPOSITORY, repository);
   assert.equal(env.GITHUB_EVENT_NAME, "workflow_dispatch", "Manual dispatch only");
@@ -30,8 +33,8 @@ export function hostedContext({ env, platform, architecture, user, home, cwd }) 
   assert.match(env.GITHUB_SHA ?? "", /^[a-f0-9]{40}$/);
   assert.match(env.GITHUB_RUN_ID ?? "", /^[1-9]\d{0,19}$/);
   assert.match(env.GITHUB_RUN_ATTEMPT ?? "", /^[1-9]\d{0,5}$/);
-  assert.equal(env.RUNNER_TEMP, "/Users/runner/work/_temp");
-  assert.equal(env.GITHUB_WORKSPACE, "/Users/runner/work/Tunnelde/Tunnelde");
+  assert.equal(env.RUNNER_TEMP, join(runnerWork, "_temp"));
+  assert.equal(env.GITHUB_WORKSPACE, join(runnerWork, "Tunnelde", "Tunnelde"));
   assert.equal(cwd, env.GITHUB_WORKSPACE);
   assert.equal(env.UPGRADE_FROM, "v1.2.1");
   assert.equal(env.UPGRADE_TO, "v1.3.0");

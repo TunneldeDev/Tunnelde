@@ -7,10 +7,11 @@
 int main(void) {
   @autoreleasepool {
     NSDictionary<NSString *, NSString *> *env = NSProcessInfo.processInfo.environment;
+    NSString *runnerHome = [@"/Users" stringByAppendingPathComponent:@"runner"];
     struct passwd *user = getpwuid(getuid());
     if (!user || getuid() == 0 || strcmp(user->pw_name, "runner") != 0 ||
-        strcmp(user->pw_dir, "/Users/runner") != 0 ||
-        ![env[@"HOME"] isEqualToString:@"/Users/runner"] ||
+        strcmp(user->pw_dir, runnerHome.fileSystemRepresentation) != 0 ||
+        ![env[@"HOME"] isEqualToString:runnerHome] ||
         ![env[@"GITHUB_ACTIONS"] isEqualToString:@"true"] ||
         ![env[@"RUNNER_ENVIRONMENT"] isEqualToString:@"github-hosted"] ||
         ![env[@"GITHUB_REPOSITORY"] isEqualToString:@"TunneldeDev/Tunnelde"] ||
