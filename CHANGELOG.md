@@ -6,6 +6,50 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.2.1...v1.3.0) - 2026-11-14
+
+### 更新概览 | Highlights
+
+- **editor:** cancel active native saves through original workers
+- **connect:** preserve IME Enter in credential dialogs
+- **terminal:** suppress orphan IME Enter releases
+- **storage:** reserve overlapping category locations across instances
+- **storage:** reserve bootstrap homes before creating files
+
+<details open>
+<summary>详细变更 | Details (16)</summary>
+
+### 新增 | New
+
+- **editor:** cancel active native saves through original workers ([#357](https://github.com/TunneldeDev/Tunnelde/pull/357), [abbb37c](https://github.com/TunneldeDev/Tunnelde/commit/abbb37c0e51cde76bc8ee8b34c6e30abc3da6fb1)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **connect:** preserve IME Enter in credential dialogs ([#350](https://github.com/TunneldeDev/Tunnelde/pull/350)) @quyansiyuanwang
+- **terminal:** suppress orphan IME Enter releases ([#352](https://github.com/TunneldeDev/Tunnelde/pull/352)) @quyansiyuanwang
+- **storage:** reserve overlapping category locations across instances ([#353](https://github.com/TunneldeDev/Tunnelde/pull/353), [92ca73b](https://github.com/TunneldeDev/Tunnelde/commit/92ca73b2e9a6ab7f8afc3c71e75042a7a5a80e62)) @quyansiyuanwang
+- **storage:** reserve bootstrap homes before creating files ([#353](https://github.com/TunneldeDev/Tunnelde/pull/353), [1adb3f1](https://github.com/TunneldeDev/Tunnelde/commit/1adb3f19b082a3ed82e6e97899b93c16e7799517)) @quyansiyuanwang
+- **storage:** coordinate macOS Unicode path aliases ([#353](https://github.com/TunneldeDev/Tunnelde/pull/353)) @quyansiyuanwang
+- **credentials:** scope system vault to the application ([#354](https://github.com/TunneldeDev/Tunnelde/pull/354)) @quyansiyuanwang
+- **files:** resolve Windows SFTP paths for native saves ([#356](https://github.com/TunneldeDev/Tunnelde/pull/356), [f35bbc3](https://github.com/TunneldeDev/Tunnelde/commit/f35bbc35f5a47625381110aa45852dfee79c67d4)) @quyansiyuanwang
+- **files:** bind Windows saves to native canonical folders ([#356](https://github.com/TunneldeDev/Tunnelde/pull/356), [702f6d5](https://github.com/TunneldeDev/Tunnelde/commit/702f6d59851e50de7a4822d85634c5ace4b4ec85)) @quyansiyuanwang
+- **files:** pin the verified SSH worker lifecycle patch ([#356](https://github.com/TunneldeDev/Tunnelde/pull/356)) @quyansiyuanwang
+- **automation:** close owned listener and requests on shutdown ([#358](https://github.com/TunneldeDev/Tunnelde/pull/358)) @quyansiyuanwang
+- **editor:** distinguish confirmed cancellation in recovery feedback ([#357](https://github.com/TunneldeDev/Tunnelde/pull/357), [2a24fe8](https://github.com/TunneldeDev/Tunnelde/commit/2a24fe8bdf970eebd4e07a39439aa99e02d1c8ae)) @quyansiyuanwang
+- **files:** pin verified macOS save cleanup repair ([#357](https://github.com/TunneldeDev/Tunnelde/pull/357)) @quyansiyuanwang
+- **tasks:** keep floating tasks below modal dialogs ([#359](https://github.com/TunneldeDev/Tunnelde/pull/359)) @quyansiyuanwang
+- **forwards:** release removed entries after unlocking registry ([#360](https://github.com/TunneldeDev/Tunnelde/pull/360)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **files:** reflect explicit native save setup ([#355](https://github.com/TunneldeDev/Tunnelde/pull/355)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.2.1](https://github.com/TunneldeDev/Tunnelde/compare/v1.2.0...v1.2.1) - 2026-11-14
 
 ### 更新概览 | Highlights

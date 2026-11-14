@@ -24,11 +24,11 @@ static MUTATIONS: Mutex<()> = Mutex::new(());
 #[cfg(test)]
 static PUBLIC_TESTS: Mutex<()> = Mutex::new(());
 
-pub fn initialize(
+pub(super) fn prepare(
     home: std::path::PathBuf,
     logs: std::path::PathBuf,
     plugins: Option<std::path::PathBuf>,
-) -> AppResult<Paths> {
+) -> AppResult<(Paths, config::Config)> {
     let mut config = config::load(&home)?;
     for path in config.locations.values_mut() {
         *path = layout::normalize(path)?;
@@ -39,25 +39,52 @@ pub fn initialize(
         &config.locations,
         plugins.clone(),
     );
+    Ok((paths, config))
+}
+
+// Ownership is acquired between preparation and the first persisted mutation.
+pub(super) fn initialize_prepared(
+    paths: Paths,
+    mut config: config::Config,
+    pending_validation: AppResult<()>,
+) -> AppResult<Paths> {
     if let Some(pending) = &mut config.pending {
         let action = pending.action;
         if pending.restart_requested {
             pending.restart_requested = false;
             // An interrupted execution must not continue to advertise a request
             // that has yet to start. Persist before touching migration files.
-            config::save(&home, &config)?;
+            config::save(&paths.home, &config)?;
         }
-        let result = match action {
+        let result = pending_validation.and_then(|()| match action {
             config::Action::Apply => migration::apply(&paths, &mut config),
             config::Action::Cancel => migration::cancel(&paths, &mut config),
-        };
+        });
         if let Err(error) = result {
             // Continue using original locations; retain plan and explain recovery in Settings.
             config.last_error = Some(error.to_string());
-            config::save(&home, &config)?;
+            config::save(&paths.home, &config)?;
         }
     }
-    Ok(Paths::new(home, logs, &config.locations, plugins))
+    let plugins = paths
+        .plugins_override
+        .then(|| paths.dir(Category::Plugins).to_owned());
+    Ok(Paths::new(
+        paths.home.clone(),
+        paths.defaults[&Category::Logs].clone(),
+        &config.locations,
+        plugins,
+    ))
+}
+
+#[cfg(test)]
+pub fn initialize(
+    home: std::path::PathBuf,
+    logs: std::path::PathBuf,
+    plugins: Option<std::path::PathBuf>,
+) -> AppResult<Paths> {
+    let (paths, config) = prepare(home, logs, plugins)?;
+    initialize_prepared(paths, config, Ok(()))
 }
 
 #[derive(Serialize)]
@@ -138,18 +165,19 @@ pub async fn storage_schedule(app: AppHandle, changes: Vec<config::Change>) -> A
 
 #[tauri::command]
 pub async fn storage_cancel(app: AppHandle) -> AppResult<Status> {
-    let paths = app.state::<AppState>().storage.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let paths = &state.storage;
         let _mutation = MUTATIONS
             .lock()
             .map_err(|_| AppError::internal("storage.lock"))?;
         let mut config = config::load(&paths.home)?;
-        if let Err(error) = migration::cancel(&paths, &mut config) {
+        if let Err(error) = state.storage_ownership.cancel(paths, &mut config) {
             config.last_error = Some(error.to_string());
             config::save(&paths.home, &config)?;
             return Err(error);
         }
-        status(&paths)
+        status(paths)
     })
     .await
     .map_err(|e| AppError::internal(e.to_string()))?

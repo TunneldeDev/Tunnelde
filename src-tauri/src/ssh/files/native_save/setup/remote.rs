@@ -1,5 +1,6 @@
 //! Exact-connection SSH/SFTP operations; no plugin runner or arbitrary runtime fallback.
 use super::package::{Package, Verified};
+use super::paths;
 use super::preparation::Prepared;
 use crate::{
     error::{AppError, AppResult},
@@ -129,7 +130,31 @@ impl Remote {
             Err(AppError::validation("editor.nativePlatformUnsupported"))
         }
     }
+    pub async fn canonical_scope(&self, path: &str, platform: Platform) -> AppResult<String> {
+        if !platform.absolute(path) {
+            return Err(AppError::validation("sftp.absolutePathRequired"));
+        }
+        self.verify()?;
+        if platform == Platform::Posix {
+            return Ok(path.into());
+        }
+        // OpenSSH realpath preserves drive/path case aliases. Ask the actual
+        // authenticated Windows filesystem for the helper's native spelling.
+        let output = self.command(powershell(&paths::scope_script(path))).await?;
+        let scope = String::from_utf8(output)
+            .map_err(|_| AppError::validation("editor.nativeProtocolRejected"))?;
+        if !platform.absolute(&scope) {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
+        Ok(scope)
+    }
     pub async fn scope_stamp(&self, path: &str, package: Package) -> AppResult<Vec<u8>> {
+        let platform = package
+            .identity()
+            .platform()
+            .ok_or_else(|| AppError::validation("editor.nativePlatformUnsupported"))?;
+        let path = paths::canonical_path(path.into(), platform);
+        let path = path.as_str();
         let command = match package.platform {
             "linux-x86_64" | "linux-aarch64" => format!("stat -c '%d:%i:%W' -- {}", posix_literal(path)),
             "macos-x86_64" | "macos-aarch64" => format!("stat -f '%d:%i:%B' {}", posix_literal(path)),
@@ -169,10 +194,7 @@ impl Remote {
                     .canonicalize(path)
                     .await
                     .map_err(crate::ssh::files::map_sftp)?;
-                let actual = actual
-                    .strip_prefix('/')
-                    .filter(|value| value.as_bytes().get(1) == Some(&b':'))
-                    .unwrap_or(&actual);
+                let actual = paths::canonical_path(actual, platform);
                 if actual != path {
                     return Err(AppError::validation("editor.nativeInstallPathUnsafe"));
                 }
@@ -255,13 +277,15 @@ impl Remote {
         let sftp = self.sftp().await?;
         let result = tokio::time::timeout(Duration::from_secs(120), async {
             let canonical = sftp
-                .canonicalize(&prepared.plan.context.scope)
+                .canonicalize(paths::canonical_path(
+                    prepared.plan.context.scope.clone(),
+                    platform,
+                ))
                 .await
                 .map_err(crate::ssh::files::map_sftp)?;
-            let canonical = canonical
-                .strip_prefix('/')
-                .filter(|value| value.as_bytes().get(1) == Some(&b':'))
-                .unwrap_or(&canonical);
+            let canonical = self
+                .canonical_scope(&paths::canonical_path(canonical, platform), platform)
+                .await?;
             if canonical != prepared.plan.context.scope {
                 return Err(AppError::validation("editor.nativeChanged"));
             }
@@ -312,6 +336,17 @@ impl Remote {
         let _ = sftp.close().await;
         result
     }
+}
+
+pub(in crate::ssh::files::native_save) async fn canonical_scope(
+    app: AppHandle,
+    session: String,
+    path: &str,
+    platform: Platform,
+) -> AppResult<String> {
+    Remote::capture(app, session)?
+        .canonical_scope(path, platform)
+        .await
 }
 
 fn posix_literal(value: &str) -> String {

@@ -122,8 +122,10 @@ impl Manager {
                         .iter()
                         .map(|record| {
                             let mut view = projection::record(record);
-                            view.running =
-                                service.legacy_worker_running(&record.binding.operation_id);
+                            if let Some(requested) = service.save_status(&record.binding) {
+                                view.running = true;
+                                view.action = Some(if requested { "inspect" } else { "cancel" });
+                            }
                             view
                         })
                         .collect();
@@ -154,6 +156,28 @@ impl Manager {
                 vec![projection::unavailable(errors::journal(error))]
             }
         }
+    }
+    pub async fn cancel_save(&self, id: &str) -> crate::error::AppResult<()> {
+        use crate::error::AppError;
+        let operation = id
+            .strip_prefix("native-")
+            .filter(|id| super::contracts::uuid(id))
+            .ok_or_else(|| AppError::validation("editor.nativeChanged"))?;
+        let service = self
+            .existing()
+            .await
+            .map_err(errors::app_journal)?
+            .ok_or_else(|| AppError::validation("editor.nativeChanged"))?;
+        let record = service
+            .records()
+            .await
+            .map_err(errors::app_journal)?
+            .into_iter()
+            .find(|record| record.binding.operation_id == operation)
+            .ok_or_else(|| AppError::validation("editor.nativeChanged"))?;
+        service
+            .request_save_cancel(&record.binding)
+            .map_err(errors::app_journal)
     }
     pub async fn retry(&self, app: &tauri::AppHandle, id: &str) -> crate::error::AppResult<()> {
         use super::{client::Client, journal::Stage, transport::ssh::Ssh};
@@ -238,6 +262,9 @@ impl Manager {
                 .into_iter()
                 .find(|record| record.binding.operation_id == operation)
                 .ok_or_else(|| AppError::validation("editor.cleanupMissing"))?;
+            if service.save_status(&record.binding).is_some() {
+                return Err(AppError::validation("editor.nativeBusy"));
+            }
             if matches!(
                 record.stage,
                 Stage::Reserved | Stage::Ready | Stage::Abandoned | Stage::Retired

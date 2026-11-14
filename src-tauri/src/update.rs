@@ -277,7 +277,12 @@ fn configured_updater(
                 .connect_timeout(Duration::from_secs(15))
                 .read_timeout(Duration::from_secs(60))
         });
-    if let Some(url) = crate::network::proxy_url(&settings.network, "updates", None)? {
+    if let Some(url) = crate::network::proxy_url(
+        &app.state::<AppState>().vault,
+        &settings.network,
+        "updates",
+        None,
+    )? {
         builder = if url.is_empty() {
             builder.no_proxy()
         } else {

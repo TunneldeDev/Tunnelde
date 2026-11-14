@@ -311,56 +311,25 @@ impl ForwardRegistry {
         self.take_checked(id, None, || Ok(()))?.finish().await
     }
     pub fn stop_session(&self, session: &str) {
-        if let Ok(mut m) = self.active.lock() {
-            self.invalidate(format!("session:{session}"));
-            let previous = m.len();
-            m.retain(|_, item| item.session != session);
-            let changed = m.len() != previous;
-            drop(m);
-            if changed {
-                self.publish();
-            }
-        }
+        self.remove_matching(Some(format!("session:{session}")), |item| {
+            item.session == session
+        });
     }
     pub fn stop_generation(&self, owner: &str, generation: u64) {
-        if let Ok(mut active) = self.active.lock() {
-            let previous = active.len();
-            active.retain(|_, item| {
-                item.owner.as_deref() != Some(owner) || item.generation != Some(generation)
-            });
-            let changed = active.len() != previous;
-            drop(active);
-            if changed {
-                self.publish();
-            }
-        }
+        self.remove_matching(None, |item| {
+            item.owner.as_deref() == Some(owner) && item.generation == Some(generation)
+        });
     }
     pub fn stop_before_generation(&self, owner: &str, boundary: u64) {
-        if let Ok(mut active) = self.active.lock() {
-            let previous = active.len();
-            active.retain(|_, item| {
-                item.owner.as_deref() != Some(owner)
-                    || item
-                        .generation
-                        .is_none_or(|generation| generation >= boundary)
-            });
-            let changed = active.len() != previous;
-            drop(active);
-            if changed {
-                self.publish();
-            }
-        }
+        self.remove_matching(None, |item| {
+            item.owner.as_deref() == Some(owner)
+                && item
+                    .generation
+                    .is_some_and(|generation| generation < boundary)
+        });
     }
     pub fn stop_all(&self) {
-        if let Ok(mut m) = self.active.lock() {
-            self.invalidate(String::new());
-            let changed = !m.is_empty();
-            m.clear();
-            drop(m);
-            if changed {
-                self.publish();
-            }
-        }
+        self.remove_matching(Some(String::new()), |_| true);
     }
 }
 

@@ -19,7 +19,6 @@ use crate::ssh::monitor;
 use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
 use crate::state::AppState;
 use crate::update::{self, UpdateState};
-use crate::vault;
 
 const TAB_KINDS: [&str; 14] = [
     "sidebar",
@@ -562,17 +561,17 @@ pub fn credential_save(
         return Err(AppError::validation("ssh.passwordRequired"));
     }
     state.db.with(|conn| db::hosts::find_host(conn, &host_id))?;
-    vault::save(&host_id, &password)
+    state.vault.save(&host_id, &password)
 }
 
 #[tauri::command]
-pub fn credential_forget(host_id: String) -> AppResult<()> {
-    vault::forget(&host_id)
+pub fn credential_forget(state: State<'_, AppState>, host_id: String) -> AppResult<()> {
+    state.vault.forget(&host_id)
 }
 
 #[tauri::command]
-pub fn credential_status(host_id: String) -> AppResult<bool> {
-    vault::has(&host_id)
+pub fn credential_status(state: State<'_, AppState>, host_id: String) -> AppResult<bool> {
+    state.vault.has(&host_id)
 }
 
 #[tauri::command]

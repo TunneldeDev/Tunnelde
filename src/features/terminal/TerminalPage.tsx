@@ -400,8 +400,25 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           },
         );
       unregisterShortcuts = bindShortcutProvider(element, terminalCandidates);
+      const imeEnterPresses = new Set<string>();
       instance.attachCustomKeyEventHandler((event) => {
         if (disposed || ended || checkpointing.current || event.defaultPrevented) return false;
+        if (event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter") {
+          const key = event.code || event.key;
+          if (event.type === "keydown") {
+            if (event.keyCode === 229) {
+              imeEnterPresses.add(key);
+              // Keep xterm's composition/direct-commit handling for this down.
+              return true;
+            }
+            if (!event.repeat) imeEnterPresses.delete(key);
+          }
+          if (imeEnterPresses.has(key)) {
+            if (event.type === "keyup") imeEnterPresses.delete(key);
+            // WebKit can release an IME Enter as keyCode 13 after its 229 down.
+            return false;
+          }
+        }
         if (consumeShortcutRelease(event)) {
           event.preventDefault();
           return false;

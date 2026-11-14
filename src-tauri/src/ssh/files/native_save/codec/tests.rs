@@ -6,6 +6,39 @@ use super::*;
 use serde_json::{json, Value};
 
 #[test]
+fn windows_initialization_keeps_exact_native_scope_authority_checks() {
+    let mut authority = authority();
+    authority.context.scope = r"\\?\D:\Actual\scope".into();
+    for identity in [&mut authority.root, &mut authority.storage_root] {
+        identity.platform = "windows".into();
+        identity.object = format!("0:{}", identity.object);
+        identity.created = "1:3".into();
+    }
+    let packet = response(&authority, None, "", 0);
+    assert!(initialize(
+        output(packet.clone()),
+        &authority.context,
+        Platform::Windows
+    )
+    .is_ok());
+    for scope in [
+        "D:/Actual/scope",
+        r"\\?\D:\actual\scope",
+        r"\\?\D:\Other\scope",
+    ] {
+        let mut requested = authority.context.clone();
+        requested.scope = scope.into();
+        assert_eq!(
+            initialize(output(packet.clone()), &requested, Platform::Windows)
+                .err()
+                .unwrap()
+                .reason,
+            Reason::AuthorityChanged
+        );
+    }
+}
+
+#[test]
 fn decoder_binds_every_authority_field_and_operation_before_acceptance() {
     let authority = authority();
     let saved = prepared(&authority);

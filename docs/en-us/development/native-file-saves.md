@@ -8,6 +8,13 @@ and file's canonical parent folder before a native installation confirmation.
 Other folders keep the existing save path. Internal protocol support does not
 make this a stable local or plugin API.
 
+On a Windows target, OpenSSH may return `/C:/folder/file` paths. The native-save
+adapter resolves the folder through a read-only handle on the authenticated
+Windows target for both setup and subsequent saves. This captures the helper's
+native canonical spelling, including case and the extended drive prefix, while
+SFTP uses its transport spelling. POSIX paths retain their original meaning;
+the helper's native path and exact authority checks are unchanged.
+
 ## Enabling a folder
 
 The user reviews the destination/account, folder, exact executable/state paths,
@@ -16,7 +23,7 @@ protocol version or digest needs to be entered. Cancelled or expired approval
 does not install anything. Replacing the connection or folder invalidates the
 preparation; it does not redirect the original installation to another host.
 
-The host pins the five reviewed 0.28.0 helper packages by exact byte size and
+The host pins the five reviewed 0.28.1 helper packages by exact byte size and
 SHA-256. Downloads use the marketplace proxy route. Partial, truncated,
 oversized or mismatching downloads are rejected before upload. Uploaded bytes
 are checked before execution. It never uses Node or a PATH-selected agent.
@@ -106,3 +113,23 @@ confirmation before discarding that original backup. The next save may offer the
 same confirmation. Declining preserves the backup and blocks a conflicting save.
 Release uses the original revision; a lost reply stays query-only. A publication
 conflict is reported distinctly because the new content may already be live.
+
+## Cancelling an active editor save
+
+Background tasks offer **Cancel save** only for a live native editor save owned
+by this application process. The request targets that original operation and
+owner generation; setup tasks, legacy SFTP saves and historical unknown records
+do not gain a cancellation action. The editor keeps its draft until the original
+save is confirmed published. A late cancellation cannot undo publication.
+Confirmed cancellation and failure before publication have distinct recovery
+messages. Their staging remains retained, and cleanup still requires exclusion
+of the original worker. User cancellation keeps the editor draft and uses an
+informational notification.
+
+Before the dispatch checkpoint, cancellation retires only the definitely unsent
+reservation. After the checkpoint, the same worker sends the original helper
+control, drains any outstanding submit/status reply and persists a monotonic
+receipt. A missing cancellation reply remains unresolved; reconnect/restart
+recovery queries the original operation without resubmitting or cancelling it.
+Known publication retains its original backup for explicit review. Cancellation
+and recovery use internal desktop adapters and add no public API method.

@@ -24,6 +24,11 @@ import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 
+// macOS IME confirmation may report keyCode 229 after isComposing clears.
+function isCredentialSubmit(event: KeyboardEvent): boolean {
+  return event.key === "Enter" && !event.isComposing && event.keyCode !== 229;
+}
+
 const STATUS_KEYS = {
   known: "connect.knownKey",
   unknown: "connect.unknownKey",
@@ -618,7 +623,7 @@ function HostConnectDialog({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (isCredentialSubmit(event.nativeEvent)) {
                     event.preventDefault();
                     void (setup ? installKey() : submit());
                   }
@@ -674,7 +679,7 @@ function HostConnectDialog({
               value={passphrase}
               onChange={(event) => setPassphrase(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
+                if (isCredentialSubmit(event.nativeEvent)) {
                   event.preventDefault();
                   void submit();
                 }

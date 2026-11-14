@@ -1,6 +1,9 @@
 use super::*;
 use serde_json::json;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 async fn wire(bytes: Vec<u8>, calls: Arc<AtomicUsize>) -> Response {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
