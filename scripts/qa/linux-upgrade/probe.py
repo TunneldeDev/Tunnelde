@@ -30,6 +30,7 @@ def main():
     assert not os.environ.get('GH_TOKEN') and not os.environ.get('GITHUB_TOKEN')
     report = dict(passed=False, packageChanged=False, version=version, actions=[])
     processes = []
+    nodes = 0
     env = dict(os.environ, TUNNELDE_DATA_DIR=str(data), APPIMAGE_EXTRACT_AND_RUN='1',
                GTK_MODULES='atk-bridge', NO_AT_BRIDGE='0', LANG='en_US.UTF-8')
     original_digest = hashlib.sha256(binary.read_bytes()).hexdigest()
