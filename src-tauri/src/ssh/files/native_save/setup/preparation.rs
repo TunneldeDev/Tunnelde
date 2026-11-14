@@ -1,12 +1,13 @@
 //! Read-only capture from the actual authenticated editor destination.
-use super::{package::Package, remote::Remote};
+use super::{
+    package::Package,
+    paths::{canonical_path, split},
+    remote::Remote,
+};
 use crate::{
     error::{AppError, AppResult},
     ssh::files::native_save::{
-        contracts::{
-            self,
-            authority::{Context, Platform},
-        },
+        contracts::{self, authority::Context},
         journal::{setup::Plan, Selection},
     },
 };
@@ -35,12 +36,15 @@ impl Prepared {
                 .canonicalize(&parent)
                 .await
                 .map_err(crate::ssh::files::map_sftp)?;
-            let canonical = canonical_path(canonical, platform);
-            if !platform.absolute(&canonical) {
+            let scope = remote
+                .canonical_scope(&canonical_path(canonical, platform), platform)
+                .await?;
+            if !platform.absolute(&scope) {
                 return Err(AppError::validation("editor.nativeChanged"));
             }
-            let context = Context::authenticated(&remote.identity, canonical.clone(), platform)
+            let context = Context::authenticated(&remote.identity, scope.clone(), platform)
                 .ok_or_else(|| AppError::validation("editor.nativeChanged"))?;
+            let canonical = canonical_path(scope, platform);
             // Private, independent scope installations avoid overwriting an executable
             // referenced by an earlier scope or an unsettled operation.
             let container = join(&canonical, ".tunnelde");
@@ -114,46 +118,4 @@ impl Prepared {
 }
 pub(super) fn join(parent: &str, child: &str) -> String {
     format!("{}/{child}", parent.trim_end_matches(['/', '\\']))
-}
-pub(in crate::ssh::files::native_save) fn canonical_path(
-    path: String,
-    platform: Platform,
-) -> String {
-    if platform == Platform::Windows
-        && path.starts_with('/')
-        && path.as_bytes().get(2) == Some(&b':')
-    {
-        path[1..].into()
-    } else {
-        path
-    }
-}
-pub(in crate::ssh::files::native_save) fn split(
-    path: &str,
-    platform: Platform,
-) -> AppResult<(String, String)> {
-    // Windows OpenSSH returns drive paths with an SFTP-only leading slash.
-    // Keep that spelling outside this authenticated native adapter boundary.
-    let path = canonical_path(path.into(), platform);
-    if !platform.absolute(&path) {
-        return Err(AppError::validation("sftp.absolutePathRequired"));
-    }
-    let path = if platform == Platform::Windows {
-        path.replace('\\', "/")
-    } else {
-        path
-    };
-    let (parent, name) = path
-        .rsplit_once('/')
-        .ok_or_else(|| AppError::validation("sftp.invalidName"))?;
-    if matches!(name, "" | "." | "..") {
-        return Err(AppError::validation("sftp.invalidName"));
-    }
-    let parent = if parent.is_empty() { "/" } else { parent };
-    let parent = if platform == Platform::Windows && parent.ends_with(':') {
-        format!("{parent}/")
-    } else {
-        parent.into()
-    };
-    Ok((parent, name.into()))
 }
