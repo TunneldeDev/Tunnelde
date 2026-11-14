@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { hostedContext, checkedDirectory, requireCapabilities, runnerHome } from "./guard.mjs";
 
@@ -106,23 +107,29 @@ test("rejects genuine host identity mismatches even with hosted environment stri
   }
 });
 
-test("filesystem checks reject symlink ancestors, shared writes, and foreign ownership", async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "tunnelde-probe-guard-")));
-  const uid = userInfo().uid;
-  try {
-    const target = join(root, "target");
-    await mkdir(target, { mode: 0o700 });
-    await checkedDirectory(target, uid);
-    await mkdir(join(target, "nested"), { mode: 0o700 });
-    await symlink(target, join(root, "alias"));
-    await assert.rejects(checkedDirectory(join(root, "alias/nested"), uid), /Unsafe directory/);
-    await assert.rejects(checkedDirectory(target, uid + 1), /another user/);
-    await chmod(target, 0o777);
-    await assert.rejects(checkedDirectory(target, uid), /writable by other users/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+test(
+  "filesystem checks reject symlink ancestors, shared writes, and foreign ownership",
+  {
+    skip: process.platform === "win32" ? "POSIX uid, mode and symlink semantics only" : false,
+  },
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "tunnelde-probe-guard-")));
+    const uid = userInfo().uid;
+    try {
+      const target = join(root, "target");
+      await mkdir(target, { mode: 0o700 });
+      await checkedDirectory(target, uid);
+      await mkdir(join(target, "nested"), { mode: 0o700 });
+      await symlink(target, join(root, "alias"));
+      await assert.rejects(checkedDirectory(join(root, "alias/nested"), uid), /Unsafe directory/);
+      await assert.rejects(checkedDirectory(target, uid + 1), /another user/);
+      await chmod(target, 0o777);
+      await assert.rejects(checkedDirectory(target, uid), /writable by other users/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test("missing GUI or TCC capability fails instead of becoming a green skip", () => {
   const native = {
@@ -155,7 +162,7 @@ test("missing GUI or TCC capability fails instead of becoming a green skip", () 
 test("the real entry point refuses a non-manual context before touching its root", async () => {
   const run = promisify(execFile);
   await assert.rejects(
-    run(process.execPath, [new URL("./run.mjs", import.meta.url).pathname], {
+    run(process.execPath, [fileURLToPath(new URL("./run.mjs", import.meta.url))], {
       env: { ...process.env, GITHUB_EVENT_NAME: "pull_request", RUNNER_ENVIRONMENT: "self-hosted" },
       timeout: 10000,
     }),
