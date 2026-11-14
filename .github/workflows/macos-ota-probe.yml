@@ -40,12 +40,14 @@ jobs:
           node-version: 24
       - name: Test environment rejection and release selection
         run: node --test scripts/qa/macos-upgrade/*.test.mjs scripts/qa/local-cli/*.test.mjs scripts/qa/windows-upgrade/assets.test.mjs
-      - name: Compile native probe without executing GUI APIs
+      - name: Compile and check native JSON without executing GUI APIs
         if: runner.os == 'macOS'
-        run: >-
-          xcrun clang -fobjc-arc -Wall -Wextra -Werror
-          -framework AppKit -framework ApplicationServices -framework SystemConfiguration
-          scripts/qa/macos-upgrade/probe.m -o "$RUNNER_TEMP/tunnelde-ota-probe-compile-check"
+        run: |
+          xcrun clang -fobjc-arc -Wall -Wextra -Werror \
+            -framework AppKit -framework ApplicationServices -framework SystemConfiguration \
+            scripts/qa/macos-upgrade/probe.m -o "$RUNNER_TEMP/tunnelde-ota-probe-compile-check"
+          "$RUNNER_TEMP/tunnelde-ota-probe-compile-check" --format-test > "$RUNNER_TEMP/probe-format.json"
+          node --input-type=module -e 'import { readFileSync } from "node:fs"; import { requireCapabilities } from "./scripts/qa/macos-upgrade/guard.mjs"; requireCapabilities(JSON.parse(readFileSync(process.argv[1], "utf8")));' "$RUNNER_TEMP/probe-format.json"
 
   probe:
     name: Disposable Mac capabilities (no OTA)

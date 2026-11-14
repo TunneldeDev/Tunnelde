@@ -142,7 +142,7 @@ test("missing GUI or TCC capability fails instead of becoming a green skip", () 
     "accessibilityTrusted",
     "screenCaptureAllowed",
   ]) {
-    for (const invalid of [false, undefined, "true"]) {
+    for (const invalid of [false, undefined, "true", 1]) {
       assert.throws(
         () => requireCapabilities({ ...native, [key]: invalid }),
         /capability unavailable/,
