@@ -17,6 +17,16 @@ data is copied by default. Turning copying off starts the category empty; review
 shows an explicit warning. Fully quit the application, including its tray process,
 then reopen it. Closing and reopening a hidden window does not run migration.
 
+Only one participating Tunnelde process can own the same application data home.
+Startup acquires an operating-system lease before reading migration metadata or
+opening data, and keeps it while running in the tray. If that home is in use,
+quit its existing process before opening another instance. The inert
+`.tunnelde-storage.lock` file remains after exit; do not delete it to bypass the
+check. The OS releases the lease when the process exits, including after a crash.
+This does not coordinate different data homes configured to share an external
+category directory, older versions without the lease, or arbitrary external file
+changes.
+
 After scheduling changes, choose **Restart now** or **Restart later**. Deferring
 keeps a restart entry in the status bar, or in the lower corner when that bar is
 hidden. Refreshing the same plan or recreating the window from the tray preserves
