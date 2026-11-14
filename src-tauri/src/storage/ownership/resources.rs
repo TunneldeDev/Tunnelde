@@ -231,7 +231,7 @@ fn normalize(path: &Path) -> io::Result<PathBuf> {
     #[cfg(windows)]
     let path = PathBuf::from(path.to_string_lossy().to_lowercase());
     #[cfg(target_os = "macos")]
-    let path = macos::normalize_case(&path)?;
+    let path = macos::normalize_names(&path)?;
     Ok(path)
 }
 

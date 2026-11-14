@@ -5,6 +5,10 @@ use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 
+use objc2_core_foundation::{
+    CFMutableString, CFString, CFStringCompareFlags, CFStringNormalizationForm,
+};
+
 unsafe extern "C" {
     fn pathconf(path: *const c_char, name: c_int) -> c_long;
 }
@@ -23,7 +27,33 @@ fn sensitive(parent: &Path) -> io::Result<bool> {
     }
 }
 
-pub(super) fn normalize_case(path: &Path) -> io::Result<PathBuf> {
+fn normalize_name(name: &str, case_sensitive: bool) -> io::Result<String> {
+    if name.is_ascii() {
+        return Ok(if case_sensitive {
+            name.to_owned()
+        } else {
+            name.to_ascii_lowercase()
+        });
+    }
+    let original = CFString::from_str(name);
+    let normalized = CFMutableString::new_copy(None, 0, Some(&original))
+        .ok_or_else(|| io::Error::other("Cannot normalize storage ownership filename"))?;
+    if !case_sensitive {
+        // Lowercasing misses case-fold aliases such as Greek sigma/final sigma.
+        CFMutableString::fold(
+            Some(&normalized),
+            CFStringCompareFlags::CompareCaseInsensitive,
+            None,
+        );
+    }
+    // APFS also aliases canonical Unicode spellings on case-sensitive volumes.
+    // Conservatively reserve those spellings on other Mac-mounted filesystems.
+    // SAFETY: A valid owned mutable string and a supported normalization form.
+    unsafe { CFMutableString::normalize(Some(&normalized), CFStringNormalizationForm::D) };
+    Ok(normalized.to_string())
+}
+
+pub(super) fn normalize_names(path: &Path) -> io::Result<PathBuf> {
     let mut original = PathBuf::new();
     let mut result = PathBuf::new();
     let mut case_sensitive = true;
@@ -32,14 +62,10 @@ pub(super) fn normalize_case(path: &Path) -> io::Result<PathBuf> {
             if original.try_exists()? {
                 case_sensitive = sensitive(&original)?;
             }
-            if case_sensitive {
-                result.push(name);
-            } else {
-                let name = name.to_str().ok_or_else(|| {
-                    io::Error::other("Storage ownership paths must be valid Unicode")
-                })?;
-                result.push(name.to_lowercase());
-            }
+            let name = name
+                .to_str()
+                .ok_or_else(|| io::Error::other("Storage ownership paths must be valid Unicode"))?;
+            result.push(normalize_name(name, case_sensitive)?);
         } else {
             result.push(part);
         }
@@ -49,20 +75,4 @@ pub(super) fn normalize_case(path: &Path) -> io::Result<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::storage::ownership::resources::tests::Fixture;
-
-    #[test]
-    fn missing_and_created_case_aliases_follow_native_volume_semantics() {
-        let f = Fixture::new();
-        let first = f.0.join("FutureCase");
-        let second = f.0.join("futurecase");
-        let sensitive = sensitive(&f.0).unwrap();
-        let owner = f.acquire(std::slice::from_ref(&first)).unwrap();
-        assert_eq!(f.acquire(std::slice::from_ref(&second)).is_ok(), sensitive);
-        std::fs::create_dir(&first).unwrap();
-        assert_eq!(f.acquire(&[second.join("child")]).is_ok(), sensitive);
-        drop(owner);
-    }
-}
+mod tests;
