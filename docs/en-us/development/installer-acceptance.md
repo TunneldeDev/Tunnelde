@@ -110,8 +110,10 @@ Check registration before dispatching a newly introduced workflow. If GitHub
 reports it unavailable, retain the response and wait for the maintainer's normal
 integration; do not merge or publish solely to enable this probe. The selected
 `--ref` identifies the reviewed code to execute, not the default branch.
-Pull requests run environment-rejection and release-selection tests on Linux and
-macOS and compile the reader without invoking its GUI APIs.
+Pull requests run environment-rejection and release-selection tests on Linux,
+macOS and Windows. The POSIX ownership/mode/symlink test runs only on Linux/macOS;
+the real-entry refusal and context tests run on all three. macOS also compiles
+the reader and verifies native JSON serialization without invoking GUI APIs.
 
 The manual job uses fixed GitHub-hosted `macos-15`, a read-only contents token,
 checkout without persisted credentials and an eight-minute timeout. Before

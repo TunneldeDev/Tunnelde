@@ -83,8 +83,9 @@ gh workflow run macos-ota-probe.yml --repo TunneldeDev/Tunnelde \
 
 新增工作流触发前先核实注册状态。若 GitHub 报告不可用，应保留响应并等待负责人
 按正常流程集成；不要仅为启用探针而合并或发布。`--ref` 指向将执行的已审查代码，
-无需选择默认分支。PR 在 Linux 和 macOS 上执行环境拒绝与资源选择测试，并编译
-原生读取程序，但不调用其图形 API。
+无需选择默认分支。PR 在 Linux、macOS 和 Windows 上执行环境拒绝与资源选择测试；
+只有 POSIX 所有权／mode／symlink 用例限制在 Linux／macOS，真实入口拒绝和上下文
+用例在三平台均执行。macOS 另编译原生读取程序并检查 JSON 序列化，不调用图形 API。
 
 手动作业固定使用 GitHub-hosted `macos-15`、只读 contents 令牌、不保留凭据的
 checkout 和八分钟超时。入口在创建文件前检查真实系统、架构、账户与 home，
