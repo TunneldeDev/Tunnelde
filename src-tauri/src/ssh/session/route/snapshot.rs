@@ -102,7 +102,7 @@ impl Snapshot {
                     .is_none_or(|value| value.is_empty())
                 && !host.id.starts_with(crate::plugins::host_sources::PREFIX)
             {
-                request.password = crate::vault::load(&host.id)?;
+                request.password = app.state::<AppState>().vault.load(&host.id)?;
             }
             Ok(request)
         })

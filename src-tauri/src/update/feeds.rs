@@ -39,10 +39,10 @@ impl ApiBackoff {
     }
 }
 
-fn proxy_fingerprint(settings: &Settings) -> AppResult<u64> {
+fn proxy_fingerprint(vault: &crate::vault::Vault, settings: &Settings) -> AppResult<u64> {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     // Never store or log a proxy URL, password, or serialized network settings.
-    crate::network::proxy_url(&settings.network, "updates", None)?.hash(&mut hasher);
+    crate::network::proxy_url(vault, &settings.network, "updates", None)?.hash(&mut hasher);
     for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"] {
         std::env::var_os(name).hash(&mut hasher);
     }
@@ -415,7 +415,7 @@ pub(super) async fn feeds(app: &AppHandle, settings: &Settings) -> AppResult<Vec
             &client,
             &settings.update_channel,
             &service.update.github_api_backoff,
-            proxy_fingerprint(settings)?,
+            proxy_fingerprint(&service.vault, settings)?,
         )
         .await?,
     ])

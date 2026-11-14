@@ -93,8 +93,8 @@ impl Target {
         self.with_current(app, |conn| {
             db::hosts::find_host(conn, host_id)?;
             match password {
-                Some(password) => crate::vault::save(host_id, password),
-                None => crate::vault::forget(host_id),
+                Some(password) => app.state::<AppState>().vault.save(host_id, password),
+                None => app.state::<AppState>().vault.forget(host_id),
             }
         })
     }

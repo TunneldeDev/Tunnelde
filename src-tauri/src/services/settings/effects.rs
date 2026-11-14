@@ -1,7 +1,7 @@
 //! Window effects, persistence rollback and ordered committed notifications.
 use super::mutation::Kind;
 use crate::{error::AppResult, settings::Settings};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub(super) fn stage(
     app: &AppHandle,
@@ -34,7 +34,11 @@ pub(super) fn publish(app: &AppHandle, previous: &Settings, next: &Settings, kin
                 .iter()
                 .any(|item| item.id == profile.id)
             {
-                if let Err(error) = crate::vault::forget(&format!("proxy:{}", profile.id)) {
+                if let Err(error) = app
+                    .state::<crate::state::AppState>()
+                    .vault
+                    .forget(&format!("proxy:{}", profile.id))
+                {
                     tracing::warn!(%error, "could not remove deleted proxy credential");
                 }
             }

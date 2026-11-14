@@ -14,7 +14,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
-    vault,
+    vault::Vault,
 };
 
 pub mod diagnostics;
@@ -123,6 +123,7 @@ pub fn selection<'a>(
 }
 
 pub fn proxy_url(
+    vault: &Vault,
     settings: &NetworkSettings,
     feature: &str,
     override_value: Option<&str>,
@@ -153,7 +154,9 @@ pub fn proxy_url(
     if !profile.username.is_empty() {
         url.set_username(&profile.username)
             .map_err(|_| AppError::validation("network.invalid"))?;
-        let password = vault::load(&format!("proxy:{}", profile.id))?.unwrap_or_default();
+        let password = vault
+            .load(&format!("proxy:{}", profile.id))?
+            .unwrap_or_default();
         url.set_password(Some(&password))
             .map_err(|_| AppError::validation("network.invalid"))?;
     }
@@ -171,7 +174,7 @@ pub struct HttpClients(Mutex<HashMap<String, CachedClient>>);
 pub fn http_client(app: &AppHandle, feature: &str) -> AppResult<reqwest::Client> {
     let state = app.state::<AppState>();
     let settings = state.settings();
-    let url = proxy_url(&settings.network, feature, None)?;
+    let url = proxy_url(&state.vault, &settings.network, feature, None)?;
     // Reuse TLS connections without retaining plaintext credentials as cache keys.
     // Periodically rebuild system routes so changed OS proxy settings take effect.
     let route: [u8; 32] = Sha256::digest(serde_json::to_vec(&url)?).into();
@@ -240,7 +243,7 @@ pub fn process_environment(
         .get(&feature)
         .filter(|v| !v.is_empty())
         .map(String::as_str);
-    if let Some(url) = proxy_url(&network, "processes", value)? {
+    if let Some(url) = proxy_url(&app.state::<AppState>().vault, &network, "processes", value)? {
         for key in [
             "HTTP_PROXY",
             "HTTPS_PROXY",
@@ -325,7 +328,7 @@ fn tcp_proxy(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<S
         return Err(AppError::validation("network.invalid"));
     }
     let network = app.state::<AppState>().settings().network;
-    let configured = proxy_url(&network, "ssh", Some(proxy))?;
+    let configured = proxy_url(&app.state::<AppState>().vault, &network, "ssh", Some(proxy))?;
     match configured {
         Some(value) => Ok(value),
         None => system_proxy(host, port),
@@ -492,7 +495,12 @@ pub fn connection_route_save(
         return Err(AppError::validation("network.jumpCycle"));
     }
     let state = app.state::<AppState>();
-    proxy_url(&state.settings().network, "ssh", Some(&route.proxy))?;
+    proxy_url(
+        &state.vault,
+        &state.settings().network,
+        "ssh",
+        Some(&route.proxy),
+    )?;
     state.db.with(|conn| {
         crate::db::hosts::find_host(conn, &host_id)?;
         let mut seen = std::collections::HashSet::from([host_id.clone()]);
@@ -519,8 +527,8 @@ pub fn proxy_password_save(app: AppHandle, id: String, password: Option<String>)
     }
     let key = format!("proxy:{id}");
     match password {
-        Some(value) if value.len() <= 4096 => vault::save(&key, &value),
-        None => vault::forget(&key),
+        Some(value) if value.len() <= 4096 => app.state::<AppState>().vault.save(&key, &value),
+        None => app.state::<AppState>().vault.forget(&key),
         _ => Err(AppError::validation("network.invalid")),
     }
 }
