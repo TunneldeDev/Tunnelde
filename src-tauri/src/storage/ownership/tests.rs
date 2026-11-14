@@ -221,12 +221,14 @@ fn final_symlinks_hardlinks_and_fifos_are_not_lease_authority() {
     std::fs::hard_link(&target, &sentinel).unwrap();
     assert!(Lease::acquire(&fixture.0).is_err());
     std::fs::remove_file(&sentinel).unwrap();
-    rustix::fs::mkfifoat(
-        rustix::fs::CWD,
-        &sentinel,
-        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
-    )
-    .unwrap();
+    // rustix does not expose mkfifoat on Apple platforms. Use the POSIX utility
+    // for this fixture so macOS exercises the same nonblocking FIFO rejection.
+    assert!(Command::new("mkfifo")
+        .args(["-m", "600"])
+        .arg(&sentinel)
+        .status()
+        .unwrap()
+        .success());
     assert!(Lease::acquire(&fixture.0).is_err());
     assert_eq!(std::fs::read(&target).unwrap(), b"foreign content");
 }
