@@ -66,13 +66,10 @@ async fn serve(app: AppHandle) -> std::io::Result<()> {
         let token = token.clone();
         tauri::async_runtime::spawn(async move {
             let _permit = permit;
-            let _ = tokio::time::timeout(
-                Duration::from_secs(10),
-                connection(stream, &token, |request| {
-                    let app = app.clone();
-                    async move { domains::call(&app, &request.method, request.params).await }
-                }),
-            )
+            let _ = connection(stream, &token, |request| {
+                let app = app.clone();
+                async move { domains::call(&app, &request.method, request.params).await }
+            })
             .await;
         });
     }
@@ -83,12 +80,39 @@ where
     F: FnOnce(Request) -> W,
     W: std::future::Future<Output = Result<serde_json::Value, Failure>>,
 {
+    connection_with_budgets(
+        stream,
+        token,
+        call,
+        Duration::from_secs(10),
+        execution_budget,
+    )
+    .await
+}
+
+async fn connection_with_budgets<F, W>(
+    stream: TcpStream,
+    token: &str,
+    call: F,
+    framing: Duration,
+    budget: impl Fn(&str) -> Duration,
+) -> std::io::Result<()>
+where
+    F: FnOnce(Request) -> W,
+    W: std::future::Future<Output = Result<serde_json::Value, Failure>>,
+{
+    let started = tokio::time::Instant::now();
+    let mut deadline = started + framing;
     let mut stream = BufReader::new(stream);
     let mut bytes = Vec::new();
-    (&mut stream)
-        .take((MAX_REQUEST + 1) as u64)
-        .read_until(b'\n', &mut bytes)
-        .await?;
+    tokio::time::timeout_at(
+        deadline,
+        (&mut stream)
+            .take((MAX_REQUEST + 1) as u64)
+            .read_until(b'\n', &mut bytes),
+    )
+    .await
+    .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))??;
     let response = if bytes.len() > MAX_REQUEST || bytes.last() != Some(&b'\n') {
         Response::new(
             String::new(),
@@ -113,7 +137,22 @@ where
                     String::new()
                 };
                 match validate(&request, token) {
-                    Ok(()) => Response::new(id, call(request).await),
+                    Ok(()) => {
+                        if tokio::time::Instant::now() >= deadline {
+                            return Err(std::io::ErrorKind::TimedOut.into());
+                        }
+                        let execution = budget(&request.method);
+                        // Preserve the original whole-exchange deadline for
+                        // noninteractive calls. Extra time is granted only
+                        // after authentication and strict request validation.
+                        if execution > framing {
+                            deadline = tokio::time::Instant::now() + execution;
+                        }
+                        let result = tokio::time::timeout_at(deadline, call(request))
+                            .await
+                            .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?;
+                        Response::new(id, result)
+                    }
                     Err(error) => Response::new(id, Err(error)),
                 }
             }
@@ -130,8 +169,12 @@ where
         ))?;
     }
     encoded.push(b'\n');
-    stream.get_mut().write_all(&encoded).await?;
-    stream.get_mut().shutdown().await
+    tokio::time::timeout_at(deadline, async {
+        stream.get_mut().write_all(&encoded).await?;
+        stream.get_mut().shutdown().await
+    })
+    .await
+    .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
 }
 
 #[cfg(test)]

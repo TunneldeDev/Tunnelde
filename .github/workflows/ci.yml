@@ -429,6 +429,12 @@ jobs:
       - name: Test macOS platform behavior
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
+          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
+          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
+          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
+          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
@@ -484,6 +490,12 @@ jobs:
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
+          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
+          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
+          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
+          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file

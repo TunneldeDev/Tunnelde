@@ -1,5 +1,6 @@
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -9,6 +10,7 @@ import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { cn } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
+import { createReviewedConnection, type ConnectionReview } from "@/lib/api/connections/review";
 import {
   isIpcError,
   type Host,
@@ -35,10 +37,13 @@ interface ConnectDialogProps {
   initialError?: string;
   onClose: () => void;
   purpose?: "forwarding";
+  context?: ReactNode;
   /** Optional exclusive host acquisition, with its own native lifetime. */
-  connectSession?: (request: SshConnectRequest) => Promise<SshSession>;
+  connectSession?: (request: SshConnectRequest, review?: ConnectionReview) => Promise<SshSession>;
   /** Native verification for acquisitions pinned to a previously captured target. */
   verification?: {
+    /** Request-owned route, captured before the originating native consent. */
+    jumpHosts?: Host[];
     probe: (credentials: SshConnectRequest["jumpCredentials"]) => Promise<HostKeyInfo>;
     trust: (
       fingerprint: string,
@@ -72,6 +77,7 @@ function HostConnectDialog({
   purpose,
   connectSession,
   verification,
+  context,
 }: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
@@ -80,6 +86,8 @@ function HostConnectDialog({
   const confirm = useDialogs((state) => state.confirm);
 
   const hosts = useHosts((state) => state.hosts);
+  const [reviewed] = useState(() => createReviewedConnection(host));
+  const [reviewedJumps, setReviewedJumps] = useState<Host[]>([]);
   const [jumpIds, setJumpIds] = useState<string[]>([]);
   const [jumpCredentials, setJumpCredentials] = useState<
     NonNullable<SshConnectRequest["jumpCredentials"]>
@@ -95,13 +103,31 @@ function HostConnectDialog({
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [reviewChanged, setReviewChanged] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
+  const reportError = useCallback(
+    (cause: unknown) => {
+      const message = isIpcError(cause) || cause instanceof Error ? cause.message : null;
+      if (message === "ssh.connectionChanged") {
+        setReviewChanged(true);
+        setTrusted(false);
+        setProbe(null);
+        setPassword("");
+        setPassphrase("");
+        setJumpCredentials({});
+        setError(t("connect.reviewChanged"));
+      } else {
+        setError(translateError(cause));
+      }
+    },
+    [t],
+  );
   const alive = useRef(true);
   const pending = useRef(false);
   const probeHost = useCallback(
     (credentials?: SshConnectRequest["jumpCredentials"]) =>
-      verification ? verification.probe(credentials ?? {}) : api.sshProbe(host.id, credentials),
-    [host.id, verification],
+      verification ? verification.probe(credentials ?? {}) : reviewed.probe(credentials ?? {}),
+    [reviewed, verification],
   );
 
   useEffect(() => {
@@ -123,7 +149,7 @@ function HostConnectDialog({
       })
       .catch((cause: unknown) => {
         if (alive) {
-          setError(translateError(cause));
+          reportError(cause);
         }
       })
       .finally(() => {
@@ -134,7 +160,7 @@ function HostConnectDialog({
     return () => {
       alive = false;
     };
-  }, [host.id, probeHost]);
+  }, [host.id, probeHost, reportError]);
 
   useEffect(() => {
     if (host.source) return;
@@ -154,26 +180,36 @@ function HostConnectDialog({
 
   useEffect(() => {
     let active = true;
-    void api
-      .connectionRoute(host.id)
+    void (
+      verification
+        ? verification.jumpHosts
+          ? Promise.resolve({ jumpHosts: verification.jumpHosts })
+          : api.connectionRoute(host.id).then((route) => ({
+              jumpHosts: route.jumpHosts
+                .map((id) => hosts.find((item) => item.id === id))
+                .filter((item): item is Host => !!item),
+            }))
+        : reviewed.prepare()
+    )
       .then(async (route) => {
         if (!active) return;
-        setJumpIds(route.jumpHosts);
+        setReviewedJumps(route.jumpHosts);
+        setJumpIds(route.jumpHosts.map((jump) => jump.id));
         const statuses = await Promise.all(
-          route.jumpHosts.map(async (id) => [id, await api.credentialStatus(id)] as const),
+          route.jumpHosts.map(async ({ id }) => [id, await api.credentialStatus(id)] as const),
         );
         if (active) setJumpSaved(Object.fromEntries(statuses));
       })
       .catch((cause) => {
-        if (active) setError(translateError(cause));
+        if (active) reportError(cause);
       });
     return () => {
       active = false;
     };
-  }, [host.id]);
+  }, [host.id, reviewed, verification, hosts, reportError]);
 
   const verifyRoute = async () => {
-    if (pending.current) return;
+    if (pending.current || reviewChanged) return;
     pending.current = true;
     setProbing(true);
     setError(null);
@@ -185,7 +221,7 @@ function HostConnectDialog({
         setTrusted(info.status === "known" && (!info.hostId || info.hostId === host.id));
       }
     } catch (cause) {
-      if (alive.current) setError(translateError(cause));
+      if (alive.current) reportError(cause);
     } finally {
       pending.current = false;
       if (alive.current) setProbing(false);
@@ -196,7 +232,8 @@ function HostConnectDialog({
   const unsupported = !setup && host.authMethod === "agent";
   const interactive = setup || (host.authMethod !== "key" && !unsupported);
   const hasCredentials = !interactive || password.length > 0 || saved;
-  const canConnect = trusted && !probing && !busy && !testing && !unsupported && hasCredentials;
+  const canConnect =
+    !reviewChanged && trusted && !probing && !busy && !testing && !unsupported && hasCredentials;
 
   const trust = async () => {
     if (pending.current || !probe) {
@@ -209,16 +246,7 @@ function HostConnectDialog({
     try {
       const info = await (verification
         ? verification.trust(probe.fingerprint, jumpCredentials, probe.hostId)
-        : probe.hostId
-          ? api.sshTrust(
-              host.id,
-              probe.fingerprint,
-              jumpIds.length ? jumpCredentials : undefined,
-              probe.hostId,
-            )
-          : jumpIds.length
-            ? api.sshTrust(host.id, probe.fingerprint, jumpCredentials)
-            : api.sshTrust(host.id, probe.fingerprint));
+        : reviewed.trust(probe.fingerprint, jumpCredentials, probe.hostId || host.id));
       if (!alive.current) {
         return;
       }
@@ -241,7 +269,7 @@ function HostConnectDialog({
       }
     } catch (cause) {
       if (alive.current) {
-        setError(translateError(cause));
+        reportError(cause);
         if (isIpcError(cause) && cause.message === "ssh.hostKeyChanged") {
           try {
             const info = await probeHost(jumpCredentials);
@@ -277,13 +305,17 @@ function HostConnectDialog({
     const acquire = connectSession
       ? async (request: SshConnectRequest, onError: (error: unknown) => void) => {
           try {
-            return await connectSession(request);
+            return await connectSession(
+              request,
+              verification ? undefined : await reviewed.review(),
+            );
           } catch (error) {
             onError(error);
             return null;
           }
         }
-      : connect;
+      : (request: SshConnectRequest, onError: (error: unknown) => void) =>
+          connect(request, onError, { key: reviewed.key, connect: reviewed.connect });
     const session = await acquire(
       {
         hostId: host.id,
@@ -296,7 +328,7 @@ function HostConnectDialog({
         rows: 32,
       },
       (cause) => {
-        if (alive.current) setError(translateError(cause));
+        if (alive.current) reportError(cause);
       },
     );
     if (!session) {
@@ -307,18 +339,18 @@ function HostConnectDialog({
       return;
     }
     if (!alive.current) return;
-    if (!host.source && interactive && remember && password.length > 0) {
+    if (!verification && !host.source && interactive && remember && password.length > 0) {
       try {
-        await api.credentialSave(host.id, password);
+        await reviewed.credential(host.id, password);
       } catch (cause) {
         toast(translateError(cause), "error");
       }
     }
-    if (rememberJumps) {
+    if (!verification && rememberJumps) {
       for (const [id, credentials] of Object.entries(jumpCredentials)) {
         if (credentials.password) {
           try {
-            await api.credentialSave(id, credentials.password);
+            await reviewed.credential(id, credentials.password);
           } catch (cause) {
             toast(translateError(cause), "error");
           }
@@ -335,7 +367,7 @@ function HostConnectDialog({
       }
       if (alive.current) onClose();
     } catch (cause) {
-      if (alive.current) setError(translateError(cause));
+      if (alive.current) reportError(cause);
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
@@ -350,7 +382,7 @@ function HostConnectDialog({
       danger: true,
       onConfirm: async () => {
         try {
-          await api.credentialForget(host.id);
+          await reviewed.credential(host.id, null);
           setSaved(false);
           setPassword("");
         } catch (cause) {
@@ -362,6 +394,7 @@ function HostConnectDialog({
 
   const installKey = async () => {
     if (
+      verification ||
       pending.current ||
       testing ||
       !trusted ||
@@ -375,9 +408,7 @@ function HostConnectDialog({
     setError(null);
     try {
       // No typed password means the backend falls back to the keychain copy.
-      await (jumpIds.length
-        ? api.sshInstallKey(host.id, password || null, jumpCredentials)
-        : api.sshInstallKey(host.id, password || null));
+      await reviewed.installKey(password || null, jumpCredentials);
       await useHosts.getState().load();
       toast(t("connect.installKeyDone"), "success");
       if (alive.current) {
@@ -385,7 +416,7 @@ function HostConnectDialog({
       }
     } catch (cause) {
       if (alive.current) {
-        setError(translateError(cause));
+        reportError(cause);
       }
     } finally {
       pending.current = false;
@@ -426,6 +457,7 @@ function HostConnectDialog({
       }
     >
       <div className="connect">
+        {context}
         {host.source && <p className="connect__hint">{t("hostSources.connectionHint")}</p>}
         {setup ? (
           <p className="connect__hint">
@@ -445,7 +477,7 @@ function HostConnectDialog({
         {jumpIds.length ? (
           <div className="form-grid">
             {jumpIds.map((id) => {
-              const jump = hosts.find((item) => item.id === id);
+              const jump = reviewedJumps.find((item) => item.id === id);
               if (!jump)
                 return (
                   <p key={id} className="connect__error">
@@ -469,7 +501,7 @@ function HostConnectDialog({
                     type="password"
                     aria-label={`${jump.name} · ${t(key ? "connect.passphrase" : "connect.password")}`}
                     autoComplete="off"
-                    disabled={busy || probing}
+                    disabled={busy || probing || reviewChanged}
                     placeholder={
                       jumpSaved[id] && !key
                         ? "••••••••"
@@ -492,16 +524,18 @@ function HostConnectDialog({
                 </Field>
               );
             })}
-            <Switch
-              label={t("network.jumpRemember")}
-              checked={rememberJumps}
-              onChange={setRememberJumps}
-              disabled={busy}
-            />
+            {!verification && (
+              <Switch
+                label={t("network.jumpRemember")}
+                checked={rememberJumps}
+                onChange={setRememberJumps}
+                disabled={busy || reviewChanged}
+              />
+            )}
             <Button
               variant="secondary"
               size="sm"
-              disabled={probing || busy}
+              disabled={probing || busy || reviewChanged}
               onClick={() => void verifyRoute()}
             >
               {t("network.verifyRoute")}
@@ -509,52 +543,55 @@ function HostConnectDialog({
           </div>
         ) : null}
 
-        <div className={cn("key-box", status === "changed" && "is-danger")}>
-          <div className="key-box__head">
-            <span className="key-box__title">
-              {status === "known" ? <ShieldCheck size={13} /> : <ShieldAlert size={13} />}
-              {probe?.hostId && probe.hostId !== host.id
-                ? t("network.keyFor", {
-                    name: hosts.find((h) => h.id === probe.hostId)?.name ?? probe.hostId,
-                  })
-                : t("connect.hostKey")}
-            </span>
-            <span className={cn("key-box__status", status === "known" && "is-ok")}>
-              {probing ? t("connect.probing") : keyStatus}
-            </span>
-          </div>
-          {probe ? <code className="key-box__fingerprint">{probe.fingerprint}</code> : null}
-          {probe?.connectionTimeMs != null && !probing ? (
-            <p className="connect__hint">
-              {t("connect.probeTime", { value: probe.connectionTimeMs })}
-            </p>
-          ) : null}
-          {probe?.knownFingerprint && probe.knownFingerprint !== probe.fingerprint ? (
-            <code className="key-box__fingerprint key-box__fingerprint--old">
-              {t("connect.previousKey")}: {probe.knownFingerprint}
-            </code>
-          ) : null}
-          {status && status !== "known" ? (
-            <>
-              <p className="key-box__hint">
-                {status === "unknown" ? t("connect.unknownHint") : t("connect.changedHint")}
+        {!reviewChanged && (
+          <div className={cn("key-box", status === "changed" && "is-danger")}>
+            <div className="key-box__head">
+              <span className="key-box__title">
+                {status === "known" ? <ShieldCheck size={13} /> : <ShieldAlert size={13} />}
+                {probe?.hostId && probe.hostId !== host.id
+                  ? t("network.keyFor", {
+                      name: reviewedJumps.find((h) => h.id === probe.hostId)?.name ?? probe.hostId,
+                    })
+                  : t("connect.hostKey")}
+              </span>
+              <span className={cn("key-box__status", status === "known" && "is-ok")}>
+                {probing ? t("connect.probing") : keyStatus}
+              </span>
+            </div>
+            {probe ? <code className="key-box__fingerprint">{probe.fingerprint}</code> : null}
+            {probe?.connectionTimeMs != null && !probing ? (
+              <p className="connect__hint">
+                {t("connect.probeTime", { value: probe.connectionTimeMs })}
               </p>
-              <Button
-                size="sm"
-                variant={status === "changed" ? "danger" : "secondary"}
-                disabled={busy || testing}
-                onClick={() => void trust()}
-              >
-                {status === "changed" ? t("connect.replaceKey") : t("connect.trustHost")}
-              </Button>
-            </>
-          ) : null}
-        </div>
+            ) : null}
+            {probe?.knownFingerprint && probe.knownFingerprint !== probe.fingerprint ? (
+              <code className="key-box__fingerprint key-box__fingerprint--old">
+                {t("connect.previousKey")}: {probe.knownFingerprint}
+              </code>
+            ) : null}
+            {status && status !== "known" ? (
+              <>
+                <p className="key-box__hint">
+                  {status === "unknown" ? t("connect.unknownHint") : t("connect.changedHint")}
+                </p>
+                <Button
+                  size="sm"
+                  variant={status === "changed" ? "danger" : "secondary"}
+                  disabled={busy || testing}
+                  onClick={() => void trust()}
+                >
+                  {status === "changed" ? t("connect.replaceKey") : t("connect.trustHost")}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        )}
 
-        {!verification && (
+        {!verification && !reviewChanged && (
           <ConnectionQuality
             hostId={host.id}
             credentials={jumpCredentials}
+            testConnection={reviewed.test}
             enabled={trusted && !probing && !busy}
             onTesting={setTesting}
             onKeyError={() => {
@@ -574,7 +611,7 @@ function HostConnectDialog({
               <Input
                 id="connect-password"
                 type="password"
-                disabled={busy}
+                disabled={busy || reviewChanged}
                 autoFocus
                 autoComplete="off"
                 placeholder={saved ? "••••••••" : undefined}
@@ -588,23 +625,28 @@ function HostConnectDialog({
                 }}
               />
             </Field>
-            {!setup && !host.source ? (
+            {!setup && !host.source && !verification ? (
               <div className="connect__remember">
                 <Switch
                   label={t("connect.remember")}
                   checked={remember}
-                  disabled={busy}
+                  disabled={busy || reviewChanged}
                   onChange={setRemember}
                 />
                 <span className="connect__remember-label">{t("connect.remember")}</span>
                 {saved ? (
-                  <Button variant="ghost-danger" size="sm" disabled={busy} onClick={forget}>
+                  <Button
+                    variant="ghost-danger"
+                    size="sm"
+                    disabled={busy || reviewChanged}
+                    onClick={forget}
+                  >
                     {t("connect.forget")}
                   </Button>
                 ) : null}
               </div>
             ) : null}
-            {!setup && !host.source ? (
+            {!setup && !host.source && !verification ? (
               <div className="connect__actions">
                 <Button
                   variant="ghost"
@@ -626,7 +668,7 @@ function HostConnectDialog({
             <Input
               id="connect-passphrase"
               type="password"
-              disabled={busy}
+              disabled={busy || reviewChanged}
               autoFocus
               autoComplete="off"
               value={passphrase}

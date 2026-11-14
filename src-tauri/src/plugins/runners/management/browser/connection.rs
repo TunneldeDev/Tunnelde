@@ -1,5 +1,6 @@
 use super::{
     destination,
+    operation::Operation,
     registry::{self, Pending},
 };
 use crate::{
@@ -22,57 +23,40 @@ impl Drop for Acquired {
     }
 }
 
-struct Busy<'a>(&'a Pending);
-impl Drop for Busy<'_> {
-    fn drop(&mut self) {
-        self.0
-            .connection
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .busy = false;
-    }
-}
-
 pub(super) async fn connect(
     app: &AppHandle,
     pending: &Pending,
     mut request: SshConnectRequest,
 ) -> AppResult<SessionInfo> {
-    destination::current(app, pending)?;
-    destination::host(app, &pending.record)?;
+    let (op, target) = Operation::begin(app, pending)?;
     let expected = destination::identity(&pending.record)?;
     if request.host_id != expected.host_id {
         return Err(AppError::validation("plugin.runners.destinationChanged"));
     }
-    {
-        let mut state = pending.connection.lock().unwrap_or_else(|e| e.into_inner());
-        if state.busy || state.session.is_some() {
-            return Err(AppError::validation("plugin.runners.busy"));
-        }
-        state.busy = true;
-    }
-    let _busy = Busy(pending);
     // A native recovery browser never opens a terminal or a forwarding connection.
     request.background = true;
     request.purpose = None;
-    let result = registry::guard(pending, async {
-        let session = session::connect_bound(app.clone(), request, expected).await?;
-        let mut acquired = Acquired {
+    let mut acquired = registry::guard(pending, async {
+        let session = target.connect_bound(app.clone(), request, expected).await?;
+        // Arm cleanup in the same poll which produced the private session.
+        Ok(Acquired {
             app: app.clone(),
             session: Some(session),
-        };
-        destination::current(app, pending)?;
-        destination::host(app, &pending.record)?;
-        let mut connection = pending.connection.lock().unwrap_or_else(|e| e.into_inner());
-        // Cancellation can race with the network return and this lock acquisition.
-        destination::current(app, pending)?;
-        let session = acquired.session.take().expect("private session");
-        connection.session = Some(session.clone());
-        connection.acquired = true;
-        Ok(session)
+        })
     })
-    .await;
-    result
+    .await?;
+    op.with_current(|connection| {
+        target.with_current(app, |_| {
+            let session = acquired.session.as_ref().expect("private session");
+            if !app.state::<AppState>().ssh.is_active(&session.id) {
+                return Err(AppError::validation("ssh.sessionMissing"));
+            }
+            let session = acquired.session.take().expect("private session");
+            connection.session = Some(session.clone());
+            connection.acquired = true;
+            Ok(session)
+        })
+    })
 }
 
 pub(super) fn dispose(app: &AppHandle, pending: &Pending) {
@@ -86,25 +70,33 @@ pub(super) fn dispose(app: &AppHandle, pending: &Pending) {
 
 pub(super) fn accept(app: &AppHandle, pending: &Pending) -> AppResult<super::contracts::Target> {
     let mut connection = pending.connection.lock().unwrap_or_else(|e| e.into_inner());
-    destination::current(app, pending)?;
-    let session = connection
-        .session
-        .as_ref()
-        .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
-    let state = app.state::<AppState>();
-    if connection.acquired {
-        destination::host(app, &pending.record)?;
-        state.ssh.publish_user_managed(&session.id)?;
-    } else if !destination::reusable(app, &pending.record, session) {
-        return Err(AppError::validation("ssh.sessionMissing"));
+    if connection.busy {
+        return Err(AppError::validation("plugin.runners.busy"));
     }
-    // No await between validation/publication and transferring to native user ownership.
-    let target = super::contracts::Target {
-        session: session.clone(),
-        directory: pending.record.deployment.directory.clone(),
-        acquired: connection.acquired,
-    };
-    connection.acquired = false;
-    connection.session = None;
-    Ok(target)
+    destination::with_current(app, pending, || {
+        let session = connection
+            .session
+            .as_ref()
+            .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
+        let state = app.state::<AppState>();
+        if connection.acquired {
+            let review = connection
+                .review
+                .as_ref()
+                .ok_or_else(|| AppError::validation("plugin.runners.browserExpired"))?;
+            let target = session::review::Target::capture(app, review)?;
+            target.with_current(app, |_| state.ssh.publish_user_managed(&session.id))?;
+        } else if !destination::reusable(app, &pending.record, session) {
+            return Err(AppError::validation("ssh.sessionMissing"));
+        }
+        // No await between validation/publication and transferring to native user ownership.
+        let target = super::contracts::Target {
+            session: session.clone(),
+            directory: pending.record.deployment.directory.clone(),
+            acquired: connection.acquired,
+        };
+        connection.acquired = false;
+        connection.session = None;
+        Ok(target)
+    })
 }

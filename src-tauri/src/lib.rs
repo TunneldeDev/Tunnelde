@@ -25,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(automation::transport::Lifecycle::default())
         .manage(window::StartupWindow::default())
+        .manage(window::close::Registry::default())
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
         .manage(plugins::frontend::Registry::default())
@@ -86,6 +87,14 @@ pub fn run() {
             }
             window::show_main(app);
         }))
+        .on_page_load(|webview, payload| {
+            use tauri::Manager;
+            if webview.label() == "main"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+            {
+                platform::window::close::reset(webview.app_handle());
+            }
+        })
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
@@ -94,6 +103,7 @@ pub fn run() {
                     .state::<plugins::frontend::Registry>()
                     .clear(window.app_handle());
                 plugins::forwarding::clear(window.app_handle());
+                services::forwarding::start::cancel_pending(window.app_handle());
                 platform::background::destroyed(window.app_handle());
             }
         })
@@ -138,6 +148,15 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            window::close::main_window_close_guard_claim,
+            window::close::main_window_close_guard_release,
+            window::close::main_window_close_guard_finish,
+            services::forwarding::start::commands::forwarding_start_pending,
+            services::forwarding::start::commands::forwarding_start_probe,
+            services::forwarding::start::commands::forwarding_start_trust,
+            services::forwarding::start::commands::forwarding_start_connect,
+            services::forwarding::start::commands::forwarding_start_cancel,
+            services::forwarding::start::commands::forwarding_start_release_ui,
             window::main_window_ready,
             platform::restart::app_restart,
             platform::background::main_window_snapshot,
@@ -252,6 +271,13 @@ pub fn run() {
             commands::key_import,
             commands::key_pick,
             commands::ssh_probe,
+            commands::connection_review::connection_review_prepare,
+            commands::connection_review::connection_review_probe,
+            commands::connection_review::connection_review_trust,
+            commands::connection_review::connection_review_connect,
+            commands::connection_review::connection_review_test,
+            commands::connection_review::connection_review_install_key,
+            commands::connection_review::connection_review_credential,
             commands::ssh_test_connection,
             commands::ssh_cancel_test,
             commands::ssh_trust,

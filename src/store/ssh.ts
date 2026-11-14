@@ -23,6 +23,7 @@ interface SshStore {
   connect: (
     request: SshConnectRequest,
     onError?: (error: unknown) => void,
+    acquisition?: { key: string; connect: (request: SshConnectRequest) => Promise<SshSession> },
   ) => Promise<SshSession | null>;
   disconnect: (sessionId: string) => Promise<void>;
   forget: (sessionId: string) => void;
@@ -70,8 +71,8 @@ export const useSsh = create<SshStore>((set, get) => ({
     }
   },
 
-  connect: (request, onError) => {
-    const connectionKey = `${request.hostId}:${request.purpose ?? (request.background ? "background" : "terminal")}`;
+  connect: (request, onError, acquisition) => {
+    const connectionKey = `${request.hostId}:${request.purpose ?? (request.background ? "background" : "terminal")}:${acquisition?.key ?? "native"}`;
     const existing = connections.get(connectionKey);
     if (existing) {
       return existing;
@@ -82,7 +83,7 @@ export const useSsh = create<SshStore>((set, get) => ({
     }));
     const operation = (async () => {
       try {
-        const session = await api.sshConnect(request);
+        const session = await (acquisition?.connect ?? api.sshConnect)(request);
         get().acceptSession(session);
         if (!request.hostId.startsWith("source:"))
           void api.markHostUsed(request.hostId).catch(() => undefined);

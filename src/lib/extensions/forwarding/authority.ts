@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SshConnectRequest, SshSession } from "@/lib/api/types";
+import type { ConnectionReview } from "@/lib/api/connections/review";
 
 export interface ForwardingOrigin {
   token: string;
@@ -79,8 +80,9 @@ export function createForwardingAuthority(
 export async function connectForwardingProvider(
   authority: ForwardingAuthority,
   request: SshConnectRequest,
+  review?: ConnectionReview,
 ): Promise<SshSession> {
   const origin = await authority.origin();
   authority.authorize();
-  return invoke("forwarding_provider_connect", { origin, request });
+  return invoke("forwarding_provider_connect", { origin, request, ...(review ? { review } : {}) });
 }

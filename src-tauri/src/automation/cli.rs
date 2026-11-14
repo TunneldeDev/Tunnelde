@@ -16,6 +16,8 @@ Usage: tunnelde-cli [--endpoint PATH] <command>\n\
   hosts list                List saved hosts without credentials\n\
   sessions list             List currently connected sessions\n\
   forwards list [--params JSON|-]  Read forwarding status (experimental)\n\
+  forwards save|remove|stop --params JSON|-  Request a confirmed change (experimental)\n\
+  forwards start|start-status|cancel-start --params JSON|-  Asynchronous startup receipts (experimental)\n\
   logs read [--params JSON|-]  Read structured logs (experimental)\n\
   preferences schema        Describe public settings\n\
   preferences snapshot      Read public settings and their revision\n\
@@ -156,6 +158,28 @@ fn parse(mut args: Vec<OsString>) -> Result<Command, Failure> {
         ["sessions", "list"] => ("sessions.list", None),
         ["forwards", "list"] => ("forwards.list", None),
         ["forwards", "list", "--params", params] => ("forwards.list", Some(*params)),
+        ["forwards", action, "--params", params]
+            if ["start", "start-status", "cancel-start"].contains(action) =>
+        {
+            (
+                match *action {
+                    "start" => "forwards.start",
+                    "start-status" => "forwards.startStatus",
+                    _ => "forwards.cancelStart",
+                },
+                Some(*params),
+            )
+        }
+        ["forwards", action, "--params", params] if ["save", "remove", "stop"].contains(action) => {
+            (
+                match *action {
+                    "save" => "forwards.save",
+                    "remove" => "forwards.remove",
+                    _ => "forwards.stop",
+                },
+                Some(*params),
+            )
+        }
         ["logs", "read"] => ("logs.read", None),
         ["logs", "read", "--params", params] => ("logs.read", Some(*params)),
         ["preferences", "schema"] => ("preferences.schema", None),
@@ -223,5 +247,25 @@ mod tests {
             parse(args(&["api", "describe"])).unwrap(),
             Command::Describe
         ));
+    }
+
+    #[test]
+    fn interactive_forwarding_aliases_require_explicit_json_parameters() {
+        for action in ["save", "remove", "stop"] {
+            assert!(
+                matches!(parse(args(&["forwards",action,"--params","{}"])).unwrap(), Command::Call { method, .. } if method == format!("forwards.{action}"))
+            );
+            assert!(parse(args(&["forwards", action])).is_err());
+        }
+        for (action, method) in [
+            ("start", "forwards.start"),
+            ("start-status", "forwards.startStatus"),
+            ("cancel-start", "forwards.cancelStart"),
+        ] {
+            assert!(
+                matches!(parse(args(&["forwards",action,"--params","{}"])) .unwrap(), Command::Call { method: parsed, .. } if parsed == method)
+            );
+            assert!(parse(args(&["forwards", action])).is_err());
+        }
     }
 }

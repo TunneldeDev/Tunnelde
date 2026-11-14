@@ -6,6 +6,47 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.1.0...v1.2.0) - 2026-11-13
+
+### 更新概览 | Highlights
+
+- **cli:** bound native confirmation time independently of framing
+- **cli:** confirm conditional forwarding changes through shared services
+- **api:** add consent-bound forwarding startup receipts
+- **forwarding:** deliver external startup through the reviewed connection dialog
+- **cli:** check authentication deadline before extending execution
+
+<details open>
+<summary>详细变更 | Details (13)</summary>
+
+### 新增 | New
+
+- **cli:** bound native confirmation time independently of framing ([#336](https://github.com/TunneldeDev/Tunnelde/pull/336), [784f5f4](https://github.com/TunneldeDev/Tunnelde/commit/784f5f492f39101b785f9167d7712554a5a12215)) @quyansiyuanwang
+- **cli:** confirm conditional forwarding changes through shared services ([#336](https://github.com/TunneldeDev/Tunnelde/pull/336), [95ac7ba](https://github.com/TunneldeDev/Tunnelde/commit/95ac7ba2303939ba85689c95af5f863e668698c5)) @quyansiyuanwang
+- **api:** add consent-bound forwarding startup receipts ([#341](https://github.com/TunneldeDev/Tunnelde/pull/341), [aedbba3](https://github.com/TunneldeDev/Tunnelde/commit/aedbba3d71ea19f114799688f1072efeaa28939c)) @quyansiyuanwang
+- **forwarding:** deliver external startup through the reviewed connection dialog ([#341](https://github.com/TunneldeDev/Tunnelde/pull/341), [b5fd00d](https://github.com/TunneldeDev/Tunnelde/commit/b5fd00d6becf25ad5e94f2917dd1fab2eeb1546b)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **cli:** check authentication deadline before extending execution ([#336](https://github.com/TunneldeDev/Tunnelde/pull/336)) @quyansiyuanwang
+- **ssh:** pin complete routes across pending connections ([#338](https://github.com/TunneldeDev/Tunnelde/pull/338), [14b8097](https://github.com/TunneldeDev/Tunnelde/commit/14b809760c0e7c64920e37ffdc5988fa3d988ece)) @quyansiyuanwang
+- **ssh:** keep quality samples on the reviewed route ([#338](https://github.com/TunneldeDev/Tunnelde/pull/338)) @quyansiyuanwang
+- **ssh:** retain reviewed routes across connection attempts ([#339](https://github.com/TunneldeDev/Tunnelde/pull/339), [b7f69f7](https://github.com/TunneldeDev/Tunnelde/commit/b7f69f781304a1fae6ed090e8527223c5be90e4b)) @quyansiyuanwang
+- **connect:** bind dialog actions to the reviewed destination ([#339](https://github.com/TunneldeDev/Tunnelde/pull/339)) @quyansiyuanwang
+- **forwarding:** reject duplicate admission before publishing resources ([#340](https://github.com/TunneldeDev/Tunnelde/pull/340)) @quyansiyuanwang
+- **window:** bind close approval to the current document ([#341](https://github.com/TunneldeDev/Tunnelde/pull/341)) @quyansiyuanwang
+- **recovery:** retain reviewed routes across browser acquisition ([#342](https://github.com/TunneldeDev/Tunnelde/pull/342)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **ssh:** run session regressions on desktop platforms ([#338](https://github.com/TunneldeDev/Tunnelde/pull/338), [c7518f7](https://github.com/TunneldeDev/Tunnelde/commit/c7518f7988dd02dbd5ef440191f91d4bc3050fb4)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.1.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.0.0...v1.1.0) - 2026-11-13
 
 ### 更新概览 | Highlights

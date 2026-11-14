@@ -1,5 +1,5 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWindow, type CloseRequestedEvent } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 
 import i18n from "@/i18n/i18n";
@@ -11,58 +11,35 @@ import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
 import { beforeWindowReload } from "./reload";
 
-/** Protect drafts on native X/Alt+F4 as well as the compact close button. */
+/** Native ownership is replaced when a document navigates. Ordinary event
+ * listeners cannot retain a Tauri close veto after their JavaScript is gone. */
 export function useWindowCloseGuard(): void {
   useEffect(() => {
     if (!isTauri()) return;
-    const window = getCurrentWindow();
+    const owner = crypto.randomUUID();
     let alive = true;
     let closing = false;
-    let unlisten: UnlistenFn | undefined;
+    let unlisten: (() => Promise<void>) | undefined;
 
     const keepsWindow = () => {
       const state = useSettings.getState();
       return state.info?.os === "macos" || state.settings.closeToTray;
     };
 
-    const subscribe = async () => {
-      const stop = await window.onCloseRequested(onCloseRequested);
-      if (alive) unlisten = stop;
-      else await stop();
-    };
-
     const closeWindow = async () => {
       if (!alive || closing) return;
       closing = true;
       try {
-        // Preferences may have changed while the confirmation was open.
-        if (!keepsWindow()) {
-          const stop = unlisten;
-          unlisten = undefined;
-          // Tauri's unlisten returns a Promise at runtime. Wait for the native
-          // listener to disappear before close, avoiding a second close prompt.
-          await stop?.();
-        }
-        await window.close();
+        await invoke("main_window_close_guard_finish", { owner });
       } catch (error) {
-        // Keep the draft in memory until the window really exits, so even a
-        // failed native close cannot turn an approved discard into data loss.
-        if (alive && !unlisten) {
-          try {
-            await subscribe();
-          } catch (listenError) {
-            toast(translateError(listenError), "error");
-          }
-        }
+        // A failed close retains both the guard and the user's in-memory draft.
         if (alive) toast(translateError(error), "error");
       } finally {
         closing = false;
       }
     };
 
-    function onCloseRequested(event: CloseRequestedEvent) {
-      // Tauri otherwise calls destroy(), bypassing the Rust tray/macOS policy.
-      event.preventDefault();
+    function onCloseRequested() {
       if (!alive || closing || keepsWindow()) return;
       const editors = useEditors.getState();
       const dirty = Object.values(editors.entries).filter((entry) => editors.isDirty(entry.tabId));
@@ -81,14 +58,26 @@ export function useWindowCloseGuard(): void {
       });
     }
 
-    const subscription = subscribe();
+    const subscription = (async () => {
+      const stop = await listen<string>("ui://close-requested", ({ payload }) => {
+        if (payload === owner) onCloseRequested();
+      });
+      const release = async () => {
+        await invoke("main_window_close_guard_release", { owner });
+        await stop();
+      };
+      try {
+        await invoke("main_window_close_guard_claim", { owner });
+      } catch (error) {
+        await stop();
+        throw error;
+      }
+      if (alive) unlisten = release;
+      else await release();
+    })();
     const removeReloadPreparation = beforeWindowReload(async () => {
-      // A reload does not destroy the native window. Its old listener would
-      // still veto future close events after its JS callback has disappeared.
       await subscription;
-      const stop = unlisten;
-      if (!stop) return;
-      await stop();
+      await unlisten?.();
       unlisten = undefined;
     });
     void subscription.catch((error) => {
@@ -97,7 +86,7 @@ export function useWindowCloseGuard(): void {
     return () => {
       alive = false;
       removeReloadPreparation();
-      void unlisten?.();
+      void unlisten?.().catch(() => undefined);
     };
   }, []);
 }

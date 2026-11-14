@@ -137,3 +137,100 @@ fn private_registration_never_places_a_capability_in_the_public_pointer() {
     assert_eq!(std::fs::read_dir(&data).unwrap().count(), 0);
     std::fs::remove_dir(data).unwrap();
 }
+
+#[tokio::test]
+async fn interactive_execution_can_outlive_framing_but_never_extend_unauthenticated_input() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        connection_with_budgets(
+            stream,
+            &"a".repeat(64),
+            |_| async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Ok(json!({"outcome":"dismissed"}))
+            },
+            Duration::from_millis(80),
+            |method| {
+                if method == "forwards.save" {
+                    Duration::from_secs(2)
+                } else {
+                    Duration::from_millis(80)
+                }
+            },
+        )
+        .await
+        .unwrap();
+    });
+    let mut client = TcpStream::connect(address).await.unwrap();
+    let mut input: serde_json::Value = serde_json::from_slice(&request(&"a".repeat(64))).unwrap();
+    input["method"] = json!("forwards.save");
+    let mut bytes = serde_json::to_vec(&input).unwrap();
+    bytes.push(b'\n');
+    client.write_all(&bytes).await.unwrap();
+    let mut bytes = Vec::new();
+    client.read_to_end(&mut bytes).await.unwrap();
+    server.await.unwrap();
+    let response: Response = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        matches!(response.outcome,Outcome::Success { result } if result["outcome"]=="dismissed")
+    );
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let dispatched = calls.clone();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        connection_with_budgets(
+            stream,
+            &"a".repeat(64),
+            move |_| async move {
+                dispatched.fetch_add(1, Ordering::SeqCst);
+                Ok(json!({}))
+            },
+            Duration::from_millis(20),
+            |_| panic!("Must not select an extended budget before authentication"),
+        )
+        .await
+        .unwrap_err()
+    });
+    let mut client = TcpStream::connect(address).await.unwrap();
+    client
+        .write_all(b"{\"method\":\"forwards.save\"")
+        .await
+        .unwrap();
+    assert_eq!(server.await.unwrap().kind(), std::io::ErrorKind::TimedOut);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn timed_out_domain_future_is_dropped_before_it_can_submit_late_work() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        connection_with_budgets(
+            stream,
+            &"a".repeat(64),
+            move |_| async move {
+                std::future::pending::<()>().await;
+                let _ = sender.send(());
+                Ok(json!({}))
+            },
+            Duration::from_millis(50),
+            |_| Duration::from_millis(50),
+        )
+        .await
+        .unwrap_err()
+    });
+    let mut client = TcpStream::connect(address).await.unwrap();
+    client.write_all(&request(&"a".repeat(64))).await.unwrap();
+    assert_eq!(server.await.unwrap().kind(), std::io::ErrorKind::TimedOut);
+    assert!(receiver.await.is_err());
+    let mut bytes = Vec::new();
+    client.read_to_end(&mut bytes).await.unwrap();
+    assert!(bytes.is_empty());
+}

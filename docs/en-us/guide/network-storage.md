@@ -58,6 +58,29 @@ key is being reviewed, asks for any missing jump credentials, and verifies the
 destination before enabling Connect. Changing a route does not bypass key trust.
 SFTP, port forwards and SSHFS reuse the resulting authenticated connection.
 
+Each connection attempt captures the complete ordered route and its effective TCP
+proxy before opening a socket. Editing an address, username, authentication method,
+key path, route, effective proxy or trusted key while the attempt is in progress
+rejects the pending connection. Review the settings and reconnect; the application
+does not automatically retry against a replacement destination. Cosmetic changes
+such as a host's display name do not cancel an attempt. Trusting a key records the
+reviewed fingerprint only for the endpoint that was actually probed.
+Connection-quality samples share one captured route; configuration changes stop
+the measurement instead of retrying against the edited destination.
+
+The standard host connection dialog also retains its reviewed route between
+separate probes, trust approvals and authentication retries. If connection settings
+change, typed credentials are cleared and Connect is disabled. Close and reopen
+the dialog to review the new destination. Missing jump credentials or a failed
+authentication do not silently reset this review. Remembering or forgetting a
+password and setting up key login use the same reviewed configuration.
+
+Key setup uses a private temporary SSH connection and preserves existing
+`authorized_keys` entries. It does not open a terminal or publish a reusable
+session. If saved connection settings change after the server accepted the key
+addition, setup reports the change instead of overwriting those new settings;
+the key already added to the original server may remain there.
+
 ## Transfer performance
 
 In **Settings → Files → Transfers**, total upload and download limits are set

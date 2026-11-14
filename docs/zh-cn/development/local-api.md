@@ -119,6 +119,74 @@ tunnelde-cli forwards list --params '{"after":"上一页返回的ID","limit":20}
 （退出码 2）；存储不可用、记录损坏或读取繁忙返回 `operation_rejected`（退出码 1）。
 七个稳定方法和既有插件转发契约保持不变。
 
+## 确认后修改转发（实验）
+
+`forwards.save`、`forwards.remove`、`forwards.stop` 在运行中的桌面程序弹出原生确认。
+弹窗说明请求来自本机程序，展示完整的新／旧规则，并警告可能允许其他设备访问的
+监听地址。本地能力凭据并不能识别具体调用程序。最多保留一个此类确认，其他请求
+直接报忙，不覆盖原弹窗；确认在 120 秒后过期。
+
+```sh
+tunnelde-cli forwards save --params '{"id":"dfe523d7-6893-4387-a609-b9f4ed1e0b23","hostId":"已保存主机ID","name":"数据库","revision":null,"direction":"local","bind":{"host":"127.0.0.1","port":15432},"target":{"host":"127.0.0.1","port":5432}}'
+tunnelde-cli forwards stop --params '{"id":"规则ID","revision":"读取到的修订"}'
+tunnelde-cli forwards remove --params '{"id":"规则ID","revision":"读取到的修订"}'
+```
+
+新建时由调用者生成新的标准小写 UUID，并显式传入 `revision: null`。提交事务要求
+该 ID 不存在；重复请求不会覆盖已有规则。编辑时提交 `forwards.list` 中读取的 ID
+和修订，以及完整规则字段。保存不会自动建立连接。编辑和删除要求规则已停止，
+确认后提交时再次检查原修订与停止状态。
+
+停止操作在确认前捕获原运行实例，提交时同时检查修订和实例。若用户等待确认期间
+停止后重新启动，旧确认不能误停新实例。停止提交后网络清理有独立任务所有者，
+调用方消失不会复活旧实例或中止已提交清理。
+
+结果包含 `outcome`（`saved`、`removed`、`stopped` 或 `dismissed`）、`id` 和
+`revision`。保存返回新修订；其他结果返回原审查修订，取消新建时修订为空。
+修订或运行实例变更返回 `stale_revision`（退出码 5）；活动规则编辑／删除、无运行
+实例、弹窗繁忙／过期及清理失败返回 `operation_rejected`（退出码 1）。报错并不
+等于没有副作用；丢回复或超时后先观察当前状态，不要自动更换 ID／修订重试。
+等待操作过期后迟到的弹窗回调不能写入。仅关闭 CLI 连接不会撤销仍待用户确认的
+桌面请求。
+
+接口不接受凭据、SSH 会话 ID、运行实例 ID 或跳过信任的参数。启动通过下述单独
+请求流程接入正常的主机密钥和凭据交互。也可使用 `call forwards.save` 等通用 CLI
+形式。这三个方法保持实验状态，不扩大七个稳定方法的兼容承诺。
+
+## 转发启动回执（实验）
+
+`forwards.start` 接受 `{id, revision, requestId}`，立即返回回执。`revision` 使用
+`forwards.list` 读取的规则修订；`requestId` 是调用方新生成的标准小写 UUID。
+CLI 成功退出表示请求已受理，只有 `running` 阶段表示监听已成功准入。
+
+```sh
+tunnelde-cli forwards start --params '{"id":"规则ID","revision":"读取到的修订","requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+tunnelde-cli forwards start-status --params '{"requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+tunnelde-cli forwards cancel-start --params '{"requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+```
+
+主程序先显示原生纯文本确认，列出捕获的主机、跳板、方向、端点和暴露风险；确认后
+打开主机密钥与密码弹窗。公开参数不接受凭据、会话 ID 或信任绕过。连接目标变化
+会使审核失效，重试不能悄悄改连别的地址。连接由主程序持有，独立于插件和用户
+终端会话。同一审核主机／路由的规则可以共享连接；最后一条规则停止且待启动
+操作释放引用后，连接自动清理。
+
+阶段依次为 `consent`、`credentials`、`connecting`、`preparing`，终态为 `running`、
+`dismissed`、`cancelled`、`expired` 或 `failed`。回执含原始输入、Unix 毫秒
+`expiresAt`（待启动请求的截止时间，并非回执保留期限）及固定诊断键 `error`（或 null）。
+`running` 只记录曾成功准入，当前
+健康状态看 `forwards.list`。`cancelStart` 仅撤销待启动请求，不能停止已运行实例；
+停止请使用另行确认的 `forwards.stop`。取消前已明确批准并保存的主机密钥不会回滚。
+
+同一时间仅允许一个待处理交互；请求总期限 300 秒，原生确认 120 秒，主窗口心跳
+15 秒。关闭弹窗、页面重载／丢失、过期或取消会阻止迟到的信任写入和监听准入，
+并清理未公开的资源。终态回执在内存中保留 15 分钟，最多 128 条；满额时拒绝新
+请求，不提前淘汰未过期回执。同一 UUID 和相同输入重放原回执，输入不同则拒绝。
+程序重启不保留回执；回执未知不代表没有副作用，先查询 `forwards.list`，再决定
+是否使用**新的** UUID 发起请求，禁止复用未知 UUID。凭据弹窗同时使用原生事件和
+待处理查询投递，避免丢事件。三个接口均为实验状态，保持普通本地 API 的 10 秒
+交换时限，不扩大稳定契约范围。
+
 ## 结构化日志读取（实验）
 
 `logs.read` 复用插件使用的持久诊断／操作日志服务。机器 Schema 归属
@@ -165,9 +233,12 @@ XDG_DATA_HOME 或 `~/.local/share` 下。不支持远程监听和网络认证模
 回环地址。不要公开凭据文件或将其复制到其他机器。
 
 通信使用每条 TCP 连接一个以换行结束的 JSON 请求，包含 `version`、`id`、
-`token`、`method`、`params`。最多八条并发连接，服务端时限 10 秒，请求最大
+`token`、`method`、`params`。最多八条并发连接，服务端默认时限 10 秒，请求最大
 32 KiB，响应最大 4 MiB。超额连接直接关闭，CLI 报告不可用。未知方法和多余参数
 明确报错。接口不依赖 WebView 是否显示；启动接口失败会写日志，不影响桌面启动。
+只有准确的 `forwards.save/remove/stop` 方法将认证后执行时限延长到 135 秒，CLI
+收发总时限延长到 150 秒；其请求分帧和认证仍需在十秒内完成。其他方法、未知
+方法名和未认证连接不延长时限。
 
 正常服务结束会清理入口文件。强制终止进程可能留下失效的私有目录，其旧凭据不能
 认证新进程。公开安装包和升级验收仍是交付门槛。桌面 CLI 入口属于现有桌面程序；
