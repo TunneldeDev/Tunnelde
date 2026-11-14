@@ -132,13 +132,16 @@ pub(in crate::ssh::files::native_save) fn split(
     path: &str,
     platform: Platform,
 ) -> AppResult<(String, String)> {
-    if !platform.absolute(path) {
+    // Windows OpenSSH returns drive paths with an SFTP-only leading slash.
+    // Keep that spelling outside this authenticated native adapter boundary.
+    let path = canonical_path(path.into(), platform);
+    if !platform.absolute(&path) {
         return Err(AppError::validation("sftp.absolutePathRequired"));
     }
     let path = if platform == Platform::Windows {
         path.replace('\\', "/")
     } else {
-        path.into()
+        path
     };
     let (parent, name) = path
         .rsplit_once('/')
