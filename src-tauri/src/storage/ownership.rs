@@ -31,6 +31,8 @@ pub(super) const SENTINEL: &str = ".tunnelde-storage.lock";
 
 pub(crate) struct Lease {
     _file: File,
+    #[cfg(unix)]
+    owner_pid: u32,
 }
 
 impl Lease {
@@ -75,7 +77,24 @@ impl Lease {
             rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
                 .map_err(io::Error::from)?;
         }
-        Ok(Self { _file: file })
+        Ok(Self {
+            _file: file,
+            #[cfg(unix)]
+            owner_pid: std::process::id(),
+        })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Lease {
+    fn drop(&mut self) {
+        // CLOEXEC only closes a forked child's copy after exec. Closing our file
+        // alone can leave the lock alive in an unrelated child during that gap.
+        // Only the acquiring process owns the lease; a forked copy must not
+        // unlock its parent's live lease if it is dropped before exec.
+        if self.owner_pid == std::process::id() {
+            let _ = rustix::fs::flock(&self._file, rustix::fs::FlockOperation::Unlock);
+        }
     }
 }
 
