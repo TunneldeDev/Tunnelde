@@ -428,6 +428,7 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib update::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
@@ -457,6 +458,8 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::files::native_save
           cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests
+          cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::tests
+          cargo test --manifest-path src-tauri/Cargo.toml --lib db::startup_tests
 
   windows-app-check:
     name: Windows application check
@@ -518,6 +521,8 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::files::native_save
           cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests
+          cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::tests
+          cargo test --manifest-path src-tauri/Cargo.toml --lib db::startup_tests
 
   hygiene:
     name: Repository hygiene

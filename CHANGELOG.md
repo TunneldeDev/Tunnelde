@@ -6,6 +6,41 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.1](https://github.com/TunneldeDev/Tunnelde/compare/v1.2.0...v1.2.1) - 2026-11-14
+
+### 更新概览 | Highlights
+
+- **storage:** own the data home for the application lifetime
+- **storage:** preserve databases when startup cannot open them
+- **ui:** unify search toolbar layout in docked panels
+- **storage:** release Unix ownership before inherited children exec
+- **updates:** install verified macOS bundles through native updater
+
+<details open>
+<summary>详细变更 | Details (7)</summary>
+
+### 修复 | Fix
+
+- **storage:** own the data home for the application lifetime ([#345](https://github.com/TunneldeDev/Tunnelde/pull/345), [91a4523](https://github.com/TunneldeDev/Tunnelde/commit/91a452368ff0148216f59ae84343676e5a6ca69d)) @quyansiyuanwang
+- **storage:** preserve databases when startup cannot open them ([#346](https://github.com/TunneldeDev/Tunnelde/pull/346)) @quyansiyuanwang
+- **ui:** unify search toolbar layout in docked panels ([#347](https://github.com/TunneldeDev/Tunnelde/pull/347)) @quyansiyuanwang
+- **storage:** release Unix ownership before inherited children exec ([#348](https://github.com/TunneldeDev/Tunnelde/pull/348)) @quyansiyuanwang
+- **updates:** install verified macOS bundles through native updater ([#349](https://github.com/TunneldeDev/Tunnelde/pull/349)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **api:** distinguish stable core and forwarding behavior ([#343](https://github.com/TunneldeDev/Tunnelde/pull/343)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **storage:** create FIFO fixtures on macOS and Linux ([#345](https://github.com/TunneldeDev/Tunnelde/pull/345)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.2.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.1.0...v1.2.0) - 2026-11-13
 
 ### 更新概览 | Highlights

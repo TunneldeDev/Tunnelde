@@ -3,6 +3,7 @@ pub mod hosts;
 pub mod known_hosts;
 pub mod migrations;
 pub mod settings;
+mod startup;
 pub mod tabs;
 
 use std::path::Path;
@@ -25,8 +26,13 @@ impl Database {
             std::fs::create_dir_all(parent)?;
         }
 
+        startup::inspect_existing(path)?;
         let conn = Connection::open(path)?;
         conn.busy_timeout(Duration::from_secs(5))?;
+        // A supported older build must refuse a future database before even
+        // changing its persistent journal mode. A read error is not corruption
+        // recovery authority either; startup must leave the files in place.
+        schema_version(&conn)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
@@ -51,13 +57,7 @@ impl Database {
 
     fn migrate(&self) -> AppResult<()> {
         self.with(|conn| {
-            let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-            let applied = version.max(0) as usize;
-            if applied > migrations::MIGRATIONS.len() {
-                return Err(AppError::internal(
-                    "database schema is newer than this build",
-                ));
-            }
+            let applied = schema_version(conn)?;
             for (index, sql) in migrations::MIGRATIONS.iter().enumerate().skip(applied) {
                 let tx = conn.unchecked_transaction()?;
                 tx.execute_batch(sql)?;
@@ -76,3 +76,17 @@ impl Database {
         run(&guard)
     }
 }
+
+fn schema_version(conn: &Connection) -> AppResult<usize> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let applied = version.max(0) as usize;
+    if applied > migrations::MIGRATIONS.len() {
+        return Err(AppError::internal(
+            "database schema is newer than this build",
+        ));
+    }
+    Ok(applied)
+}
+
+#[cfg(test)]
+mod startup_tests;

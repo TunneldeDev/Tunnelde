@@ -16,6 +16,8 @@ mod atom;
 mod channels;
 mod feeds;
 pub mod history;
+#[cfg(target_os = "macos")]
+mod macos;
 
 use channels::accepts_version;
 use feeds::{feeds, Feed};
@@ -190,10 +192,12 @@ pub fn capability() -> Capability {
             reason: "dev",
         };
     }
+    #[cfg(target_os = "macos")]
+    return macos::capability();
+
+    #[cfg(not(target_os = "macos"))]
     let (supported, auto_install, reason) = if cfg!(target_os = "windows") {
         (true, true, "")
-    } else if cfg!(target_os = "macos") {
-        (true, false, "unsigned")
     } else if cfg!(target_os = "linux") {
         if std::env::var_os("APPIMAGE").is_some() {
             (true, true, "")
@@ -203,6 +207,7 @@ pub fn capability() -> Capability {
     } else {
         (false, false, "unsupported")
     };
+    #[cfg(not(target_os = "macos"))]
     Capability {
         supported,
         auto_install,
@@ -463,22 +468,48 @@ async fn run_install(app: &AppHandle) -> AppResult<UpdateState> {
             || {},
         )
         .await?;
-    // Download verifies the package before we change the recovery marker.
-    // Windows installation exits directly; Linux returns and needs a restart.
-    service
-        .plugins
-        .security
-        .with_planned_restart(&service.db, || {
-            update.install(bytes)?;
-            {
-                let mut next = service.update.write();
-                next.phase = Phase::Ready;
-                next.progress = next.content_length;
-            }
-            service.update.set_pending(None);
-            service.update.publish(app);
-            app.restart();
+    #[cfg(target_os = "macos")]
+    {
+        let identifier = app.config().identifier.clone();
+        let version = update.version.clone();
+        let checked_update = update.clone();
+        let bytes = bytes.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            checked_update.verify(&bytes)?;
+            let executable = std::env::current_exe()?;
+            let name = executable
+                .file_name()
+                .ok_or_else(|| AppError::Update("updates.invalidMacBundle".into()))?;
+            macos::validate_current(&executable)?;
+            macos::validate_package(&bytes, &identifier, &version, name)
         })
+        .await
+        .map_err(|error| AppError::Update(error.to_string()))??;
+    }
+    // Download verifies the package before we change the recovery marker.
+    // Windows installation exits directly; macOS/Linux return and need a restart.
+    let install_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let service = install_app.state::<AppState>();
+        service
+            .plugins
+            .security
+            .with_planned_restart(&service.db, || {
+                #[cfg(target_os = "macos")]
+                macos::validate_current(&std::env::current_exe()?)?;
+                update.install(bytes)?;
+                {
+                    let mut next = service.update.write();
+                    next.phase = Phase::Ready;
+                    next.progress = next.content_length;
+                }
+                service.update.set_pending(None);
+                service.update.publish(&install_app);
+                install_app.restart();
+            })
+    })
+    .await
+    .map_err(|error| AppError::Update(error.to_string()))?
 }
 
 pub fn release_page(settings: &Settings, snapshot: &UpdateState) -> String {

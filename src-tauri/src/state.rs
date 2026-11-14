@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, RwLock};
 
@@ -40,6 +40,8 @@ pub struct AppState {
     pub storage: crate::storage::layout::Paths,
     pub log_dir: PathBuf,
     _log_guard: Mutex<Option<WorkerGuard>>,
+    // Last field: keep ownership until database, plugin and log state has dropped.
+    _storage_lease: crate::storage::ownership::Lease,
 }
 
 impl AppState {
@@ -90,7 +92,6 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
             .app_data_dir()
             .map_err(|error| AppError::internal(error.to_string()))?,
     };
-    std::fs::create_dir_all(&data_dir)?;
 
     let log_dir = match &override_dir {
         Some(path) => path.join("logs"),
@@ -99,7 +100,9 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
             .app_log_dir()
             .map_err(|error| AppError::internal(error.to_string()))?,
     };
-    let storage = crate::storage::initialize(
+    // Application identifiers do not protect a shared TUNNELDE_DATA_DIR.
+    // Own it before reading config or allowing startup migration to touch files.
+    let (storage, storage_lease) = crate::storage::ownership::initialize(
         data_dir.clone(),
         log_dir,
         std::env::var_os("TUNNELDE_PLUGINS_DIR").map(PathBuf::from),
@@ -112,14 +115,14 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     let db_path = storage
         .dir(crate::storage::layout::Category::Database)
         .join("tunnelde.db");
-    let database = match Database::open(&db_path) {
-        Ok(database) => database,
-        Err(error) => {
-            tracing::error!(%error, "database unavailable, recreating a fresh copy");
-            quarantine(&db_path)?;
-            Database::open(&db_path)?
-        }
-    };
+    let database = Database::open(&db_path).inspect_err(|error| {
+        tracing::error!(
+            %error,
+            path = %db_path.display(),
+            action = "retain_database_and_stop_startup",
+            "database unavailable; original database and sidecars retained"
+        );
+    })?;
 
     crate::storage::relocate_key_references(&database, &storage)?;
     let plugins_dir = storage
@@ -168,26 +171,8 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         storage,
         log_dir,
         _log_guard: Mutex::new(Some(guard)),
+        _storage_lease: storage_lease,
     });
 
-    Ok(())
-}
-
-/// Moves a corrupt database (and its WAL sidecars) aside instead of deleting
-/// it, so a user can still recover data manually.
-fn quarantine(path: &Path) -> AppResult<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let suffix = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let target = path.with_extension(format!("corrupt-{suffix}.db"));
-    std::fs::rename(path, &target)?;
-    for sidecar in ["-wal", "-shm"] {
-        let from = PathBuf::from(format!("{}{sidecar}", path.display()));
-        if from.exists() {
-            let to = PathBuf::from(format!("{}{sidecar}", target.display()));
-            let _ = std::fs::rename(from, to);
-        }
-    }
     Ok(())
 }

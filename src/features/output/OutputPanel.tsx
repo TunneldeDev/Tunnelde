@@ -1,5 +1,5 @@
 import { ArrowDownToLine, ListFilter, Trash2 } from "lucide-react";
-import { SearchField } from "@/components/ui/form/SearchField";
+import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, parseSearchQuery } from "@/lib/search/query";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -205,42 +205,42 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
           />
         </div>
       ) : null}
-      <div className="output-panel__filters">
-        <SearchField
-          className="output-panel__search"
-          aria-label={t("output.search")}
-          filterKeys={["level", "domain", "plugin", "source"]}
-          placeholder={t("output.search")}
-          value={query}
-          onChange={setQuery}
-          presets={[
-            ...["ERROR", "WARN", "INFO", "DEBUG", "TRACE"].map((level) => ({
-              key: "level",
-              value: level,
-              label: level,
-            })),
-            ...[...new Set(output.entries.map((entry) => entry.domain))].sort().map((domain) => ({
-              key: "domain",
-              value: domain,
-              label: `${t("searchUi.domain")}: ${domain}`,
-            })),
-            ...plugins.map((plugin) => ({ key: "plugin", value: plugin.id, label: plugin.name })),
-            { key: "source", value: "application", label: t("logs.diagnostic") },
-            { key: "source", value: "operations", label: t("logs.operations") },
-            { key: "source", value: "runtime", label: t("output.runtime") },
-          ]}
-        />
-        <Select
-          label={t("output.level")}
-          value={minimum}
-          disabled={channel === "runtime"}
-          options={[
-            { value: "TRACE", label: t("output.allLevels") },
-            ...["DEBUG", "INFO", "WARN", "ERROR"].map((value) => ({ value, label: value })),
-          ]}
-          onChange={setMinimum}
-        />
-      </div>
+      <SearchToolbar
+        className="output-panel__filters"
+        aria-label={t("output.search")}
+        filterKeys={["level", "domain", "plugin", "source"]}
+        placeholder={t("output.search")}
+        value={query}
+        onChange={setQuery}
+        presets={[
+          ...["ERROR", "WARN", "INFO", "DEBUG", "TRACE"].map((level) => ({
+            key: "level",
+            value: level,
+            label: level,
+          })),
+          ...[...new Set(output.entries.map((entry) => entry.domain))].sort().map((domain) => ({
+            key: "domain",
+            value: domain,
+            label: `${t("searchUi.domain")}: ${domain}`,
+          })),
+          ...plugins.map((plugin) => ({ key: "plugin", value: plugin.id, label: plugin.name })),
+          { key: "source", value: "application", label: t("logs.diagnostic") },
+          { key: "source", value: "operations", label: t("logs.operations") },
+          { key: "source", value: "runtime", label: t("output.runtime") },
+        ]}
+        actions={
+          <Select
+            label={t("output.level")}
+            value={minimum}
+            disabled={channel === "runtime"}
+            options={[
+              { value: "TRACE", label: t("output.allLevels") },
+              ...["DEBUG", "INFO", "WARN", "ERROR"].map((value) => ({ value, label: value })),
+            ]}
+            onChange={setMinimum}
+          />
+        }
+      />
       {output.error ? (
         <div className="output-panel__error" role="alert">
           {output.error}

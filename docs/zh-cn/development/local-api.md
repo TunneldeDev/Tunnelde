@@ -3,8 +3,9 @@
 有限稳定范围、数据生命周期和演进规则见
 [兼容规则](local-api-compatibility.md)。
 
-CLI 连接最多等待三秒；建立连接后，请求／响应收发总计最多十秒，零碎输出不会
-重置总时限，每次写入另有三秒上限。写入发送后超时不证明宿主拒绝或回滚，应
+CLI 连接最多等待三秒；建立连接后，普通请求／响应收发总计最多十秒，零碎输出不会
+重置总时限，每次写入另有三秒上限。`forwards.save/remove/stop` 的确认等待采用
+下文说明的独立延长时限。写入发送后超时不证明宿主拒绝或回滚，应
 先重读快照确认结果。协议客户端位于 `automation/client/`，与 CLI 参数解析、
 输出和退出码处理分离。
 
@@ -64,8 +65,10 @@ tunnelde-cli call api.describe
 帮助、CLI 版本及 CLI 自身的接口说明可离线使用。在线调用使用运行中应用的公共
 业务服务，不单独读取数据库、不启动 WebView、不执行 shell，也不转发任意 Tauri
 命令。核心发现、主机与会话方法仅提供读取，公共设置支持通过共享设置服务执行
-修订检查后的更新。主机结果不包含备注、密钥路径或凭据，但包含地址
-和用户名，请妥善处理输出。已保存主机列表不包含插件动态提供的主机。
+带修订检查的稳定更新。下文的实验领域方法还提供有界日志读取，以及分别确认的
+转发修改和启动；应通过接口发现检查其可用性及各自的稳定状态。主机结果不包含
+备注、密钥路径或凭据，但包含地址和用户名，请妥善处理输出。已保存主机列表不包含
+插件动态提供的主机。
 
 在线成功结果向 stdout 输出一个 JSON 对象，包含 `version`、`id`、`result`；
 失败向 stderr 输出 `version`、`id`、`error: {code, message}`。退出码为
@@ -229,8 +232,9 @@ tunnelde-cli logs read --params '{"source":"operations","limit":20}'
 隔离应用标识、`TUNNELDE_DATA_DIR` 或自定义环境可使用 `--endpoint /absolute/path/to/automation.json`
 或 `TUNNELDE_ENDPOINT`。默认使用 `dev.tunnelde.app` 标识，Windows 位于
 APPDATA 下，macOS 位于 `~/Library/Application Support` 下，Linux 位于
-XDG_DATA_HOME 或 `~/.local/share` 下。不支持远程监听和网络认证模式，双方都检查
-回环地址。不要公开凭据文件或将其复制到其他机器。
+XDG_DATA_HOME 或 `~/.local/share` 下。这个自动化端点不支持远程监听和网络认证模式，
+双方都检查回环地址；此通信限制独立于上述实验转发方法管理的 SSH 监听器。
+不要公开凭据文件或将其复制到其他机器。
 
 通信使用每条 TCP 连接一个以换行结束的 JSON 请求，包含 `version`、`id`、
 `token`、`method`、`params`。最多八条并发连接，服务端默认时限 10 秒，请求最大
