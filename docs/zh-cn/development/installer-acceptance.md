@@ -64,3 +64,77 @@ Gatekeeper／隔离属性、物理硬件或应用内 OTA 验收。程序只终�
 OTA 使用一次性 Runner 的原生应用数据目录，开始前该目录必须不存在。NSIS 经
 Explorer 重启，不继承验收进程的临时数据目录环境变量。起始及自动重启后的进程
 必须报告相同的实际数据库位置；日志从报告位置采集。仅安装器测试仍使用临时目录。
+
+## 一次性 macOS OTA 环境探针
+
+**Public macOS OTA environment probe** 工作流是 macOS 公开包 OTA 验收的第一阶段。
+它编译原生能力读取程序，检查托管控制台会话、显示器、辅助功能信任和屏幕捕获
+预检；通过后才实际截取桌面。随后复用公开 CLI 包选择器，按实际架构选择公开
+`v1.2.1`、`v1.3.0` 归档的元数据。它不下载、解包、启动、修改或更新应用。
+探针成功**不代表 OTA 通过**，也不保证后续 GUI 驱动拥有相同的 TCC 身份。
+
+在 `TunneldeDev/Tunnelde` 中从已审查分支手动运行，`acknowledgement` 输入
+`probe-only`。GitHub 已在仓库默认分支注册该工作流后：
+
+```sh
+gh workflow run macos-ota-probe.yml --repo TunneldeDev/Tunnelde \
+  --ref <reviewed-branch> -f acknowledgement=probe-only
+```
+
+GitHub 要求 `workflow_dispatch` 对应文件存在于默认分支，因此新主题分支的工作流
+可能需要等待负责人按正常流程集成、提升后才可手动触发。不要仅为启用探针而合并
+或发布。PR 在 Linux 和 macOS 上执行环境拒绝与资源选择测试，并编译原生读取
+程序，但不调用其图形 API。
+
+手动作业固定使用 GitHub-hosted `macos-15`、只读 contents 令牌、不保留凭据的
+checkout 和八分钟超时。入口在创建文件前检查真实系统、架构、账户与 home，
+hosted／手动事件／仓库／工作流上下文、固定版本对，以及无符号链接祖先的规范
+workspace／temp 路径。拒绝 root、自托管、其他仓库及普通工作站。这些检查用于
+防止误跑；环境字符串不能证明恶意管理员没有伪造环境。勿在用户机器复制托管环境。
+
+每次尝试新建仅所有者可访问的
+`$RUNNER_TEMP/tunnelde-macos-ota-probe-<run-id>-<attempt>`；已有目录直接拒绝。
+辅助命令有时间和输出上限。不启动应用或服务，不递归删除内容，清理由 Runner
+销毁负责。即使能力检查失败，也上传 `evidence` 子目录并保留 14 天。
+`results.json` 将探针结果与 `otaAttempted: false`、`otaAccepted: false` 分开，
+`native.json` 保留能力观测。提前被环境门禁拒绝时不创建证据目录，具体断言保留在
+作业日志。截图仍需实际审查。
+
+读取程序调用 `AXIsProcessTrusted()` 和 `CGPreflightScreenCaptureAccess()`，
+不请求授权、不修改 TCC、不调用 `sudo`、不改变系统安全策略、不安装常驻服务。
+缺少图形／辅助功能／截图能力时作业失败，不以成功跳过代替。不能为绕过失败而
+授予权限或重签公开应用；此时需要另一个已明确授权原生图形访问的一次性环境。
+
+### 后续公开包 OTA 阶段
+
+以下是后继验收程序的要求，尚未由本探针实现；证据须与第一阶段分开：
+
+1. 重跑 hosted 门禁，检查实际 GUI 驱动的能力。要求一次性原生 Profile 干净，
+   没有既存 Tunnelde 进程、应用数据、偏好与应用凭据条目。公开 `1.2.1` 使用正式
+   Keychain service，用户账户内只改数据目录或 plist 不足以隔离。不得检查真实用户凭据库。
+2. 复用发布选择与 CLI 工具，下载对应架构的原始起始包和目标包。记录资源 ID、发布
+   SHA-256／大小、独立计算的下载摘要、原 bundle 标识、plist 版本、二进制摘要、
+   架构及 `codesign --verify --deep --strict` 结果。不重签、注入库、替换运行时代码，
+   不放宽 TLS／更新签名。目标归档仅作对照，不由验收程序代替更新器安装或启动。
+3. 将未改动起始 bundle 放入本次拥有且可写的安装目录，不向应用传入 GitHub 令牌。
+   通过既有服务／CLI 写入合成设置、主机元数据和支持的存储，记录实际数据库／端点
+   位置。使用一次性账户的原生 Profile，使自动重启无需继承临时数据目录覆盖。
+   两个进程均核实实际位置，不能假定相同。
+4. 使用真实 GUI 的检查与安装控件和普通公开 feed。选择版本必须等于 `1.3.0`；若
+   当前选择其他版本，应停止并复核版本对，不固定假 feed 或降级。保存截图、下载／
+   进度／错误日志，以及应用签名和原生包校验结果。只选择到元数据不足以结算。
+5. 观察旧进程退出、更新器自动从同一安装路径重启，不能手动启动目标。核实新版本、
+   原身份／签名、与参考包一致的二进制摘要、合成数据保留且未进入恢复模式。复用
+   七个 stable CLI 检查，包括陈旧修订拒绝／恢复。仅记录实际可得的退出码；
+   非子进程消失不等于取得退出码。
+6. 从重启后的 GUI 正常退出，确认进程和端点移除，将正常退出与强制清理分别留证。
+   等待有界，清理只针对 PID、启动身份和拥有 bundle 路径均匹配本次的进程；失败和
+   未知结果保留至 Runner 销毁。上传合成结果／日志／截图，不上传端点 capability 或秘密。
+
+分阶段工作流无需签名／发布密钥，不新增产品 API。CLI 成功、生成式 GUI 输入和
+托管执行均不代替物理键盘／输入法、Gatekeeper 或完整历史迁移验收。
+
+参考：GitHub [手动工作流触发](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)
+与 [Runner 变量](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables)；
+Apple [辅助功能信任查询](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrusted)
+与 [屏幕捕获预检](<https://developer.apple.com/documentation/coregraphics/cgpreflightscreencaptureaccess()>)。
