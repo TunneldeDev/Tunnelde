@@ -6,6 +6,27 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.2](https://github.com/TunneldeDev/Tunnelde/compare/v1.2.1...v1.2.2) - 2026-11-14
+
+### 更新概览 | Highlights
+
+- **connect:** preserve IME Enter in credential dialogs
+- **terminal:** suppress orphan IME Enter releases
+
+<details open>
+<summary>详细变更 | Details (2)</summary>
+
+### 修复 | Fix
+
+- **connect:** preserve IME Enter in credential dialogs ([#350](https://github.com/TunneldeDev/Tunnelde/pull/350)) @quyansiyuanwang
+- **terminal:** suppress orphan IME Enter releases ([#352](https://github.com/TunneldeDev/Tunnelde/pull/352)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.2.1](https://github.com/TunneldeDev/Tunnelde/compare/v1.2.0...v1.2.1) - 2026-11-14
 
 ### 更新概览 | Highlights
