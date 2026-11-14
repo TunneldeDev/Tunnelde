@@ -74,17 +74,17 @@ Explorer 重启，不继承验收进程的临时数据目录环境变量。起�
 探针成功**不代表 OTA 通过**，也不保证后续 GUI 驱动拥有相同的 TCC 身份。
 
 在 `TunneldeDev/Tunnelde` 中从已审查分支手动运行，`acknowledgement` 输入
-`probe-only`。GitHub 已在仓库默认分支注册该工作流后：
+`probe-only`。GitHub 已注册该工作流后：
 
 ```sh
 gh workflow run macos-ota-probe.yml --repo TunneldeDev/Tunnelde \
   --ref <reviewed-branch> -f acknowledgement=probe-only
 ```
 
-GitHub 要求 `workflow_dispatch` 对应文件存在于默认分支，因此新主题分支的工作流
-可能需要等待负责人按正常流程集成、提升后才可手动触发。不要仅为启用探针而合并
-或发布。PR 在 Linux 和 macOS 上执行环境拒绝与资源选择测试，并编译原生读取
-程序，但不调用其图形 API。
+新增工作流触发前先核实注册状态。若 GitHub 报告不可用，应保留响应并等待负责人
+按正常流程集成；不要仅为启用探针而合并或发布。`--ref` 指向将执行的已审查代码，
+无需选择默认分支。PR 在 Linux 和 macOS 上执行环境拒绝与资源选择测试，并编译
+原生读取程序，但不调用其图形 API。
 
 手动作业固定使用 GitHub-hosted `macos-15`、只读 contents 令牌、不保留凭据的
 checkout 和八分钟超时。入口在创建文件前检查真实系统、架构、账户与 home，
