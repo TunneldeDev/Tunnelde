@@ -9,9 +9,11 @@ Other folders keep the existing save path. Internal protocol support does not
 make this a stable local or plugin API.
 
 On a Windows target, OpenSSH may return `/C:/folder/file` paths. The native-save
-adapter resolves that spelling against the authenticated Windows platform for
-both setup and subsequent saves. POSIX paths retain their original meaning;
-the helper's native path contract is unchanged.
+adapter resolves the folder through a read-only handle on the authenticated
+Windows target for both setup and subsequent saves. This captures the helper's
+native canonical spelling, including case and the extended drive prefix, while
+SFTP uses its transport spelling. POSIX paths retain their original meaning;
+the helper's native path and exact authority checks are unchanged.
 
 ## Enabling a folder
 

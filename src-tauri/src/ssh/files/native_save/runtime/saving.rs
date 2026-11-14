@@ -63,6 +63,13 @@ impl Manager {
             let _ = sftp.close().await;
             let canonical = canonical.map_err(super::super::super::map_sftp)?;
             let canonical = super::super::setup::canonical_editor_path(canonical, platform);
+            let canonical = super::super::setup::canonical_scope(
+                app.clone(),
+                session.clone(),
+                &canonical,
+                platform,
+            )
+            .await?;
             if canonical != setup.plan.context.scope {
                 continue;
             }
