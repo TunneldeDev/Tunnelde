@@ -3,8 +3,7 @@ use super::super::{contracts, journal::setup::Package as Identity};
 use crate::error::{AppError, AppResult};
 use std::time::Duration;
 
-const VERSION: &str = "0.28.0";
-const RELEASE: &str = "https://github.com/TunneldeDev/Tunnelde-agent/releases/download/v0.28.0";
+const VERSION: &str = "0.28.1";
 
 #[derive(Clone, Copy)]
 pub(super) struct Package {
@@ -15,27 +14,27 @@ pub(super) struct Package {
 const PACKAGES: &[Package] = &[
     Package {
         platform: "linux-x86_64",
-        sha256: "406f32d56c569180dba49d49e4d7842f6634fb58ff0fdba14df1cdf4a31fb592",
+        sha256: "92dd3ba7efd0d421d035c75e0fec1ce3cbaa948859fc94fb1f4281e27ccbe9bc",
         bytes: 4_660_728,
     },
     Package {
         platform: "linux-aarch64",
-        sha256: "68f8bd1d8d2c5fb212f04c3cd1a863961e6301323b8e618824e3890965ade2a0",
+        sha256: "a83330d55420e15943a4dd602cf00b0406291301ed4b68bf549b79ea35005432",
         bytes: 4_281_320,
     },
     Package {
         platform: "macos-x86_64",
-        sha256: "bdf42bc46f365fd75eb6a8aa81b24f8eb9ab0918282d6a8749b441871ce830ed",
+        sha256: "945a66e6403249f3107e643e83126468a1d6e97a328dff740ee2c9b46a2036e4",
         bytes: 4_291_696,
     },
     Package {
         platform: "macos-aarch64",
-        sha256: "e58f79ff82aa63124246d26b6553d65e67e5313d1e2d4ca2a23c0ae1b6084064",
+        sha256: "6b9d050e800a47580fc1ad398e00b80521c6017df2d3d831ec19c4d5d063adeb",
         bytes: 3_820_944,
     },
     Package {
         platform: "windows-x86_64",
-        sha256: "b158ab99f8b56aea3c6c4af3887900e2c00ba35f88b1981d6835ae4dbee2a246",
+        sha256: "d88818b44ae8bc561aaafc81cc8521a48ddf99517daf84c9c02c40905547e27b",
         bytes: 3_859_968,
     },
 ];
@@ -80,7 +79,10 @@ impl Package {
         )
     }
     pub fn url(self) -> String {
-        format!("{RELEASE}/{}", self.filename())
+        format!(
+            "https://github.com/TunneldeDev/Tunnelde-agent/releases/download/v{VERSION}/{}",
+            self.filename()
+        )
     }
     pub fn verify(self, bytes: Vec<u8>) -> AppResult<Verified> {
         if bytes.len() != self.bytes || contracts::hash(b"", &bytes) != self.sha256 {
