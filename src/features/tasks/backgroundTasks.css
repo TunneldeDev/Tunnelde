@@ -105,7 +105,8 @@
   position: fixed;
   right: 12px;
   bottom: calc(var(--td-statusbar-h) + 8px);
-  z-index: 65;
+  /* Task actions can open modal dialogs, whose backdrops start at 40. */
+  z-index: 35;
   width: min(460px, calc(100vw - 24px));
   max-height: min(560px, calc(100vh - 96px));
   display: flex;
