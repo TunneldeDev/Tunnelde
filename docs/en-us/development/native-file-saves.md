@@ -23,7 +23,7 @@ protocol version or digest needs to be entered. Cancelled or expired approval
 does not install anything. Replacing the connection or folder invalidates the
 preparation; it does not redirect the original installation to another host.
 
-The host pins the five reviewed 0.28.0 helper packages by exact byte size and
+The host pins the five reviewed 0.28.1 helper packages by exact byte size and
 SHA-256. Downloads use the marketplace proxy route. Partial, truncated,
 oversized or mismatching downloads are rejected before upload. Uploaded bytes
 are checked before execution. It never uses Node or a PATH-selected agent.
