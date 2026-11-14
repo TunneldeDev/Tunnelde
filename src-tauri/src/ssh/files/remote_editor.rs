@@ -135,6 +135,14 @@ fn session_for(app: &AppHandle, record: &Record) -> AppResult<String> {
 }
 
 #[tauri::command]
+pub async fn editor_save_cancel(app: AppHandle, id: String) -> AppResult<()> {
+    let native = app.state::<AppState>().native_saves.clone();
+    let result = native.cancel_save(&id).await;
+    let _ = app.emit("editor://cleanup-changed", ());
+    result
+}
+
+#[tauri::command]
 pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
     if pending::diagnostic_id(&id) {
         return tauri::async_runtime::spawn_blocking(move || pending::retry(&app, &id))

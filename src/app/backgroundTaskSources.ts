@@ -56,28 +56,36 @@ export function registerBackgroundTaskSources(): () => void {
                 ? translateError({ code: "editorCleanup", message: item.error })
                 : undefined,
             actions: [
-              ...(item.action === "inspect"
-                ? []
-                : [
+              ...(item.action === "cancel"
+                ? [
                     {
-                      id: "retry",
-                      disabled: item.running,
-                      label: i18n.t(
-                        item.action === "reload"
-                          ? "editor.reloadRecoveryRecords"
-                          : item.source !== "native"
-                            ? "editor.retryCleanup"
-                            : item.action === "discard"
-                              ? "editor.nativeDiscardUnsent"
-                              : item.action === "finish"
-                                ? "editor.nativeFinishRecovery"
-                                : item.action === "release"
-                                  ? "editor.nativeReleaseBackup"
-                                  : "editor.nativeQueryOriginal",
-                      ),
-                      run: () => useEditorCleanup.getState().retry(item.id),
+                      id: "cancel",
+                      label: i18n.t("editor.cancelSave"),
+                      run: () => useEditorCleanup.getState().cancelSave(item.id),
                     },
-                  ]),
+                  ]
+                : item.action === "inspect"
+                  ? []
+                  : [
+                      {
+                        id: "retry",
+                        disabled: item.running,
+                        label: i18n.t(
+                          item.action === "reload"
+                            ? "editor.reloadRecoveryRecords"
+                            : item.source !== "native"
+                              ? "editor.retryCleanup"
+                              : item.action === "discard"
+                                ? "editor.nativeDiscardUnsent"
+                                : item.action === "finish"
+                                  ? "editor.nativeFinishRecovery"
+                                  : item.action === "release"
+                                    ? "editor.nativeReleaseBackup"
+                                    : "editor.nativeQueryOriginal",
+                        ),
+                        run: () => useEditorCleanup.getState().retry(item.id),
+                      },
+                    ]),
               ...(item.source === "native" || item.source === "diagnostic"
                 ? [
                     {

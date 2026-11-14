@@ -205,3 +205,30 @@ it("distinguishes local cleanup paths from remote hosts and retries the native t
     "清理编辑暂存文件",
   );
 });
+
+it("cancels only the active original native save and refreshes its journal snapshot", async () => {
+  const pending = {
+    id: "native-original-save",
+    source: "native" as const,
+    action: "cancel" as const,
+    address: "user@server",
+    path: "/scope/note.txt",
+    directory: "/scope",
+    updatedAt: 0,
+    running: true,
+    error: null,
+  };
+  useEditorCleanup.setState({ items: [pending] });
+  const cancel = vi.spyOn(api, "editorSaveCancel").mockResolvedValue(undefined);
+  const retry = vi.spyOn(api, "editorCleanupRetry").mockResolvedValue(undefined);
+  vi.spyOn(api, "editorCleanupList").mockResolvedValue([{ ...pending, action: "inspect" }]);
+  dispose = registerBackgroundTaskSources();
+  const task = useBackgroundTasks.getState().items.find((item) => item.id === pending.id);
+  expect(task?.status).toBe("running");
+  expect(task?.actions?.map((action) => action.id)).toEqual(["cancel", "logs"]);
+  await task?.actions?.[0]?.run();
+  expect(cancel).toHaveBeenCalledWith(pending.id);
+  expect(retry).not.toHaveBeenCalled();
+  const refreshed = useBackgroundTasks.getState().items.find((item) => item.id === pending.id);
+  expect(refreshed?.actions?.map((action) => action.id)).toEqual(["logs"]);
+});

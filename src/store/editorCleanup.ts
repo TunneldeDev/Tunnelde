@@ -5,6 +5,7 @@ import type { EditorCleanup } from "@/lib/api/types";
 interface CleanupStore {
   items: EditorCleanup[];
   hydrate: () => Promise<void>;
+  cancelSave: (id: string) => Promise<void>;
   retry: (id: string) => Promise<void>;
 }
 
@@ -15,6 +16,13 @@ export const useEditorCleanup = create<CleanupStore>((set, get) => ({
     const request = ++generation;
     const items = await api.editorCleanupList();
     if (request === generation) set({ items });
+  },
+  cancelSave: async (id) => {
+    try {
+      await api.editorSaveCancel(id);
+    } finally {
+      await get().hydrate();
+    }
   },
   retry: async (id) => {
     try {
