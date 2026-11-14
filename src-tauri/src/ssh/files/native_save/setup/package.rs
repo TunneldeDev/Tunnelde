@@ -3,7 +3,7 @@ use super::super::{contracts, journal::setup::Package as Identity};
 use crate::error::{AppError, AppResult};
 use std::time::Duration;
 
-const VERSION: &str = "0.28.1";
+const VERSION: &str = "0.28.2";
 
 #[derive(Clone, Copy)]
 pub(super) struct Package {
@@ -14,27 +14,27 @@ pub(super) struct Package {
 const PACKAGES: &[Package] = &[
     Package {
         platform: "linux-x86_64",
-        sha256: "92dd3ba7efd0d421d035c75e0fec1ce3cbaa948859fc94fb1f4281e27ccbe9bc",
+        sha256: "73d088c0575dc9eb51838216a052c98b562fb864cedaafc871ebe8d7773232ca",
         bytes: 4_660_728,
     },
     Package {
         platform: "linux-aarch64",
-        sha256: "a83330d55420e15943a4dd602cf00b0406291301ed4b68bf549b79ea35005432",
+        sha256: "db485bbbc57c9d17cd3ed94514f00a1dd279f2ca5c51f6d123e9a8ffed45f455",
         bytes: 4_281_320,
     },
     Package {
         platform: "macos-x86_64",
-        sha256: "945a66e6403249f3107e643e83126468a1d6e97a328dff740ee2c9b46a2036e4",
-        bytes: 4_291_696,
+        sha256: "df237af97dfd811f5583babf450548f9ff86db64282ae3df0b3953d37e4f9ff1",
+        bytes: 4_291_752,
     },
     Package {
         platform: "macos-aarch64",
-        sha256: "6b9d050e800a47580fc1ad398e00b80521c6017df2d3d831ec19c4d5d063adeb",
-        bytes: 3_820_944,
+        sha256: "7a734f1f621e8fd19a6a2b9442fc842405e7739704a9daf624f9a03eec14b87a",
+        bytes: 3_820_992,
     },
     Package {
         platform: "windows-x86_64",
-        sha256: "d88818b44ae8bc561aaafc81cc8521a48ddf99517daf84c9c02c40905547e27b",
+        sha256: "acbd037345d028791a0f054083969186bc2ca9dbff613f425b8970ccabfa04b8",
         bytes: 3_859_968,
     },
 ];
