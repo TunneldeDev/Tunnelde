@@ -50,12 +50,25 @@ unchanged. Defaults describe this application version and may evolve. Partial
 object updates preserve unspecified fields; collections replace their previous
 contents according to the public schema.
 
-The local protocol has no subscriptions, durable event replay or cancellation
-method. Poll snapshots as needed. Closing a connection or timing out is not a
-rollback: a write may have committed even if its response was lost. Read again
-and reconcile; request IDs provide correlation, not deduplication. Do not
-automatically replay timed-out writes. The local API does not expose arbitrary
-native commands, shell execution, credentials or remote listening.
+The local protocol has no subscriptions, durable event replay or generic
+cancellation method. Poll snapshots as needed. The seven stable methods do not
+create network listeners. The automation endpoint itself always listens on
+loopback; it has no remote-listen mode. The API does not expose arbitrary native
+commands, shell execution or credentials.
+
+Experimental domain methods have separate behavior contracts. In particular,
+`forwards.save` can persist a remote-direction rule, and `forwards.start` can
+establish its SSH listener after native user consent and normal host-key and
+credential checks. `forwards.cancelStart` cancels only a pending startup request;
+it cannot stop an admitted listener. See [local API usage](local-api.md) for the
+receipt lifetime, retry rules and separately confirmed `forwards.stop` flow.
+These methods do not expand the seven-method stable declaration.
+
+Closing a connection or timing out is not a rollback: a write may have committed
+even if its response was lost. Read again and reconcile; protocol request IDs
+provide correlation, not deduplication. Domain-specific receipt IDs can provide
+bounded replay as explicitly documented for forwarding startup. Do not
+automatically replay timed-out writes or infer rollback from cancellation.
 
 ## Stable declaration rules
 
