@@ -5,7 +5,7 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { hostedContext, checkedDirectory, requireCapabilities } from "./guard.mjs";
+import { hostedContext, checkedDirectory, requireCapabilities, runnerHome } from "./guard.mjs";
 
 function hosted() {
   return {
@@ -14,7 +14,7 @@ function hosted() {
       RUNNER_ENVIRONMENT: "github-hosted",
       RUNNER_OS: "macOS",
       RUNNER_ARCH: "ARM64",
-      HOME: "/Users/runner",
+      HOME: runnerHome,
       GITHUB_REPOSITORY: "TunneldeDev/Tunnelde",
       GITHUB_EVENT_NAME: "workflow_dispatch",
       GITHUB_REF: "refs/heads/qa/macos-hosted-ota-probe",
@@ -23,17 +23,17 @@ function hosted() {
       GITHUB_SHA: "a".repeat(40),
       GITHUB_RUN_ID: "123456",
       GITHUB_RUN_ATTEMPT: "1",
-      GITHUB_WORKSPACE: "/Users/runner/work/Tunnelde/Tunnelde",
-      RUNNER_TEMP: "/Users/runner/work/_temp",
+      GITHUB_WORKSPACE: join(runnerHome, "work", "Tunnelde", "Tunnelde"),
+      RUNNER_TEMP: join(runnerHome, "work", "_temp"),
       MACOS_OTA_ACK: "probe-only",
       UPGRADE_FROM: "v1.2.1",
       UPGRADE_TO: "v1.3.0",
     },
     platform: "darwin",
     architecture: "arm64",
-    user: { username: "runner", uid: 501, homedir: "/Users/runner" },
-    home: "/Users/runner",
-    cwd: "/Users/runner/work/Tunnelde/Tunnelde",
+    user: { username: "runner", uid: 501, homedir: runnerHome },
+    home: runnerHome,
+    cwd: join(runnerHome, "work", "Tunnelde", "Tunnelde"),
   };
 }
 
@@ -41,11 +41,11 @@ test("accepts the manual hosted context for each supported native architecture",
   const context = hosted();
   assert.equal(
     hostedContext(context).root,
-    "/Users/runner/work/_temp/tunnelde-macos-ota-probe-123456-1",
+    join(runnerHome, "work", "_temp", "tunnelde-macos-ota-probe-123456-1"),
   );
   context.architecture = "x64";
   context.env.RUNNER_ARCH = "X64";
-  assert.equal(hostedContext(context).temp, "/Users/runner/work/_temp");
+  assert.equal(hostedContext(context).temp, join(runnerHome, "work", "_temp"));
 });
 
 for (const [key, value] of [
@@ -53,7 +53,7 @@ for (const [key, value] of [
   ["RUNNER_ENVIRONMENT", "self-hosted"],
   ["RUNNER_OS", "Linux"],
   ["RUNNER_ARCH", "X64"],
-  ["HOME", "/Users/alice"],
+  ["HOME", "/tmp/not-hosted"],
   ["GITHUB_REPOSITORY", "someone/Tunnelde"],
   ["GITHUB_EVENT_NAME", "pull_request_target"],
   ["GITHUB_EVENT_NAME", "pull_request"],
@@ -64,8 +64,8 @@ for (const [key, value] of [
   ["GITHUB_RUN_ATTEMPT", "0"],
   ["MACOS_OTA_ACK", "true"],
   ["RUNNER_TEMP", "/tmp"],
-  ["RUNNER_TEMP", "/Users/runner/work/_temp/../_temp"],
-  ["GITHUB_WORKSPACE", "/Users/runner/work/other/other"],
+  ["RUNNER_TEMP", join(runnerHome, "work", "_temp") + "/../_temp"],
+  ["GITHUB_WORKSPACE", join(runnerHome, "work", "other", "other")],
   ["UPGRADE_FROM", "v1.3.0"],
   ["UPGRADE_TO", "v1.4.0"],
 ]) {
@@ -91,13 +91,13 @@ test("rejects genuine host identity mismatches even with hosted environment stri
       c.user.username = "alice";
     },
     (c) => {
-      c.user.homedir = "/Users/alice";
+      c.user.homedir = "/tmp/not-hosted";
     },
     (c) => {
-      c.home = "/Users/alice";
+      c.home = "/tmp/not-hosted";
     },
     (c) => {
-      c.cwd = "/Users/runner/work/Tunnelde/Tunnelde/subdir";
+      c.cwd = join(runnerHome, "work", "Tunnelde", "Tunnelde", "subdir");
     },
   ]) {
     const context = hosted();
