@@ -17,6 +17,7 @@ use crate::update::UpdateService;
 
 pub struct AppState {
     pub db: Database,
+    pub(crate) vault: crate::vault::Vault,
     pub settings: RwLock<Settings>,
     /// Serializes read/validate/persist/publish for every settings writer.
     pub(crate) settings_commit: tokio::sync::Mutex<()>,
@@ -84,6 +85,7 @@ impl AppState {
 }
 
 pub fn init(app: &AppHandle) -> AppResult<()> {
+    let vault = crate::vault::Vault::new(&app.config().identifier)?;
     let override_dir = std::env::var_os("TUNNELDE_DATA_DIR").map(PathBuf::from);
     let data_dir = match &override_dir {
         Some(path) => path.clone(),
@@ -149,6 +151,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
 
     app.manage(AppState {
         db: database,
+        vault,
         settings: RwLock::new(settings),
         settings_commit: tokio::sync::Mutex::new(()),
         ui_provider_revision: AtomicU64::new(0),

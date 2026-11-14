@@ -31,7 +31,7 @@ impl Effects for Runtime<'_> {
     }
 
     fn forget_credential(&self, id: &str) {
-        let _ = crate::vault::forget(id);
+        let _ = self.state.vault.forget(id);
     }
 
     fn changed(&self) {
