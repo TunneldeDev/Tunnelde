@@ -83,14 +83,20 @@ fn lease_child() {
         return;
     };
     let mode = std::env::var("TUNNELDE_STORAGE_LEASE_CHILD_MODE").unwrap();
+    let publish_ready = |value: &str| {
+        // Readers must never observe the file between creation and write_all.
+        let temporary = Path::new(&home).join("child-ready.tmp");
+        std::fs::write(&temporary, value).unwrap();
+        std::fs::rename(temporary, Path::new(&home).join("child-ready")).unwrap();
+    };
     let lease = Lease::acquire(Path::new(&home));
     let _lease = if mode == "busy" {
         assert!(lease.is_err_and(|error| error.kind() == io::ErrorKind::WouldBlock));
-        std::fs::write(Path::new(&home).join("child-ready"), "busy").unwrap();
+        publish_ready("busy");
         None
     } else {
         let owned = lease.unwrap();
-        std::fs::write(Path::new(&home).join("child-ready"), "owned").unwrap();
+        publish_ready("owned");
         Some(owned)
     };
     let mut input = [0];
@@ -231,4 +237,98 @@ fn final_symlinks_hardlinks_and_fifos_are_not_lease_authority() {
         .success());
     assert!(Lease::acquire(&fixture.0).is_err());
     assert_eq!(std::fs::read(&target).unwrap(), b"foreign content");
+}
+
+/// Command::spawn can overlap a different test's lease drop. CLOEXEC only closes
+/// inherited descriptors after exec, so hold the child in pre_exec deliberately.
+#[cfg(unix)]
+#[test]
+fn dropping_owner_releases_the_lease_while_an_unrelated_child_is_before_exec() {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::{net::UnixStream, process::CommandExt};
+
+    unsafe extern "C" {
+        fn _exit(status: i32) -> !;
+    }
+
+    struct BeforeExec {
+        signal: UnixStream,
+        thread: Option<std::thread::JoinHandle<std::io::Result<std::process::ExitStatus>>>,
+    }
+    impl Drop for BeforeExec {
+        fn drop(&mut self) {
+            // Unblock/reap the child even if the regression assertion panics.
+            let _ = self.signal.write_all(b"q");
+            if let Some(thread) = self.thread.take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
+    let fixture = Fixture::new();
+    let lease = Lease::acquire(&fixture.0).unwrap();
+    let (signal, child_signal) = UnixStream::pair().unwrap();
+    signal
+        .set_read_timeout(Some(Duration::from_secs(15)))
+        .unwrap();
+    let child_fd = child_signal.as_raw_fd();
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "storage::ownership::tests::lease_child",
+            "--ignored",
+        ])
+        .env_remove("TUNNELDE_STORAGE_LEASE_CHILD_HOME")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    // SAFETY: the child uses only async-signal-safe syscalls before exec. The
+    // stream is kept alive in the spawning thread until Command::status returns.
+    unsafe {
+        command.pre_exec(move || {
+            let fd = std::os::fd::BorrowedFd::borrow_raw(child_fd);
+            loop {
+                match rustix::io::write(fd, b"r") {
+                    Ok(1) => break,
+                    Err(rustix::io::Errno::INTR) => continue,
+                    _ => _exit(1),
+                }
+            }
+            let mut byte = [0];
+            loop {
+                match rustix::io::read(fd, &mut byte) {
+                    Ok(1) => break,
+                    Err(rustix::io::Errno::INTR) => continue,
+                    _ => _exit(1),
+                }
+            }
+            Ok(())
+        });
+    }
+    let thread = std::thread::spawn(move || {
+        let result = command.status();
+        drop(child_signal);
+        result
+    });
+    let mut child = BeforeExec {
+        signal,
+        thread: Some(thread),
+    };
+    let mut byte = [0];
+    std::io::Read::read_exact(&mut child.signal, &mut byte).unwrap();
+    assert!(
+        Lease::acquire(&fixture.0).is_err_and(|error| error.kind() == io::ErrorKind::WouldBlock)
+    );
+    drop(lease);
+    let _next_owner = Lease::acquire(&fixture.0).unwrap();
+    child.signal.write_all(b"q").unwrap();
+    assert!(child
+        .thread
+        .take()
+        .unwrap()
+        .join()
+        .unwrap()
+        .unwrap()
+        .success());
 }
