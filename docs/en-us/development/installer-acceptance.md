@@ -99,17 +99,17 @@ modify or update either application. A passing probe is **not OTA acceptance**,
 nor proof that a later GUI driver has the same TCC identity.
 
 Run it manually from a reviewed branch in `TunneldeDev/Tunnelde`, entering
-`probe-only` as `acknowledgement`. After GitHub has registered the workflow on
-the repository's default branch:
+`probe-only` as `acknowledgement`. Once GitHub has registered the workflow:
 
 ```sh
 gh workflow run macos-ota-probe.yml --repo TunneldeDev/Tunnelde \
   --ref <reviewed-branch> -f acknowledgement=probe-only
 ```
 
-GitHub requires the workflow file on the default branch for `workflow_dispatch`;
-a new topic-branch workflow can be unavailable until the maintainer's normal
-integration and promotion. Do not merge or publish solely to enable this probe.
+Check registration before dispatching a newly introduced workflow. If GitHub
+reports it unavailable, retain the response and wait for the maintainer's normal
+integration; do not merge or publish solely to enable this probe. The selected
+`--ref` identifies the reviewed code to execute, not the default branch.
 Pull requests run environment-rejection and release-selection tests on Linux and
 macOS and compile the reader without invoking its GUI APIs.
 
