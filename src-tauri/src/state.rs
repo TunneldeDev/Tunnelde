@@ -40,6 +40,8 @@ pub struct AppState {
     pub storage: crate::storage::layout::Paths,
     pub log_dir: PathBuf,
     _log_guard: Mutex<Option<WorkerGuard>>,
+    // Last field: keep ownership until database, plugin and log state has dropped.
+    _storage_lease: crate::storage::ownership::Lease,
 }
 
 impl AppState {
@@ -90,7 +92,6 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
             .app_data_dir()
             .map_err(|error| AppError::internal(error.to_string()))?,
     };
-    std::fs::create_dir_all(&data_dir)?;
 
     let log_dir = match &override_dir {
         Some(path) => path.join("logs"),
@@ -99,7 +100,9 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
             .app_log_dir()
             .map_err(|error| AppError::internal(error.to_string()))?,
     };
-    let storage = crate::storage::initialize(
+    // Application identifiers do not protect a shared TUNNELDE_DATA_DIR.
+    // Own it before reading config or allowing startup migration to touch files.
+    let (storage, storage_lease) = crate::storage::ownership::initialize(
         data_dir.clone(),
         log_dir,
         std::env::var_os("TUNNELDE_PLUGINS_DIR").map(PathBuf::from),
@@ -168,6 +171,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         storage,
         log_dir,
         _log_guard: Mutex::new(Some(guard)),
+        _storage_lease: storage_lease,
     });
 
     Ok(())

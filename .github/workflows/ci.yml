@@ -457,6 +457,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::files::native_save
           cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests
+          cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::tests
 
   windows-app-check:
     name: Windows application check
@@ -518,6 +519,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::files::native_save
           cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests
+          cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::tests
 
   hygiene:
     name: Repository hygiene

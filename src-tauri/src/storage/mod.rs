@@ -2,6 +2,7 @@ mod config;
 mod inventory;
 pub mod layout;
 mod migration;
+pub(crate) mod ownership;
 pub(crate) mod public;
 pub(crate) mod recovery;
 pub(crate) mod restart;
