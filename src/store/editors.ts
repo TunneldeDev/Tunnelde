@@ -375,7 +375,11 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             },
           };
         });
-        toast(translateError(error), "error");
+        const cancelled =
+          isIpcError(error) &&
+          error.code === "validation" &&
+          error.message === "editor.saveCancelled";
+        toast(translateError(error), cancelled ? "info" : "error");
         return false;
       }
     })().finally(() => {

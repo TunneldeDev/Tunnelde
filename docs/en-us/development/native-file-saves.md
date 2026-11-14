@@ -121,6 +121,10 @@ by this application process. The request targets that original operation and
 owner generation; setup tasks, legacy SFTP saves and historical unknown records
 do not gain a cancellation action. The editor keeps its draft until the original
 save is confirmed published. A late cancellation cannot undo publication.
+Confirmed cancellation and failure before publication have distinct recovery
+messages. Their staging remains retained, and cleanup still requires exclusion
+of the original worker. User cancellation keeps the editor draft and uses an
+informational notification.
 
 Before the dispatch checkpoint, cancellation retires only the definitely unsent
 reservation. After the checkpoint, the same worker sends the original helper
