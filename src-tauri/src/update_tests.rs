@@ -294,6 +294,70 @@ fn checks_and_installation_share_an_exclusive_cancellation_safe_guard() {
 }
 
 #[test]
+fn committed_selection_changes_clear_targets_errors_and_do_not_revive_on_return() {
+    for field in ["channel", "source", "url"] {
+        let service = UpdateService::new("0.26.1".into());
+        let previous = Settings::default();
+        let mut selected = UpdateState::new("0.26.1".into(), &previous);
+        selected.phase = Phase::Available;
+        selected.available = true;
+        selected.auto_install = true;
+        selected.version = Some("1.2.1".into());
+        selected.notes = Some("Old release notes".into());
+        selected.error = Some("Old diagnostic".into());
+        selected.last_checked = Some(123);
+        selected.download_url = Some(RELEASES_PAGE.into());
+        *service.write() = selected;
+        let generation = service.selection_generation.load(Ordering::SeqCst);
+        let mut next = previous.clone();
+        match field {
+            "channel" => next.update_channel = "beta".into(),
+            "source" => next.update_source = "custom".into(),
+            _ => next.update_source_url = "https://mirror.example.com/{channel}.json".into(),
+        }
+        service.settings_committed(&previous, &next);
+        let cleared = service.snapshot();
+        assert!(cleared.matches(&next));
+        assert_eq!(cleared.phase, Phase::Idle);
+        assert!(!cleared.available);
+        assert!(!cleared.auto_install);
+        assert!(cleared.version.is_none());
+        assert!(cleared.notes.is_none());
+        assert!(cleared.error.is_none());
+        assert!(cleared.last_checked.is_none());
+        assert!(cleared.download_url.is_none());
+        assert!(!service.current_selection(generation));
+        service.settings_committed(&next, &previous);
+        let restored = service.snapshot();
+        assert!(restored.matches(&previous));
+        assert_eq!(restored.phase, Phase::Idle);
+        assert!(!restored.available);
+        // Value equality after A -> B -> A cannot admit a late success OR failure.
+        assert!(!service.current_selection(generation));
+    }
+}
+
+#[test]
+fn unrelated_preferences_and_check_metadata_preserve_a_selection() {
+    let service = UpdateService::new("0.26.1".into());
+    let previous = Settings::default();
+    let mut selected = UpdateState::new("0.26.1".into(), &previous);
+    selected.phase = Phase::Available;
+    selected.available = true;
+    selected.version = Some("1.2.1".into());
+    *service.write() = selected;
+    let generation = service.selection_generation.load(Ordering::SeqCst);
+    let mut next = previous.clone();
+    next.theme = "dark".into();
+    next.last_update_check = Some(123);
+    next.skipped_version = Some("1.2.1".into());
+    service.settings_committed(&previous, &next);
+    assert!(service.current_selection(generation));
+    assert_eq!(service.snapshot().version.as_deref(), Some("1.2.1"));
+    assert!(service.snapshot().available);
+}
+
+#[test]
 fn installation_locks_channel_and_source_but_allows_other_preferences() {
     let previous = Settings::default();
     let mut snapshot = UpdateState::new("0.26.1".into(), &previous);
