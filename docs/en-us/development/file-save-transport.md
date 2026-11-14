@@ -4,11 +4,15 @@
 
 The internal `ssh/files/native_save` adapter consumes the optional helper's
 `files.save.v1` protocol. It is separate from legacy SFTP cleanup and runner
-control. It does not install a runtime, advertise support, enable desktop saves,
-or add a public plugin API. Installation consent, editor integration and recovery
-UI must be accepted before enabling new writes. The desktop lifecycle can load
-existing recovery records and project explicit recovery actions into background
-tasks. Installation, initialization and the actual editor save path remain disabled.
+control. The desktop editor offers an explicit, experimental per-folder setup
+that installs and initializes the reviewed official helper after native consent.
+Successfully initialized folders use it for subsequent editor saves; other
+folders retain the existing save path. An uncertain native result never falls
+back to an SFTP write. The desktop lifecycle loads recovery records and projects
+explicit recovery actions into background tasks. See [Native file saves](native-file-saves.md)
+for installation, ownership and backup review. These internal capabilities do not
+add a stable local or public plugin API, and implementation does not establish
+complete desktop lifecycle acceptance.
 
 The adapter has separate contracts, codec, client and transport modules. Shared
 POSIX/PowerShell command encoding lives under `ssh/command`; it never includes
@@ -79,14 +83,12 @@ parent, with bounded probes and a deadline. Corrupt/inaccessible recovery storag
 rejects mutations while browsing and diagnostics remain available. An absent
 first-run store is not created by these checks.
 
-This is protection for existing records, not bilateral mutation admission. New
-native reservation entry points are compiled only for tests. Before enabling new
-saves, a durable broker must atomically exclude active and unresolved legacy
-writes in both directions, with the actual worker retaining ownership through
-cancellation and process loss. A read/check before a network await is insufficient
-when new reservations can be admitted concurrently. The current checks do not
-fence arbitrary external filesystem writers or prove symlink identity survives a
-later mutation. They do not settle unknown legacy SFTP requests.
+These path checks alone are not bilateral mutation admission. Host-owned setup
+and editor saves also use the durable reservation and worker ownership described
+below to exclude conflicting native and legacy writes. A read/check before a
+network await is insufficient when new reservations can be admitted concurrently.
+The checks do not fence arbitrary external filesystem writers or prove symlink
+identity survives a later mutation. They do not settle unknown legacy SFTP requests.
 
 The internal version-2 journal adds legacy mutation claims in the same SQLite
 authority. Format upgrade is explicit and transactional; reopening version 1
@@ -162,7 +164,7 @@ it dispatched. A temporarily pending reply does not consume the original worker:
 it retains its permit and may park only after observing that reply. A sealed
 attempt cannot extend paths, park or settle a second time. Persisted task
 association now ties this state machine to transfer run and artifact cleanup;
-remaining lifecycle boundaries below still gate production enablement.
+remaining lifecycle boundaries below still require desktop acceptance.
 
 Actual range channels now share one in-memory observation per transfer, including
 parallel directory workers, compressed channels, archive writes and detached
@@ -293,15 +295,18 @@ errors. A denial before the request is polled releases only that definitely
 unsent request receipt; it is not presented as a server rejection or an unknown
 write. Already admitted protocol requests still require their original reply.
 
-The recoverable editor phase is part of the internal, explicitly initialized v2
-candidate format; it is not a public plugin API or an automatic storage upgrade.
+The recoverable editor phase uses an internal, explicitly initialized journal;
+version 2 adds legacy claims and version 3 adds installation records, as described
+in [Native file saves](native-file-saves.md). It is not a public plugin API or an
+automatic storage upgrade.
 An interrupted possible dispatch without an original terminal receipt still
 retains a conservative reservation. Terminal projection can recover locally;
 unknown remote outcomes remain unresolved, and complete desktop lifecycle
-acceptance remains a production enablement gate.
+acceptance remains required for the experimental editor flow.
 
-Production initialization and full transfer/artifact enrollment are not enabled yet, so this
-does not establish complete bilateral coverage or enable native editor saves.
+Explicit desktop setup now initializes the journal and remote helper, and native
+editor saves use that completed setup. The transfer/artifact integration described
+above does not establish complete mutation-boundary or desktop lifecycle coverage.
 Unknown historical SFTP outcomes are never attested by a newly installed helper.
 
 After possible dispatch, only original-operation status is used for recovery.
