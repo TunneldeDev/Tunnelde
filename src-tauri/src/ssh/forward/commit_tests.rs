@@ -132,6 +132,25 @@ async fn denied_final_authority_never_admits_or_retains_listener() {
 
 #[tokio::test]
 async fn owned_connection_disposal_is_never_called_inside_the_registry_lock() {
+    assert_disposal_outside_lock(|registry| registry.stop_session("session")).await;
+}
+
+#[tokio::test]
+async fn generation_disposal_is_never_called_inside_the_registry_lock() {
+    assert_disposal_outside_lock(|registry| registry.stop_generation("owner", 1)).await;
+}
+
+#[tokio::test]
+async fn older_generation_disposal_is_never_called_inside_the_registry_lock() {
+    assert_disposal_outside_lock(|registry| registry.stop_before_generation("owner", 2)).await;
+}
+
+#[tokio::test]
+async fn stopping_all_disposes_connections_outside_the_registry_lock() {
+    assert_disposal_outside_lock(ForwardRegistry::stop_all).await;
+}
+
+async fn assert_disposal_outside_lock(stop: impl Fn(&ForwardRegistry)) {
     struct Owner(
         Arc<ForwardRegistry>,
         Option<tokio::sync::oneshot::Sender<bool>>,
@@ -142,16 +161,20 @@ async fn owned_connection_disposal_is_never_called_inside_the_registry_lock() {
             let _ = self.1.take().unwrap().send(outside);
         }
     }
-    let registry = Arc::new(ForwardRegistry::default());
-    let (mut pending, address, _, cancelled) = pending(&registry, "rule").await;
-    let (done, receiver) = tokio::sync::oneshot::channel();
-    pending.retain(Arc::new(Owner(registry.clone(), Some(done))));
-    pending.commit(&registry, || Ok(())).unwrap();
-    // stop_session deliberately removes/drops entries under its registry lock.
-    registry.stop_session("session");
-    assert!(tokio::time::timeout(Duration::from_secs(3), receiver)
-        .await
-        .unwrap()
-        .unwrap());
-    released(address, cancelled).await;
+    for _ in 0..64 {
+        let registry = Arc::new(ForwardRegistry::default());
+        let (mut pending, address, _, cancelled) = pending(&registry, "rule").await;
+        pending.item.owner = Some("owner".into());
+        pending.item.generation = Some(1);
+        let (done, receiver) = tokio::sync::oneshot::channel();
+        pending.retain(Arc::new(Owner(registry.clone(), Some(done))));
+        pending.commit(&registry, || Ok(())).unwrap();
+        stop(&registry);
+        assert!(tokio::time::timeout(Duration::from_secs(3), receiver)
+            .await
+            .unwrap()
+            .unwrap());
+        assert!(registry.snapshot().unwrap().is_empty());
+        released(address, cancelled).await;
+    }
 }
