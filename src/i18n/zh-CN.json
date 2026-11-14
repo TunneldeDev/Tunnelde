@@ -1146,7 +1146,6 @@
     "newHost": "新建主机",
     "settings": "设置",
     "recent": "最近",
-    "hint": "Ctrl+N 新建主机 · Ctrl+, 设置",
     "empty": "添加一台主机开始使用"
   },
   "palette": {
