@@ -1,7 +1,7 @@
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { AboutPage } from "@/features/about/AboutPage";
 import { ChevronRight, RotateCcw, Search } from "lucide-react";
-import { SearchField } from "@/components/ui/form/SearchField";
+import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, parseSearchQuery, toggleSearchFilter } from "@/lib/search/query";
 import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -194,47 +194,48 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
           clearNumberDrafts(definitions.map((definition) => definition.key));
         }}
       />
-      <div className="settings-toolbar">
-        <SearchField
-          className="settings-search"
-          aria-label={t("settings.search")}
-          placeholder={t("settings.search")}
-          value={query}
-          onChange={setQuery}
-          presets={[
-            { key: "@is", value: "modified", label: t("searchUi.modified") },
-            ...SETTINGS_SECTIONS.map((section) => ({
-              key: "section",
-              value: section,
-              label: t(SECTION_LABELS[section]),
-              exclusive: true,
-            })),
-            { key: "id", value: "", label: t("searchUi.id") },
-            ...plugins
-              .filter((plugin) => plugin.configuration)
-              .map((plugin) => ({ key: "plugin", value: plugin.id, label: plugin.name })),
-            { key: "group", value: "", label: t("configuration.groupFilter") },
-          ]}
-        />
-        <label className="settings-modified-filter">
-          <input
-            type="checkbox"
-            checked={modifiedRequested}
-            onChange={(event) => {
-              setModifiedOnly(event.target.checked);
-              if (
-                !event.target.checked &&
-                search.filters.some(
-                  (term) => !term.exclude && term.key === "is" && term.values.includes("modified"),
+      <SearchToolbar
+        className="settings-toolbar"
+        aria-label={t("settings.search")}
+        placeholder={t("settings.search")}
+        value={query}
+        onChange={setQuery}
+        presets={[
+          { key: "@is", value: "modified", label: t("searchUi.modified") },
+          ...SETTINGS_SECTIONS.map((section) => ({
+            key: "section",
+            value: section,
+            label: t(SECTION_LABELS[section]),
+            exclusive: true,
+          })),
+          { key: "id", value: "", label: t("searchUi.id") },
+          ...plugins
+            .filter((plugin) => plugin.configuration)
+            .map((plugin) => ({ key: "plugin", value: plugin.id, label: plugin.name })),
+          { key: "group", value: "", label: t("configuration.groupFilter") },
+        ]}
+        actions={
+          <label className="settings-modified-filter">
+            <input
+              type="checkbox"
+              checked={modifiedRequested}
+              onChange={(event) => {
+                setModifiedOnly(event.target.checked);
+                if (
+                  !event.target.checked &&
+                  search.filters.some(
+                    (term) =>
+                      !term.exclude && term.key === "is" && term.values.includes("modified"),
+                  )
                 )
-              )
-                setQuery(toggleSearchFilter(query, "@is", "modified", true));
-            }}
-          />
-          {t("settings.modifiedOnly")}
-          <span>{definitions.filter(isModified).length}</span>
-        </label>
-      </div>
+                  setQuery(toggleSearchFilter(query, "@is", "modified", true));
+              }}
+            />
+            {t("settings.modifiedOnly")}
+            <span>{definitions.filter(isModified).length}</span>
+          </label>
+        }
+      />
       <div className="settings-save-state" role="status">
         {error ? (
           <span className="settings-message is-error">{error}</span>

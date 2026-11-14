@@ -254,6 +254,19 @@ describe("updates inside settings", () => {
     ).toBe(true);
   });
 
+  it("explains a non-writable Mac installation and keeps manual download available", () => {
+    useUpdates.setState({
+      state: state({ autoInstall: false, unsupportedReason: "location" }),
+    });
+    render(<UpdateStatus />);
+    expect(
+      screen.getByText("Move Tunnelde to a writable Applications folder before installing updates"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Download manually" }));
+    expect(mock.openReleasePage).toHaveBeenCalled();
+    expect(mock.install).not.toHaveBeenCalled();
+  });
+
   it("shows real percentage progress and manual updates for platforms without automatic installation", () => {
     useUpdates.setState({
       state: state({ phase: "downloading", progress: 50, contentLength: 100 }),
