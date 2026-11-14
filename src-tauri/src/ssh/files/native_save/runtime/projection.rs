@@ -32,6 +32,14 @@ pub(super) fn record(record: &Record) -> PendingCleanup {
             && matches!(receipt.phase, Phase::Succeeded | Phase::Conflict)
     }) {
         "editor.nativePublished"
+    } else if record.observation.as_ref().is_some_and(|receipt| {
+        receipt.publication == Publication::None && receipt.phase == Phase::Cancelled
+    }) {
+        "editor.nativeCancelled"
+    } else if record.observation.as_ref().is_some_and(|receipt| {
+        receipt.publication == Publication::None && receipt.phase == Phase::Failed
+    }) {
+        "editor.nativeFailed"
     } else {
         "editor.remoteOutcomeUnknown"
     };

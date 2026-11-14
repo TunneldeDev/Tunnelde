@@ -180,6 +180,44 @@ fn historical_live_receipts_remain_attention_and_never_announce_current_executio
 }
 
 #[test]
+fn known_terminal_receipts_project_their_outcome_without_granting_live_cleanup() {
+    let fixture = Fixture::new();
+    let authority = authority();
+    let prepared = prepared(&authority);
+    let mut journal = fixture.journal();
+    let record = journal.reserve(binding(&authority, &prepared)).unwrap();
+    let ready = journal.ready(&record).unwrap();
+    let mut record = journal.dispatch(&ready).unwrap().0;
+    for (phase, message) in [
+        ("cancelled", "editor.nativeCancelled"),
+        ("failed", "editor.nativeFailed"),
+        ("unknown", "editor.remoteOutcomeUnknown"),
+        ("publishing", "editor.remoteOutcomeUnknown"),
+        ("succeeded", "editor.nativePublished"),
+        ("conflict", "editor.nativePublished"),
+    ] {
+        for live in [Some(false), Some(true), None] {
+            let mut receipt =
+                response(&authority, Some(&prepared.control), phase, 3)["observation"].clone();
+            receipt["live"] = serde_json::json!(live);
+            let receipt =
+                serde_json::from_value::<super::super::contracts::receipt::Observation>(receipt)
+                    .unwrap();
+            assert!(receipt.valid());
+            let releasable = receipt.releasable();
+            record.observation = Some(receipt);
+            let pending = projection::record(&record);
+            assert_eq!(pending.error.as_deref(), Some(message), "{phase} {live:?}");
+            assert_eq!(
+                pending.action,
+                Some(if releasable { "release" } else { "query" })
+            );
+            assert!(!pending.running);
+        }
+    }
+}
+
+#[test]
 #[ignore = "explicit isolated desktop acceptance fixture; no remote IO or credential access"]
 fn native_desktop_recovery_fixture() {
     let root = PathBuf::from(std::env::var_os("TUNNELDE_TEST_NATIVE_DESKTOP_ROOT").unwrap());

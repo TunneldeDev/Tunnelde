@@ -23,6 +23,28 @@ beforeEach(() => {
 });
 
 describe("editor requests", () => {
+  it("retains a cancelled save draft and reports cancellation as information", async () => {
+    useToasts.setState({ items: [] });
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "my draft");
+    vi.mocked(api.sftpWriteText).mockRejectedValueOnce({
+      code: "validation",
+      message: "editor.saveCancelled",
+    });
+    expect(await state().save(id)).toBe(false);
+    expect(state().entries[id]).toMatchObject({
+      content: "my draft",
+      baseline: "original",
+      saving: false,
+      saveConflict: false,
+      saveFailure: "Saving was cancelled. Your draft has been retained.",
+    });
+    expect(state().isDirty(id)).toBe(true);
+    expect(useToasts.getState().items).toMatchObject([
+      { variant: "info", message: "Saving was cancelled. Your draft has been retained." },
+    ]);
+  });
+
   it("retains a remote draft and baseline on conflict, then uses the reviewed disk as the next baseline", async () => {
     await state().open(id, "s1", "/a.txt");
     state().change(id, "my draft");
