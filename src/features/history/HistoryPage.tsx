@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { SearchField } from "@/components/ui/form/SearchField";
+import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, matchesSearchDate, parseSearchQuery } from "@/lib/search/query";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { encodeBase64 } from "@/lib/text/base64";
@@ -106,31 +106,31 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="history-page">
-      <header className="history-head">
-        <SearchField
-          value={query}
-          spellCheck={false}
-          placeholder={t("history.search")}
-          aria-label={t("history.search")}
-          onChange={setQuery}
-          presets={[
-            { key: "command", value: "", label: t("searchUi.command") },
-            { key: "date", value: "", label: t("searchUi.date") },
-          ]}
-        />
-        <span className="history-head__count">
-          {t("history.count", { count: filtered.length })}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          leading={<Trash2 size={13} />}
-          disabled={snapshot.busy || !!snapshot.error || !entries || entries.length === 0}
-          onClick={() => clear()}
-        >
-          {t("history.clear")}
-        </Button>
-      </header>
+      <SearchToolbar
+        as="header"
+        className="history-head"
+        value={query}
+        spellCheck={false}
+        placeholder={t("history.search")}
+        aria-label={t("history.search")}
+        onChange={setQuery}
+        presets={[
+          { key: "command", value: "", label: t("searchUi.command") },
+          { key: "date", value: "", label: t("searchUi.date") },
+        ]}
+        status={t("history.count", { count: filtered.length })}
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            leading={<Trash2 size={13} />}
+            disabled={snapshot.busy || !!snapshot.error || !entries || entries.length === 0}
+            onClick={() => clear()}
+          >
+            {t("history.clear")}
+          </Button>
+        }
+      />
 
       {snapshot.error ? (
         <div className="history-error" role="alert">

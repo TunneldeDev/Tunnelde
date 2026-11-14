@@ -4,43 +4,9 @@
   gap: 10px;
   min-height: 0;
 }
-.process-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.process-search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex: 1 1 220px;
-  min-width: 120px;
-  border: 1px solid var(--td-border);
-  border-radius: 5px;
-  padding-left: 9px;
-  color: var(--td-muted);
-}
-.process-search:focus-within {
-  border-color: var(--td-accent);
-  box-shadow: 0 0 0 1px var(--td-accent);
-}
-.process-search .td-input {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  min-width: 0;
-}
-.process-search .td-input:focus {
-  box-shadow: none;
-  outline: none;
-}
-.process-count,
 .process-status {
   color: var(--td-muted);
   font-size: 11px;
-}
-.process-status {
   margin-right: auto;
 }
 .process-scroll {

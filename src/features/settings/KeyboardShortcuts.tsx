@@ -1,5 +1,5 @@
 import { Keyboard, Pencil, Plus, RotateCcw, Settings2, X } from "lucide-react";
-import { SearchField } from "@/components/ui/form/SearchField";
+import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ParseKeys } from "i18next";
@@ -178,45 +178,47 @@ export function KeyboardShortcuts() {
   return (
     <section className="shortcuts" aria-label={t("shortcuts.title" as ParseKeys)}>
       <p className="shortcuts__hint">{t("shortcuts.hint" as ParseKeys)}</p>
-      <div className="shortcuts__toolbar">
-        <SearchField
-          className="settings-search shortcuts__search"
-          inputRef={input}
-          value={query}
-          onChange={setQuery}
-          placeholder={t("shortcuts.search" as ParseKeys)}
-          aria-label={t("shortcuts.search" as ParseKeys)}
-          aria-describedby={hintId}
-          filterItems={filterItems}
-          filterLabel={t("shortcuts.filters.title")}
-        />
-        <label className="settings-modified-filter">
-          <input
-            type="checkbox"
-            checked={modifiedOnly}
-            onChange={() => toggleFilter("is", "modified")}
-          />
-          {t("shortcuts.modified" as ParseKeys)}
-        </label>
-        <Button
-          size="sm"
-          disabled={saving || (!Object.keys(overrides).length && !Object.keys(rules).length)}
-          leading={<RotateCcw size={13} />}
-          onClick={() =>
-            useDialogs.getState().confirm({
-              title: t("shortcuts.resetAll" as ParseKeys),
-              body: t("shortcuts.resetBody" as ParseKeys),
-              confirmLabel: t("common.reset" as ParseKeys),
-              onConfirm: () => {
-                setEditing(null);
-                void update({ keyboardShortcuts: {}, shortcutRules: {} });
-              },
-            })
-          }
-        >
-          {t("shortcuts.resetAll" as ParseKeys)}
-        </Button>
-      </div>
+      <SearchToolbar
+        className="shortcuts__toolbar"
+        inputRef={input}
+        value={query}
+        onChange={setQuery}
+        placeholder={t("shortcuts.search" as ParseKeys)}
+        aria-label={t("shortcuts.search" as ParseKeys)}
+        aria-describedby={hintId}
+        filterItems={filterItems}
+        filterLabel={t("shortcuts.filters.title")}
+        actions={
+          <>
+            <label className="settings-modified-filter">
+              <input
+                type="checkbox"
+                checked={modifiedOnly}
+                onChange={() => toggleFilter("is", "modified")}
+              />
+              {t("shortcuts.modified" as ParseKeys)}
+            </label>
+            <Button
+              size="sm"
+              disabled={saving || (!Object.keys(overrides).length && !Object.keys(rules).length)}
+              leading={<RotateCcw size={13} />}
+              onClick={() =>
+                useDialogs.getState().confirm({
+                  title: t("shortcuts.resetAll" as ParseKeys),
+                  body: t("shortcuts.resetBody" as ParseKeys),
+                  confirmLabel: t("common.reset" as ParseKeys),
+                  onConfirm: () => {
+                    setEditing(null);
+                    void update({ keyboardShortcuts: {}, shortcutRules: {} });
+                  },
+                })
+              }
+            >
+              {t("shortcuts.resetAll" as ParseKeys)}
+            </Button>
+          </>
+        }
+      />
       <div className="shortcuts__options">
         <label className="shortcuts__details-toggle">
           <Switch

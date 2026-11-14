@@ -68,14 +68,7 @@
   margin: 0 0 14px;
 }
 .shortcuts__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
   margin-bottom: 6px;
-}
-.shortcuts__toolbar .settings-search {
-  flex: 1 1 260px;
 }
 .shortcuts__filter.is-active {
   color: var(--td-accent);
