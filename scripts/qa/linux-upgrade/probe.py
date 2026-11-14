@@ -99,7 +99,7 @@ def main():
             nodes = 0
             observed = tree(accessible)
             (evidence / 'accessible-before.json').write_text(json.dumps(observed, indent=2))
-            return observed if any(v['name'] == 'Welcome' for v in observed) else None
+            return observed if any(v['role'] == 'page tab' and v['name'].startswith('Welcome') for v in observed) else None
 
         wait(welcome)  # The CLI endpoint is published before frontend/window readiness.
         # Select only windows belonging to this exact isolated process.
@@ -107,13 +107,16 @@ def main():
         assert windows
         execute(['xdotool', 'windowactivate', '--sync', windows[0]])
         execute(['xdotool', 'key', '--clearmodifiers', 'F1'])
+        execute(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'])
+        execute(['xdotool', 'type', '--clearmodifiers', '--delay', '15', '>Check for updates'])
         report['actions'].append('Native generated F1 in the owned window')
 
         def palette():
             nonlocal nodes
             nodes = 0
             observed = tree(accessible)
-            return observed if any(v['name'] == 'Check for updates' for v in observed) else None
+            (evidence / 'accessible-palette.json').write_text(json.dumps(observed, indent=2))
+            return observed if any(v['role'] == 'list item' or v['role'] == 'option' for v in observed if v['name'].startswith('Check for updates')) else None
 
         after = wait(palette, 15)
         (evidence / 'accessible-palette.json').write_text(json.dumps(after, indent=2))
