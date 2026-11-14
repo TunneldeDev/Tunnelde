@@ -28,6 +28,7 @@ pub(in crate::ssh::files::native_save) fn app_remote(failure: Failure) -> AppErr
 }
 pub(super) fn app_service(error: service::Error) -> AppError {
     match error {
+        service::Error::Cancelled => AppError::validation("editor.saveCancelled"),
         service::Error::Journal(error) => app_journal(error),
         service::Error::Remote(error) => app_remote(error),
     }

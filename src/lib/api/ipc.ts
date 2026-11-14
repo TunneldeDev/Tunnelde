@@ -328,6 +328,7 @@ export const api = {
     invoke<void>("sftp_write_text", { sessionId, path, content, baseline }),
 
   editorCleanupList: () => invoke<EditorCleanup[]>("editor_cleanup_list"),
+  editorSaveCancel: (id: string) => invoke<void>("editor_save_cancel", { id }),
   editorCleanupRetry: (id: string) => invoke<void>("editor_cleanup_retry", { id }),
 
   fsTransfer: (

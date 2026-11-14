@@ -7,12 +7,36 @@ use std::path::Path;
 use super::layout::Paths;
 use crate::error::{AppError, AppResult};
 
+mod resources;
+
+pub(crate) struct Ownership {
+    _resources: resources::Claim,
+    _home: Lease,
+}
+
+impl Ownership {
+    pub(super) fn cancel(
+        &self,
+        paths: &Paths,
+        config: &mut super::config::Config,
+    ) -> AppResult<()> {
+        // A plan scheduled since startup was not in the process-lifetime claim.
+        // Protect its recovery writes too, without conflicting with our own lease.
+        let extra = resources::pending_roots(paths, config)?;
+        let _reservation = resources::Claim::acquire(paths, &extra, Some(&self._resources))?;
+        super::migration::cancel(paths, config)
+    }
+}
+
 /// Keep the ordering in one entry point used by desktop startup and its tests.
 pub(crate) fn initialize(
     home: std::path::PathBuf,
     logs: std::path::PathBuf,
     plugins: Option<std::path::PathBuf>,
-) -> AppResult<(Paths, Lease)> {
+) -> AppResult<(Paths, Ownership)> {
+    // Even creating the home/sentinel can mutate another instance's category.
+    // Reserve it first, then atomically hand off to the complete resource claim.
+    let bootstrap = resources::Claim::home(&home)?;
     std::fs::create_dir_all(&home)?;
     let lease = Lease::acquire(&home).map_err(|error| {
         if error.kind() == io::ErrorKind::WouldBlock {
@@ -23,8 +47,22 @@ pub(crate) fn initialize(
             AppError::internal(format!("Cannot acquire the storage directory lease: {error}"))
         }
     })?;
-    let paths = super::initialize(home, logs, plugins)?;
-    Ok((paths, lease))
+    // Inspect the protected bootstrap index before migration can consume it.
+    let (paths, config) = super::prepare(home, logs, plugins)?;
+    let pending = resources::pending_roots(&paths, &config);
+    let extra = pending.as_deref().unwrap_or_default();
+    let resources = resources::Claim::acquire(&paths, extra, Some(&bootstrap))?;
+    drop(bootstrap);
+    // A malformed/unavailable destination must retain the old recovery behavior:
+    // report the plan error while using current data, without attempting that plan.
+    let paths = super::initialize_prepared(paths, config, pending.map(|_| ()))?;
+    Ok((
+        paths,
+        Ownership {
+            _resources: resources,
+            _home: lease,
+        },
+    ))
 }
 
 pub(super) const SENTINEL: &str = ".tunnelde-storage.lock";
@@ -37,8 +75,17 @@ pub(crate) struct Lease {
 
 impl Lease {
     pub(crate) fn acquire(home: &Path) -> io::Result<Self> {
+        Self::open(&home.join(SENTINEL), false)
+    }
+
+    fn open(path: &Path, create_new: bool) -> io::Result<Self> {
         let mut options = OpenOptions::new();
-        options.read(true).write(true).create(true).truncate(false);
+        options.read(true).write(true).truncate(false);
+        if create_new {
+            options.create_new(true);
+        } else {
+            options.create(true);
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
@@ -57,7 +104,7 @@ impl Lease {
                 .share_mode(FILE_SHARE_READ)
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
         }
-        let file = options.open(home.join(SENTINEL)).map_err(map_busy)?;
+        let file = options.open(path).map_err(map_busy)?;
         let metadata = file.metadata()?;
         if !metadata.is_file() || super::layout::linked(&metadata) {
             return Err(io::Error::new(

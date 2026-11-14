@@ -1,6 +1,36 @@
 //! Current-instance ownership and disposal; listener state remains authoritative.
 use super::*;
 impl ForwardRegistry {
+    pub(super) fn remove_matching(
+        &self,
+        invalidation: Option<String>,
+        matches: impl Fn(&ActiveForward) -> bool,
+    ) {
+        let Ok(mut active) = self.active.lock() else {
+            return;
+        };
+        if let Some(key) = invalidation {
+            self.invalidate(key);
+        }
+        let ids: Vec<_> = active
+            .iter()
+            .filter(|(_, item)| matches(item))
+            .map(|(id, _)| id.clone())
+            .collect();
+        let removed: Vec<_> = ids
+            .into_iter()
+            .filter_map(|id| active.remove(&id))
+            .collect();
+        drop(active);
+        // Even detached cleanup can begin immediately on another runtime thread.
+        // Keep entries alive until the registry is unlocked before scheduling it.
+        let changed = !removed.is_empty();
+        drop(removed);
+        if changed {
+            self.publish();
+        }
+    }
+
     pub(crate) fn owned_resources(
         &self,
         owner: &str,

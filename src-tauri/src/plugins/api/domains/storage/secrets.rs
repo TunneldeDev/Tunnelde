@@ -2,6 +2,7 @@ use super::storage_key;
 use crate::error::{AppError, AppResult};
 use crate::plugins::api::{authorize, encode, field, HostContext};
 use serde_json::Value;
+use tauri::Manager;
 
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
@@ -22,14 +23,17 @@ pub(in crate::plugins::api) async fn dispatch(
     let context = context.clone();
     tokio::task::spawn_blocking(move || {
         authorize(&context, &["secrets"])?;
+        let state = context.app.state::<crate::state::AppState>();
         match method.as_str() {
-            "secrets.get" => encode(crate::vault::load(&identity)?),
+            "secrets.get" => encode(state.vault.load(&identity)?),
             "secrets.set" => {
-                crate::vault::save(&identity, value.as_deref().unwrap_or_default())?;
+                state
+                    .vault
+                    .save(&identity, value.as_deref().unwrap_or_default())?;
                 Ok(Value::Null)
             }
             "secrets.delete" => {
-                crate::vault::forget(&identity)?;
+                state.vault.forget(&identity)?;
                 Ok(Value::Null)
             }
             _ => Err(AppError::validation("plugin.api.unknownMethod")),

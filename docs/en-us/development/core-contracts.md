@@ -6,6 +6,22 @@ permissions are distinct. A working internal command is not automatically a
 public API. The application version does not silently promote an experimental
 method to stable.
 
+## Credential ownership
+
+Host, proxy and plugin secrets use the application-owned vault injected through
+`AppState`. The keyring service is the configured application identifier.
+Production keeps `dev.tunnelde.app` and its existing credential keys, so upgrades
+continue reading saved passwords without copying or renaming them. Isolated
+applications use their own service and never fall back to production credentials.
+Changing the data directory alone does not isolate OS credentials; QA builds must
+also use a distinct application identifier. Instances with the same identifier
+intentionally share that credential service. This naming boundary is not an OS
+access-control boundary against other programs running as the same user.
+
+Native-save recovery tokens keep their separate, application-derived service.
+Public transports cannot select a vault service or change the application's
+identifier. No credential values enter API discovery, logs or snapshots.
+
 ## Compatibility rules
 
 - A stable interface has an owned request/result/error schema, documented effects

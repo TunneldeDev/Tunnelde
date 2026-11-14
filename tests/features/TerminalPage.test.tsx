@@ -915,6 +915,77 @@ describe("terminal clipboard", () => {
     expect(apiMock.clipboardReadText).not.toHaveBeenCalled();
   });
 
+  it.each(["Enter", "NumpadEnter"])(
+    "keeps the IME %s keydown in xterm but suppresses its terminal release",
+    async (code) => {
+      render(<TerminalPage sessionId="s1" active />);
+      await waitFor(() => expect(keyboard).toHaveLength(1));
+      const press = new KeyboardEvent("keydown", {
+        key: "Enter",
+        code,
+        keyCode: 229,
+        cancelable: true,
+      });
+      expect(keyboard[0]!(press)).toBe(true);
+      expect(press.defaultPrevented).toBe(false);
+      for (const event of [
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          code,
+          keyCode: 13,
+          repeat: true,
+          cancelable: true,
+        }),
+        new KeyboardEvent("keypress", { key: "Enter", code, keyCode: 13, cancelable: true }),
+        new KeyboardEvent("keyup", { key: "Enter", code, keyCode: 13, cancelable: true }),
+      ]) {
+        expect(keyboard[0]!(event)).toBe(false);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      expect(keyboard[0]!(new KeyboardEvent("keydown", { key: "Enter", code, keyCode: 13 }))).toBe(
+        true,
+      );
+      expect(keyboard[0]!(new KeyboardEvent("keyup", { key: "Enter", code, keyCode: 13 }))).toBe(
+        true,
+      );
+      // Fresh nonrepeat presses recover if the preceding keyup was lost.
+      expect(keyboard[0]!(press)).toBe(true);
+      expect(keyboard[0]!(new KeyboardEvent("keydown", { key: "Enter", code, keyCode: 13 }))).toBe(
+        true,
+      );
+      expect(keyboard[0]!(new KeyboardEvent("keyup", { key: "Enter", code, keyCode: 13 }))).toBe(
+        true,
+      );
+      expect(keyboard[0]!(new KeyboardEvent("keydown", { key: "Process", keyCode: 229 }))).toBe(
+        true,
+      );
+      expect(
+        keyboard[0]!(
+          new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, isComposing: true }),
+        ),
+      ).toBe(true);
+      expect(apiMock.sshWrite).not.toHaveBeenCalled();
+    },
+  );
+
+  it("tracks Process Enter by physical code while leaving unrelated 229 keys alone", async () => {
+    render(<TerminalPage sessionId="s1" active />);
+    await waitFor(() => expect(keyboard).toHaveLength(1));
+    expect(
+      keyboard[0]!(new KeyboardEvent("keydown", { key: "Process", code: "Enter", keyCode: 229 })),
+    ).toBe(true);
+    expect(
+      keyboard[0]!(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13 })),
+    ).toBe(false);
+    expect(
+      keyboard[0]!(new KeyboardEvent("keydown", { key: "Process", code: "KeyA", keyCode: 229 })),
+    ).toBe(true);
+    expect(
+      keyboard[0]!(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13 })),
+    ).toBe(true);
+    expect(apiMock.sshWrite).not.toHaveBeenCalled();
+  });
+
   it("supports macOS Command shortcuts", async () => {
     const original = Object.getOwnPropertyDescriptor(navigator, "platform");
     Object.defineProperty(navigator, "platform", { configurable: true, value: "MacIntel" });

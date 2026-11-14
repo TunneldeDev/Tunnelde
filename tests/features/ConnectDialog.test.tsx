@@ -374,6 +374,67 @@ describe("ConnectDialog", () => {
       ),
     );
   });
+  it.each([
+    ["password", "Password", "connect"],
+    ["key", "Key passphrase", "connect"],
+    ["key", "Password", "installKey"],
+  ] as const)(
+    "leaves IME Enter untouched for %s/%s/%s until an ordinary Enter",
+    async (authMethod, label, intent) => {
+      apiMock.sshProbe.mockResolvedValue({
+        hostId: host.id,
+        fingerprint: "SHA256:known",
+        status: "known",
+      });
+      render(
+        <ConnectDialog host={{ ...host, authMethod }} intent={intent} onClose={() => undefined} />,
+      );
+      const field = await screen.findByLabelText(label);
+      fireEvent.change(field, { target: { value: "QA credential" } });
+
+      await waitFor(() =>
+        expect(
+          (
+            screen.getByRole("button", {
+              name: intent === "installKey" ? "Set up key login" : "Connect",
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false),
+      );
+
+      for (const options of [{ isComposing: true }, { isComposing: false, keyCode: 229 }]) {
+        const event = new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+          ...options,
+        });
+        await act(async () => {
+          fireEvent(field, event);
+        });
+        expect(connect).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(apiMock.sshInstallKey).not.toHaveBeenCalled();
+      }
+
+      fireEvent.keyDown(field, { key: "Enter" });
+      if (intent === "installKey") {
+        await waitFor(() => expect(apiMock.sshInstallKey).toHaveBeenCalledOnce());
+        expect(apiMock.sshInstallKey).toHaveBeenCalledWith(host.id, "QA credential", {});
+        expect(connect).not.toHaveBeenCalled();
+      } else {
+        await waitFor(() => expect(connect).toHaveBeenCalledOnce());
+        expect(connect).toHaveBeenCalledWith(
+          expect.objectContaining(
+            authMethod === "key" ? { passphrase: "QA credential" } : { password: "QA credential" },
+          ),
+          expect.any(Function),
+          expect.any(Object),
+        );
+      }
+    },
+  );
+
   it("installs the public key with the typed password", async () => {
     render(<ConnectDialog host={host} onClose={() => undefined} />);
 
