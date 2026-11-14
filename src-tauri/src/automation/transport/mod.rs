@@ -1,21 +1,17 @@
 //! One bounded JSON request per authenticated loopback connection.
+mod lifecycle;
+mod listener;
 mod location;
 use super::{contract::*, domains};
+pub(crate) use lifecycle::Lifecycle;
 pub(super) use location::{default_pointer, read as read_endpoint};
-use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
-#[derive(Default)]
-pub(crate) struct Lifecycle(std::sync::Mutex<(bool, Option<location::Registration>)>);
-
 pub(crate) fn stop(app: &AppHandle) {
-    let state = app.state::<Lifecycle>();
-    let mut guard = state.0.lock().unwrap_or_else(|error| error.into_inner());
-    guard.0 = true;
-    guard.1.take();
+    app.state::<Lifecycle>().stop();
 }
 
 pub(crate) fn start(app: &AppHandle) {
@@ -30,6 +26,10 @@ pub(crate) fn start(app: &AppHandle) {
 }
 
 async fn serve(app: AppHandle) -> std::io::Result<()> {
+    let lifecycle = app.state::<Lifecycle>();
+    let Some(running) = lifecycle.begin() else {
+        return Ok(());
+    };
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
     let token = format!(
         "{}{}",
@@ -44,35 +44,23 @@ async fn serve(app: AppHandle) -> std::io::Result<()> {
             token: token.clone(),
         },
     )?;
-    {
-        let state = app.state::<Lifecycle>();
-        let mut guard = state.0.lock().unwrap_or_else(|error| error.into_inner());
-        if guard.0 {
-            return Ok(());
-        }
-        guard.1 = Some(registration);
+    if !running.register(registration) {
+        return Ok(());
     }
-    let capacity = Arc::new(tokio::sync::Semaphore::new(8));
     tracing::debug!(target: "automation", "Authenticated local automation ready");
-    loop {
-        let (stream, peer) = listener.accept().await?;
-        if !peer.ip().is_loopback() {
-            continue;
-        }
-        let Ok(permit) = capacity.clone().try_acquire_owned() else {
-            continue;
-        };
-        let app = app.clone();
+    let connection_app = app.clone();
+    listener::serve(listener, running.shutdown(), move |stream| {
+        let app = connection_app.clone();
         let token = token.clone();
-        tauri::async_runtime::spawn(async move {
-            let _permit = permit;
-            let _ = connection(stream, &token, |request| {
+        async move {
+            connection(stream, &token, |request| {
                 let app = app.clone();
                 async move { domains::call(&app, &request.method, request.params).await }
             })
-            .await;
-        });
-    }
+            .await
+        }
+    })
+    .await
 }
 
 async fn connection<F, W>(stream: TcpStream, token: &str, call: F) -> std::io::Result<()>

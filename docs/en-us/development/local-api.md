@@ -304,7 +304,16 @@ also undergo runtime loopback, port and capability validation.
 Endpoint availability is independent of webview visibility. A local API startup
 failure is logged without preventing desktop startup.
 
-Normal service shutdown removes its endpoint files. A forced process termination
+Normal service shutdown removes its endpoint files and signals the listener to
+stop. When the listener processes that signal, it closes its socket and drops
+its owned request tasks, including incomplete input and pending async exchanges.
+Startup cannot reopen a stopped service; a failed or cancelled listener also
+withdraws discovery. Already admitted domain work may have committed or may
+still settle in a blocking worker. Losing a response during shutdown does not
+prove rollback: re-read the domain snapshot after restarting before retrying a
+write. Closing the window to the tray does not stop this service.
+
+A forced process termination
 may leave an inert private directory. Its old capability cannot authenticate a
 new process. Public installer and upgrade acceptance remain release gates.
 The desktop CLI entry is part of the existing desktop binary; a standalone
