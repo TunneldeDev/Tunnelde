@@ -27,6 +27,9 @@ pub(super) fn rollback_title(app: &AppHandle, previous: &Settings) {
 
 pub(super) fn publish(app: &AppHandle, previous: &Settings, next: &Settings, kind: Kind) {
     if matches!(kind, Kind::Preferences) {
+        if crate::update::selection_changed(previous, next) {
+            app.state::<crate::state::AppState>().update.publish(app);
+        }
         for profile in &previous.network.profiles {
             if !next
                 .network

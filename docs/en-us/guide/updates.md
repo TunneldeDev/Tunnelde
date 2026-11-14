@@ -40,6 +40,10 @@ in the URL path and must serve compatible Tauri manifests and signed packages. A
 the edited URL before checking again. A custom source currently provides the target
 manifest's notes only; Tunnelde does not mix unrelated GitHub history into its results.
 
+Changing the source, its URL or the channel clears the checked package and its notes.
+Check again before installing, even if you switch back to the previous selection.
+Results from checks started before the change are discarded.
+
 Package selection and installation keep the same signature checks regardless of the
 source. The package selected by Check is retained for Install. Notes cannot change the
 download URL or verification key. Installation restarts the application; platforms
