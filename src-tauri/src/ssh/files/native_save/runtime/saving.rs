@@ -50,6 +50,10 @@ impl Manager {
                 .package
                 .platform()
                 .ok_or_else(|| AppError::validation("editor.nativeChanged"))?;
+            // Match the editor's Windows SFTP spelling to the saved native
+            // authority before deciding that no setup applies. Otherwise an
+            // initialized folder can incorrectly fall through to legacy SFTP.
+            let path = super::super::setup::canonical_editor_path(path.clone(), platform);
             if !platform.absolute(&path) {
                 continue;
             }
