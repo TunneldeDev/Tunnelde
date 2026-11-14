@@ -9,6 +9,9 @@ fn version(value: &str) -> Version {
 #[test]
 fn stable_and_beta_channels_use_semver_without_implicit_downgrades() {
     for (current, candidate, channel, expected) in [
+        ("0.33.0", "1.2.0", "stable", true),
+        ("0.34.0-beta.3", "1.2.0", "stable", true),
+        ("0.34.0-beta.3", "1.2.0", "beta", true),
         ("0.26.1", "0.26.2-beta.2.1", "stable", false),
         ("0.26.1", "0.26.2-beta.2.1", "beta", true),
         ("0.26.2-beta.2.1", "0.26.2", "stable", true),

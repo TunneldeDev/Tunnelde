@@ -45,6 +45,20 @@ source. The package selected by Check is retained for Install. Notes cannot chan
 download URL or verification key. Installation restarts the application; platforms
 without automatic installation provide a manual download action.
 
+On macOS, automatic installation requires a writable `.app` and its containing
+folder. Use `/Applications` or `~/Applications`; move the app out of a mounted disk
+image or App Translocation location before updating. The downloaded archive must
+match the application identifier, version, executable and Mac architecture, and
+pass native code-signature verification in addition to the embedded updater-key
+and signed-version checks. Tauri handles installation and restart. Certificate
+verification, package verification and macOS security policy stay enabled.
+
+Older macOS builds, including `0.34.0-beta.3` and the published `1.2.0`, have
+hard-coded manual-only installation. They need one manual upgrade to a release
+containing the automatic-updater implementation; discovering a newer release
+cannot change their installed updater code. Keep the existing application data
+when replacing the app bundle.
+
 On Windows, the installer uses the system language when it is supported, otherwise
 English. English and Simplified Chinese are included. Installation and updates do
 not pause for a separate language selection dialog. Change the application's

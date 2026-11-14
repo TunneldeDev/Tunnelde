@@ -143,6 +143,7 @@ export function UpdateSourceUrl({ onReset }: { onReset: () => void }) {
 const REASONS = {
   dev: "updates.unsupportedDev",
   unsigned: "updates.unsupportedUnsigned",
+  location: "updates.macInstallLocation",
   package: "updates.unsupportedPackage",
   unsupported: "updates.unsupportedOther",
 } as const;
