@@ -41,7 +41,7 @@ pub struct AppState {
     pub log_dir: PathBuf,
     _log_guard: Mutex<Option<WorkerGuard>>,
     // Last field: keep ownership until database, plugin and log state has dropped.
-    _storage_lease: crate::storage::ownership::Lease,
+    pub(crate) storage_ownership: crate::storage::ownership::Ownership,
 }
 
 impl AppState {
@@ -171,7 +171,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         storage,
         log_dir,
         _log_guard: Mutex::new(Some(guard)),
-        _storage_lease: storage_lease,
+        storage_ownership: storage_lease,
     });
 
     Ok(())

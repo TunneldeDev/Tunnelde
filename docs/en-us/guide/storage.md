@@ -23,9 +23,26 @@ opening data, and keeps it while running in the tray. If that home is in use,
 quit its existing process before opening another instance. The inert
 `.tunnelde-storage.lock` file remains after exit; do not delete it to bypass the
 check. The OS releases the lease when the process exits, including after a crash.
-This does not coordinate different data homes configured to share an external
-category directory, older versions without the lease, or arbitrary external file
-changes.
+
+Instances using different data homes also check storage-category ownership.
+Current locations and pending migration destinations, staging and recovery paths
+must not equal, contain, or sit inside a location owned by another participating
+instance. This check runs before migration, log or database writes. A conflict
+stops startup while preserving the plan and original files. Claims remain until
+the process fully exits, including after a failed migration. Independent,
+non-overlapping storage locations can run concurrently.
+
+A malformed or inaccessible pending destination leaves the current locations in
+use and records a recovery error in Settings; that plan is not executed. Cancelling
+a plan also reserves its recovery locations before touching files, including plans
+scheduled since startup. An occupied destination blocks that cancellation.
+
+Coordination records live under `tunnelde-storage-ownership-v1` in the current
+user's temporary directory (with a user-ID suffix on Unix), outside migrated data.
+Later startups reclaim inactive records; do not delete or move this directory
+while an instance is running. Participating processes must use the same user
+temporary directory. This does not constrain older versions, other accounts,
+arbitrary external writes, or replacement of ancestor directories by other tools.
 
 If the database cannot be opened, startup stops and records the actual error and
 database path in the software log. It does not move the database or its sidecars
