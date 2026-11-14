@@ -32,6 +32,11 @@ stops startup while preserving the plan and original files. Claims remain until
 the process fully exits, including after a failed migration. Independent,
 non-overlapping storage locations can run concurrently.
 
+On macOS, ownership checks include canonical Unicode spellings and Unicode case
+folding on case-insensitive volumes, including destinations that do not exist yet.
+Canonical Unicode equivalents are conservatively reserved together on other
+Mac-mounted filesystems as well; the original configured paths are unchanged.
+
 A malformed or inaccessible pending destination leaves the current locations in
 use and records a recovery error in Settings; that plan is not executed. Cancelling
 a plan also reserves its recovery locations before touching files, including plans

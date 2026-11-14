@@ -6367,6 +6367,7 @@ dependencies = [
  "hyper-util",
  "keyring",
  "objc2-app-kit",
+ "objc2-core-foundation",
  "percent-encoding",
  "quick-xml 0.42.0",
  "rand",
