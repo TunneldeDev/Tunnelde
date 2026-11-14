@@ -41,6 +41,10 @@ def main():
     def wait(predicate, timeout=45):
         until = time.monotonic() + timeout
         while time.monotonic() < until:
+            from gi.repository import GLib
+            context = GLib.MainContext.default()
+            while context.pending():
+                context.iteration(False)
             value = predicate()
             if value:
                 return value
@@ -88,10 +92,15 @@ def main():
 
         accessible = wait(application)
         report['ownedPid'] = accessible.get_process_id()
-        nodes = 0
-        before = tree(accessible)
-        (evidence / 'accessible-before.json').write_text(json.dumps(before, indent=2))
-        assert any(v['name'] == 'Welcome' for v in before), 'WebKit accessible content unavailable'
+
+        def welcome():
+            nonlocal nodes
+            nodes = 0
+            observed = tree(accessible)
+            (evidence / 'accessible-before.json').write_text(json.dumps(observed, indent=2))
+            return observed if any(v['name'] == 'Welcome' for v in observed) else None
+
+        wait(welcome)  # The CLI endpoint is published before frontend/window readiness.
         # Select only windows belonging to this exact isolated process.
         windows = execute(['xdotool', 'search', '--onlyvisible', '--pid', str(report['ownedPid'])]).stdout.split()
         assert windows
