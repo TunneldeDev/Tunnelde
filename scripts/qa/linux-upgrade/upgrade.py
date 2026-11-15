@@ -33,19 +33,38 @@ def run_upgrade(driver, binary, data, evidence, report):
     upgrade = report['upgrade']
 
     def cli(*command):
-        reply = json.loads(driver.execute(
-            [str(binary), 'cli', '--endpoint', str(pointer), *command], timeout=30).stdout)
+        entry = dict(command=list(command[:2]))
+        upgrade.setdefault('cliCalls', []).append(entry)
+        try:
+            output = driver.execute(
+                [str(binary), 'cli', '--endpoint', str(pointer), *command], timeout=30)
+        except subprocess.CalledProcessError as error:
+            entry.update(exitCode=error.returncode, stderr=error.stderr)
+            raise
+        entry['exitCode'] = 0
+        reply = json.loads(output.stdout)
         assert 'error' not in reply, reply
         return reply['result']
 
-    before = cli('preferences', 'snapshot')
-    request = dict(revision=before['revision'], changes={
+    changes = {
         'general': {'language': 'en-US', 'closeToTray': False},
         'appearance': {'theme': 'light'},
         'editor': {'tabSize': 8},
         'updates': {'autoCheck': False, 'channel': 'stable', 'source': 'github', 'sourceUrl': ''},
-    })
-    seeded = cli('preferences', 'update', '--params', json.dumps(request))
+    }
+    for attempt in range(3):
+        before = cli('preferences', 'snapshot')
+        request = dict(revision=before['revision'], changes=changes)
+        try:
+            seeded = cli('preferences', 'update', '--params', json.dumps(request))
+            break
+        except subprocess.CalledProcessError as error:
+            # Startup's automatic check may commit last-check metadata. Only an
+            # explicit CAS rejection proves no write occurred. Read a new token
+            # for the same reviewed fixture values; never retry unknown writes.
+            failure = json.loads(error.stderr)
+            if failure.get('error', {}).get('code') != 'stale_revision' or attempt == 2:
+                raise
     assert seeded['values']['editor']['tabSize'] == 8
     # This initial acceptance seeds settings only. An empty host snapshot does
     # not establish populated host/history/profile/plugin/credential migration.
