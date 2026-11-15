@@ -1,7 +1,7 @@
 //! Connect only captured endpoints, with explicit cleanup across every await.
 mod snapshot;
 use super::*;
-pub(super) use snapshot::Snapshot;
+pub(super) use snapshot::{Observed, Snapshot};
 
 pub(super) async fn open(
     app: &AppHandle,

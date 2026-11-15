@@ -83,21 +83,16 @@ pub async fn runner_recovery_browser_connect(
 }
 
 #[tauri::command]
-pub fn runner_recovery_browser_open(app: AppHandle, id: String) -> AppResult<Target> {
+pub async fn runner_recovery_browser_open(app: AppHandle, id: String) -> AppResult<Target> {
     let state = app.state::<AppState>();
-    // Serialize acceptance with cancellation; no registry lock crosses a network operation.
-    let entries = state
-        .runners
-        .browsers
-        .entries
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let pending = entries
-        .get(&id)
-        .ok_or_else(|| AppError::validation("plugin.runners.browserExpired"))?;
-    let result = connection::accept(&app, pending);
-    drop(entries);
-    cancel(&app, &id);
+    let pending = state.runners.browsers.get(&id)?;
+    let result = connection::accept(&app, &id, &pending).await;
+    // Do not cancel an in-flight operation merely because another open was busy.
+    if !matches!(&result, Err(AppError::Validation(key)) if key == "plugin.runners.busy") {
+        if let Some(removed) = state.runners.browsers.remove_matching(&id, &pending) {
+            connection::dispose(&app, &removed);
+        }
+    }
     if let Ok(target) = &result {
         if target.acquired {
             session::announce_connection(&app);

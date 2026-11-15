@@ -18,6 +18,16 @@ impl TcpRoute {
         Ok(Self(tcp_proxy(app, host, port, proxy)?))
     }
 
+    pub(crate) fn capture_with(
+        vault: &Vault,
+        network: &NetworkSettings,
+        host: &str,
+        port: u16,
+        proxy: &str,
+    ) -> AppResult<Self> {
+        Ok(Self(tcp_proxy_with(vault, network, host, port, proxy)?))
+    }
+
     pub(crate) async fn capture_background(
         app: &AppHandle,
         host: &str,

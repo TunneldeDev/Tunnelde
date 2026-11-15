@@ -13,7 +13,7 @@ use crate::{
 
 pub mod diagnostics;
 pub(crate) mod http;
-mod proxy;
+pub(crate) mod proxy;
 pub(crate) mod requests;
 mod transport;
 pub(super) use http::client_for_proxy as http_client_for_proxy;
@@ -218,7 +218,20 @@ fn tcp_proxy(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<S
         return Err(AppError::validation("network.invalid"));
     }
     let network = app.state::<AppState>().settings().network;
-    let configured = proxy_url(&app.state::<AppState>().vault, &network, "ssh", Some(proxy))?;
+    tcp_proxy_with(&app.state::<AppState>().vault, &network, host, port, proxy)
+}
+
+fn tcp_proxy_with(
+    vault: &Vault,
+    network: &NetworkSettings,
+    host: &str,
+    port: u16,
+    proxy: &str,
+) -> AppResult<String> {
+    if !valid_host(host) || port == 0 {
+        return Err(AppError::validation("network.invalid"));
+    }
+    let configured = proxy_url(vault, network, "ssh", Some(proxy))?;
     match configured {
         Some(value) => Ok(value),
         None => system_proxy(host, port),

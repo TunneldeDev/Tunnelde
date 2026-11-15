@@ -72,6 +72,25 @@ TLS verification and the selected proxy. Saving a connection route validates
 proxy selection and URL fields without reading a saved password. This does not
 change the separate authority rules for reviewed credential mutations.
 
+The recovery browser's probe, trust, connect and final open perform slow OS
+proxy inspection before retaining registry, connection or recovery metadata
+guards. Their native observation is opaque and cannot be supplied over IPC.
+Final effects match the same pending object and original recovery token, then
+check persisted hosts, routes, known keys and effective SSH proxy configuration.
+The durable settings row is authoritative even before its in-memory publication;
+malformed stored settings reject admission rather than silently using defaults.
+Unrelated profiles and display names do not revoke an operation. Trust advances
+only the approved endpoint and aliases without another OS read inside the guard.
+
+Open reserves an existing connection while preparing asynchronously. A competing
+busy request cannot cancel its owner. Cancellation, failed or dropped acceptance
+retires only the matching pending object and closes its newly acquired private
+connection; reused user-owned sessions retain their separate ownership. No OS
+transaction is promised for external proxy or credential changes: the observed
+transport precedes the final pure configuration check. Reviewed credential
+writes/deletes retain their separate mutation authority and may still block
+consumers; this browser boundary does not declare those paths solved.
+
 ## Compatibility rules
 
 - A stable interface has an owned request/result/error schema, documented effects
