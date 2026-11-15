@@ -168,7 +168,9 @@ Each run retains screenshots, AX trees, source/binary hashes, command results an
 normal-exit versus forced-cleanup evidence under
 `$RUNNER_TEMP/tunnelde-macos-public-ota-<run-id>-<attempt>/evidence` for 14 days.
 The original endpoint capability and credential values are not uploaded. Failure
-only stops the still-owned direct child; profile cleanup belongs to VM disposal.
+stops the still-owned direct source child and, after an update attempt, an updater
+target whose bundle path, user, PID and start identity still match this run.
+Forced cleanup is recorded separately; profile cleanup belongs to VM disposal.
 `otaAttempted` and `otaAccepted` remain false in inspection mode.
 
 Upgrade mode downloads the original target archive as an unexecuted reference.
@@ -191,10 +193,13 @@ have also been verified. A passing staged workflow does not complete that matrix
 The native profile reader opens only the disposable account's canonical database
 in read-only mode; it accepts no alternative data path and performs no seeding.
 
-### Remaining public-package OTA stages
+### Public-package OTA acceptance checklist
 
-These requirements belong to a subsequent harness; the probe does not implement
-them. Keep their evidence separate from the first-stage result:
+The public-app harness implements the core update steps below. Keep its actual
+evidence separate from the first-stage capability probe. Complete data acceptance
+still requires nonempty history, credential authentication/value retention and
+plugin fingerprint/approval/storage with an active recovery marker; those remain
+outside the core result:
 
 1. Re-run the hosted guard and inspect the actual GUI driver's capabilities.
    Require a clean disposable native profile, no pre-existing Tunnelde process,
