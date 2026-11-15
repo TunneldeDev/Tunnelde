@@ -83,6 +83,18 @@ pub(super) fn read(context: &HostContext) -> AppResult<Vec<Record>> {
     access(context, load)
 }
 
+pub(super) fn require_current(context: &HostContext, observed: &Record) -> AppResult<()> {
+    access(context, |path| require_observed(&load(path)?, observed))
+}
+
+fn require_observed(records: &[Record], observed: &Record) -> AppResult<()> {
+    if records.iter().any(|record| record.same_revision(observed)) {
+        Ok(())
+    } else {
+        Err(AppError::validation("plugin.runners.recordChanged"))
+    }
+}
+
 pub(super) fn transaction<T>(
     context: &HostContext,
     mutate: impl FnOnce(&mut Vec<Record>) -> AppResult<T>,

@@ -10,6 +10,14 @@ Only an observed terminal helper status clears a pending stop. A launch whose ac
 
 Metadata updates use bounded reads and writes, atomic replacement, and revisions checked before applying delayed results. No repository lock is held while waiting for SSH. Private revision and launch fields are storage details; `runners.list` retains its existing public shape. Existing records without those fields remain readable.
 
+Launches and messages recheck plugin authorization, the complete original task
+record and the captured SSH destination before opening a channel, before submitting
+the helper command and before submitting input. A stop, replacement or revocation
+observed at those boundaries prevents subsequent dispatch. Rejection closes only
+the owned channel; it does not replay the message or prove that an already queued
+command has not run. A transport error after dispatch remains uncertain. Host-owned
+stop recovery and inspection continue to work after plugin retirement.
+
 This lifecycle does not make the runner API stable, replace active resource handles, grant access to other plugins, or validate account-specific AI configuration. Remote deployment, initialization and credentials still require the appropriate authorization.
 
 ## Interrupted deployment
