@@ -82,7 +82,12 @@ class Retention:
         profile, = (v for v in before['profiles'] if v['name'] == PROFILE_NAME)
         assert profile['settings']['editorTabSize'] == 8
         (self.evidence / 'records-before.json').write_text(json.dumps(before, indent=2), encoding='utf-8')
-        self.driver.capture('retained-records', 'heading', HOST_NAME, self.app)
+        (self.evidence / 'records-accessibility.json').write_text(
+            json.dumps(self.driver.tree(self.app), indent=2), encoding='utf-8')
+        # Native WebKit does not expose this h1 as a heading. Read the actual
+        # host name in two complete owned-window captures, not the italic tab.
+        self.driver.capture('retained-records', 'frame', 'Tunnelde', self.app,
+                            expected_text=HOST_NAME)
         return before
 
     def verify(self, app, before):

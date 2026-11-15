@@ -88,7 +88,7 @@ def main():
                     return found
         return None
 
-    def capture(label, role, prefix, root_node=None, light_text=False):
+    def capture(label, role, prefix, root_node=None, light_text=False, expected_text=None):
         path = evidence / (label + '.png')
         control = evidence / (label + '-control.png')
         ocr = evidence / (label + '-ocr.png')
@@ -113,7 +113,7 @@ def main():
                      *(['-negate'] if light_text else []), '-auto-level',
                      '-bordercolor', 'white', '-border', '10', str(ocr)])
             text = execute(['tesseract', str(ocr), 'stdout', '--psm', '6']).stdout
-            expected_visible = prefix.lower() in ' '.join(text.lower().split())
+            expected_visible = (expected_text or prefix).lower() in ' '.join(text.lower().split())
             samples.append(dict(colors=colors, bounds=crop, text=text,
                                 expectedVisible=expected_visible))
             # Accessibility and paint can advance at different times. Colors from
