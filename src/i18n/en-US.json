@@ -2417,7 +2417,12 @@
   },
   "preferences": {
     "invalidValue": "Invalid preference value: {{field}}.",
-    "staleRevision": "Preferences changed. Read a new snapshot before saving again."
+    "staleRevision": "Preferences changed. Read a new snapshot before saving again.",
+    "read": {
+      "busy": "Preference readers are busy. Try again after the current reads finish.",
+      "cancelled": "Preference reading was cancelled.",
+      "unavailable": "Cannot read preferences. Check the application logs and try again."
+    }
   },
   "configuration": {
     "title": "Plugin configuration",

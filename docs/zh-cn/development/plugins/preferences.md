@@ -19,6 +19,13 @@
 Schema 定义结构限制，宿主还会检查代理引用、快捷键、主题标识和更新源等语义。
 字符数按 Unicode 标量计数；`x-maxBytes` 额外限制 UTF-8 字节数。
 
+快照、观察及 Profile 激活前审查与本地 CLI 快照共用四个有界阻塞读取名额，等待设置
+串行锁或数据库锁不会阻塞异步运行时。worker 在取消后仍占名额，直到实际退出；满额
+返回 `preferences.read.busy`。获得每把锁后检查取消；运行授权在数据库锁外于等待后和
+返回前复核，撤权可以拒绝已完成的读取，但不会中断已经开始的 SQLite 查询。取消返回
+`preferences.read.cancelled`，worker 失败返回 `preferences.read.unavailable`。
+原有的有序写入和提交边界不变。
+
 ## 修改快照
 
 ```ts

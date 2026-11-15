@@ -48,10 +48,13 @@ pub(super) async fn activate(
     .map_err(|_| AppError::internal("profiles.mutation.unavailable"))??;
     let state = context.app.state::<AppState>();
     let groups = {
-        let writer = crate::services::settings::writer(&context.app, &state).await;
-        ticket.check()?;
-        authorize(context, WRITE)?;
-        let current = writer.preferences()?;
+        let worker = context.clone();
+        let read_ticket = ticket.clone();
+        let current = crate::services::settings::read::snapshot(&context.app, move || {
+            read_ticket.check()?;
+            authorize(&worker, WRITE)
+        })
+        .await?;
         if current.revision != request.preferences_revision {
             return Err(AppError::validation("preferences.staleRevision"));
         }

@@ -107,6 +107,15 @@ application restart; changes with deferred effects follow ordinary desktop
 settings behavior. Storage relocation remains a separate domain and is not
 available through preferences.update.
 
+Public preference snapshots share four bounded blocking readers with plugin
+preference reads and Profile activation review. These readers acquire the same
+serialization lock as settings writers, then read a consistent values/revision
+pair. Waiting for either lock does not block the async runtime. Cancellation is
+checked after lock acquisition and before returning; started SQLite statements
+are not interrupted, and workers retain capacity until they exit. Exhaustion
+returns `operation_rejected`. Preference updates keep their existing ordered
+commit/publication behavior.
+
 ## Forwarding status (experimental)
 
 `forwards.list` reads the same saved rules and runtime registry as the native

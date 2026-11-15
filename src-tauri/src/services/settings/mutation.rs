@@ -28,10 +28,7 @@ pub(crate) async fn writer<'a>(app: &'a AppHandle, state: &'a AppState) -> Write
 impl<'a> Writer<'a> {
     pub(super) fn current(&self) -> AppResult<(Settings, String)> {
         let current = self.state.settings();
-        let revision = self
-            .state
-            .db
-            .with(|conn| super::repository::revision(conn, &current))?;
+        let revision = super::read::revision(&self.state.db, &current, || Ok(()))?;
         Ok((current, revision))
     }
     pub(crate) fn update(self, patch: serde_json::Value) -> AppResult<Settings> {
