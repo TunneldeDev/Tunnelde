@@ -514,23 +514,12 @@ pub fn connection_route_save(
 }
 
 #[tauri::command]
-pub fn proxy_password_save(app: AppHandle, id: String, password: Option<String>) -> AppResult<()> {
-    if !app
-        .state::<AppState>()
-        .settings()
-        .network
-        .profiles
-        .iter()
-        .any(|p| p.id == id)
-    {
-        return Err(AppError::validation("network.proxyMissing"));
-    }
-    let key = format!("proxy:{id}");
-    match password {
-        Some(value) if value.len() <= 4096 => app.state::<AppState>().vault.save(&key, &value),
-        None => app.state::<AppState>().vault.forget(&key),
-        _ => Err(AppError::validation("network.invalid")),
-    }
+pub async fn proxy_password_save(
+    app: AppHandle,
+    id: String,
+    password: Option<String>,
+) -> AppResult<()> {
+    crate::services::credentials::proxy_password(app, id, password).await
 }
 
 #[tauri::command]

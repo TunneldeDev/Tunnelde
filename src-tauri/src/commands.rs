@@ -552,26 +552,18 @@ pub async fn ssh_install_key(
 }
 
 #[tauri::command]
-pub fn credential_save(
-    state: State<'_, AppState>,
-    host_id: String,
-    password: String,
-) -> AppResult<()> {
-    if password.is_empty() {
-        return Err(AppError::validation("ssh.passwordRequired"));
-    }
-    state.db.with(|conn| db::hosts::find_host(conn, &host_id))?;
-    state.vault.save(&host_id, &password)
+pub async fn credential_save(app: AppHandle, host_id: String, password: String) -> AppResult<()> {
+    crate::services::credentials::save(app, host_id, password).await
 }
 
 #[tauri::command]
-pub fn credential_forget(state: State<'_, AppState>, host_id: String) -> AppResult<()> {
-    state.vault.forget(&host_id)
+pub async fn credential_forget(app: AppHandle, host_id: String) -> AppResult<()> {
+    crate::services::credentials::forget(app, host_id).await
 }
 
 #[tauri::command]
-pub fn credential_status(state: State<'_, AppState>, host_id: String) -> AppResult<bool> {
-    state.vault.has(&host_id)
+pub async fn credential_status(app: AppHandle, host_id: String) -> AppResult<bool> {
+    crate::services::credentials::status(app, host_id).await
 }
 
 #[tauri::command]
