@@ -29,7 +29,7 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
     match method {
         "api.describe" => Ok(contract::describe()),
         "app.info" => Ok(info(&app.package_info().version.to_string())),
-        "hosts.list" => hosts::list(&state.db),
+        "hosts.list" => hosts::call(app).await,
         "sessions.list" => Ok(sessions::project(state.ssh.list())),
         _ => Err(Failure::new(
             "unknown_method",
@@ -66,7 +66,7 @@ mod tests {
         let mut samples = json!({"schema":contract::describe(), "samples":[
             {"method":"api.describe", "params":{}, "result":contract::describe()},
             {"method":"app.info", "params":{}, "result":info(env!("CARGO_PKG_VERSION"))},
-            {"method":"hosts.list", "params":{}, "result":hosts::list(&db).unwrap()},
+            {"method":"hosts.list", "params":{}, "result":hosts::project(&db, || Ok(())).unwrap()},
             {"method":"sessions.list", "params":{}, "result":sessions::project(vec![crate::ssh::SessionInfo {
                 id:"session-fixture".into(),host_id:host.id.clone(),title:"Fixture".into(),address:"user@example.test:22".into(),
                 cols:80,rows:24,connected_at:1_700_000_000_000,terminal:true,purpose:None,

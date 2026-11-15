@@ -65,6 +65,14 @@ individual stability. Saved-host results exclude notes, key paths and credential
 They include addresses and usernames; treat output as private.
 Plugin-defined host sources are not part of the saved-host list.
 
+Saved-host reads run on at most four blocking workers, separately from log and
+forwarding readers. Waiting for the database lock does not occupy an async
+runtime thread. Cancellation is checked after acquiring that lock and between
+table reads; a started SQLite query is not interrupted. A timed-out or cancelled
+worker retains its slot until it actually exits. When all slots are occupied,
+new calls fail with `operation_rejected`; no unbounded queue or automatic retry
+is created. The existing host fields and saved ordering remain unchanged.
+
 Successful live calls write one JSON object to stdout, with `version`, `id` and
 `result`. Errors write `version`, `id` and `error: {code, message}` to stderr.
 Exit codes are 0 (success), 1 (operation failure), 2 (input/protocol error),

@@ -460,6 +460,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::logging
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::hosts
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::forwarding
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::runtime
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
@@ -550,6 +551,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::logging
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::hosts
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::forwarding
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::runtime
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
