@@ -35,6 +35,11 @@
     "status": "Status",
     "author": "Author"
   },
+  "credentials": {
+    "busy": "Password operations are still running. Wait for them to finish, then try again.",
+    "cancelled": "The password operation was cancelled before it started.",
+    "workerFailed": "The password operation stopped unexpectedly. Check the software log before retrying."
+  },
   "fileRead": {
     "busy": "File reads are still running. Wait for them to finish, then try again.",
     "cancelled": "The file read was cancelled.",
