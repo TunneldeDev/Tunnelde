@@ -4,10 +4,11 @@ use crate::{
     error::{AppError, AppResult},
     state::AppState,
 };
-use russh::ChannelMsg;
 use serde_json::Value;
 use std::time::Duration;
 use tauri::Manager;
+
+mod channel;
 
 pub(super) struct Limits {
     pub timeout: Duration,
@@ -50,8 +51,40 @@ pub(super) async fn exec(
             output: 1024 * 1024,
         },
     )
-    .await
-    .map_err(|error| match error {
+    .await;
+    decode(output)
+}
+
+/// Launch and prompt input must still belong to the original authorized record
+/// after channel negotiation. Cleanup and host-owned inspection use `exec`.
+pub(super) async fn exec_current(
+    context: &HostContext,
+    session: &str,
+    record: &super::Record,
+    args: Vec<String>,
+    input: Option<String>,
+) -> AppResult<Value> {
+    let output = exchange_checked(
+        context,
+        session,
+        &record.deployment,
+        args,
+        input,
+        Limits {
+            timeout: Duration::from_secs(45),
+            output: 1024 * 1024,
+        },
+        || {
+            super::authorize(context, &["ssh.exec"])?;
+            super::repository::require_current(context, record)
+        },
+    )
+    .await;
+    decode(output)
+}
+
+fn decode(output: Result<Output, Failure>) -> AppResult<Value> {
+    let output = output.map_err(|error| match error {
         Failure::Connection(error) => error,
         Failure::Timeout => AppError::validation("plugin.runners.timeout"),
         Failure::OutputTooLarge => AppError::validation("plugin.runners.outputTooLarge"),
@@ -78,10 +111,18 @@ pub(super) async fn exchange(
     input: Option<String>,
     limits: Limits,
 ) -> Result<Output, Failure> {
-    super::identity::verify(
-        deployment,
-        &super::identity::capture(&context.app, session)?,
-    )?;
+    exchange_checked(context, session, deployment, args, input, limits, || Ok(())).await
+}
+
+async fn exchange_checked(
+    context: &HostContext,
+    session: &str,
+    deployment: &Deployment,
+    args: Vec<String>,
+    input: Option<String>,
+    limits: Limits,
+    current: impl Fn() -> AppResult<()>,
+) -> Result<Output, Failure> {
     let command = crate::plugins::tasks::remote_command(
         &deployment.runner,
         &args,
@@ -89,58 +130,23 @@ pub(super) async fn exchange(
         &deployment.platform,
     )?;
     let handle = context.app.state::<AppState>().ssh.handle(session)?;
-    let deadline = tokio::time::Instant::now() + limits.timeout;
-    let mut channel = tokio::time::timeout_at(deadline, handle.channel_open_session())
-        .await
-        .map_err(|_| Failure::Timeout)?
-        .map_err(|error| AppError::Ssh(error.to_string()))?;
-    let result = tokio::time::timeout_at(deadline, async {
-        channel
-            .exec(true, command)
-            .await
-            .map_err(|error| AppError::Ssh(error.to_string()))?;
-        if let Some(input) = input {
-            channel
-                .data(input.as_bytes())
+    channel::exchange(
+        async {
+            handle
+                .channel_open_session()
                 .await
-                .map_err(|error| AppError::Ssh(error.to_string()))?;
-        }
-        channel
-            .eof()
-            .await
-            .map_err(|error| AppError::Ssh(error.to_string()))?;
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut code = None;
-        while let Some(message) = channel.wait().await {
-            match message {
-                ChannelMsg::Data { data } => {
-                    if data.len() > limits.output.saturating_sub(stdout.len() + stderr.len()) {
-                        return Err(Failure::OutputTooLarge);
-                    }
-                    stdout.extend_from_slice(&data);
-                }
-                ChannelMsg::ExtendedData { data, .. } => {
-                    if data.len() > limits.output.saturating_sub(stdout.len() + stderr.len()) {
-                        return Err(Failure::OutputTooLarge);
-                    }
-                    stderr.extend_from_slice(&data);
-                }
-                ChannelMsg::ExitStatus { exit_status } => code = Some(exit_status),
-                ChannelMsg::Close => break,
-                _ => {}
-            }
-        }
-        Ok(Output {
-            stdout,
-            stderr,
-            code,
-        })
-    })
+                .map_err(|error| AppError::Ssh(error.to_string()))
+        },
+        command,
+        input,
+        limits,
+        || {
+            current()?;
+            super::identity::verify(
+                deployment,
+                &super::identity::capture(&context.app, session)?,
+            )
+        },
+    )
     .await
-    .map_err(|_| Failure::Timeout)
-    .and_then(|value| value);
-    // Closing the SSH channel is best effort, not proof of remote process exit.
-    let _ = tokio::time::timeout(Duration::from_millis(100), channel.close()).await;
-    result
 }

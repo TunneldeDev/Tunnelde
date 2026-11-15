@@ -104,7 +104,11 @@ pub(in crate::plugins::runners) async fn action(
         ]);
     }
     authorize(context, &["ssh.exec"])?;
-    let result = exec(context, &session, deployment, args, input).await?;
+    let result = if method == "runners.send" {
+        super::super::transport::exec_current(context, &session, &observed, args, input).await?
+    } else {
+        exec(context, &session, deployment, args, input).await?
+    };
     let status = if method == "runners.poll" {
         result["state"]["status"].as_str()
     } else if method == "runners.status" {

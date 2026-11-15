@@ -2,8 +2,8 @@ use serde_json::{json, Value};
 use tauri::Manager;
 
 use super::super::{
-    admission, authorize, bootstrap, exec, field, host_id, lifecycle, model::LaunchState,
-    repository, HostContext, Record,
+    admission, authorize, bootstrap, field, host_id, lifecycle, model::LaunchState, repository,
+    HostContext, Record,
 };
 use crate::{
     error::{AppError, AppResult},
@@ -154,7 +154,9 @@ pub(in crate::plugins::runners) async fn start(
         deployment.entry.clone(),
     ];
     args.extend(transport_args);
-    let result = exec(context, &session, deployment, args, Some(initial)).await?;
+    let result =
+        super::super::transport::exec_current(context, &session, &dispatched, args, Some(initial))
+            .await?;
     if result["runnerId"].as_str() != Some(&id) || result["status"].as_str() != Some("starting") {
         return Err(AppError::validation("plugin.runners.invalidResponse"));
     }
