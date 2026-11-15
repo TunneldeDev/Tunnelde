@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { repository } from "../windows-upgrade/assets.mjs";
 import { verifyLocalCli } from "../local-cli/verify.mjs";
 import { permissions, pluginId, seedRetention, verifyRetention } from "./retention.mjs";
+import { verifyTargetQuit } from "./quit.mjs";
 
 export async function waitUntil(label, action, milliseconds = 30000) {
   const deadline = Date.now() + milliseconds;
@@ -345,8 +346,16 @@ export async function upgrade(runtime) {
   });
   await tree(target.pid, "automatic-target");
   await screenshot("original-automatic-target");
-  await native("key", target.pid, "quit");
-  await waitUntil("normal target Quit", async () => !(await native("locate")).processes.length);
+  await verifyTargetQuit({
+    native,
+    target,
+    report,
+    wait: waitUntil,
+    capture: async () => {
+      await tree(target.pid, "quit-timeout");
+      await screenshot("quit-timeout");
+    },
+  });
   await waitUntil("target endpoint removal", async () => {
     try {
       await readFile(pointer);

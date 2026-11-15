@@ -55,6 +55,12 @@ static NSDictionary *identity(pid_t pid, NSString *expected) {
            @"identifier": app.bundleIdentifier};
 }
 
+static NSDictionary *focusState(pid_t pid) {
+  NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+  return @{@"frontmostPid": @(NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier),
+           @"targetActive": app.active ? @YES : @NO};
+}
+
 static BOOL walk(AXUIElementRef element, NSUInteger depth, NSMutableArray *nodes,
                  NSMutableArray *matches, NSString *label, NSString *selection, CFAbsoluteTime deadline) {
   if (depth > 24 || nodes.count >= 1000 || CFAbsoluteTimeGetCurrent() > deadline) return NO;
@@ -171,6 +177,8 @@ int main(int argc, const char *argv[]) {
     NSDictionary *process = identity(pid, executable);
     if (!process) { fputs("Target identity did not match this owned bundle\n", stderr); return 3; }
     if ([action isEqual:@"identity"]) return emit(process);
+    if ([action isEqual:@"focus"] && argc == 3)
+      return emit(@{@"identity": process, @"focus": focusState(pid)});
     if ([action isEqual:@"stop"] && argc == 6) {
       if (![[NSString stringWithUTF8String:argv[3]] isEqual:[process[@"startSeconds"] stringValue]] ||
           ![[NSString stringWithUTF8String:argv[4]] isEqual:[process[@"startMicroseconds"] stringValue]]) return 3;
@@ -187,6 +195,7 @@ int main(int argc, const char *argv[]) {
     }
     if (!AXIsProcessTrusted()) return 4;
     if ([action isEqual:@"key"] && argc == 4) {
+      NSDictionary *before = focusState(pid);
       NSString *key = [NSString stringWithUTF8String:argv[3]];
       CGKeyCode code;
       CGEventFlags flags = kCGEventFlagMaskCommand;
@@ -220,7 +229,10 @@ int main(int argc, const char *argv[]) {
         else CGEventPostToPid(pid, event);
         CFRelease(event);
       }
-      return emit(@{@"identity": process, @"key": key, @"generatedOSInput": @YES});
+      return emit(@{@"identity": process, @"key": key, @"generatedOSInput": @YES,
+                    @"focusBefore": before, @"focusAfter": focusState(pid),
+                    @"eventRoute": nativeDialogKey ? @"session-event-tap" : @"process-id",
+                    @"keyCode": @(code), @"eventFlags": @((uint64_t)flags)});
     }
     if ([action isEqual:@"plugin-path"] && argc == 3) {
       if (![env[@"MACOS_OTA_MODE"] isEqual:@"retention"]) return 2;
