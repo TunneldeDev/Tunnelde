@@ -440,6 +440,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
@@ -507,6 +508,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::

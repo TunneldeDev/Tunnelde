@@ -576,8 +576,8 @@ pub async fn sftp_list(
 }
 
 #[tauri::command]
-pub fn local_list(path: Option<String>) -> AppResult<Listing> {
-    sftp::local_list(path)
+pub async fn local_list(path: Option<String>) -> AppResult<Listing> {
+    crate::services::files::local::list(path).await
 }
 
 #[tauri::command]
@@ -643,8 +643,8 @@ pub async fn sftp_delete(
 }
 
 #[tauri::command]
-pub fn local_mkdir(path: String) -> AppResult<()> {
-    sftp::local_mkdir(path)
+pub async fn local_mkdir(path: String) -> AppResult<()> {
+    crate::services::files::local::mkdir(path).await
 }
 
 #[tauri::command]
@@ -673,8 +673,8 @@ pub async fn local_rename(
 }
 
 #[tauri::command]
-pub fn local_delete(path: String, is_dir: bool) -> AppResult<()> {
-    sftp::local_delete(path, is_dir)
+pub async fn local_delete(path: String, is_dir: bool) -> AppResult<()> {
+    crate::services::files::local::delete(path, is_dir).await
 }
 
 #[tauri::command]
@@ -703,8 +703,8 @@ pub fn fs_transfer(
 }
 
 #[tauri::command]
-pub fn local_create_file(path: String) -> AppResult<()> {
-    sftp::local_create_file(path)
+pub async fn local_create_file(path: String) -> AppResult<()> {
+    crate::services::files::local::create_file(path).await
 }
 
 #[tauri::command]
