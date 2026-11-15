@@ -21,6 +21,7 @@ pub(super) struct Seen {
     pub subsystem: Notify,
     pub subsystems: AtomicUsize,
     pub closed: AtomicUsize,
+    pub finished: AtomicUsize,
     workers: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 struct Server {
@@ -77,7 +78,10 @@ impl server::Handler for Server {
                 .workers
                 .lock()
                 .unwrap()
-                .push(tokio::spawn(russh_sftp::server::run(stream, Sftp)));
+                .push(tokio::spawn(russh_sftp::server::run(
+                    stream,
+                    Sftp(self.seen.clone()),
+                )));
         }
         Ok(())
     }
@@ -87,7 +91,15 @@ impl server::Handler for Server {
         Ok(())
     }
 }
-struct Sftp;
+struct Sftp(Arc<Seen>);
+impl Drop for Sftp {
+    fn drop(&mut self) {
+        // The SFTP server owns this handler until its stream loop ends. On EOF
+        // its stream can retire the SSH channel before a reciprocal Close is
+        // delivered to server::Handler::channel_close (notably on Linux).
+        self.0.finished.fetch_add(1, Ordering::SeqCst);
+    }
+}
 const BYTES: &[u8] = b"read-only SSH fixture";
 fn attributes(id: u32) -> Attrs {
     Attrs {
@@ -240,21 +252,22 @@ impl Fixture {
         .await
     }
     pub async fn read(&self) {
-        let closed_before = self.seen.closed.load(Ordering::SeqCst);
+        let finished_before = self.seen.finished.load(Ordering::SeqCst);
         let capacity = Arc::new(Semaphore::new(1));
         let (reader, size) = self.open(&capacity).await.unwrap();
         assert_eq!(size, BYTES.len() as u64);
         assert_eq!(reader.read(0, size).await.unwrap(), BYTES);
         assert_eq!(capacity.available_permits(), 0);
         reader.close().await;
-        self.settled(&capacity).await;
         tokio::time::timeout(deadline(), async {
-            while self.seen.closed.load(Ordering::SeqCst) <= closed_before {
+            while self.seen.finished.load(Ordering::SeqCst) <= finished_before
+                || capacity.available_permits() != 1
+            {
                 tokio::task::yield_now().await;
             }
         })
         .await
-        .expect("accepted reader did not close its own SSH channel");
+        .expect("accepted reader retained its SFTP server or connection slot");
         assert!(!self.handle.is_closed());
     }
 }
