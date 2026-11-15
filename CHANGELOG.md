@@ -6,6 +6,52 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1](https://github.com/TunneldeDev/Tunnelde/compare/v1.3.0...v1.3.1) - 2026-11-15
+
+### 更新概览 | Highlights
+
+- **updates:** invalidate packages when source preferences change
+- **welcome:** show configured platform keyboard shortcuts
+- **qa:** encode native capability flags as JSON booleans
+- **credentials:** move native password commands off the UI thread
+- **connect:** report target credential status failures
+
+<details open>
+<summary>详细变更 | Details (18)</summary>
+
+### 修复 | Fix
+
+- **updates:** invalidate packages when source preferences change ([#361](https://github.com/TunneldeDev/Tunnelde/pull/361)) @quyansiyuanwang
+- **welcome:** show configured platform keyboard shortcuts ([#363](https://github.com/TunneldeDev/Tunnelde/pull/363)) @quyansiyuanwang
+- **qa:** encode native capability flags as JSON booleans ([#364](https://github.com/TunneldeDev/Tunnelde/pull/364), [2c284cd](https://github.com/TunneldeDev/Tunnelde/commit/2c284cdc41374f38e7637353918ab837dc01b1ff)) @quyansiyuanwang
+- **credentials:** move native password commands off the UI thread ([#372](https://github.com/TunneldeDev/Tunnelde/pull/372), [263d248](https://github.com/TunneldeDev/Tunnelde/commit/263d248b310aba75eb2c1985438529465ef0e05d)) @quyansiyuanwang
+- **connect:** report target credential status failures ([#372](https://github.com/TunneldeDev/Tunnelde/pull/372)) @quyansiyuanwang
+- **files:** keep native local operations off the UI thread ([#373](https://github.com/TunneldeDev/Tunnelde/pull/373)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **qa:** clarify manual workflow registration checks ([#364](https://github.com/TunneldeDev/Tunnelde/pull/364), [bea93bb](https://github.com/TunneldeDev/Tunnelde/commit/bea93bbf8a5b906d401994cf0663ac83bb79ac85)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **macos:** add guarded hosted OTA environment probe ([#364](https://github.com/TunneldeDev/Tunnelde/pull/364), [ba50b45](https://github.com/TunneldeDev/Tunnelde/commit/ba50b455f78dbf9b30536251ad3fdb196a4654be)) @quyansiyuanwang
+- **macos:** derive hosted account paths for hygiene checks ([#364](https://github.com/TunneldeDev/Tunnelde/pull/364), [c5e22df](https://github.com/TunneldeDev/Tunnelde/commit/c5e22df28ab34e6ed575c2e75f45f831dd7807f8)) @quyansiyuanwang
+- **macos:** make hosted guard tests portable on Windows ([#364](https://github.com/TunneldeDev/Tunnelde/pull/364)) @quyansiyuanwang
+- **update:** verify public Linux desktop entry ([#365](https://github.com/TunneldeDev/Tunnelde/pull/365)) @quyansiyuanwang
+- **update:** verify public Linux AppImage upgrades ([#367](https://github.com/TunneldeDev/Tunnelde/pull/367)) @quyansiyuanwang
+- **update:** verify retained Linux host and profile records ([#369](https://github.com/TunneldeDev/Tunnelde/pull/369)) @quyansiyuanwang
+- **ssh:** reserve the pending remote forwarding listener ([#371](https://github.com/TunneldeDev/Tunnelde/pull/371)) @quyansiyuanwang
+- **updates:** control shared request deadline regression ([#370](https://github.com/TunneldeDev/Tunnelde/pull/370)) @quyansiyuanwang
+- **macos:** verify public app update on disposable hosted Mac ([#366](https://github.com/TunneldeDev/Tunnelde/pull/366)) @quyansiyuanwang
+- **credentials:** run worker regressions on macOS and Windows ([#372](https://github.com/TunneldeDev/Tunnelde/pull/372), [2db39cd](https://github.com/TunneldeDev/Tunnelde/commit/2db39cdbe1ad1c9377d52b9ef6b0aa2369a32038)) @quyansiyuanwang
+- **macos:** verify public OTA data retention ([#368](https://github.com/TunneldeDev/Tunnelde/pull/368)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.3.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.2.1...v1.3.0) - 2026-11-14
 
 ### 更新概览 | Highlights

@@ -133,6 +133,10 @@ impl Prepared<'_> {
             )
         })?;
         self.writer.state.set_settings(self.next.clone());
+        self.writer
+            .state
+            .update
+            .settings_committed(&self.previous, &self.next);
         self.revision = Some(revision);
         self.committed = true;
         Ok(())

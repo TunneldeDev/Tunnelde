@@ -35,6 +35,11 @@
     "status": "状态",
     "author": "作者"
   },
+  "credentials": {
+    "busy": "密码操作仍在进行，请等待完成后重试。",
+    "cancelled": "密码操作已在开始前取消。",
+    "workerFailed": "密码操作意外停止，请先查看软件日志再决定是否重试。"
+  },
   "fileRead": {
     "busy": "仍有文件读取操作未结束，请等待完成后重试。",
     "cancelled": "文件读取已取消。",
@@ -623,6 +628,9 @@
     "testCancelled": "已取消连接测试"
   },
   "sftp": {
+    "localBusy": "本地文件操作仍在运行。请等待完成后再试。",
+    "localCancelled": "本地文件操作已在开始前取消。",
+    "localWorkerFailed": "本地文件工作线程意外停止。请先检查软件日志，再决定是否重试。",
     "copyInterrupted": "复制任务在报告完成前意外停止。请先检查后台任务列表和日志，再决定是否重试。",
     "title": "文件",
     "local": "本地",
@@ -1146,7 +1154,6 @@
     "newHost": "新建主机",
     "settings": "设置",
     "recent": "最近",
-    "hint": "Ctrl+N 新建主机 · Ctrl+, 设置",
     "empty": "添加一台主机开始使用"
   },
   "palette": {

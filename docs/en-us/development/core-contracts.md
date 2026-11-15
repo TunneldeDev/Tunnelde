@@ -22,6 +22,18 @@ Native-save recovery tokens keep their separate, application-derived service.
 Public transports cannot select a vault service or change the application's
 identifier. No credential values enter API discovery, logs or snapshots.
 
+The native `credential_save`, `credential_forget`, `credential_status` and
+`proxy_password_save` commands await bounded blocking workers for OS credential
+access. Their shared budget admits at most 16 operations, including queued work;
+overload returns `credentials.busy`. Cancelling the command future before worker
+admission prevents a queued operation from starting. After admission, the worker retains
+capacity until OS access settles; losing the reply does not roll back a write.
+Host/profile validation, vault service and keys, and underlying OS errors remain
+part of the same operation. Status still reads the stored credential and can
+require OS authorization. This scheduling boundary covers these four commands;
+reviewed SSH-route mutations and other credential consumers keep their existing
+admission rules.
+
 ## Compatibility rules
 
 - A stable interface has an owned request/result/error schema, documented effects
@@ -89,6 +101,14 @@ Do not expand RPC counts as a substitute for closing these boundaries. Do not
 make every plugin or advanced transfer recovery mechanism a prerequisite for
 the first stable desktop release. Basic file safety, actual installation and
 upgrade preservation remain necessary even when advanced features are deferred.
+
+Native local listing, directory creation, file creation and deletion use the
+bounded `services/files/local.rs` worker adapter. The eight queued or running
+operations retain capacity until actual filesystem work settles. Cancellation
+before admission prevents a late mutation; cancellation after admission does
+not roll it back. Existing filesystem behavior and errors remain shared with
+the synchronous domain implementation. Plugin calls retain their immediate
+authorization-to-operation boundary; they do not enter this native queue.
 
 ## Automated evidence
 

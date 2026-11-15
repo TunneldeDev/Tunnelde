@@ -131,12 +131,12 @@ impl Budget {
 
     fn worker_error(&self, error: tokio::task::JoinError, stage: &'static str) -> AppError {
         tracing::error!(
-            target: "files.operations",
+            target: "services.operations",
             domain = self.errors.domain,
             stage,
             panic = error.is_panic(),
             cancelled = error.is_cancelled(),
-            "File operation worker stopped"
+            "Operation worker stopped"
         );
         AppError::internal(self.errors.failed)
     }

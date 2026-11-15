@@ -177,11 +177,15 @@ function HostConnectDialog({
           setSaved(value);
         }
       })
-      .catch(() => undefined);
+      .catch((cause: unknown) => {
+        if (alive) {
+          reportError(cause);
+        }
+      });
     return () => {
       alive = false;
     };
-  }, [host.id, host.source]);
+  }, [host.id, host.source, reportError]);
 
   useEffect(() => {
     let active = true;

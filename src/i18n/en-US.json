@@ -35,6 +35,11 @@
     "status": "Status",
     "author": "Author"
   },
+  "credentials": {
+    "busy": "Password operations are still running. Wait for them to finish, then try again.",
+    "cancelled": "The password operation was cancelled before it started.",
+    "workerFailed": "The password operation stopped unexpectedly. Check the software log before retrying."
+  },
   "fileRead": {
     "busy": "File reads are still running. Wait for them to finish, then try again.",
     "cancelled": "The file read was cancelled.",
@@ -623,6 +628,9 @@
     "testCancelled": "Connection test cancelled"
   },
   "sftp": {
+    "localBusy": "Local file operations are still running. Wait for them to finish, then try again.",
+    "localCancelled": "The local file operation was cancelled before it started.",
+    "localWorkerFailed": "The local file worker stopped unexpectedly. Check the software log before retrying.",
     "copyInterrupted": "The copy worker stopped before reporting completion. Check the background task list and logs before retrying.",
     "title": "Files",
     "local": "Local",
@@ -1146,7 +1154,6 @@
     "newHost": "New host",
     "settings": "Settings",
     "recent": "Recent",
-    "hint": "Ctrl+N new host · Ctrl+, settings",
     "empty": "Add a host to get started"
   },
   "palette": {

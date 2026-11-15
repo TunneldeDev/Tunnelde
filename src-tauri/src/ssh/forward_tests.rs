@@ -9,6 +9,7 @@ use tokio::{
 struct Gate {
     entered: tokio::sync::Notify,
     release: tokio::sync::Notify,
+    reserved_listener: Mutex<Option<TcpListener>>,
 }
 #[derive(Default)]
 struct TestServer {
@@ -65,11 +66,22 @@ impl server::Handler for TestServer {
         port: &mut u32,
         session: &mut Session,
     ) -> Result<bool, Self::Error> {
-        let listener = match TcpListener::bind((address, *port as u16)).await {
-            Ok(listener) => listener,
-            Err(error) => {
-                eprintln!("Fixture remote listener {address}:{port} was rejected: {error}");
-                return Ok(false);
+        let reserved = self
+            .gate
+            .as_ref()
+            .and_then(|gate| gate.reserved_listener.lock().unwrap().take());
+        let listener = if let Some(listener) = reserved {
+            let local = listener.local_addr().unwrap();
+            assert_eq!(local.ip().to_string(), address);
+            assert_eq!(u32::from(local.port()), *port);
+            listener
+        } else {
+            match TcpListener::bind((address, *port as u16)).await {
+                Ok(listener) => listener,
+                Err(error) => {
+                    eprintln!("Fixture remote listener {address}:{port} was rejected: {error}");
+                    return Ok(false);
+                }
             }
         };
         let local = listener.local_addr().unwrap();
@@ -751,7 +763,14 @@ async fn nested_jump_transports_verify_each_hop_and_reject_changed_target_key() 
 }
 #[tokio::test]
 async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener() {
-    let gate = Arc::new(Gate::default());
+    // Keep the actual socket owned until the remote fixture adopts it. Releasing
+    // a free_port probe lets another parallel test or client claim the port.
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let gate = Arc::new(Gate {
+        reserved_listener: Mutex::new(Some(listener)),
+        ..Default::default()
+    });
     let (address, fingerprint, server) = gated_server(Some(gate.clone())).await;
     let socket = TcpStream::connect(address).await.unwrap();
     let (mut client, _, routes) =
@@ -759,7 +778,7 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
             .await
             .unwrap();
     assert!(client.authenticate_none("test").await.unwrap().success());
-    let port = free_port().await;
+    assert!(TcpListener::bind(("127.0.0.1", port)).await.is_err());
     let keep_routes = routes.clone();
     let lifetime = Arc::new(());
     let observed = Arc::downgrade(&lifetime);
@@ -788,6 +807,7 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
     tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
         .await
         .unwrap();
+    assert!(gate.reserved_listener.lock().unwrap().is_none());
     assert!(!keep_routes.entries.lock().unwrap().is_empty());
     setup.abort();
     assert!(matches!(setup.await, Err(error) if error.is_cancelled()));

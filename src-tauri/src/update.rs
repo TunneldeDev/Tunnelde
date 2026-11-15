@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, RwLock, RwLockWriteGuard};
 use std::time::Duration;
 
@@ -107,11 +107,18 @@ pub fn validate_settings_change(
     Ok(())
 }
 
+pub(crate) fn selection_changed(previous: &Settings, next: &Settings) -> bool {
+    previous.update_channel != next.update_channel
+        || previous.update_source != next.update_source
+        || previous.update_source_url != next.update_source_url
+}
+
 pub struct UpdateService {
     state: RwLock<UpdateState>,
     // Retain the exact signed package selected by Check, rather than checking again at Install.
     pending: Mutex<Option<Update>>,
     busy: AtomicBool,
+    selection_generation: AtomicU64,
     github_api_backoff: feeds::ApiBackoff,
 }
 
@@ -121,6 +128,7 @@ impl UpdateService {
             state: RwLock::new(UpdateState::new(current_version, &Settings::default())),
             pending: Mutex::new(None),
             busy: AtomicBool::new(false),
+            selection_generation: AtomicU64::new(0),
             github_api_backoff: feeds::ApiBackoff::default(),
         }
     }
@@ -138,12 +146,27 @@ impl UpdateService {
             .unwrap_or_else(|error| error.into_inner())
     }
 
-    fn publish(&self, app: &AppHandle) {
+    pub(crate) fn publish(&self, app: &AppHandle) {
         let _ = app.emit(EVENT, self.snapshot());
     }
 
     fn set_pending(&self, update: Option<Update>) {
         *self.pending.lock().unwrap_or_else(|e| e.into_inner()) = update;
+    }
+
+    // Called only after a durable settings commit, while settings_commit is held.
+    // Returning to the same source/channel must not revive a previous selection.
+    pub(crate) fn settings_committed(&self, previous: &Settings, next: &Settings) {
+        if selection_changed(previous, next) {
+            self.selection_generation.fetch_add(1, Ordering::SeqCst);
+            self.set_pending(None);
+            let mut state = self.write();
+            *state = UpdateState::new(state.current_version.clone(), next);
+        }
+    }
+
+    fn current_selection(&self, generation: u64) -> bool {
+        self.selection_generation.load(Ordering::SeqCst) == generation
     }
 
     fn acquire(&self) -> Option<BusyGuard<'_>> {
@@ -326,36 +349,65 @@ pub async fn check(app: AppHandle, force: bool) -> AppResult<UpdateState> {
     let Some(_busy) = service.update.acquire() else {
         return Ok(service.update.snapshot());
     };
-    let result = tokio::time::timeout(Duration::from_secs(65), run_check(&app, force))
-        .await
-        .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
-    if let Err(error) = &result {
-        service.update.fail(&app, error);
+    let (settings, next, generation) = {
+        let _settings = service.settings_commit.lock().await;
+        let settings = service.settings();
+        let mut next = UpdateState::new(service.update.snapshot().current_version, &settings);
+        next.phase = Phase::Checking;
+        service.update.set_pending(None);
+        *service.update.write() = next.clone();
+        service.update.publish(&app);
+        let generation = service.update.selection_generation.load(Ordering::SeqCst);
+        (settings, next, generation)
+    };
+    let result = tokio::time::timeout(
+        Duration::from_secs(65),
+        run_check(&app, force, &settings, next),
+    )
+    .await
+    .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
+    {
+        // Order result publication with preference commits and installation start.
+        let _settings = service.settings_commit.lock().await;
+        if !service.update.current_selection(generation) {
+            return Ok(service.update.snapshot());
+        }
+        match result {
+            Ok((next, pending)) => {
+                service.update.set_pending(pending);
+                *service.update.write() = next;
+                service.update.publish(&app);
+            }
+            Err(error) => {
+                service.update.fail(&app, &error);
+                return Err(error);
+            }
+        }
     }
-    result
+    persist_last_check(&app).await;
+    Ok(service.update.snapshot())
 }
 
-async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
-    let service = app.state::<AppState>();
-    let settings = service.settings();
+async fn run_check(
+    app: &AppHandle,
+    force: bool,
+    settings: &Settings,
+    mut next: UpdateState,
+) -> AppResult<(UpdateState, Option<Update>)> {
     let capability = capability();
-    let mut next = UpdateState::new(service.update.snapshot().current_version, &settings);
-    next.phase = Phase::Checking;
-    service.update.set_pending(None);
-    *service.update.write() = next.clone();
-    service.update.publish(app);
+    let mut pending = None;
 
     if !capability.supported {
         next.phase = Phase::Unsupported;
         next.unsupported_reason = Some(capability.reason.into());
         next.download_url = Some(RELEASES_PAGE.into());
     } else {
-        let feeds = feeds(app, &settings).await?;
+        let feeds = feeds(app, settings).await?;
         let mut candidates = Vec::new();
         // At most three channel manifests; choose by SemVer, not publication date.
         let checks = feeds
             .iter()
-            .map(|feed| configured_updater(app, &settings, feed))
+            .map(|feed| configured_updater(app, settings, feed))
             .collect::<AppResult<Vec<_>>>()?;
         let client = crate::network::http_client(app, "updates")?;
         let (first, second, third) = tokio::join!(
@@ -398,7 +450,7 @@ async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
             next.version = Some(update.version.clone());
             next.notes = update.body.clone();
             next.published_at = update.date.map(|date| date.unix_timestamp() * 1000);
-            service.update.set_pending(Some(update));
+            pending = Some(update);
         } else {
             next.phase = Phase::UpToDate;
         }
@@ -407,10 +459,7 @@ async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
         }
     }
     next.last_checked = Some(now_ms());
-    *service.update.write() = next;
-    persist_last_check(app).await;
-    service.update.publish(app);
-    Ok(service.update.snapshot())
+    Ok((next, pending))
 }
 
 pub async fn install(app: AppHandle) -> AppResult<UpdateState> {
@@ -430,6 +479,7 @@ async fn run_install(app: &AppHandle) -> AppResult<UpdateState> {
         return Err(AppError::Update("updates.unsupportedOther".into()));
     }
     let service = app.state::<AppState>();
+    let settings_guard = service.settings_commit.lock().await;
     let snapshot = service.update.snapshot();
     if !snapshot.matches(&service.settings()) || !snapshot.available {
         return Err(AppError::Update("updates.checkAgain".into()));
@@ -449,6 +499,7 @@ async fn run_install(app: &AppHandle) -> AppResult<UpdateState> {
         next.error = None;
     }
     service.update.publish(app);
+    drop(settings_guard);
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;
     let mut last_emitted = std::time::Instant::now();
