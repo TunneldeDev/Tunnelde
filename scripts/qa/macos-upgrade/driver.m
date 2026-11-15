@@ -3,9 +3,11 @@
 #import <LocalAuthentication/LocalAuthentication.h>
 #import <Security/Security.h>
 #import <SystemConfiguration/SystemConfiguration.h>
+#import <CommonCrypto/CommonDigest.h>
 #include <libproc.h>
 #include <limits.h>
 #include <pwd.h>
+#include <signal.h>
 #include <unistd.h>
 
 static int emit(NSDictionary *result) {
@@ -29,6 +31,7 @@ static NSDictionary *capabilities(void) {
     @"accessibilityTrusted": AXIsProcessTrusted() ? @YES : @NO,
     @"screenCaptureAllowed": CGPreflightScreenCaptureAccess() ? @YES : @NO,
     @"schemaVersion": @1,
+    @"osVersion": NSProcessInfo.processInfo.operatingSystemVersionString,
   };
 }
 
@@ -52,9 +55,9 @@ static NSDictionary *identity(pid_t pid, NSString *expected) {
            @"identifier": app.bundleIdentifier};
 }
 
-static void walk(AXUIElementRef element, NSUInteger depth, NSMutableArray *nodes,
-                 NSMutableArray *matches, NSString *label, CFAbsoluteTime deadline) {
-  if (depth > 24 || nodes.count >= 1000 || CFAbsoluteTimeGetCurrent() > deadline) return;
+static BOOL walk(AXUIElementRef element, NSUInteger depth, NSMutableArray *nodes,
+                 NSMutableArray *matches, NSString *label, NSString *selection, CFAbsoluteTime deadline) {
+  if (depth > 24 || nodes.count >= 1000 || CFAbsoluteTimeGetCurrent() > deadline) return NO;
   id role = attribute(element, kAXRoleAttribute);
   NSMutableDictionary *node = [NSMutableDictionary dictionaryWithDictionary:@{@"depth": @(depth)}];
   if ([role isKindOfClass:NSString.class]) node[@"role"] = role;
@@ -65,24 +68,29 @@ static void walk(AXUIElementRef element, NSUInteger depth, NSMutableArray *nodes
     if ([value isKindOfClass:NSString.class] || [value isKindOfClass:NSNumber.class]) node[key] = value;
   }
   // Never inspect a secure input's value. This harness seeds synthetic data only.
-  if (![role isEqualToString:@"AXSecureTextField"]) {
+  id subrole = attribute(element, kAXSubroleAttribute);
+  if (![role isEqualToString:@"AXSecureTextField"] && ![subrole isEqualToString:@"AXSecureTextField"]) {
     id value = attribute(element, kAXValueAttribute);
     if ([value isKindOfClass:NSString.class]) node[@"AXValue"] = value;
   }
   [nodes addObject:node];
-  if (label && ([node[@"AXTitle"] isEqual:label] || [node[@"AXDescription"] isEqual:label] ||
-                [node[@"AXValue"] isEqual:label]) &&
-      ![node[@"AXEnabled"] isEqual:@NO] &&
-      ([role isEqualToString:@"AXButton"] || [role isEqualToString:@"AXMenuItem"])) {
+  BOOL labelMatches = [node[@"AXTitle"] isEqual:label] || [node[@"AXDescription"] isEqual:label];
+  if ([selection isEqual:@"title-only"]) labelMatches = [node[@"AXTitle"] isEqual:label] && [node[@"AXDescription"] isEqual:@""];
+  if ([selection isEqual:@"described"]) labelMatches = [node[@"AXDescription"] isEqual:label];
+  BOOL roleMatches = [selection isEqual:@"fill"]
+      ? ([role isEqualToString:@"AXTextField"] || [role isEqualToString:@"AXTextArea"] || [role isEqualToString:@"AXSecureTextField"])
+      : ([role isEqualToString:@"AXButton"] || [role isEqualToString:@"AXMenuItem"]);
+  if (label && labelMatches && [node[@"AXEnabled"] isEqual:@YES] && roleMatches) {
     [matches addObject:(__bridge id)element];
   }
   id children = attribute(element, kAXChildrenAttribute);
   if ([children isKindOfClass:NSArray.class]) {
     for (id child in children) {
-      if (CFGetTypeID((__bridge CFTypeRef)child) == AXUIElementGetTypeID())
-        walk((__bridge AXUIElementRef)child, depth + 1, nodes, matches, label, deadline);
+      if (CFGetTypeID((__bridge CFTypeRef)child) == AXUIElementGetTypeID() &&
+          !walk((__bridge AXUIElementRef)child, depth + 1, nodes, matches, label, selection, deadline)) return NO;
     }
   }
+  return YES;
 }
 
 int main(int argc, const char *argv[]) {
@@ -116,17 +124,56 @@ int main(int argc, const char *argv[]) {
       return emit(@{@"keychainStatus": @(status), @"serviceAbsent": status == errSecItemNotFound ? @YES : @NO,
                     @"existingApps": @([NSRunningApplication runningApplicationsWithBundleIdentifier:@"dev.tunnelde.app"].count)});
     }
+    NSString *root = [env[@"RUNNER_TEMP"] stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"tunnelde-macos-public-ota-%@-%@", env[@"GITHUB_RUN_ID"], env[@"GITHUB_RUN_ATTEMPT"]]];
+    NSString *executable = [root stringByAppendingPathComponent:@"install/Tunnelde.app/Contents/MacOS/tunnelde"];
+    if ([action isEqual:@"locate"]) {
+      NSMutableArray *owned = [NSMutableArray array];
+      for (NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"dev.tunnelde.app"]) {
+        NSDictionary *value = identity(app.processIdentifier, executable);
+        if (value) [owned addObject:value];
+      }
+      return emit(@{@"processes": owned});
+    }
+    if ([action isEqual:@"credential"] && argc == 3) {
+      NSString *account = [NSString stringWithUTF8String:argv[2]];
+      if (![[NSUUID alloc] initWithUUIDString:account]) return 2;
+      LAContext *authentication = [LAContext new];
+      authentication.interactionNotAllowed = YES;
+      NSDictionary *query = @{(__bridge NSString *)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge NSString *)kSecAttrService: @"dev.tunnelde.app", (__bridge NSString *)kSecAttrAccount: account,
+        (__bridge NSString *)kSecReturnPersistentRef: @YES, (__bridge NSString *)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
+        (__bridge NSString *)kSecUseAuthenticationContext: authentication};
+      CFTypeRef result = NULL;
+      OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+      NSData *reference = CFBridgingRelease(result);
+      NSMutableDictionary *value = [NSMutableDictionary dictionaryWithDictionary:@{@"status": @(status), @"account": account, @"secretRead": @NO}];
+      if (status == errSecSuccess && [reference isKindOfClass:NSData.class]) {
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        CC_SHA256(reference.bytes, (CC_LONG)reference.length, digest);
+        NSMutableString *hash = [NSMutableString string];
+        for (NSUInteger i = 0; i < sizeof(digest); i++) [hash appendFormat:@"%02x", digest[i]];
+        value[@"persistentReferenceSha256"] = hash;
+      }
+      return emit(value);
+    }
     if (argc < 3) return 2;
     char *end = NULL;
     long number = strtol(argv[2], &end, 10);
     if (!end || *end || number <= 1 || number > INT_MAX) return 2;
     pid_t pid = (pid_t)number;
-    NSString *root = [env[@"RUNNER_TEMP"] stringByAppendingPathComponent:
-        [NSString stringWithFormat:@"tunnelde-macos-public-ota-%@-%@", env[@"GITHUB_RUN_ID"], env[@"GITHUB_RUN_ATTEMPT"]]];
-    NSString *executable = [root stringByAppendingPathComponent:@"install/Tunnelde.app/Contents/MacOS/tunnelde"];
     NSDictionary *process = identity(pid, executable);
     if (!process) { fputs("Target identity did not match this owned bundle\n", stderr); return 3; }
     if ([action isEqual:@"identity"]) return emit(process);
+    if ([action isEqual:@"stop"] && argc == 6) {
+      if (![[NSString stringWithUTF8String:argv[3]] isEqual:[process[@"startSeconds"] stringValue]] ||
+          ![[NSString stringWithUTF8String:argv[4]] isEqual:[process[@"startMicroseconds"] stringValue]]) return 3;
+      NSString *signalName = [NSString stringWithUTF8String:argv[5]];
+      int signalNumber = [signalName isEqual:@"TERM"] ? SIGTERM : [signalName isEqual:@"KILL"] ? SIGKILL : 0;
+      if (!signalNumber) return 2;
+      int result = kill(pid, signalNumber);
+      return emit(@{@"identity": process, @"signal": signalName, @"result": @(result)});
+    }
     if ([action isEqual:@"activate"]) {
       NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
       BOOL activated = [app activateWithOptions:NSApplicationActivateAllWindows];
@@ -139,6 +186,7 @@ int main(int argc, const char *argv[]) {
       CGEventFlags flags = kCGEventFlagMaskCommand;
       if ([key isEqual:@"quit"]) code = 12;
       else if ([key isEqual:@"settings"]) code = 43; // Cmd+Comma, the product Settings command.
+      else if ([key isEqual:@"new-host"]) code = 45;
       else return 2;
       for (int down = 1; down >= 0; down--) {
         CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down != 0);
@@ -149,19 +197,46 @@ int main(int argc, const char *argv[]) {
       }
       return emit(@{@"identity": process, @"key": key, @"generatedOSInput": @YES});
     }
-    if (![action isEqual:@"tree"] && ![action isEqual:@"press"]) return 2;
-    NSString *label = argc == 4 ? [NSString stringWithUTF8String:argv[3]] : nil;
-    if ([action isEqual:@"press"] && !label) return 2;
+    BOOL fill = [action isEqual:@"fill"];
+    if (![action isEqual:@"tree"] && ![action isEqual:@"press"] && !fill) return 2;
+    NSString *label = argc >= 4 ? [NSString stringWithUTF8String:argv[3]] : nil;
+    NSString *selection = fill ? @"fill" : argc == 5 ? [NSString stringWithUTF8String:argv[4]] : @"button";
+    if (([action isEqual:@"press"] || fill) && !label) return 2;
     AXUIElementRef target = AXUIElementCreateApplication(pid);
     AXUIElementSetMessagingTimeout(target, 1.0);
     NSMutableArray *nodes = [NSMutableArray array], *matches = [NSMutableArray array];
-    walk(target, 0, nodes, matches, label, CFAbsoluteTimeGetCurrent() + 12);
+    BOOL complete = walk(target, 0, nodes, matches, label, selection, CFAbsoluteTimeGetCurrent() + 12);
     AXError status = kAXErrorSuccess;
     if ([action isEqual:@"press"]) {
-      status = matches.count == 1 ? AXUIElementPerformAction((__bridge AXUIElementRef)matches[0], kAXPressAction) : kAXErrorIllegalArgument;
+      status = complete && matches.count == 1 ? AXUIElementPerformAction((__bridge AXUIElementRef)matches[0], kAXPressAction) : kAXErrorIllegalArgument;
+    }
+    if (fill) {
+      NSString *text = env[@"MACOS_OTA_TEXT"];
+      status = complete && matches.count == 1 && text.length > 0 && text.length <= 1024
+          ? AXUIElementSetAttributeValue((__bridge AXUIElementRef)matches[0], kAXFocusedAttribute, kCFBooleanTrue)
+          : kAXErrorIllegalArgument;
+      if (status == kAXErrorSuccess) {
+        for (int down = 1; down >= 0; down--) {
+          CGEventRef event = CGEventCreateKeyboardEvent(NULL, 0, down != 0); // Cmd+A
+          if (!event) { status = kAXErrorFailure; break; }
+          CGEventSetFlags(event, kCGEventFlagMaskCommand);
+          CGEventPostToPid(pid, event); CFRelease(event);
+        }
+        usleep(100000);
+        UniChar buffer[1024]; [text getCharacters:buffer range:NSMakeRange(0, text.length)];
+        for (int down = 1; status == kAXErrorSuccess && down >= 0; down--) {
+          CGEventRef event = CGEventCreateKeyboardEvent(NULL, 0, down != 0);
+          if (!event) { status = kAXErrorFailure; break; }
+          CGEventSetFlags(event, 0);
+          CGEventKeyboardSetUnicodeString(event, text.length, buffer);
+          CGEventPostToPid(pid, event); CFRelease(event);
+        }
+      }
+      // Avoid logging field values, including the synthetic credential.
+      [nodes removeAllObjects];
     }
     CFRelease(target);
-    int result = emit(@{@"identity": process, @"nodes": nodes, @"matches": @(matches.count), @"axStatus": @(status)});
+    int result = emit(@{@"identity": process, @"nodes": nodes, @"matches": @(matches.count), @"axStatus": @(status), @"traversalCompleted": complete ? @YES : @NO});
     return status == kAXErrorSuccess ? result : 6;
   }
 }

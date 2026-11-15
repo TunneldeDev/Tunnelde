@@ -11,6 +11,7 @@ import { repository } from "../windows-upgrade/assets.mjs";
 import { packagedAsset } from "../local-cli/assets.mjs";
 import { applicationEnvironment, offlineCli, verifyLocalCli } from "../local-cli/verify.mjs";
 import { checkedDirectory, hostedContext, requireCapabilities } from "./guard.mjs";
+import { hasText, upgrade, waitUntil } from "./ota.mjs";
 
 const run = promisify(execFile);
 const user = userInfo();
@@ -24,11 +25,8 @@ const context = hostedContext({
   workflowFile: "macos-public-ota.yml",
   acknowledgement: "original-public-ota",
 });
-assert.equal(
-  process.env.MACOS_OTA_MODE,
-  "inspect",
-  "Only the initial GUI inspection is implemented",
-);
+const mode = process.env.MACOS_OTA_MODE;
+assert(["inspect", "upgrade"].includes(mode), "Expected inspect or upgrade mode");
 for (const path of [context.home, context.workspace, context.temp])
   await checkedDirectory(path, user.uid);
 const source = dirname(fileURLToPath(import.meta.url));
@@ -46,7 +44,7 @@ const report = {
   schemaVersion: 1,
   head: process.env.GITHUB_SHA,
   startedAt: new Date().toISOString(),
-  mode: "original-public-gui-inspection",
+  mode,
   otaAttempted: false,
   otaAccepted: false,
   from: process.env.UPGRADE_FROM,
@@ -59,6 +57,7 @@ const report = {
   checks: [],
 };
 let child, closed, exit;
+let ownedTarget;
 let stdout = "",
   stderr = "";
 
@@ -143,7 +142,14 @@ try {
     "",
   );
   report.sourceFiles = {};
-  for (const name of ["public.mjs", "driver.m", "guard.mjs", "archive.py"]) {
+  for (const name of [
+    "public.mjs",
+    "ota.mjs",
+    "driver.m",
+    "guard.mjs",
+    "archive.py",
+    "profile.py",
+  ]) {
     report.sourceFiles[name] = createHash("sha256")
       .update(await readFile(join(source, name)))
       .digest("hex");
@@ -330,29 +336,52 @@ try {
     }),
   );
   report.sourceCli = await verifyLocalCli(binary, report.from.slice(1), pointer, { env });
+  await waitFor("rendered source controls", async () =>
+    hasText(await native("tree", child.pid), "Updates"),
+  );
   await screenshot("source-original-started");
   await writeFile(
     join(evidence, "startup-ax.json"),
     JSON.stringify(await native("tree", child.pid), null, 2),
   );
-  await native("key", child.pid, "settings");
-  await delay(1500);
-  await writeFile(
-    join(evidence, "settings-ax.json"),
-    JSON.stringify(await native("tree", child.pid), null, 2),
+  await native("press", child.pid, "Updates", "described");
+  await waitFor("rendered Updates controls", async () =>
+    hasText(await native("tree", child.pid), "Check for updates"),
   );
-  await native("press", child.pid, "Updates");
-  await delay(500);
   await writeFile(
     join(evidence, "updates-ax.json"),
     JSON.stringify(await native("tree", child.pid), null, 2),
   );
   await screenshot("original-updates-controls");
-  await native("key", child.pid, "quit");
-  await Promise.race([closed, delay(10000)]);
-  assert.deepEqual(exit, { code: 0, signal: null }, "Original GUI did not quit normally");
-  await absent(pointer);
-  report.normalQuit = exit;
+  if (mode === "upgrade") {
+    await upgrade({
+      report,
+      native,
+      command,
+      env,
+      binary,
+      bundle,
+      data,
+      pointer,
+      source,
+      evidence,
+      pid: child.pid,
+      driver,
+      screenshot,
+      call,
+      closed,
+      getExit: () => exit,
+      ownTarget: (identity) => {
+        ownedTarget = identity;
+      },
+    });
+  } else {
+    await native("key", child.pid, "quit");
+    await Promise.race([closed, delay(10000)]);
+    assert.deepEqual(exit, { code: 0, signal: null }, "Original GUI did not quit normally");
+    await absent(pointer);
+    report.normalQuit = exit;
+  }
   report.passed = true;
 } catch (error) {
   report.passed = false;
@@ -369,19 +398,59 @@ try {
     }
     report.forcedCleanup = true;
   }
+  if (report.otaAttempted && !report.normalTargetQuit) {
+    try {
+      const targets = (await native("locate")).processes.filter(
+        (identity) => identity.pid !== child?.pid,
+      );
+      if (!ownedTarget && targets.length === 1) ownedTarget = targets[0];
+      if (
+        ownedTarget &&
+        targets.some((identity) =>
+          ["pid", "startSeconds", "startMicroseconds", "executable", "identifier"].every(
+            (key) => identity[key] === ownedTarget[key],
+          ),
+        )
+      ) {
+        const stop = async (signal) =>
+          native(
+            "stop",
+            ownedTarget.pid,
+            ownedTarget.startSeconds,
+            ownedTarget.startMicroseconds,
+            signal,
+          );
+        report.targetForcedCleanup = await stop("TERM");
+        try {
+          await waitUntil(
+            "owned target termination",
+            async () => !(await native("locate")).processes.length,
+            5000,
+          );
+        } catch {
+          report.targetForcedKill = await stop("KILL");
+        }
+      }
+      report.finalOwnedProcesses = (await native("locate")).processes;
+    } catch (error) {
+      report.targetCleanupError = String(error);
+    }
+  }
   report.sourceExit = exit;
   report.finishedAt = new Date().toISOString();
   report.cleanup =
-    "Only the owned direct source child was stopped; native profile retained for runner disposal";
-  await writeFile(join(evidence, "source-stdout.log"), stdout, { mode: 0o600 });
-  await writeFile(join(evidence, "source-stderr.log"), stderr, { mode: 0o600 });
+    "Owned direct source and any start-identity-verified updater target only; native profile retained for runner disposal";
+  const redact = (text) => text.replace(/https:\/\/[^\s"<>]*[?][^\s"<>]*/g, "<redacted-url>");
+  await writeFile(join(evidence, "source-stdout.log"), redact(stdout), { mode: 0o600 });
+  await writeFile(join(evidence, "source-stderr.log"), redact(stderr), { mode: 0o600 });
   await writeFile(join(evidence, "results.json"), JSON.stringify(report, null, 2) + "\n", {
     mode: 0o600,
   });
   console.log(
     JSON.stringify({
       passed: report.passed,
-      otaAccepted: false,
+      otaAccepted: report.otaAccepted,
+      otaCoreAccepted: report.otaCoreAccepted ?? false,
       evidence,
       failure: report.failure,
     }),

@@ -110,7 +110,8 @@ workspace／temp 路径。拒绝 root、自托管、其他仓库及普通工作�
 
 独立的 **Original public macOS GUI and OTA acceptance** 工作流实现后继检查阶段。
 从已审查分支手动触发 `macos-public-ota.yml`，填写
-`acknowledgement=original-public-ota`。当前模式为 `inspect`，不尝试更新。
+`acknowledgement=original-public-ota`。`inspect` 模式检查控件与正常 Quit；
+`upgrade` 模式尝试真实签名更新。
 PR 检查验证归档拒绝、编译外部原生驱动，并确认在访问 GUI／Profile 前拒绝普通环境。
 
 启动前驱动重新检查自身权限，要求一次性账户没有生产 bundle、原生应用数据／偏好／
@@ -127,7 +128,21 @@ Runner 下载未改动的公开起始包，核对发布大小／SHA-256，验证
 `$RUNNER_TEMP/tunnelde-macos-public-ota-<run-id>-<attempt>/evidence` 保留截图、AX 树、
 源码／二进制摘要、命令结果，以及正常退出和强制清理的区别，上传后保存 14 天。
 不上传端点 capability 或凭据值。失败只停止仍拥有的直接子进程，Profile 由 VM 销毁清理。
-本检查阶段的 `otaAttempted` 和 `otaAccepted` 均保持 false。
+`inspect` 模式的 `otaAttempted` 和 `otaAccepted` 均保持 false。
+
+`upgrade` 模式将原始目标归档下载为不执行的对照。通过原生 GUI 保存命名设置 Profile
+以及带随机密码的合成主机，密码保存在一次性账户凭据库，不进入参数或 AX 树。
+凭据检查只读取条目的不透明持久引用并记录其 SHA-256，不读取秘密。
+GUI 选择版本必须准确等于固定公开目标，之后才点击安装。Runner 不启动目标进程：
+观察更新器自行重启，核实 PID／启动身份、安装后版本／代码签名／对照二进制摘要和
+实际原生数据库位置；比较设置、Profile、主机、凭据条目身份、stable CLI 与正常 Quit。
+重启进程不是 Runner 的子进程，只能记录退出观测，不能虚报退出码。清理信号要求
+PID／启动时间、bundle 路径和用户身份仍一致。
+
+`otaCoreAccepted` 仅表示上述实际更新／保留范围。非空历史、凭据实际认证／值保留、
+插件指纹／授权／存储和活动恢复标记尚待验证时，完整 `otaAccepted` 保持 false。
+阶段工作流通过不等于整个矩阵完成。原生 Profile 读取程序只以只读模式打开一次性
+账户的规范数据库，不接受其他数据路径、不负责预置数据。
 
 ### 后续公开包 OTA 阶段
 

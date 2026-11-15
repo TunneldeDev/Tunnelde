@@ -145,8 +145,8 @@ environment with explicitly authorized native GUI access is then needed.
 
 The separate **Original public macOS GUI and OTA acceptance** workflow implements
 the next inspection stage. Dispatch `macos-public-ota.yml` from the reviewed
-branch with `acknowledgement=original-public-ota`. Its current mode is `inspect`:
-it does not attempt an update. PR checks test archive rejection, compile the
+branch with `acknowledgement=original-public-ota`. Mode `inspect` checks controls
+and normal Quit; mode `upgrade` attempts the real signed update. PR checks test archive rejection, compile the
 external native driver and verify refusal before GUI/profile access.
 
 Before launching, the driver repeats its own capability checks and requires no
@@ -169,7 +169,27 @@ normal-exit versus forced-cleanup evidence under
 `$RUNNER_TEMP/tunnelde-macos-public-ota-<run-id>-<attempt>/evidence` for 14 days.
 The original endpoint capability and credential values are not uploaded. Failure
 only stops the still-owned direct child; profile cleanup belongs to VM disposal.
-`otaAttempted` and `otaAccepted` remain false in this inspection stage.
+`otaAttempted` and `otaAccepted` remain false in inspection mode.
+
+Upgrade mode downloads the original target archive as an unexecuted reference.
+Using native GUI controls, it saves a named settings profile and a synthetic host
+with a random password in the disposable account's credential store. The password
+is neither passed in arguments nor captured in AX trees. Credential checks read
+only an opaque persistent item's reference and record its SHA-256, never its
+secret. The GUI must select exactly the fixed public target before installation.
+The runner never starts the target: it observes the updater's automatic relaunch,
+checks PID/start identity, installed version/code signature/reference binary hash,
+and actual native database path. It compares settings, profile and host records,
+credential-item identity, stable CLI behavior and normal target Quit. The
+restarted process is not its child; observed exit does not supply an exit code.
+Cleanup signals require the same PID/start time, bundle path and user identity.
+
+`otaCoreAccepted` records only this actual update/retention scope. Full
+`otaAccepted` remains false until nonempty history, credential authentication/value
+retention and plugin fingerprint/approval/storage with an active recovery marker
+have also been verified. A passing staged workflow does not complete that matrix.
+The native profile reader opens only the disposable account's canonical database
+in read-only mode; it accepts no alternative data path and performs no seeding.
 
 ### Remaining public-package OTA stages
 
