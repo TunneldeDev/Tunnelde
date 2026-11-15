@@ -471,6 +471,18 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::
           cargo test --manifest-path src-tauri/Cargo.toml --lib db::startup_tests
 
+      - name: Test immutable credential bindings in isolated macOS keychain
+        timeout-minutes: 3
+        run: TUNNELDE_TEST_APP_KEYRING=1 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::native::tests::system::immutable_bindings_survive_restart_and_cleanup_preserves_other_services -- --ignored --exact
+
+      - name: Preserve isolated macOS binding child diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-binding-keyring-macos-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tunnelde-native-bindings-*/child.log
+          if-no-files-found: ignore
+
   windows-app-check:
     name: Windows application check
     runs-on: windows-latest
