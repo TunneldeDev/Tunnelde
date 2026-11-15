@@ -8,6 +8,16 @@ on:
         default: v1.2.1
         required: true
         type: string
+      mode:
+        description: Environment probe or original public package upgrade
+        default: probe
+        required: true
+        type: choice
+        options: [probe, upgrade]
+      acknowledgement:
+        description: For upgrade mode, type upgrade-test-only (disposable hosted runner only)
+        required: false
+        type: string
   pull_request:
     branches: [dev]
     paths:
@@ -33,7 +43,7 @@ jobs:
         with:
           node-version: 24
       - run: node --test scripts/qa/linux-upgrade/*.test.mjs
-      - run: python3 -m py_compile scripts/qa/linux-upgrade/probe.py
+      - run: python3 -m py_compile scripts/qa/linux-upgrade/probe.py scripts/qa/linux-upgrade/upgrade.py
         env:
           PYTHONPYCACHEPREFIX: ${{ runner.temp }}/linux-ota-python-cache
 
@@ -56,6 +66,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OTA_SOURCE_TAG: ${{ inputs.tag || 'v1.2.1' }}
+          OTA_MODE: ${{ inputs.mode || 'probe' }}
+          OTA_UPGRADE_ACK: ${{ inputs.acknowledgement }}
+          OTA_TARGET_TAG: v1.3.0
         run: dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' node scripts/qa/linux-upgrade/run.mjs
       - name: Retain original probe evidence
         if: always()

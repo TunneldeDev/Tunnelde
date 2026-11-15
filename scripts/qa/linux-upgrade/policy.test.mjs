@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { appimageAsset, requireHostedLinux } from "./policy.mjs";
+import { appimageAsset, requireHostedLinux, upgradeTarget } from "./policy.mjs";
+
+test("installing an update requires the explicit manual hosted release pair and acknowledgement", () => {
+  const env = {
+    OTA_MODE: "upgrade",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_REPOSITORY: "TunneldeDev/Tunnelde",
+    OTA_UPGRADE_ACK: "upgrade-test-only",
+    OTA_SOURCE_TAG: "v1.2.1",
+    OTA_TARGET_TAG: "v1.3.0",
+  };
+  assert.equal(upgradeTarget(env), "v1.3.0");
+  assert.equal(upgradeTarget({}), undefined);
+  assert.equal(upgradeTarget({ ...env, OTA_MODE: "probe" }), undefined);
+  for (const patch of [
+    { OTA_MODE: "install" },
+    { GITHUB_EVENT_NAME: "pull_request" },
+    { GITHUB_REPOSITORY: "other/Tunnelde" },
+    { OTA_UPGRADE_ACK: "" },
+    { OTA_SOURCE_TAG: "v1.3.0" },
+    { OTA_TARGET_TAG: "v1.3.1" },
+  ])
+    assert.throws(() => upgradeTarget({ ...env, ...patch }));
+});
 
 test("reject workstation, self-hosted, wrong platform and missing graphical session before launch", () => {
   const env = {

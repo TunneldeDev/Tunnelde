@@ -29,6 +29,13 @@ def main():
     data.mkdir()
     assert not os.environ.get('GH_TOKEN') and not os.environ.get('GITHUB_TOKEN')
     report = dict(passed=False, packageChanged=False, version=version, actions=[])
+    target = os.environ.get('OTA_TARGET_VERSION')
+    if target:
+        assert target == '1.3.0' and version == '1.2.1'
+        assert os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch'
+        assert os.environ.get('GITHUB_REPOSITORY') == 'TunneldeDev/Tunnelde'
+        assert os.environ.get('OTA_UPGRADE_ACK') == 'upgrade-test-only'
+        assert re.fullmatch(r'[a-f0-9]{64}', os.environ['OTA_TARGET_SHA256'])
     processes = []
     nodes = 0
     env = dict(os.environ, TUNNELDE_DATA_DIR=str(data), APPIMAGE_EXTRACT_AND_RUN='1',
@@ -81,7 +88,7 @@ def main():
                     return found
         return None
 
-    def capture(label, role, prefix):
+    def capture(label, role, prefix, root_node=None):
         path = evidence / (label + '.png')
         control = evidence / (label + '-control.png')
         samples = report.setdefault('captureColorCounts', {}).setdefault(label, [])
@@ -89,10 +96,10 @@ def main():
 
         def painted():
             nonlocal matching_frames
-            target = find_element(accessible, role, prefix)
-            if target is None:
+            element = find_element(root_node if root_node is not None else accessible, role, prefix)
+            if element is None:
                 return False
-            rect = target.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            rect = element.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
             if rect.x < 0 or rect.y < 0 or rect.width <= 0 or rect.height <= 0:
                 return False
             execute(['import', '-window', 'root', str(path)])
@@ -166,6 +173,14 @@ def main():
         (evidence / 'accessible-palette.json').write_text(json.dumps(after, indent=2))
         capture('palette', 'list item', 'Check for updates')
         execute(['xdotool', 'key', '--clearmodifiers', 'Escape'])
+        if target:
+            from upgrade import NativeDriver, run_upgrade
+            def snapshot(node):
+                nonlocal nodes
+                nodes = 0
+                return tree(node)
+            driver = NativeDriver(execute, wait, application, find_element, capture, snapshot, owned_pid)
+            run_upgrade(driver, binary, data, evidence, report)
         report['passed'] = True
     except Exception:
         report['failure'] = traceback.format_exc()
@@ -175,10 +190,21 @@ def main():
             report['screenshotFailure'] = str(screenshot_error)
         raise
     finally:
+        upgrade = report.get('upgrade', {})
+        recorded_pids = {pid for pid in [report.get('ownedPid'),
+                                        upgrade.get('restartCandidatePid'),
+                                        upgrade.get('restartedPid')] if pid}
         # These are only new child process groups; never enumerate/kill desktop Apps.
         report['cleanup'] = []
         for process in reversed(processes):
-            if process.poll() is None:
+            owned_group = False
+            for pid in recorded_pids:
+                if owned_pid(pid):
+                    try:
+                        owned_group = owned_group or os.getpgid(pid) == process.pid
+                    except ProcessLookupError:
+                        pass
+            if process.poll() is None or owned_group:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
                     process.wait(timeout=10)
@@ -191,12 +217,19 @@ def main():
                         pass
                     process.wait(timeout=5)
             report['cleanup'].append(dict(pid=process.pid, exitCode=process.returncode))
+        for pid in recorded_pids:
+            if owned_pid(pid):
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
         report['packageChanged'] = hashlib.sha256(binary.read_bytes()).hexdigest() != original_digest
         report['cleanupIsNormalQuit'] = False
         if (data / 'logs').is_dir():
             shutil.copytree(data / 'logs', evidence / 'logs')
         (evidence / 'gui-probe.json').write_text(json.dumps(report, indent=2))
-        assert not report['packageChanged']
+        if not target:
+            assert not report['packageChanged']
 
 
 if __name__ == '__main__':
