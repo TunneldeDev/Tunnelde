@@ -628,6 +628,9 @@
     "testCancelled": "已取消连接测试"
   },
   "sftp": {
+    "localBusy": "本地文件操作仍在运行。请等待完成后再试。",
+    "localCancelled": "本地文件操作已在开始前取消。",
+    "localWorkerFailed": "本地文件工作线程意外停止。请先检查软件日志，再决定是否重试。",
     "copyInterrupted": "复制任务在报告完成前意外停止。请先检查后台任务列表和日志，再决定是否重试。",
     "title": "文件",
     "local": "本地",

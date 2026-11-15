@@ -628,6 +628,9 @@
     "testCancelled": "Connection test cancelled"
   },
   "sftp": {
+    "localBusy": "Local file operations are still running. Wait for them to finish, then try again.",
+    "localCancelled": "The local file operation was cancelled before it started.",
+    "localWorkerFailed": "The local file worker stopped unexpectedly. Check the software log before retrying.",
     "copyInterrupted": "The copy worker stopped before reporting completion. Check the background task list and logs before retrying.",
     "title": "Files",
     "local": "Local",

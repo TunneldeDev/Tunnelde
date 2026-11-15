@@ -102,6 +102,14 @@ make every plugin or advanced transfer recovery mechanism a prerequisite for
 the first stable desktop release. Basic file safety, actual installation and
 upgrade preservation remain necessary even when advanced features are deferred.
 
+Native local listing, directory creation, file creation and deletion use the
+bounded `services/files/local.rs` worker adapter. The eight queued or running
+operations retain capacity until actual filesystem work settles. Cancellation
+before admission prevents a late mutation; cancellation after admission does
+not roll it back. Existing filesystem behavior and errors remain shared with
+the synchronous domain implementation. Plugin calls retain their immediate
+authorization-to-operation boundary; they do not enter this native queue.
+
 ## Automated evidence
 
 `scripts/ci/check-core-contract.mjs` checks the historical stable plugin floor.
