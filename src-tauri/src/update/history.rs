@@ -241,9 +241,23 @@ pub async fn load(app: AppHandle, version: String) -> AppResult<ReleaseHistory> 
     if settings.update_source == "custom" {
         return Ok(history.finish(false, Some("updates.historyCustom")));
     }
-    let result = match crate::network::http_client(&app, "updates") {
-        Ok(client) => fetch(&client, RELEASES_API, history, Duration::from_secs(25)).await,
-        Err(_) => history.finish(false, Some("updates.historyUnavailable")),
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
+    let result = match tokio::time::timeout_at(
+        deadline,
+        crate::network::http::prepare(&app, "updates", settings.network.clone()),
+    )
+    .await
+    {
+        Ok(Ok(route)) => {
+            fetch(
+                route.client(),
+                RELEASES_API,
+                history,
+                deadline.saturating_duration_since(tokio::time::Instant::now()),
+            )
+            .await
+        }
+        _ => history.finish(false, Some("updates.historyUnavailable")),
     };
     let latest = service.update.snapshot();
     if !latest.matches(&settings)

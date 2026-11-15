@@ -280,7 +280,7 @@ pub fn validate_preferences(settings: &Settings) -> AppResult<()> {
 
 fn configured_updater(
     app: &AppHandle,
-    settings: &Settings,
+    proxy: Option<&str>,
     feed: &Feed,
 ) -> AppResult<tauri_plugin_updater::Updater> {
     let channel = feed.channel.clone();
@@ -300,12 +300,7 @@ fn configured_updater(
                 .connect_timeout(Duration::from_secs(15))
                 .read_timeout(Duration::from_secs(60))
         });
-    if let Some(url) = crate::network::proxy_url(
-        &app.state::<AppState>().vault,
-        &settings.network,
-        "updates",
-        None,
-    )? {
+    if let Some(url) = proxy {
         builder = if url.is_empty() {
             builder.no_proxy()
         } else {
@@ -402,26 +397,36 @@ async fn run_check(
         next.unsupported_reason = Some(capability.reason.into());
         next.download_url = Some(RELEASES_PAGE.into());
     } else {
-        let feeds = feeds(app, settings).await?;
+        validate_preferences(settings)?;
+        let route = crate::network::http::prepare(app, "updates", settings.network.clone()).await?;
+        let feeds = feeds(app, settings, &route).await?;
         let mut candidates = Vec::new();
+        let worker_app = app.clone();
+        let proxy = route.proxy().map(str::to_owned);
+        // Reuse the captured route for every manifest and the retained updater.
+        // Updater construction also stays off runtime threads.
+        let (feeds, checks) = crate::services::credentials::inspect(move || {
+            let checks = feeds
+                .iter()
+                .map(|feed| configured_updater(&worker_app, proxy.as_deref(), feed))
+                .collect::<AppResult<Vec<_>>>()?;
+            Ok((feeds, checks))
+        })
+        .await?;
         // At most three channel manifests; choose by SemVer, not publication date.
-        let checks = feeds
-            .iter()
-            .map(|feed| configured_updater(app, settings, feed))
-            .collect::<AppResult<Vec<_>>>()?;
-        let client = crate::network::http_client(app, "updates")?;
+        let client = route.client();
         let (first, second, third) = tokio::join!(
-            check_manifest(&client, &checks[0], &feeds[0]),
+            check_manifest(client, &checks[0], &feeds[0]),
             async {
                 if checks.len() > 1 {
-                    check_manifest(&client, &checks[1], &feeds[1]).await
+                    check_manifest(client, &checks[1], &feeds[1]).await
                 } else {
                     Ok(None)
                 }
             },
             async {
                 if checks.len() > 2 {
-                    check_manifest(&client, &checks[2], &feeds[2]).await
+                    check_manifest(client, &checks[2], &feeds[2]).await
                 } else {
                     Ok(None)
                 }

@@ -1,13 +1,7 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    pin::Pin,
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, pin::Pin, time::Duration};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -18,8 +12,11 @@ use crate::{
 };
 
 pub mod diagnostics;
+pub(crate) mod http;
 pub(crate) mod requests;
 mod transport;
+pub(super) use http::client_for_proxy as http_client_for_proxy;
+pub(crate) use http::{http_client, HttpClients};
 pub(crate) use transport::TcpRoute;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -161,74 +158,6 @@ pub fn proxy_url(
             .map_err(|_| AppError::validation("network.invalid"))?;
     }
     Ok(Some(url.to_string()))
-}
-
-struct CachedClient {
-    route: [u8; 32],
-    created: Instant,
-    client: reqwest::Client,
-}
-#[derive(Default)]
-pub struct HttpClients(Mutex<HashMap<String, CachedClient>>);
-
-pub fn http_client(app: &AppHandle, feature: &str) -> AppResult<reqwest::Client> {
-    let state = app.state::<AppState>();
-    let settings = state.settings();
-    let url = proxy_url(&state.vault, &settings.network, feature, None)?;
-    // Reuse TLS connections without retaining plaintext credentials as cache keys.
-    // Periodically rebuild system routes so changed OS proxy settings take effect.
-    let route: [u8; 32] = Sha256::digest(serde_json::to_vec(&url)?).into();
-    let mut clients = state
-        .http_clients
-        .0
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    if let Some(cached) = clients.get(feature).filter(|cached| {
-        cached.route == route
-            && (url.is_some() || cached.created.elapsed() < Duration::from_secs(30))
-    }) {
-        return Ok(cached.client.clone());
-    }
-    let client = http_client_for_proxy(url.as_deref())?;
-    clients.insert(
-        feature.to_owned(),
-        CachedClient {
-            route,
-            created: Instant::now(),
-            client: client.clone(),
-        },
-    );
-    Ok(client)
-}
-
-/// Shared HTTPS transport for real requests and proxy diagnostics. Explicit
-/// routes always disable ambient proxy inheritance; TLS verification stays on.
-pub(super) fn http_client_for_proxy(url: Option<&str>) -> AppResult<reqwest::Client> {
-    let mut builder = reqwest::Client::builder()
-        .https_only(true)
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(300))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .user_agent(concat!("Tunnelde/", env!("CARGO_PKG_VERSION")));
-    // Some Windows proxy routes close the Rustls handshake even when the same
-    // verified HTTPS request succeeds through Schannel. Use the native backend
-    // consistently for diagnostics and real traffic; never disable verification
-    // or change the selected proxy to compensate for a failed handshake.
-    #[cfg(windows)]
-    {
-        builder = builder.tls_backend_native();
-    }
-    if let Some(url) = url {
-        builder = builder.no_proxy();
-        if !url.is_empty() {
-            builder = builder.proxy(
-                reqwest::Proxy::all(url).map_err(|_| AppError::validation("network.invalid"))?,
-            );
-        }
-    }
-    builder
-        .build()
-        .map_err(|_| AppError::validation("network.failed"))
 }
 
 pub fn process_environment(

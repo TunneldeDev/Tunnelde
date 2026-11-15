@@ -37,7 +37,9 @@ async fn perform(app: AppHandle, session: String, path: String) -> AppResult<boo
         return Ok(false);
     }
     prepared.verify_scope().await?;
-    let http = crate::network::http_client(&app, "marketplace")?;
+    let http = crate::network::http_client(&app, "marketplace").await?;
+    // Scope can change while OS proxy credentials are pending.
+    prepared.verify_scope().await?;
     let package = prepared.package.download(&http).await?;
     prepared.verify_scope().await?;
     let service = state
