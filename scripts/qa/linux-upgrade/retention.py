@@ -4,6 +4,7 @@ import sqlite3
 
 HOST_NAME = 'OTA retained Linux host'
 PROFILE_NAME = 'OTA retained Linux profile'
+INPUT_ROLES = ('text', 'entry', 'embedded')
 
 
 class Retention:
@@ -21,7 +22,8 @@ class Retention:
             count += 1
             assert depth <= 30 and count <= 2500, 'Incomplete accessibility traversal'
             state = node.getState()
-            if (node.getRoleName() == role and node.name == name
+            roles = (role,) if isinstance(role, str) else role
+            if (node.getRoleName() in roles and node.name == name
                     and state.contains(self.atspi.STATE_SHOWING)
                     and state.contains(self.atspi.STATE_ENABLED)):
                 result.append(node)
@@ -47,7 +49,7 @@ class Retention:
     def fill(self, name, value):
         # ASCII fixture typing does not establish physical Unicode/IME behavior.
         assert value.isascii() and '\n' not in value
-        self.click('text', name)
+        self.click(INPUT_ROLES, name)
         self.driver.execute(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'])
         self.driver.execute(['xdotool', 'type', '--clearmodifiers', '--delay', '15', value])
 
@@ -67,19 +69,20 @@ class Retention:
         self.click('push button', 'Save as profile…')
         self.fill('Profile name', PROFILE_NAME)
         self.click('push button', 'Save')
-        self.driver.wait(lambda: not self.matches('text', 'Profile name'), 20)
+        self.driver.wait(lambda: not self.matches(INPUT_ROLES, 'Profile name'), 20)
         self.driver.execute(['xdotool', 'key', '--clearmodifiers', 'ctrl+n'])
         for label, value in [('Name', HOST_NAME), ('Host', '127.0.0.1'), ('Port', '2209'), ('User', 'qa')]:
             self.fill(label, value)
         # No credential: keyring/real authentication retention is still separate.
         self.click('push button', 'Save')
-        self.driver.wait(lambda: not self.matches('text', 'Name'), 20)
+        self.driver.wait(lambda: not self.matches(INPUT_ROLES, 'Name'), 20)
         before = self.snapshot()
         host, = (v for v in before['hosts'] if v['name'] == HOST_NAME)
         assert (host['address'], host['port'], host['username']) == ('127.0.0.1', 2209, 'qa')
         profile, = (v for v in before['profiles'] if v['name'] == PROFILE_NAME)
         assert profile['settings']['editorTabSize'] == 8
         (self.evidence / 'records-before.json').write_text(json.dumps(before, indent=2), encoding='utf-8')
+        self.driver.capture('retained-records', 'page tab', HOST_NAME, self.app)
         return before
 
     def verify(self, app, before):
