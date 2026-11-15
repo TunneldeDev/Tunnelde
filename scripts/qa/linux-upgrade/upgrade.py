@@ -7,6 +7,7 @@ import subprocess
 import time
 from typing import Callable
 from retention import Retention
+from selection import require_selected_target, validate_pair
 
 
 @dataclass
@@ -26,6 +27,7 @@ def run_upgrade(driver, binary, data, evidence, report):
     assert os.environ['OTA_UPGRADE_ACK'] == 'upgrade-test-only'
     import pyatspi
     target = os.environ['OTA_TARGET_VERSION']
+    channel = validate_pair(report['version'], target)
     expected_digest = os.environ['OTA_TARGET_SHA256']
     pointer = data / 'automation.json'
     old_pid = report['ownedPid']
@@ -51,7 +53,7 @@ def run_upgrade(driver, binary, data, evidence, report):
         'general': {'language': 'en-US', 'closeToTray': False},
         'appearance': {'theme': 'light'},
         'editor': {'tabSize': 8},
-        'updates': {'autoCheck': False, 'channel': 'stable', 'source': 'github', 'sourceUrl': ''},
+        'updates': {'autoCheck': False, 'channel': channel, 'source': 'github', 'sourceUrl': ''},
     }
     for attempt in range(3):
         before = cli('preferences', 'snapshot')
@@ -94,6 +96,10 @@ def run_upgrade(driver, binary, data, evidence, report):
 
     button = driver.wait(install_button, 90)[0]
     driver.capture('update-available', 'push button', 'Download and install', app, light_text=True)
+    observed = driver.tree(app)
+    (evidence / 'accessible-selected-target.json').write_text(json.dumps(observed, indent=2))
+    upgrade['selectedTargetLabel'] = require_selected_target(observed, report['version'], target)
+    upgrade['checks'].append('Exact source-to-target update selection verified before installation')
     rect = button.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
     assert rect.x >= 0 and rect.y >= 0 and rect.width > 0 and rect.height > 0
     initial_stat = binary.stat()

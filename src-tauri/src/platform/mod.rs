@@ -1,3 +1,4 @@
+pub(crate) mod application_actions;
 pub mod background;
 pub mod editor_file;
 pub mod file_identity;

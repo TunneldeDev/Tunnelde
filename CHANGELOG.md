@@ -6,6 +6,69 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.3.1...v1.4.0) - 2026-11-15
+
+### 更新概览 | Highlights
+
+- **editor:** recover unsaved drafts after restart
+- **ssh:** reuse atomic key publication
+- **credentials:** model durable credential bindings
+- **credentials:** stage native credential IO outside database guards
+- **ssh:** release the database during reviewed password reads
+
+<details open>
+<summary>详细变更 | Details (32)</summary>
+
+### 新增 | New
+
+- **editor:** recover unsaved drafts after restart ([#377](https://github.com/TunneldeDev/Tunnelde/pull/377), [2cceb5c](https://github.com/TunneldeDev/Tunnelde/commit/2cceb5c773a5b9c47546114fc458a78a015e077c)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **ssh:** reuse atomic key publication ([#384](https://github.com/TunneldeDev/Tunnelde/pull/384)) @quyansiyuanwang
+- **credentials:** model durable credential bindings ([#390](https://github.com/TunneldeDev/Tunnelde/pull/390), [6b5fadc](https://github.com/TunneldeDev/Tunnelde/commit/6b5fadc0e75aa4463597eb91a2691256b207e7bb)) @quyansiyuanwang
+- **credentials:** stage native credential IO outside database guards ([#390](https://github.com/TunneldeDev/Tunnelde/pull/390), [f107c5a](https://github.com/TunneldeDev/Tunnelde/commit/f107c5a80901c130dc0bf944ae20b1a8fa3ead36)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **ssh:** release the database during reviewed password reads ([#374](https://github.com/TunneldeDev/Tunnelde/pull/374)) @quyansiyuanwang
+- **ssh:** prepare connection reviews off the UI thread ([#375](https://github.com/TunneldeDev/Tunnelde/pull/375), [526c92d](https://github.com/TunneldeDev/Tunnelde/commit/526c92d8385fc35c2edd3f9a4653c79f8ebd99a9)) @quyansiyuanwang
+- **ssh:** reject stale review inputs before proxy reads ([#375](https://github.com/TunneldeDev/Tunnelde/pull/375)) @quyansiyuanwang
+- **editor:** retain consent fence through startup handoff ([#377](https://github.com/TunneldeDev/Tunnelde/pull/377)) @quyansiyuanwang
+- **lifecycle:** checkpoint edits before tray quit and restart ([#378](https://github.com/TunneldeDev/Tunnelde/pull/378)) @quyansiyuanwang
+- **editor:** coalesce shared checkpoint failure notices ([#379](https://github.com/TunneldeDev/Tunnelde/pull/379)) @quyansiyuanwang
+- **ssh:** keep route credential checks off runtime threads ([#380](https://github.com/TunneldeDev/Tunnelde/pull/380), [0ec46bd](https://github.com/TunneldeDev/Tunnelde/commit/0ec46bdaf8b685581f246d39f16f32652bf4dc3a)) @quyansiyuanwang
+- **ssh:** dispose sessions whose worker result is abandoned ([#380](https://github.com/TunneldeDev/Tunnelde/pull/380)) @quyansiyuanwang
+- **plugins:** keep route preparation cancellable during credential reads ([#381](https://github.com/TunneldeDev/Tunnelde/pull/381)) @quyansiyuanwang
+- **plugins:** recover running frontends after WebView reload ([#382](https://github.com/TunneldeDev/Tunnelde/pull/382)) @quyansiyuanwang
+- **runners:** keep browser preparation cancellable ([#383](https://github.com/TunneldeDev/Tunnelde/pull/383)) @quyansiyuanwang
+- **ssh:** preserve keys during login setup ([#384](https://github.com/TunneldeDev/Tunnelde/pull/384), [18629ef](https://github.com/TunneldeDev/Tunnelde/commit/18629ef66b3ff5560008545c84a3939ab8c7f44b)) @quyansiyuanwang
+- **network:** prepare HTTP proxy routes off runtime threads ([#385](https://github.com/TunneldeDev/Tunnelde/pull/385), [524c197](https://github.com/TunneldeDev/Tunnelde/commit/524c19705a3dded2f12ff707943a85fb8f9606d6)) @quyansiyuanwang
+- **network:** keep proxy diagnostics off runtime threads ([#386](https://github.com/TunneldeDev/Tunnelde/pull/386)) @quyansiyuanwang
+- validate recovery browser effects without OS reads under authority locks ([#387](https://github.com/TunneldeDev/Tunnelde/pull/387)) @quyansiyuanwang
+- prepare plugin process proxies without blocking runtime threads ([#388](https://github.com/TunneldeDev/Tunnelde/pull/388)) @quyansiyuanwang
+- bound plugin keyring operations and fence queued writes ([#389](https://github.com/TunneldeDev/Tunnelde/pull/389)) @quyansiyuanwang
+- **credentials:** bind native secrets to durable configuration authority ([#390](https://github.com/TunneldeDev/Tunnelde/pull/390)) @quyansiyuanwang
+- **credentials:** explain pending recovery before retrying saves ([#391](https://github.com/TunneldeDev/Tunnelde/pull/391)) @quyansiyuanwang
+- **sshfs:** propagate transport EOF without losing final responses ([#395](https://github.com/TunneldeDev/Tunnelde/pull/395), [b561456](https://github.com/TunneldeDev/Tunnelde/commit/b56145608591a64da4bca7a9df617d903635f0f6)) @quyansiyuanwang
+- **sshfs:** bound final drain when passive process remains open ([#395](https://github.com/TunneldeDev/Tunnelde/pull/395)) @quyansiyuanwang
+- **sshfs:** bound subsystem negotiation without blocking mount cleanup ([#396](https://github.com/TunneldeDev/Tunnelde/pull/396)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **network:** exercise HTTP workers on macOS and Windows ([#385](https://github.com/TunneldeDev/Tunnelde/pull/385)) @quyansiyuanwang
+- **credentials:** verify native binding lifecycle in isolated keyring ([#391](https://github.com/TunneldeDev/Tunnelde/pull/391), [2176147](https://github.com/TunneldeDev/Tunnelde/commit/2176147c7688888c210c1fee16ea72e28c66ced3)) @quyansiyuanwang
+- **credentials:** verify native bindings in macOS Keychain ([#392](https://github.com/TunneldeDev/Tunnelde/pull/392)) @quyansiyuanwang
+- **updates:** retain download evidence across WebView exit ([#393](https://github.com/TunneldeDev/Tunnelde/pull/393)) @quyansiyuanwang
+- **updates:** validate explicit Linux public upgrade targets ([#394](https://github.com/TunneldeDev/Tunnelde/pull/394)) @quyansiyuanwang
+- **sshfs:** exercise owned mounts through authenticated SSH ([#395](https://github.com/TunneldeDev/Tunnelde/pull/395), [5d55e7f](https://github.com/TunneldeDev/Tunnelde/commit/5d55e7f8877df844083688129e59119567826a68)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.3.1](https://github.com/TunneldeDev/Tunnelde/compare/v1.3.0...v1.3.1) - 2026-11-15
 
 ### 更新概览 | Highlights

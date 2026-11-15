@@ -4,10 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     connectionRoute: vi.fn(),
-    saveConnectionRoute: vi.fn(),
     credentialStatus: vi.fn(),
-    credentialSave: vi.fn(),
-    credentialForget: vi.fn(),
+    saveHostEditor: vi.fn(),
   },
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
@@ -46,10 +44,8 @@ beforeEach(async () => {
   vi.resetAllMocks();
   await i18n.changeLanguage("en-US");
   apiMock.connectionRoute.mockReset().mockResolvedValue({ proxy: "", jumpHosts: [] });
-  apiMock.saveConnectionRoute.mockReset().mockResolvedValue(undefined);
   apiMock.credentialStatus.mockResolvedValue(true);
-  apiMock.credentialSave.mockResolvedValue(undefined);
-  apiMock.credentialForget.mockResolvedValue(undefined);
+  apiMock.saveHostEditor.mockResolvedValue({ host, credentialError: null });
   createHost.mockResolvedValue(host);
   updateHost.mockResolvedValue(host);
   useHosts.setState({ groups: [], hosts: [host], createHost, updateHost });
@@ -71,9 +67,13 @@ describe("host password editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
-    expect(apiMock.credentialSave).not.toHaveBeenCalled();
-    expect(apiMock.credentialForget).not.toHaveBeenCalled();
-    expect(updateHost).toHaveBeenCalledWith("h1", expect.objectContaining({ name: "Renamed" }));
+    expect(apiMock.saveHostEditor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "h1",
+        input: expect.objectContaining({ name: "Renamed" }),
+        credential: { action: "keep" },
+      }),
+    );
   });
 
   it("saves the exact password to the vault without putting it into host data", async () => {
@@ -88,18 +88,23 @@ describe("host password editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
-      expect(apiMock.credentialSave).toHaveBeenCalledWith("h1", " secret with spaces "),
+      expect(apiMock.saveHostEditor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "h1",
+          credential: { action: "save", password: " secret with spaces " },
+        }),
+      ),
     );
-    expect(updateHost.mock.calls[0]![1]).not.toHaveProperty("password");
+    expect(apiMock.saveHostEditor.mock.calls[0]![0].input).not.toHaveProperty("password");
   });
 
   it("stages password removal until Save and allows undo or cancel", async () => {
     render(<DialogHost />);
     fireEvent.click(await screen.findByRole("button", { name: "Remove saved password" }));
-    expect(apiMock.credentialForget).not.toHaveBeenCalled();
+    expect(apiMock.saveHostEditor).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(apiMock.credentialForget).not.toHaveBeenCalled();
+    expect(apiMock.saveHostEditor).not.toHaveBeenCalled();
     expect(updateHost).not.toHaveBeenCalled();
   });
 
@@ -112,12 +117,19 @@ describe("host password editing", () => {
       ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(apiMock.credentialForget).toHaveBeenCalledExactlyOnceWith("h1"));
+    await waitFor(() =>
+      expect(apiMock.saveHostEditor).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: "h1", credential: { action: "forget" } }),
+      ),
+    );
   });
 
   it("retries vault failures without creating duplicate hosts or losing the password", async () => {
     useDialogs.setState({ dialog: { kind: "host", host: null } });
-    apiMock.credentialSave.mockRejectedValueOnce(new Error("Vault unavailable"));
+    apiMock.saveHostEditor.mockResolvedValueOnce({
+      host,
+      credentialError: new Error("Vault unavailable"),
+    });
     render(<DialogHost />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Web" } });
     fireEvent.change(screen.getByLabelText("Host"), { target: { value: "example.com" } });
@@ -138,9 +150,10 @@ describe("host password editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
-    expect(createHost).toHaveBeenCalledOnce();
-    expect(updateHost).toHaveBeenCalledOnce();
-    expect(apiMock.credentialSave).toHaveBeenCalledTimes(2);
+    expect(apiMock.saveHostEditor).toHaveBeenCalledTimes(2);
+    expect(apiMock.saveHostEditor.mock.calls[0]![0].id).toBeNull();
+    expect(apiMock.saveHostEditor.mock.calls[1]![0].id).toBe("h1");
+    expect(useHosts.getState().hosts.filter((item) => item.id === "h1")).toHaveLength(1);
   });
 
   it("does not offer a password field for key authentication", async () => {
@@ -156,6 +169,24 @@ describe("host password editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
-    expect(apiMock.credentialSave).not.toHaveBeenCalled();
+    expect(apiMock.saveHostEditor).toHaveBeenCalledWith(
+      expect.objectContaining({ credential: { action: "keep" } }),
+    );
+  });
+
+  it("keeps an unsaved draft and reports the original error when field persistence fails", async () => {
+    useDialogs.setState({ dialog: { kind: "host", host: null } });
+    apiMock.saveHostEditor.mockRejectedValueOnce(new Error("Route no longer exists"));
+    render(<DialogHost />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Draft" } });
+    fireEvent.change(screen.getByLabelText("Host"), { target: { value: "example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("Route no longer exists");
+    expect(screen.queryByText(/Host details were saved/)).toBeNull();
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
+    expect(apiMock.saveHostEditor.mock.calls[1]![0].id).toBeNull();
   });
 });

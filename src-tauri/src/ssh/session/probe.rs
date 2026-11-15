@@ -5,9 +5,10 @@ use super::*;
 pub(in crate::ssh) struct ProbeTarget(route::Snapshot);
 
 impl ProbeTarget {
-    pub(in crate::ssh) fn capture(app: &AppHandle, host_id: &str) -> AppResult<Self> {
-        let host = crate::services::hosts::resolve(app, host_id)?;
-        Ok(Self(route::Snapshot::capture(app, &host)?))
+    pub(in crate::ssh) async fn capture(app: &AppHandle, host_id: &str) -> AppResult<Self> {
+        Ok(Self(
+            route::Snapshot::capture_background(app, host_id).await?,
+        ))
     }
 
     pub(in crate::ssh) async fn probe(

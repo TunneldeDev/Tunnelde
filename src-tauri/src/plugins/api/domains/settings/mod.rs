@@ -33,6 +33,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     "plugin.frontend.userSelectionRequired",
                 ));
             }
+            // Persisting file contents requires a local user choice, including
+            // for legacy settings writers outside the versioned allowlist.
+            if patch.get("editorDraftRecovery").is_some() {
+                return Err(AppError::validation("editor.recoveryConsentRequired"));
+            }
             let writer = crate::services::settings::writer(app, &state).await;
             authorize(context, &["settings.write"])?;
             let mut prepared = writer.prepare_update(patch)?;

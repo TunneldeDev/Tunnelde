@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type * as IpcModule from "@/lib/api/ipc";
+import type * as ToastModule from "@/store/toasts";
 
 const mocks = vi.hoisted(() => ({
   native: vi.fn(),
@@ -8,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   stop: vi.fn(),
   toast: vi.fn(),
+  flushRecovery: vi.fn(async () => {}),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
@@ -15,7 +17,11 @@ vi.mock("@/lib/api/ipc", async (original) => ({
   ...(await original<typeof IpcModule>()),
   isTauri: mocks.native,
 }));
-vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
+vi.mock("@/store/toasts", async (original) => ({
+  ...(await original<typeof ToastModule>()),
+  toast: mocks.toast,
+}));
+vi.mock("@/lib/editor/recovery/persistence", () => ({ flushEditorDrafts: mocks.flushRecovery }));
 import "@/i18n/i18n";
 import type { AppInfo } from "@/lib/api/types";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
@@ -57,6 +63,7 @@ beforeEach(() => {
   mocks.invoke.mockResolvedValue(undefined);
   mocks.stop.mockResolvedValue(undefined);
   mocks.listen.mockResolvedValue(mocks.stop);
+  mocks.flushRecovery.mockResolvedValue(undefined);
   useSettings.setState({
     settings: { ...DEFAULT_SETTINGS, closeToTray: false },
     info: { os: "windows" } as AppInfo,
@@ -145,6 +152,39 @@ it("retains close protection and drafts after failed release or failed close", a
   confirmation = useDialogs.getState().dialog;
   expect(confirmation.kind).toBe("confirm");
 });
+it("awaits opted-in recovery before approving a close, and retains the window if it fails", async () => {
+  useSettings.setState({ settings: { ...DEFAULT_SETTINGS, editorDraftRecovery: true } });
+  useEditors.setState({ entries: { draft: draft() } });
+  let finish!: () => void;
+  mocks.flushRecovery.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await mount();
+  await requestClose();
+  expect(useDialogs.getState().dialog.kind).toBe("none");
+  expect(mocks.invoke).not.toHaveBeenCalledWith(
+    "main_window_close_guard_finish",
+    expect.anything(),
+  );
+  await act(async () => {
+    finish();
+  });
+  expect(mocks.invoke).toHaveBeenCalledWith("main_window_close_guard_finish", { owner: owner() });
+  const currentOwner = owner();
+  mocks.invoke.mockClear();
+  mocks.flushRecovery.mockRejectedValueOnce(Error("checkpoint unavailable"));
+  await requestClose(currentOwner);
+  expect(mocks.invoke).not.toHaveBeenCalledWith(
+    "main_window_close_guard_finish",
+    expect.anything(),
+  );
+  expect(mocks.toast).toHaveBeenCalledWith("checkpoint unavailable", "error");
+  expect(useEditors.getState().entries.draft?.content).toBe("edited");
+});
+
 it("does not ask to discard for macOS or tray hiding", async () => {
   await mount();
   useEditors.setState({ entries: { draft: draft() } });
@@ -156,6 +196,24 @@ it("does not ask to discard for macOS or tray hiding", async () => {
   });
   await requestClose();
   expect(useDialogs.getState().dialog.kind).toBe("none");
+  expect(mocks.invoke).not.toHaveBeenCalledWith(
+    "main_window_close_guard_finish",
+    expect.anything(),
+  );
+});
+it("does not report a late checkpoint failure after its close guard unmounts", async () => {
+  let reject!: (error: unknown) => void;
+  mocks.flushRecovery.mockImplementationOnce(
+    () =>
+      new Promise<void>((_, failed) => {
+        reject = failed;
+      }),
+  );
+  const rendered = await mount();
+  await requestClose();
+  rendered.unmount();
+  await act(async () => reject(Error("late checkpoint failure")));
+  expect(mocks.toast).not.toHaveBeenCalled();
   expect(mocks.invoke).not.toHaveBeenCalledWith(
     "main_window_close_guard_finish",
     expect.anything(),

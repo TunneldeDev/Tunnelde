@@ -14,6 +14,10 @@ on:
         required: true
         type: choice
         options: [probe, upgrade]
+      to:
+        description: Exact public target tag (required for upgrade mode)
+        required: false
+        type: string
       acknowledgement:
         description: For upgrade mode, type upgrade-test-only (disposable hosted runner only)
         required: false
@@ -43,6 +47,9 @@ jobs:
         with:
           node-version: 24
       - run: node --test scripts/qa/linux-upgrade/*.test.mjs
+      - run: python3 -m unittest discover -s scripts/qa/linux-upgrade -p '*_test.py'
+        env:
+          PYTHONPYCACHEPREFIX: ${{ runner.temp }}/linux-ota-python-cache
       - run: python3 -m py_compile scripts/qa/linux-upgrade/probe.py scripts/qa/linux-upgrade/upgrade.py scripts/qa/linux-upgrade/retention.py
         env:
           PYTHONPYCACHEPREFIX: ${{ runner.temp }}/linux-ota-python-cache
@@ -68,7 +75,7 @@ jobs:
           OTA_SOURCE_TAG: ${{ inputs.tag || 'v1.2.1' }}
           OTA_MODE: ${{ inputs.mode || 'probe' }}
           OTA_UPGRADE_ACK: ${{ inputs.acknowledgement }}
-          OTA_TARGET_TAG: v1.3.0
+          OTA_TARGET_TAG: ${{ inputs.to }}
         run: dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' node scripts/qa/linux-upgrade/run.mjs
       - name: Retain original probe evidence
         if: always()

@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { access, writeFile } from "node:fs/promises";
 import { setTimeout as pause } from "node:timers/promises";
 import { join } from "node:path";
+import { observeUpdateProgress } from "./progress.mjs";
 
 const run = promisify(execFile);
 
@@ -43,28 +44,14 @@ export async function updateInApplication(desktop, binary, tag, report) {
     join(desktop.root, "evidence", "update-selection.json"),
     JSON.stringify(selected, null, 2),
   );
-  const progress = [];
-  await desktop.page.evaluate(async () => {
-    globalThis.__qaOtaEvents = [];
-    await globalThis.__TAURI_INTERNALS__.invoke("plugin:event|listen", {
-      event: "update://state",
-      target: { kind: "Any" },
-      handler: globalThis.__TAURI_INTERNALS__.transformCallback((event) => {
-        globalThis.__qaOtaEvents.push(event.payload);
-      }),
-    });
-  });
+  const progress = (report.updateProgress = []);
+  await observeUpdateProgress(desktop.page, progress);
   let installError;
   const install = desktop.invoke("update_install").catch((error) => {
     installError = String(error);
   });
   const until = Date.now() + 180000;
   while (desktop.child.exitCode === null && Date.now() < until) {
-    try {
-      progress.push(...(await desktop.page.evaluate(() => globalThis.__qaOtaEvents.splice(0))));
-    } catch {
-      /* the webview can close as the updater launches */
-    }
     await pause(250);
   }
   assert.notEqual(
@@ -75,12 +62,6 @@ export async function updateInApplication(desktop, binary, tag, report) {
   const exit = await desktop.done;
   assert.equal(exit.code, 0, JSON.stringify(exit));
   report.exits.push({ version: desktop.version, stage: "updater-handoff", ...exit });
-  report.updateProgress = progress.map(({ phase, progress, contentLength, error }) => ({
-    phase,
-    progress,
-    contentLength,
-    error,
-  }));
   // Closing the old WebView rejects a pending invocation; it is not an updater error.
   await desktop.browser?.close().catch(() => {});
   await install;

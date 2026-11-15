@@ -27,6 +27,7 @@ import { cn } from "@/lib/text/format";
 import { dispatchShortcuts } from "@/lib/keyboard/routing";
 import { useInternalDrag } from "@/lib/session/useInternalDrag";
 import { useWindowCloseGuard } from "@/lib/session/useWindowCloseGuard";
+import { useNativeApplicationActions } from "@/lib/session/useNativeApplicationActions";
 import { useSsh } from "@/store/ssh";
 import { isTauri } from "@/lib/api/ipc";
 import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/workspace";
@@ -69,6 +70,7 @@ export function AppShell() {
   }, []);
   useInternalDrag();
   useWindowCloseGuard();
+  useNativeApplicationActions();
   useBackgroundWindow();
   const settings = useSettings((state) => state.settings);
   const os = useSettings((state) => state.info?.os);

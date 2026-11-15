@@ -8,6 +8,7 @@ import { useSettings } from "@/store/settings";
 import i18n from "@/i18n/i18n";
 import { isIpcError } from "@/lib/api/types";
 import { useWorkspace } from "@/store/workspace";
+import { checkpointEditorDrafts } from "@/lib/editor/recovery/checkpoint";
 
 interface UpdatesStore {
   state: UpdateState | null;
@@ -144,6 +145,7 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
     }
     set({ busy: true });
     try {
+      if (!(await checkpointEditorDrafts())) return;
       await api.installUpdate();
     } catch (error) {
       set({ busy: false });

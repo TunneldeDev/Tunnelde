@@ -96,7 +96,7 @@ async fn actual_direct_connections_are_closed_without_sending_application_data()
             assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
         }
     });
-    let result = measure_route("127.0.0.1", port, "").await.unwrap();
+    let result = measure_route("127.0.0.1", port, "", BUDGET).await.unwrap();
     assert_eq!(result.successful, 3);
     tokio::time::timeout(Duration::from_secs(2), server)
         .await
@@ -133,6 +133,7 @@ async fn actual_http_proxy_measurements_include_negotiation_and_preserve_selecte
         "unreachable.invalid",
         443,
         &format!("http://127.0.0.1:{port}"),
+        BUDGET,
     )
     .await
     .unwrap();
@@ -155,7 +156,7 @@ async fn live_tcp_quality() {
         .unwrap()
         .parse()
         .unwrap();
-    let result = measure_route(&host, port, "").await.unwrap();
+    let result = measure_route(&host, port, "", BUDGET).await.unwrap();
     println!("{}", serde_json::to_string_pretty(&result).unwrap());
     assert_eq!(result.successful, 3);
 }
@@ -185,10 +186,30 @@ async fn tcp_success_does_not_imply_https_success() {
             }
         }
     });
-    let tcp = measure_route("archive.example", 443, &proxy).await.unwrap();
+    let tcp = measure_route("archive.example", 443, &proxy, BUDGET)
+        .await
+        .unwrap();
     assert_eq!(tcp.successful, 3);
     let https = check_https("archive.example", &proxy).await;
     assert!(!https.success);
     assert_eq!(https.error.unwrap().to_string(), "network.httpsFailed");
     server.await.unwrap();
+}
+
+#[tokio::test]
+async fn expired_measurement_budget_never_starts_another_tcp_sample() {
+    let calls = AtomicUsize::new(0);
+    let result = measure(
+        || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok(1)
+        },
+        Duration::ZERO,
+    )
+    .await
+    .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(result.attempts, 0);
+    assert_eq!(result.quality, Quality::Unreachable);
+    assert_eq!(result.last_error.unwrap().to_string(), "network.timeout");
 }

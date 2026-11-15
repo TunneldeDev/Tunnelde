@@ -1,5 +1,28 @@
 //! Bounded ownership projection; safe unmount remains with the mount registry.
 use super::*;
+
+/// Dropping mount startup must close access even when its caller disappears
+/// during readiness probing. Keep the registered record for safe OS cleanup.
+pub(super) struct PendingMount(Option<tokio::task::AbortHandle>);
+
+impl PendingMount {
+    pub(super) fn new(bridge: &tokio::task::JoinHandle<()>) -> Self {
+        Self(Some(bridge.abort_handle()))
+    }
+
+    pub(super) fn complete(mut self) {
+        self.0.take();
+    }
+}
+
+impl Drop for PendingMount {
+    fn drop(&mut self) {
+        if let Some(bridge) = self.0.take() {
+            bridge.abort();
+        }
+    }
+}
+
 impl MountRegistry {
     pub(crate) async fn owned_resources(
         &self,
@@ -51,6 +74,18 @@ mod tests {
         atomic::{AtomicBool, Ordering},
         Arc,
     };
+    #[tokio::test]
+    async fn cancelled_readiness_aborts_bridge_but_completed_start_keeps_it_running() {
+        let first = tokio::spawn(std::future::pending::<()>());
+        drop(PendingMount::new(&first));
+        assert!(first.await.unwrap_err().is_cancelled());
+        let second = tokio::spawn(std::future::pending::<()>());
+        PendingMount::new(&second).complete();
+        assert!(!second.is_finished());
+        second.abort();
+        assert!(second.await.unwrap_err().is_cancelled());
+    }
+
     struct Settled(Arc<AtomicBool>);
     impl Drop for Settled {
         fn drop(&mut self) {

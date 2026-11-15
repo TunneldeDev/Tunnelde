@@ -2,17 +2,25 @@
 //! resolves a later hop from mutable storage after starting network I/O.
 use super::*;
 use crate::network::{ConnectionRoute, TcpRoute};
+mod observation;
 mod review;
+pub(in crate::ssh::session) use observation::Observed;
 
+#[derive(Clone)]
 pub(super) struct Node {
     pub host: Host,
     pub key: Option<String>,
+    pub incarnation: Option<uuid::Uuid>,
+    pub trust_incarnation: Option<uuid::Uuid>,
 }
 
+#[derive(Clone)]
 pub(in super::super) struct Snapshot {
     pub(super) nodes: Vec<Node>,
     route: ConnectionRoute,
     pub(super) transport: TcpRoute,
+    proxy: crate::network::proxy::Selected,
+    proxy_authority: Vec<u8>,
 }
 
 fn changed() -> AppError {
@@ -46,24 +54,69 @@ fn capture_nodes(
             let host = host?;
             let key = db::known_hosts::find(conn, &host.host, host.port as i64)?
                 .map(|key| key.fingerprint);
-            Ok(Node { host, key })
+            let incarnation = if host.id.starts_with(crate::plugins::host_sources::PREFIX) {
+                None
+            } else {
+                crate::services::credentials::host_incarnation(conn, &host.id)?
+            };
+            Ok(Node {
+                trust_incarnation: crate::services::credentials::lifecycle::trust_incarnation(
+                    conn,
+                    &host.host,
+                    i64::from(host.port),
+                )?,
+                host,
+                key,
+                incarnation,
+            })
         })
         .collect()
 }
 
 impl Snapshot {
+    pub(in super::super) async fn capture_background(
+        app: &AppHandle,
+        host_id: &str,
+    ) -> AppResult<Self> {
+        let app = app.clone();
+        let host_id = host_id.to_owned();
+        crate::services::credentials::inspect(move || {
+            let host = crate::services::hosts::resolve(&app, &host_id)?;
+            Self::capture(&app, &host)
+        })
+        .await
+    }
+
     pub(in super::super) fn capture(app: &AppHandle, host: &Host) -> AppResult<Self> {
         let state = app.state::<AppState>();
-        let (route, nodes) = state.db.with(|conn| {
-            let route = crate::network::route_at(conn, &host.id)?;
-            let nodes = capture_nodes(conn, host, &route)?;
-            Ok((route, nodes))
+        let (route, nodes, network, proxy_authority) = state.db.with(|conn| {
+            let (route, nodes) = capture_configuration(conn, host)?;
+            let network = db::settings::load_checked(conn)?.network;
+            let proxy_authority = crate::services::credentials::lifecycle::selection_authority(
+                conn,
+                &network,
+                "ssh",
+                Some(&route.proxy),
+            )?;
+            Ok((route, nodes, network, proxy_authority))
         })?;
+        // Reject an already-stale displayed host or revoked dynamic source
+        // before transport capture can access a proxy credential. The DB guard
+        // has ended; verification after OS access still checks concurrent edits.
+        verify_dynamic(&nodes, |id| crate::services::hosts::resolve(app, id))?;
         let first = &nodes[0].host;
         let snapshot = Self {
-            transport: TcpRoute::capture(app, &first.host, first.port, &route.proxy)?,
+            proxy: crate::network::proxy::Selected::capture(&network, "ssh", Some(&route.proxy))?,
+            transport: TcpRoute::capture_with(
+                |profile| crate::services::credentials::read_proxy(&state, profile),
+                &network,
+                &first.host,
+                first.port,
+                &route.proxy,
+            )?,
             nodes,
             route,
+            proxy_authority,
         };
         snapshot.verify(app)?;
         Ok(snapshot)
@@ -84,53 +137,62 @@ impl Snapshot {
         self.nodes.iter().any(|node| node.host.id == id)
     }
 
-    /// Read the host-ID vault fallback while the reviewed configuration is
-    /// still current under the DB guard. Authentication itself must never
-    /// resolve mutable storage after this point.
-    pub(in super::super) fn authentication(
+    /// Acquire a saved password off the runtime without retaining the DB lock.
+    /// The worker revalidates the original review before and after the read;
+    /// only a still-current value may reach authentication.
+    pub(in super::super) async fn authentication(
         &self,
         app: &AppHandle,
         host: &Host,
         request: &SshConnectRequest,
     ) -> AppResult<SshConnectRequest> {
-        self.with_current(app, |_| {
-            let mut request = request.clone();
-            if !matches!(host.auth_method.as_str(), "key" | "agent")
-                && request
-                    .password
-                    .as_ref()
-                    .is_none_or(|value| value.is_empty())
-                && !host.id.starts_with(crate::plugins::host_sources::PREFIX)
-            {
-                request.password = app.state::<AppState>().vault.load(&host.id)?;
-            }
-            Ok(request)
-        })
+        self.verify_background(app).await?;
+        let mut request = request.clone();
+        if !matches!(host.auth_method.as_str(), "key" | "agent")
+            && request
+                .password
+                .as_ref()
+                .is_none_or(|value| value.is_empty())
+            && !host.id.starts_with(crate::plugins::host_sources::PREFIX)
+        {
+            let reviewed = self.clone();
+            let host_id = host.id.clone();
+            request.password = crate::services::credentials::load_reviewed(
+                app.clone(),
+                host_id.clone(),
+                move |app| {
+                    if !reviewed.contains_host(&host_id) {
+                        return Err(changed());
+                    }
+                    reviewed.verify(app)
+                },
+            )
+            .await?;
+            // Recheck after asynchronous delivery, before returning any value
+            // to the route's next authentication step.
+            self.verify_background(app).await?;
+        }
+        Ok(request)
     }
 
     pub(in super::super) fn revision(&self) -> String {
         review::revision(&self.nodes, &self.route, |digest| {
+            use sha2::Digest;
+            digest.update(&self.proxy_authority);
             self.transport.update_review(digest);
+            self.proxy.update_review(digest);
         })
     }
 
     /// Advance only the key the user approved, including saved aliases of the
     /// same endpoint. Other edits cannot be folded into a new review revision.
-    pub(in super::super) fn approve_reviewed(
-        &mut self,
-        app: &AppHandle,
-        info: &HostKeyInfo,
-    ) -> AppResult<()> {
-        self.approve_reviewed_checked(app, info, || Ok(()))
-    }
-
     pub(in super::super) fn approve_reviewed_checked(
         &mut self,
         app: &AppHandle,
         info: &HostKeyInfo,
         check: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<()> {
-        self.approve_checked(app, info, check)?;
+        let trust_incarnation = self.approve_checked(app, info, check)?;
         let observed = self
             .nodes
             .iter()
@@ -140,13 +202,35 @@ impl Snapshot {
         for node in &mut self.nodes {
             if (&node.host.host, node.host.port) == (&endpoint.0, endpoint.1) {
                 node.key = Some(info.fingerprint.clone());
+                node.trust_incarnation = trust_incarnation;
             }
         }
         self.verify(app)
     }
 
     fn verify_saved(&self, conn: &rusqlite::Connection) -> AppResult<()> {
-        verify_configuration(conn, &self.target().id, &self.route, &self.nodes)
+        verify_configuration(conn, &self.target().id, &self.route, &self.nodes)?;
+        let network = db::settings::load_checked(conn)
+            .map_err(|_| changed())?
+            .network;
+        if crate::services::credentials::lifecycle::selection_authority(
+            conn,
+            &network,
+            "ssh",
+            Some(&self.route.proxy),
+        )
+        .map_err(|_| changed())?
+            != self.proxy_authority
+        {
+            return Err(changed());
+        }
+        let current =
+            crate::network::proxy::Selected::capture(&network, "ssh", Some(&self.route.proxy))
+                .map_err(|_| changed())?;
+        if current != self.proxy {
+            return Err(changed());
+        }
+        Ok(())
     }
 
     /// The database lock covers the final check and synchronous admission/write.
@@ -156,38 +240,36 @@ impl Snapshot {
         app: &AppHandle,
         operation: impl FnOnce(&rusqlite::Connection) -> AppResult<T>,
     ) -> AppResult<T> {
-        let first = &self.nodes[0].host;
-        if TcpRoute::capture(app, &first.host, first.port, &self.route.proxy)
-            .map_err(|_| changed())?
-            != self.transport
-        {
-            return Err(changed());
-        }
-        for node in &self.nodes {
-            if node
-                .host
-                .id
-                .starts_with(crate::plugins::host_sources::PREFIX)
-                && !same_destination(
-                    &node.host,
-                    &crate::services::hosts::resolve(app, &node.host.id).map_err(|_| changed())?,
-                )
-            {
-                return Err(changed());
-            }
-        }
-        app.state::<AppState>().db.with(|conn| {
-            self.verify_saved(conn)?;
-            operation(conn)
-        })
+        self.observe(app)?.with_current(app, operation)
     }
 
     pub(in super::super) fn verify(&self, app: &AppHandle) -> AppResult<()> {
         self.with_current(app, |_| Ok(()))
     }
 
-    pub(in super::super) fn approve(&self, app: &AppHandle, info: &HostKeyInfo) -> AppResult<()> {
-        self.approve_checked(app, info, || Ok(()))
+    pub(in super::super) async fn verify_background(&self, app: &AppHandle) -> AppResult<()> {
+        let snapshot = self.clone();
+        let app = app.clone();
+        crate::services::credentials::checked(move |job| {
+            snapshot.with_current(&app, |_| job.check())
+        })
+        .await
+    }
+
+    pub(in super::super) async fn approve_background(
+        &self,
+        app: &AppHandle,
+        info: &HostKeyInfo,
+    ) -> AppResult<()> {
+        let snapshot = self.clone();
+        let app = app.clone();
+        let info = info.clone();
+        crate::services::credentials::checked(move |job| {
+            snapshot
+                .approve_checked(&app, &info, || job.commit())
+                .map(|_| ())
+        })
+        .await
     }
 
     fn approve_checked(
@@ -195,7 +277,7 @@ impl Snapshot {
         app: &AppHandle,
         info: &HostKeyInfo,
         check: impl FnOnce() -> AppResult<()>,
-    ) -> AppResult<()> {
+    ) -> AppResult<Option<uuid::Uuid>> {
         // Never resolve an observed host ID to an edited address after probing.
         let node = self
             .nodes
@@ -212,9 +294,41 @@ impl Snapshot {
                 node.host.port as i64,
                 &info.algorithm,
                 &info.fingerprint,
+            )?;
+            crate::services::credentials::lifecycle::trust_incarnation(
+                conn,
+                &node.host.host,
+                i64::from(node.host.port),
             )
         })
     }
+}
+
+fn capture_configuration(
+    conn: &rusqlite::Connection,
+    host: &Host,
+) -> AppResult<(ConnectionRoute, Vec<Node>)> {
+    let route = crate::network::route_at(conn, &host.id)?;
+    let nodes = capture_nodes(conn, host, &route)?;
+    verify_configuration(conn, &host.id, &route, &nodes)?;
+    Ok((route, nodes))
+}
+
+fn verify_dynamic(
+    nodes: &[Node],
+    mut resolve: impl FnMut(&str) -> AppResult<Host>,
+) -> AppResult<()> {
+    for node in nodes {
+        if node
+            .host
+            .id
+            .starts_with(crate::plugins::host_sources::PREFIX)
+            && !same_destination(&node.host, &resolve(&node.host.id).map_err(|_| changed())?)
+        {
+            return Err(changed());
+        }
+    }
+    Ok(())
 }
 
 fn verify_configuration(
@@ -235,16 +349,24 @@ fn verify_nodes(conn: &rusqlite::Connection, nodes: &[Node]) -> AppResult<()> {
             .host
             .id
             .starts_with(crate::plugins::host_sources::PREFIX)
-            && !same_destination(
-                &node.host,
-                &db::hosts::find_host(conn, &node.host.id).map_err(|_| changed())?,
-            )
+            && (crate::services::credentials::host_incarnation(conn, &node.host.id)?
+                != node.incarnation
+                || !same_destination(
+                    &node.host,
+                    &db::hosts::find_host(conn, &node.host.id).map_err(|_| changed())?,
+                ))
         {
             return Err(changed());
         }
         let key = db::known_hosts::find(conn, &node.host.host, node.host.port as i64)?
             .map(|key| key.fingerprint);
-        if key != node.key {
+        if key != node.key
+            || crate::services::credentials::lifecycle::trust_incarnation(
+                conn,
+                &node.host.host,
+                i64::from(node.host.port),
+            )? != node.trust_incarnation
+        {
             return Err(changed());
         }
     }

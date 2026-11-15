@@ -206,6 +206,15 @@ it("keeps native discovery, profiles and restoration when a provider omits Field
   expect(retained.snapshot.fields.some((field) => field.id.includes("uiProviders"))).toBe(false);
 });
 
+it("cannot hide the native draft recovery consent when a preferences provider omits Fields", () => {
+  omit = true;
+  useNavigation.setState({ settingsSection: "editor" });
+  render(<SettingsPage />);
+  const consent = screen.getByRole("switch", { name: "Recover unsaved edits after restart" });
+  expect(consent.getAttribute("aria-checked")).toBe("false");
+  expect(retained.snapshot.fields.some((field) => /draftRecovery/i.test(field.id))).toBe(false);
+});
+
 it("retains number drafts in the actual settings form when the plugin stops", () => {
   useNavigation.setState({ settingsSection: "appearance" });
   render(<SettingsPage />);

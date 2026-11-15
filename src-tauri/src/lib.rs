@@ -26,6 +26,7 @@ pub fn run() {
         .manage(automation::transport::Lifecycle::default())
         .manage(window::StartupWindow::default())
         .manage(window::close::Registry::default())
+        .manage(platform::application_actions::Registry::default())
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
         .manage(plugins::frontend::Registry::default())
@@ -93,11 +94,13 @@ pub fn run() {
                 && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
             {
                 platform::window::close::reset(webview.app_handle());
+                platform::application_actions::reset(webview.app_handle());
             }
         })
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
+                platform::application_actions::reset(window.app_handle());
                 window.state::<preview::Registry>().clear();
                 window
                     .state::<plugins::frontend::Registry>()
@@ -148,6 +151,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            services::editor::recovery::commands::editor_drafts_read,
+            services::editor::recovery::commands::editor_drafts_save,
             window::close::main_window_close_guard_claim,
             window::close::main_window_close_guard_release,
             window::close::main_window_close_guard_finish,
@@ -159,6 +164,9 @@ pub fn run() {
             services::forwarding::start::commands::forwarding_start_release_ui,
             window::main_window_ready,
             platform::restart::app_restart,
+            platform::application_actions::application_action_claim,
+            platform::application_actions::application_action_release,
+            platform::application_actions::application_action_finish,
             platform::background::main_window_snapshot,
             platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
@@ -182,7 +190,7 @@ pub fn run() {
             commands::forwarding::forwarding_stop,
             network::connection_route_get,
             network::connection_route_save,
-            network::proxy_password_save,
+            services::credentials::editor::proxy_profile_save,
             network::proxy_test,
             network::diagnostics::proxy_test_quality,
             plugins::security::plugin_security_state,
@@ -290,8 +298,7 @@ pub fn run() {
             commands::ssh_disconnect,
             commands::ssh_install_key,
             commands::ssh_sessions,
-            commands::credential_save,
-            commands::credential_forget,
+            services::credentials::editor::host_editor_save,
             commands::credential_status,
             commands::sftp_list,
             commands::sftp_mkdir,

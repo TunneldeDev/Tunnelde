@@ -5,10 +5,11 @@ import { NetworkSettingsSection } from "@/features/settings/NetworkSettings";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";
+import type { ProxySaved, ProxyEdit } from "@/lib/api/credentials";
 import type { NetworkConnectionQuality } from "@/lib/api/network";
 import type { PluginInfo, Settings } from "@/lib/api/types";
 
-const api = vi.hoisted(() => ({ saveProxyPassword: vi.fn(), testProxyQuality: vi.fn() }));
+const api = vi.hoisted(() => ({ saveProxyProfile: vi.fn(), testProxyQuality: vi.fn() }));
 vi.mock("@/lib/api/ipc", () => ({ api, isTauri: () => true }));
 const update = vi.fn(async (patch: Partial<Settings>) => {
   useSettings.setState({ settings: { ...useSettings.getState().settings, ...patch } });
@@ -36,7 +37,13 @@ const proxy = {
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  api.saveProxyPassword.mockResolvedValue(undefined);
+  api.saveProxyProfile.mockImplementation(async ({ profile }: ProxyEdit) => ({
+    settings: {
+      ...useSettings.getState().settings,
+      network: { ...useSettings.getState().settings.network, profiles: [profile] },
+    },
+    credentialError: null,
+  }));
   api.testProxyQuality.mockResolvedValue(quality);
   await i18n.changeLanguage("en-US");
   useSettings.setState({
@@ -45,6 +52,7 @@ beforeEach(async () => {
       network: { profiles: [proxy], defaultProxy: "system", features: {} },
     },
     update,
+    applyRemote: vi.fn((settings: Settings) => useSettings.setState({ settings })),
   });
   usePlugins.setState({ items: [] });
 });
@@ -55,24 +63,32 @@ it("keeps cancelled edits private and writes passwords separately from exported 
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(update).not.toHaveBeenCalled();
-  expect(api.saveProxyPassword).not.toHaveBeenCalled();
+  expect(api.saveProxyProfile).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("");
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
-  expect(api.saveProxyPassword).toHaveBeenCalledExactlyOnceWith("office", "secret");
+  expect(api.saveProxyProfile).toHaveBeenCalledExactlyOnceWith({
+    profile: proxy,
+    credential: { action: "save", password: "secret" },
+  });
   expect(JSON.stringify(update.mock.calls)).not.toContain("secret");
   expect(screen.queryByLabelText("Password")).toBeNull();
 });
 
 it("retains the editor and reports a credential-store failure instead of claiming success", async () => {
-  api.saveProxyPassword.mockRejectedValue(new Error("Keychain unavailable"));
+  api.saveProxyProfile.mockResolvedValueOnce({
+    settings: useSettings.getState().settings,
+    credentialError: new Error("Keychain unavailable"),
+  });
   render(<NetworkSettingsSection />);
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
   expect(screen.getByRole("alert").textContent).toContain("Keychain unavailable");
   expect(screen.getByLabelText("Password")).toBeTruthy();
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+  expect(JSON.stringify(useSettings.getState().settings)).not.toContain("secret");
 });
 
 it("saves an individual feature route and tests the explicitly selected proxy", async () => {
@@ -98,16 +114,19 @@ it("forgets a saved password only after explicit selection and save", async () =
   render(<NetworkSettingsSection />);
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.click(screen.getByRole("switch", { name: "Forget saved proxy password" }));
-  expect(api.saveProxyPassword).not.toHaveBeenCalled();
+  expect(api.saveProxyProfile).not.toHaveBeenCalled();
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
-  expect(api.saveProxyPassword).toHaveBeenCalledExactlyOnceWith("office", null);
+  expect(api.saveProxyProfile).toHaveBeenCalledExactlyOnceWith({
+    profile: proxy,
+    credential: { action: "forget" },
+  });
 });
 
 it("keeps the proxy editor in its section and protects the current draft while saving", async () => {
   let finish!: () => void;
-  api.saveProxyPassword.mockReturnValueOnce(
-    new Promise<void>((resolve) => {
-      finish = resolve;
+  api.saveProxyProfile.mockReturnValueOnce(
+    new Promise<ProxySaved>((resolve) => {
+      finish = () => resolve({ settings: useSettings.getState().settings, credentialError: null });
     }),
   );
   render(<NetworkSettingsSection />);
@@ -120,7 +139,7 @@ it("keeps the proxy editor in its section and protects the current draft while s
   fireEvent.click(within(editor).getByText("Forget saved proxy password"));
   expect(within(editor).getByRole("switch").getAttribute("aria-checked")).toBe("true");
   fireEvent.click(profiles.getByRole("button", { name: "Save" }));
-  await waitFor(() => expect(api.saveProxyPassword).toHaveBeenCalled());
+  await waitFor(() => expect(api.saveProxyProfile).toHaveBeenCalled());
   for (const name of ["Edit", "Delete", "Add proxy", "Cancel"]) {
     expect(profiles.getByRole("button", { name }).matches(":disabled")).toBe(true);
   }

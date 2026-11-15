@@ -114,6 +114,7 @@ export interface Settings {
   editorWordWrap: boolean;
   editorTabSize: number;
   editorSpellCheck: boolean;
+  editorDraftRecovery: boolean;
   monitorIntervalMs: number;
 }
 

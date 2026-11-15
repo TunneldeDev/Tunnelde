@@ -2,6 +2,28 @@ use super::*;
 use crate::db::Database;
 
 #[test]
+fn opting_out_clears_recovery_atomically_and_companion_failure_retains_it() {
+    let database = Database::in_memory().unwrap();
+    database.with(|conn| {
+        let enabled = Settings { editor_draft_recovery: true, ..Settings::default() };
+        save(conn, &enabled)?;
+        conn.execute("INSERT INTO settings(key,value,updated_at) VALUES('editor.drafts.v1','retained malformed recovery',0)", [])?;
+        let disabled = Settings::default();
+        assert!(save_with(conn, &disabled, |_| Err(crate::error::AppError::validation("companion failed"))).is_err());
+        let retained: String = conn.query_row("SELECT value FROM settings WHERE key='editor.drafts.v1'", [], |row| row.get(0))?;
+        assert_eq!(retained, "retained malformed recovery");
+        assert!(crate::db::settings::load(conn)?.editor_draft_recovery);
+        save(conn, &disabled)?;
+        let raw: String = conn.query_row("SELECT value FROM settings WHERE key='editor.drafts.v1'", [], |row| row.get(0))?;
+        let snapshot: serde_json::Value = serde_json::from_str(&raw)?;
+        assert_eq!(snapshot["drafts"], serde_json::json!([]));
+        assert!(uuid::Uuid::parse_str(snapshot["revision"].as_str().unwrap()).is_ok());
+        assert!(!crate::db::settings::load(conn)?.editor_draft_recovery);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn final_guard_runs_before_any_write_and_companion_failure_stays_atomic() {
     Database::in_memory().unwrap().with(|conn| {
         let initial = Settings::default();

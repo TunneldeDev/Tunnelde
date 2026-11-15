@@ -36,6 +36,9 @@
     "author": "作者"
   },
   "credentials": {
+    "cleanupRequired": "部分密码操作仍待确认或清理。请等待正在运行的操作完成；若持续出现，请查看软件日志并重启 Tunnelde 以继续恢复，再尝试保存。",
+    "changed": "等待期间主机、代理、信任或已存密码发生了变化。请检查当前设置后重试。",
+    "invalidMetadata": "已存密码的元数据无效。原记录已保留，请打开软件日志排查。",
     "busy": "密码操作仍在进行，请等待完成后重试。",
     "cancelled": "密码操作已在开始前取消。",
     "workerFailed": "密码操作意外停止，请先查看软件日志再决定是否重试。"
@@ -380,6 +383,8 @@
     "editorTabSize": "Tab 显示宽度",
     "editorTabSizeHint": "仅改变已有制表符的显示宽度，不改写文件缩进。",
     "editorSpellCheck": "拼写检查",
+    "editorDraftRecovery": "重启后恢复未保存的编辑",
+    "editorDraftRecoveryHint": "在此设备上启用后，将未保存的文件文本及原始内容存入应用数据库，不加密。关闭会移除恢复记录，数据库备份中可能仍有副本。远端草稿只允许重新连接原目标。若进程在下次检查点前崩溃，最近的编辑可能丢失。",
     "monitorIntervalMs": "采样间隔",
     "monitorIntervalMsHint": "用于本地和远端监控；隐藏时暂停，慢请求不会重叠。",
     "search": "搜索设置",
@@ -889,6 +894,16 @@
     "discardBody": "不保存就关闭“{{name}}”？",
     "discard": "放弃",
     "offline": "连接已断开，未保存的修改保留在此窗口。",
+    "recoveredDraft": "已恢复未保存的编辑，原文件未被修改。保存时仍会检查原文件是否变化。",
+    "recoveryDestinationChanged": "此草稿属于其他 SSH 目标，请连接原主机后恢复。",
+    "recoveryInvalid": "草稿恢复记录无效或过大，原记录已保留。如需明确移除，请关闭草稿恢复。",
+    "recoveryDisabled": "草稿恢复已关闭，未保存的修改仍保留在此窗口。",
+    "recoveryChanged": "恢复检查点已变化，已保留磁盘上的恢复副本，没有写入过期检查点。",
+    "recoveryBusy": "草稿恢复正忙，编辑内容仍保留在此窗口。",
+    "recoveryCancelled": "草稿检查点已取消，编辑内容仍保留在此窗口。",
+    "recoveryFailed": "无法完成草稿检查点，请保留此窗口并查看软件日志。",
+    "recoveryIncomplete": "某个打开的草稿缺少原始文件身份，请保留此窗口，保存或明确放弃该草稿后再关闭。",
+    "recoveryConsentRequired": "请在本机设置中选择是否恢复草稿，插件不能修改此存储授权。",
     "reconnect": "恢复连接",
     "saving": "正在保存…",
     "conflictTitle": "远端文件已更改",
@@ -1920,6 +1935,7 @@
     "timeout": "搜索超时，请缩小搜索目录。"
   },
   "network": {
+    "configurationChanged": "准备进程期间代理配置发生变化。请检查所选代理后重试。",
     "title": "网络与代理",
     "intro": "设置默认连接方式，并为各功能或主机单独指定代理。密码保存在系统钥匙串中。",
     "inherit": "使用默认设置",
@@ -2108,6 +2124,10 @@
     "notOwned": "此挂载属于其他插件。",
     "startFailed": "SSHFS 在挂载完成前退出，请检查 SSHFS 安装和远端目录访问权限。",
     "startTimeout": "挂载目录超时，请检查 SSH 连接和 FUSE 驱动。",
+    "negotiationTimeout": "SSH 服务器未能及时开启 SFTP 子系统，请检查连接后重试。",
+    "subsystemRejected": "SSH 服务器拒绝了 SFTP 访问，请检查是否已启用 SFTP 子系统并允许当前账户使用。",
+    "subsystemProtocol": "SSH 服务器在启动 SFTP 时返回了无效响应，请检查子系统配置和服务器日志。",
+    "connectionBusy": "先前的 SSHFS 连接请求仍在等待服务器响应，请稍后重试或重新连接受影响的 SSH 会话。",
     "pathTimeout": "挂载目录响应超时，请检查连接后重试。",
     "pathBusy": "挂载目录仍在处理先前的请求，请稍后重试。",
     "busy": "目录正在使用中，请关闭使用此目录的文件和终端，再重试卸载。",
@@ -2145,6 +2165,11 @@
     "truncated": "显示最近 256 KiB"
   },
   "restart": {
+    "quit": "退出 Tunnelde",
+    "quitTitle": "退出 Tunnelde？",
+    "quitWarning": "退出会断开连接、中断后台任务并丢失未保存的编辑。请先保存工作。",
+    "quitRecoveryWarning": "退出会断开连接并中断后台任务。退出前会先保存未保存文件编辑的恢复检查点。",
+    "requestChanged": "此应用操作已失效，请重新从托盘菜单选择。",
     "command": "重启 Tunnelde",
     "reload": "重新加载窗口",
     "now": "立即重启",
@@ -2154,7 +2179,9 @@
     "confirmTitle": "重启 Tunnelde？",
     "reloadTitle": "重新加载窗口？",
     "restartWarning": "重启会断开连接、中断后台任务并丢失未保存的编辑。请先保存工作。",
+    "restartRecoveryWarning": "重启会断开连接并中断后台任务。重启前会先记录未保存的文件编辑，供再次启动时恢复。",
     "reloadWarning": "重新加载窗口可能中断当前视图，并丢失未保存的编辑。请先保存工作。",
+    "reloadRecoveryWarning": "重新加载可能中断当前视图。加载前会先记录未保存的文件编辑，供恢复使用。",
     "unsaved": "未保存的文件：{{names}}",
     "nativeOnly": "只能在桌面应用中重启。"
   },

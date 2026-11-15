@@ -8,6 +8,35 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("reconciles opted-in subscriptions on first registration and retries reads without reinstalling", async () => {
+  const stop = vi.fn();
+  const register = vi.fn(async () => stop);
+  const recover = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("snapshot failed"))
+    .mockResolvedValue(undefined);
+  const unrelated = vi.fn();
+  const report = vi.fn();
+  const lifecycle = createEventLifecycle(
+    [
+      { register, recover, recoverOnStart: true },
+      { register: async () => vi.fn(), recover: unrelated },
+    ],
+    report,
+  );
+  await lifecycle.start();
+  expect(recover).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenCalledOnce();
+  expect(unrelated).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(recover).toHaveBeenCalledTimes(2);
+  expect(register).toHaveBeenCalledOnce();
+  lifecycle.dispose();
+  expect(stop).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(recover).toHaveBeenCalledTimes(2);
+});
+
 it("retries only the unavailable subscription and reads a snapshot once recovered", async () => {
   const healthy = vi.fn(async () => vi.fn());
   const recover = vi.fn(async () => {}),
