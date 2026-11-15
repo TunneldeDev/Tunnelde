@@ -56,11 +56,11 @@ fn capture_nodes(
 impl Snapshot {
     pub(in super::super) fn capture(app: &AppHandle, host: &Host) -> AppResult<Self> {
         let state = app.state::<AppState>();
-        let (route, nodes) = state.db.with(|conn| {
-            let route = crate::network::route_at(conn, &host.id)?;
-            let nodes = capture_nodes(conn, host, &route)?;
-            Ok((route, nodes))
-        })?;
+        let (route, nodes) = state.db.with(|conn| capture_configuration(conn, host))?;
+        // Reject an already-stale displayed host or revoked dynamic source
+        // before transport capture can access a proxy credential. The DB guard
+        // has ended; verification after OS access still checks concurrent edits.
+        verify_dynamic(&nodes, |id| crate::services::hosts::resolve(app, id))?;
         let first = &nodes[0].host;
         let snapshot = Self {
             transport: TcpRoute::capture(app, &first.host, first.port, &route.proxy)?,
@@ -179,19 +179,7 @@ impl Snapshot {
         {
             return Err(changed());
         }
-        for node in &self.nodes {
-            if node
-                .host
-                .id
-                .starts_with(crate::plugins::host_sources::PREFIX)
-                && !same_destination(
-                    &node.host,
-                    &crate::services::hosts::resolve(app, &node.host.id).map_err(|_| changed())?,
-                )
-            {
-                return Err(changed());
-            }
-        }
+        verify_dynamic(&self.nodes, |id| crate::services::hosts::resolve(app, id))?;
         app.state::<AppState>().db.with(|conn| {
             self.verify_saved(conn)?;
             operation(conn)
@@ -231,6 +219,33 @@ impl Snapshot {
             )
         })
     }
+}
+
+fn capture_configuration(
+    conn: &rusqlite::Connection,
+    host: &Host,
+) -> AppResult<(ConnectionRoute, Vec<Node>)> {
+    let route = crate::network::route_at(conn, &host.id)?;
+    let nodes = capture_nodes(conn, host, &route)?;
+    verify_configuration(conn, &host.id, &route, &nodes)?;
+    Ok((route, nodes))
+}
+
+fn verify_dynamic(
+    nodes: &[Node],
+    mut resolve: impl FnMut(&str) -> AppResult<Host>,
+) -> AppResult<()> {
+    for node in nodes {
+        if node
+            .host
+            .id
+            .starts_with(crate::plugins::host_sources::PREFIX)
+            && !same_destination(&node.host, &resolve(&node.host.id).map_err(|_| changed())?)
+        {
+            return Err(changed());
+        }
+    }
+    Ok(())
 }
 
 fn verify_configuration(

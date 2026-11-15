@@ -42,9 +42,13 @@ authority guard; those mutations and other consumers retain their own rules.
 
 Preparing the desktop SSH review also uses this bounded worker capacity because
 capturing the transport can read an authenticated proxy's saved password. The
-displayed host is checked against current storage when the worker actually runs;
-queueing does not refresh a stale dialog. Other review operations retain their
-existing authority and scheduling rules.
+displayed host is checked against current storage when the worker actually runs,
+before proxy credential access; queueing does not refresh a stale dialog. Shared
+route capture checks saved connection inputs and dynamic source scope before
+transport inspection, then keeps its complete post-read verification. Database
+locks are released before OS access. A concurrent edit can still require discarding
+a completed read. Other review operations retain their existing authority and
+scheduling rules.
 
 ## Compatibility rules
 
