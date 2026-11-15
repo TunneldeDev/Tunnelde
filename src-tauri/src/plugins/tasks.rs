@@ -3,19 +3,17 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use russh::ChannelMsg;
 use serde_json::{json, Value};
-use tauri::Manager;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
 
 use super::api::{authorize, field, optional, HostContext};
 use crate::error::{AppError, AppResult};
-use crate::state::AppState;
 
 mod lifecycle;
 mod preparation;
+mod remote;
 pub(super) use lifecycle::{cancel_owned_resource, owned_resources};
 
 const MAX_BUFFER: usize = 4 * 1024 * 1024;
@@ -280,7 +278,7 @@ async fn start(context: &HostContext, params: Value) -> AppResult<Value> {
                 .unwrap_or_else(|| "posix".into());
             match remote_command(&executable, &args, cwd.as_deref(), &platform) {
                 Ok(command) => {
-                    run_remote(&context, &task_id, &session, command, timeout, input).await
+                    remote::run(&context, &task_id, &session, command, timeout, input).await
                 }
                 Err(error) => Err(error),
             }
@@ -579,148 +577,6 @@ async fn run_local(
         Some(reason),
         status.and_then(|status| status.code()),
     );
-    Ok(())
-}
-
-async fn run_remote(
-    context: &HostContext,
-    id: &str,
-    session: &str,
-    command: String,
-    timeout: u64,
-    input: TaskInput,
-) -> AppResult<()> {
-    let TaskInput {
-        mut receiver,
-        mut cancellation,
-    } = input;
-    let expires = tokio::time::Instant::now() + Duration::from_millis(timeout);
-    let handle = context.app.state::<AppState>().ssh.handle(session)?;
-    let opened = until_cancelled(
-        tokio::time::timeout_at(
-            expires.min(tokio::time::Instant::now() + Duration::from_secs(10)),
-            handle.channel_open_session(),
-        ),
-        &mut cancellation,
-    )
-    .await;
-    let Some(opened) = opened else {
-        publish(
-            context,
-            id,
-            "status",
-            String::new(),
-            Some("cancelled"),
-            None,
-        );
-        return Ok(());
-    };
-    let channel = opened
-        .map_err(|_| AppError::validation("plugin.tasks.channelTimeout"))?
-        .map_err(|e| AppError::Ssh(e.to_string()))?;
-    let started = until_cancelled(
-        async {
-            authorize(context, &["ssh.exec"])?;
-            tokio::time::timeout_at(expires, channel.exec(true, command))
-                .await
-                .map_err(|_| AppError::validation("plugin.tasks.channelTimeout"))?
-                .map_err(|error| AppError::Ssh(error.to_string()))
-        },
-        &mut cancellation,
-    )
-    .await;
-    if !matches!(started, Some(Ok(()))) {
-        let _ = tokio::time::timeout(Duration::from_secs(2), channel.close()).await;
-        if let Some(Err(error)) = started {
-            return Err(error);
-        }
-        publish(
-            context,
-            id,
-            "status",
-            String::new(),
-            Some("cancelled"),
-            None,
-        );
-        return Ok(());
-    }
-    let (mut channel, channel_writer) = channel.split();
-    let channel_writer = Arc::new(channel_writer);
-    let input_writer = channel_writer.clone();
-    let mut writer_cancel = cancellation.clone();
-    let mut writer = tokio::spawn(async move {
-        until_cancelled(
-            async {
-                while let Some(command) = receiver.recv().await {
-                    match command {
-                        Input::Write(data) => input_writer.data(data.as_bytes()).await?,
-                        Input::Eof => return input_writer.eof().await,
-                    }
-                }
-                Ok::<(), russh::Error>(())
-            },
-            &mut writer_cancel,
-        )
-        .await
-    });
-    let mut input_ended = false;
-    let mut interval = tokio::time::interval(Duration::from_millis(200));
-    let deadline = tokio::time::sleep_until(expires);
-    tokio::pin!(deadline);
-    let mut exit = None;
-    let mut reason = "completed";
-    let mut decoders = [Decoder::default(), Decoder::default()];
-    loop {
-        tokio::select! {
-            message = channel.wait() => match message {
-                Some(ChannelMsg::Data { data }) => { let text = decoders[0].push(&data, false); if !text.is_empty() { publish(context, id, "stdout", text, None, None); } },
-                Some(ChannelMsg::ExtendedData { data, .. }) => { let text = decoders[1].push(&data, false); if !text.is_empty() { publish(context, id, "stderr", text, None, None); } },
-                Some(ChannelMsg::ExitStatus { exit_status }) => exit = i32::try_from(exit_status).ok(),
-                Some(ChannelMsg::Close) | None => {
-                    if exit.is_none() {
-                        reason = "failed";
-                        task_error(id, "SSH channel closed without an exit status");
-                    }
-                    break;
-                },
-                _ => {}
-            },
-            _ = cancelled(&mut cancellation) => { reason = "cancelled"; break; },
-            result = &mut writer, if !input_ended => {
-                input_ended = true;
-                match result {
-                    Ok(Some(Err(error))) => { task_error(id, error); reason = "failed"; break; }
-                    Err(error) => { task_error(id, error); reason = "failed"; break; }
-                    _ => {}
-                }
-            },
-            _ = interval.tick() => if authorize(context, &["ssh.exec"]).is_err() { reason = "cancelled"; break; },
-            _ = &mut deadline => { reason = "timedOut"; break; }
-        }
-    }
-    writer.abort();
-    if reason != "completed" {
-        let _ = tokio::time::timeout(
-            Duration::from_secs(2),
-            channel_writer.signal(russh::Sig::KILL),
-        )
-        .await;
-    }
-    let _ = tokio::time::timeout(Duration::from_secs(2), channel_writer.close()).await;
-    for (index, decoder) in decoders.iter_mut().enumerate() {
-        let data = decoder.push(&[], true);
-        if !data.is_empty() {
-            publish(
-                context,
-                id,
-                if index == 0 { "stdout" } else { "stderr" },
-                data,
-                None,
-                None,
-            );
-        }
-    }
-    publish(context, id, "status", String::new(), Some(reason), exit);
     Ok(())
 }
 
