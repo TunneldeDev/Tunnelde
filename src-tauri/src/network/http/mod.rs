@@ -103,12 +103,58 @@ pub(crate) async fn prepare(
     feature: &str,
     network: NetworkSettings,
 ) -> AppResult<Prepared> {
+    let state = app.state::<AppState>();
+    let expected = super::proxy::Selected::capture(&network, feature, None)?;
+    let expires = tokio::time::Instant::now() + Duration::from_secs(15);
+    // Capture persisted authority before waiting for a platform worker. The
+    // caller's original settings are never silently refreshed to a new route.
+    let authority = loop {
+        if let Some(authority) = state.db.try_with(|conn| {
+            let current = crate::db::settings::load_checked(conn)?.network;
+            if super::proxy::Selected::capture(&current, feature, None)? != expected {
+                return Err(AppError::validation("network.configurationChanged"));
+            }
+            crate::services::credentials::lifecycle::selection_authority(
+                conn, &current, feature, None,
+            )
+        })? {
+            break authority;
+        }
+        if tokio::time::Instant::now() >= expires {
+            return Err(AppError::validation("network.timeout"));
+        }
+        tokio::time::sleep_until(
+            expires.min(tokio::time::Instant::now() + Duration::from_millis(5)),
+        )
+        .await;
+    };
     let app = app.clone();
     let feature = feature.to_owned();
     acquire(move || {
         let state = app.state::<AppState>();
-        let proxy = super::proxy_url(&state.vault, &network, &feature, None)?;
-        state.http_clients.prepare(&feature, proxy)
+        let verify = || {
+            state.db.with(|conn| {
+                let current = crate::db::settings::load_checked(conn)?.network;
+                if crate::services::credentials::lifecycle::selection_authority(
+                    conn, &current, &feature, None,
+                )? != authority
+                {
+                    return Err(AppError::validation("network.configurationChanged"));
+                }
+                Ok(())
+            })
+        };
+        verify()?;
+        let proxy = super::proxy_url(
+            |profile| crate::services::credentials::read_proxy(&state, profile),
+            &network,
+            &feature,
+            None,
+        )?;
+        verify()?;
+        let prepared = state.http_clients.prepare(&feature, proxy)?;
+        verify()?;
+        Ok(prepared)
     })
     .await
 }

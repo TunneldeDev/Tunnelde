@@ -36,6 +36,8 @@
     "author": "Author"
   },
   "credentials": {
+    "changed": "The host, proxy, trust or saved password changed while this operation was pending. Review the current settings before retrying.",
+    "invalidMetadata": "Saved password metadata is invalid. The original records were retained; open the software log for diagnosis.",
     "busy": "Password operations are still running. Wait for them to finish, then try again.",
     "cancelled": "The password operation was cancelled before it started.",
     "workerFailed": "The password operation stopped unexpectedly. Check the software log before retrying."

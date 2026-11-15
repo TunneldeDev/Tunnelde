@@ -104,6 +104,19 @@ impl<'a, P: Platform> Service<'a, P> {
         Ok(())
     }
 
+    pub(super) fn require_binding<Before, Check>(
+        &self,
+        request: &Request<'_, Before, Check>,
+        expected: &Binding,
+    ) -> AppResult<()> {
+        self.own(request)?;
+        if request.binding != *expected {
+            return Err(AppError::validation("credentials.changed"));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub(super) fn read<Before, Check>(
         &self,
         request: &Request<'_, Before, Check>,
@@ -113,10 +126,36 @@ impl<'a, P: Platform> Service<'a, P> {
         Before: Fn() -> AppResult<()>,
         Check: Fn(&Connection) -> AppResult<Stamp>,
     {
+        self.read_with(request, || job.commit())
+    }
+
+    /// A composite read-only acquisition already owns its worker admission.
+    /// Its subreads still revalidate captured binding/configuration on each side
+    /// of OS access; they cannot mutate or admit a second cancellation token.
+    pub(super) fn read_after_admission<Before, Check>(
+        &self,
+        request: &Request<'_, Before, Check>,
+    ) -> AppResult<Option<String>>
+    where
+        Before: Fn() -> AppResult<()>,
+        Check: Fn(&Connection) -> AppResult<Stamp>,
+    {
+        self.read_with(request, || Ok(()))
+    }
+
+    fn read_with<Before, Check>(
+        &self,
+        request: &Request<'_, Before, Check>,
+        admit: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<Option<String>>
+    where
+        Before: Fn() -> AppResult<()>,
+        Check: Fn(&Connection) -> AppResult<Stamp>,
+    {
         self.own(request)?;
         let physical = request.with(|conn| {
             bindings::verify(conn, &request.binding)?;
-            job.commit()?;
+            admit()?;
             Ok(request.binding.physical())
         })?;
         let value = match physical {

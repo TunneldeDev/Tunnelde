@@ -23,8 +23,8 @@ fn authenticated_routes_validate_without_credential_access_and_resolve_only_when
     let reads = Cell::new(0);
     let value = Configured::capture(&network, "ssh", None)
         .unwrap()
-        .resolve(|key| {
-            assert_eq!(key, "proxy:office");
+        .resolve(|profile| {
+            assert_eq!(profile.id, "office");
             reads.set(reads.get() + 1);
             Ok(Some("p@ss:/".into()))
         })

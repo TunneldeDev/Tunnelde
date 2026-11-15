@@ -11,13 +11,39 @@ impl<P: Platform> Service<'_, P> {
         Before: Fn() -> AppResult<()>,
         Check: Fn(&Connection) -> AppResult<Stamp>,
     {
+        self.save_with(request, secret, || job.commit())
+    }
+
+    /// Compound host/profile persistence already admitted its original write.
+    pub(in crate::services::credentials) fn save_after_admission<Before, Check>(
+        &self,
+        request: &Request<'_, Before, Check>,
+        secret: &str,
+    ) -> AppResult<()>
+    where
+        Before: Fn() -> AppResult<()>,
+        Check: Fn(&Connection) -> AppResult<Stamp>,
+    {
+        self.save_with(request, secret, || Ok(()))
+    }
+
+    fn save_with<Before, Check>(
+        &self,
+        request: &Request<'_, Before, Check>,
+        secret: &str,
+        admit: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<()>
+    where
+        Before: Fn() -> AppResult<()>,
+        Check: Fn(&Connection) -> AppResult<Stamp>,
+    {
         self.own(request)?;
         let intent = request.with(|conn| {
             transaction(conn, |conn| {
                 let intent = bindings::begin(conn, &request.binding, &request.stamp.0, self.run)?;
                 // Queue cancellation and DB/policy waits must settle before the
                 // original request admits even the first OS mutation.
-                job.commit()?;
+                admit()?;
                 Ok(intent)
             })
         })?;
@@ -66,11 +92,34 @@ impl<P: Platform> Service<'_, P> {
         Before: Fn() -> AppResult<()>,
         Check: Fn(&Connection) -> AppResult<Stamp>,
     {
+        self.forget_with(request, || job.commit())
+    }
+
+    pub(in crate::services::credentials) fn forget_after_admission<Before, Check>(
+        &self,
+        request: &Request<'_, Before, Check>,
+    ) -> AppResult<()>
+    where
+        Before: Fn() -> AppResult<()>,
+        Check: Fn(&Connection) -> AppResult<Stamp>,
+    {
+        self.forget_with(request, || Ok(()))
+    }
+
+    fn forget_with<Before, Check>(
+        &self,
+        request: &Request<'_, Before, Check>,
+        admit: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<()>
+    where
+        Before: Fn() -> AppResult<()>,
+        Check: Fn(&Connection) -> AppResult<Stamp>,
+    {
         self.own(request)?;
         request.with(|conn| {
             transaction(conn, |conn| {
                 bindings::verify(conn, &request.binding)?;
-                job.commit()?;
+                admit()?;
                 bindings::forget(conn, &request.binding)
             })
         })

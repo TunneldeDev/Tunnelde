@@ -6,7 +6,6 @@ import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";
-import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { NetworkConnectionTest } from "./NetworkConnectionTest";
 import { defaultNetwork, type ProxyProfile } from "@/lib/api/network";
@@ -43,14 +42,18 @@ export function NetworkSettingsSection() {
     setSaving(true);
     setError("");
     try {
-      const profiles = settings.profiles.some((p) => p.id === editing.id)
-        ? settings.profiles.map((p) => (p.id === editing.id ? editing : p))
-        : [...settings.profiles, editing];
-      if (!(await update({ network: { ...settings, profiles } }))) return;
-      if (!useSettings.getState().settings.network.profiles.some((p) => p.id === editing.id))
+      const result = await useSettings.getState().saveProxyProfile({
+        profile: editing,
+        credential: clearPassword
+          ? { action: "forget" }
+          : password
+            ? { action: "save", password }
+            : { action: "keep" },
+      });
+      if (result.credentialError != null) {
+        setError(translateError(result.credentialError));
         return;
-      if (password || clearPassword)
-        await api.saveProxyPassword(editing.id, clearPassword ? null : password);
+      }
       setEditing(null);
       setPassword("");
     } catch (cause) {

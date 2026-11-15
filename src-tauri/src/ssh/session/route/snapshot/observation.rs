@@ -14,7 +14,7 @@ impl Snapshot {
         let first = &self.nodes[0].host;
         // No database, recovery metadata, connection or registry lock spans OS access.
         let transport = TcpRoute::capture_with(
-            &state.vault,
+            |profile| crate::services::credentials::read_proxy(&state, profile),
             &network,
             &first.host,
             first.port,
@@ -38,6 +38,16 @@ impl Snapshot {
     }
 }
 impl Observed {
+    pub(in crate::ssh::session) fn before(&self, app: &AppHandle) -> AppResult<()> {
+        verify_dynamic(&self.0.nodes, |id| crate::services::hosts::resolve(app, id))
+    }
+    pub(in crate::ssh::session) fn credential_stamp(
+        &self,
+        conn: &rusqlite::Connection,
+    ) -> AppResult<String> {
+        self.0.verify_saved(conn)?;
+        Ok(self.0.revision())
+    }
     pub(in crate::ssh::session) fn with_current<T>(
         &self,
         app: &AppHandle,
@@ -88,9 +98,15 @@ impl Snapshot {
             &info.algorithm,
             &info.fingerprint,
         )?;
+        let trust_incarnation = crate::services::credentials::lifecycle::trust_incarnation(
+            conn,
+            &endpoint.0,
+            i64::from(endpoint.1),
+        )?;
         for node in &mut self.nodes {
             if (&node.host.host, node.host.port) == (&endpoint.0, endpoint.1) {
                 node.key = Some(info.fingerprint.clone());
+                node.trust_incarnation = trust_incarnation;
             }
         }
         self.verify_saved(conn)

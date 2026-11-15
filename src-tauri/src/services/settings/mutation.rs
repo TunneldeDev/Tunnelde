@@ -150,10 +150,14 @@ impl Prepared<'_> {
             "settings must be persisted before publication"
         );
         super::effects::publish(self.writer.app, &self.previous, &self.next, self.kind);
-        project(
+        let result = project(
             &self.next,
             self.revision.as_deref().expect("committed revision"),
-        )
+        );
+        let app = self.writer.app.clone();
+        drop(self); // OS retirement is scheduled only after the ordered writer ends.
+        crate::services::credentials::schedule_cleanup(&app);
+        result
     }
 }
 impl Drop for Prepared<'_> {

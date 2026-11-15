@@ -12,6 +12,8 @@ fn prompt_revision_excludes_cosmetics_but_covers_every_connection_input() {
             .unwrap();
             let original = db::hosts::create_host(conn, &input.validate()?)?;
             let node = |host| Node {
+                incarnation: None,
+                trust_incarnation: None,
                 host,
                 key: Some("SHA256:original".into()),
             };
@@ -72,10 +74,14 @@ fn prompt_revision_preserves_order_and_all_jump_trust_baselines() {
     };
     let mut nodes = vec![
         Node {
+            incarnation: None,
+            trust_incarnation: None,
             host: host("jump"),
             key: Some("jump-key".into()),
         },
         Node {
+            incarnation: None,
+            trust_incarnation: None,
             host: host("target"),
             key: Some("target-key".into()),
         },

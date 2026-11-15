@@ -8,7 +8,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
-    vault::Vault,
 };
 
 pub mod diagnostics;
@@ -172,12 +171,42 @@ fn tcp_proxy(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<S
     if !valid_host(host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
     }
-    let network = app.state::<AppState>().settings().network;
-    tcp_proxy_with(&app.state::<AppState>().vault, &network, host, port, proxy)
+    let state = app.state::<AppState>();
+    let (network, authority) = state.db.with(|conn| {
+        let network = crate::db::settings::load_checked(conn)?.network;
+        let authority = crate::services::credentials::lifecycle::selection_authority(
+            conn,
+            &network,
+            "ssh",
+            Some(proxy),
+        )?;
+        Ok((network, authority))
+    })?;
+    let resolved = tcp_proxy_with(
+        |profile| crate::services::credentials::read_proxy(&state, profile),
+        &network,
+        host,
+        port,
+        proxy,
+    )?;
+    state.db.with(|conn| {
+        let current = crate::db::settings::load_checked(conn)?.network;
+        if crate::services::credentials::lifecycle::selection_authority(
+            conn,
+            &current,
+            "ssh",
+            Some(proxy),
+        )? != authority
+        {
+            return Err(AppError::validation("network.configurationChanged"));
+        }
+        Ok(())
+    })?;
+    Ok(resolved)
 }
 
 fn tcp_proxy_with(
-    vault: &Vault,
+    load: impl FnOnce(&ProxyProfile) -> AppResult<Option<String>>,
     network: &NetworkSettings,
     host: &str,
     port: u16,
@@ -186,7 +215,7 @@ fn tcp_proxy_with(
     if !valid_host(host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
     }
-    let configured = proxy_url(vault, network, "ssh", Some(proxy))?;
+    let configured = proxy_url(load, network, "ssh", Some(proxy))?;
     match configured {
         Some(value) => Ok(value),
         None => system_proxy(host, port),
@@ -349,31 +378,38 @@ pub fn connection_route_save(
     host_id: String,
     route: ConnectionRoute,
 ) -> AppResult<()> {
+    app.state::<AppState>()
+        .db
+        .with(|conn| crate::db::atomic(conn, |conn| save_route_at(conn, &host_id, &route)))
+}
+
+pub(crate) fn save_route_at(
+    conn: &rusqlite::Connection,
+    host_id: &str,
+    route: &ConnectionRoute,
+) -> AppResult<()> {
+    if conn.is_autocommit() {
+        return Err(AppError::internal("credentials.transactionRequired"));
+    }
     if route.jump_hosts.len() > 8 {
         return Err(AppError::validation("network.jumpCycle"));
     }
-    let state = app.state::<AppState>();
-    // Saving a route validates configuration; it must not prompt for a password.
-    proxy::validate_selection(&state.settings().network, "ssh", Some(&route.proxy))?;
-    state.db.with(|conn| {
-        crate::db::hosts::find_host(conn, &host_id)?;
-        let mut seen = std::collections::HashSet::from([host_id.clone()]);
-        for id in &route.jump_hosts {
-            if !seen.insert(id.clone()) { return Err(AppError::validation("network.jumpCycle")); }
-            crate::db::hosts::find_host(conn, id)?;
+    let previous = route_at(conn, host_id)?;
+    let network = crate::db::settings::load_checked(conn)?.network;
+    proxy::validate_selection(&network, "ssh", Some(&route.proxy))?;
+    crate::db::hosts::find_host(conn, host_id)?;
+    let mut seen = std::collections::HashSet::from([host_id.to_owned()]);
+    for id in &route.jump_hosts {
+        if !seen.insert(id.clone()) {
+            return Err(AppError::validation("network.jumpCycle"));
         }
-        conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![format!("route:{host_id}"), serde_json::to_string(&route)?, crate::models::now_ms()])?;
-        Ok(())
-    })
-}
-
-#[tauri::command]
-pub async fn proxy_password_save(
-    app: AppHandle,
-    id: String,
-    password: Option<String>,
-) -> AppResult<()> {
-    crate::services::credentials::proxy_password(app, id, password).await
+        crate::db::hosts::find_host(conn, id)?;
+    }
+    conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![format!("route:{host_id}"),serde_json::to_string(route)?,crate::models::now_ms()])?;
+    if previous != *route {
+        crate::services::credentials::lifecycle::route_changed(conn, host_id)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

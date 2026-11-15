@@ -94,4 +94,5 @@ CREATE TABLE host_plugin_fields (
     PRIMARY KEY (plugin_id, host_id)
 );
 "#,
+    include_str!("../services/credentials/bindings/schema.sql"),
 ];

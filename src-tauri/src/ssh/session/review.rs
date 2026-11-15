@@ -117,7 +117,7 @@ impl Target {
         &self.0.target().id
     }
 
-    pub(crate) fn credential(
+    pub(crate) async fn credential(
         &self,
         app: &AppHandle,
         host_id: &str,
@@ -129,13 +129,16 @@ impl Target {
         if password == Some("") {
             return Err(AppError::validation("ssh.passwordRequired"));
         }
-        self.with_current(app, |conn| {
-            db::hosts::find_host(conn, host_id)?;
-            match password {
-                Some(password) => app.state::<AppState>().vault.save(host_id, password),
-                None => app.state::<AppState>().vault.forget(host_id),
-            }
-        })
+        let observed = std::sync::Arc::new(self.0.observe_background(app).await?);
+        let before = observed.clone();
+        crate::services::credentials::mutate_reviewed(
+            app.clone(),
+            host_id.into(),
+            password.map(str::to_owned),
+            move |app| before.before(app),
+            move |conn| observed.credential_stamp(conn),
+        )
+        .await
     }
 
     pub(crate) fn with_current<T>(

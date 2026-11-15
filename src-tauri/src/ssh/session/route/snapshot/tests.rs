@@ -160,7 +160,9 @@ fn trust_revocation_or_replacement_invalidates_pending_authentication() {
             db::known_hosts::forget(conn, &target.host, 22)?;
             assert!(verify_nodes(conn, &nodes).is_err());
             db::known_hosts::upsert(conn, &target.host, 22, "ssh-ed25519", "SHA256:original")?;
-            verify_nodes(conn, &nodes)
+            assert!(verify_nodes(conn, &nodes).is_err());
+            let fresh = capture_nodes(conn, &target, &ConnectionRoute::default())?;
+            verify_nodes(conn, &fresh)
         })
         .unwrap();
 }
@@ -304,6 +306,8 @@ fn dynamic_preflight_reuses_destination_and_source_scope_checks() {
             let mut dynamic = host(conn, "dynamic");
             dynamic.id = format!("{}owned", crate::plugins::host_sources::PREFIX);
             let node = Node {
+                incarnation: None,
+                trust_incarnation: None,
                 host: dynamic.clone(),
                 key: None,
             };
@@ -325,6 +329,8 @@ fn dynamic_preflight_reuses_destination_and_source_scope_checks() {
                 "ssh.connectionChanged"
             );
             let saved = Node {
+                incarnation: None,
+                trust_incarnation: None,
                 host: host(conn, "saved"),
                 key: None,
             };
