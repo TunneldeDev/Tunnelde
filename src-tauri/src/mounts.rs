@@ -1,6 +1,7 @@
 //! SSHFS transports reuse an authenticated SSH channel. No credentials or
 //! unauthenticated local listening sockets are exposed to the mount program.
 mod lifecycle;
+mod transport;
 use crate::{
     error::{AppError, AppResult},
     ssh::SshManager,
@@ -658,13 +659,7 @@ impl MountRegistry {
             .take()
             .ok_or_else(|| AppError::internal("mounts.stdout"))?;
         let bridge = tokio::spawn(async move {
-            let (mut remote_read, mut remote_write) = tokio::io::split(channel.into_stream());
-            let mut input = input;
-            let mut output = output;
-            let _ = tokio::try_join!(
-                tokio::io::copy(&mut remote_read, &mut input),
-                tokio::io::copy(&mut output, &mut remote_write)
-            );
+            let _ = transport::bridge(channel.into_stream(), input, output).await;
         });
         let info = MountInfo {
             id: uuid::Uuid::new_v4().to_string(),
