@@ -131,3 +131,8 @@ pub(crate) async fn checked<T: Send + 'static>(
 
 #[cfg(test)]
 mod tests;
+
+// Compile the transaction model against adversarial fixtures before activating
+// its schema and switching every native reader/writer in the same change.
+#[cfg(test)]
+mod bindings;
