@@ -146,7 +146,8 @@ environment with explicitly authorized native GUI access is then needed.
 The separate **Original public macOS GUI and OTA acceptance** workflow implements
 the next inspection stage. Dispatch `macos-public-ota.yml` from the reviewed
 branch with `acknowledgement=original-public-ota`. Mode `inspect` checks controls
-and normal Quit; mode `upgrade` attempts the real signed update. PR checks test archive rejection, compile the
+and normal Quit; mode `upgrade` attempts the real signed update; `retention` adds
+the nonempty-data checks described below. PR checks test archive rejection, compile the
 external native driver and verify refusal before GUI/profile access.
 
 Before launching, the driver repeats its own capability checks and requires no
@@ -192,6 +193,36 @@ retention and plugin fingerprint/approval/storage with an active recovery marker
 have also been verified. A passing staged workflow does not complete that matrix.
 The native profile reader opens only the disposable account's canonical database
 in read-only mode; it accepts no alternative data path and performs no seeding.
+
+Mode `retention` uses the same disposable-account guard. The actual plugin install
+dialog, native folder picker, manifest preview and explicit permission approval
+install a small trusted frontend fixture; it needs no Node runtime. Its declared
+SDK permissions allow reading the synthetic host and recording/reading history,
+plus its own secret store. It writes nonempty history and plugin JSON storage,
+then verifies the original values after update without reseeding. No private
+bridge invocation, globals carrying an API context or product-package changes
+are used. Installation, approval, source writes and target reads have AX records
+and screenshots. Changing approved package bytes is rejected.
+
+The approved source fixture reads its own synthetic secret through `secrets.get`
+and displays only SHA-256. No secret, command-line secret argument or second
+plaintext copy is captured. After actual public 1.2.1 to 1.3.0 OTA, the target
+app's own secret read opened a login Keychain authorization dialog. The unattended
+runner does not repeat that read, operate the dialog or change credential access.
+Its target `Verify OTA data` action checks only host/history/storage through the
+public SDK; `Verify OTA secret` is a separate action requiring appropriate system
+authorization and is not driven by this runner. Neither action reseeds data.
+
+Installed fixture bytes, approved fingerprint/permissions and nonempty history
+must match. The source must have a running plugin's unclean marker before the
+planned update; the target must remain unrestricted and reactivate using its
+retained grant. `pluginRecordsAccepted` records these ordinary data checks.
+`pluginSecretValueAccepted` and `pluginDataAccepted` remain false until a target
+secret read can be completed and compared with the source hash. Host password
+value/actual SSH authentication also remains unaccepted. An earlier external value
+query opened a legacy Keychain dialog despite noninteractive LAContext and was
+removed. `otaAccepted` remains false for these gaps, independent review and the
+wider platform matrix. Guard/unit checks do not count as real OTA acceptance.
 
 ### Public-package OTA acceptance checklist
 

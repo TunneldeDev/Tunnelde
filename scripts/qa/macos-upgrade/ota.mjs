@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { repository } from "../windows-upgrade/assets.mjs";
 import { verifyLocalCli } from "../local-cli/verify.mjs";
+import { permissions, pluginId, seedRetention, verifyRetention } from "./retention.mjs";
 
 export async function waitUntil(label, action, milliseconds = 30000) {
   const deadline = Date.now() + milliseconds;
@@ -43,6 +44,7 @@ export function verifySeedHost(host) {
 }
 
 export async function upgrade(runtime) {
+  const retention = runtime.report.mode === "retention";
   const {
     report,
     native,
@@ -144,7 +146,7 @@ export async function upgrade(runtime) {
   ])
     await fill(label, value);
   // Only the disposable original app receives this synthetic credential. Never
-  // put it in argv, results, AX values or screenshots; no credential is read.
+  // put it in argv, results, AX values or screenshots; no host credential is read.
   await fill("Password", randomBytes(32).toString("base64url"));
   await native("press", pid, "Save");
   let host;
@@ -163,12 +165,36 @@ export async function upgrade(runtime) {
     "Synthetic credential metadata unavailable without UI",
   );
   assert.match(report.credentialBefore.persistentReferenceSha256, /^[a-f0-9]{64}$/);
+  const retentionRuntime = { ...runtime, tree, waitUntil, hasText };
+  if (retention) {
+    await seedRetention(retentionRuntime);
+  }
   report.profileBeforeUpdate = await profile(host.id);
   assert(
     report.profileBeforeUpdate.profiles.some(
       (entry) => entry.name === "OTA preserved profile 升级保留",
     ),
   );
+  if (retention) {
+    assert(
+      report.profileBeforeUpdate.history.some(
+        ([command]) => command === "echo ota-preserved-history",
+      ),
+    );
+    const grant = report.profileBeforeUpdate.security?.grants[pluginId];
+    assert.match(grant?.fingerprint ?? "", /^[a-f0-9]{64}$/);
+    assert.deepEqual([...grant.permissions].sort(), [...permissions].sort());
+    assert.equal(report.profileBeforeUpdate.security.restricted, false);
+    assert.equal(
+      report.profileBeforeUpdate.pluginPackageSha256["ui/main.mjs"],
+      report.retentionFixture.moduleSha256,
+    );
+    assert.equal(
+      report.profileBeforeUpdate.security.unclean,
+      true,
+      "The source plugin must actually be active",
+    );
+  }
   report.preferencesBeforeUpdate = await live("preferences", "snapshot");
 
   // The status bar Updates button is distinguished from the Settings nav button
@@ -198,7 +224,7 @@ export async function upgrade(runtime) {
   await screenshot("original-update-selected");
   report.otaAttempted = true;
   await native("press", pid, "Download and install");
-  await Promise.race([closed, delay(180000)]);
+  await Promise.race([closed, delay(180000, undefined, { ref: false })]);
   assert.deepEqual(
     getExit(),
     { code: 0, signal: null },
@@ -272,13 +298,28 @@ export async function upgrade(runtime) {
     (await live("hosts", "list")).hosts.find((entry) => entry.id === host.id),
     host,
   );
+  if (retention) await verifyRetention(retentionRuntime, target.pid);
   report.profileAfterUpdate = await profile(host.id);
   assert.deepEqual(report.profileAfterUpdate.profiles, report.profileBeforeUpdate.profiles);
   assert.deepEqual(report.profileAfterUpdate.history, report.profileBeforeUpdate.history);
   assert.equal(report.profileAfterUpdate.security?.restricted, false);
-  assert.equal(report.profileAfterUpdate.security?.unclean, false);
+  assert.equal(report.profileAfterUpdate.security?.unclean, retention);
   report.credentialAfter = await native("credential", host.id);
   assert.deepEqual(report.credentialAfter, report.credentialBefore);
+  if (retention) {
+    assert.deepEqual(
+      report.profileAfterUpdate.pluginPackageSha256,
+      report.profileBeforeUpdate.pluginPackageSha256,
+    );
+    assert.deepEqual(
+      report.profileAfterUpdate.security.grants,
+      report.profileBeforeUpdate.security.grants,
+    );
+    report.pluginRecordsAccepted = true;
+    report.pluginDataAccepted = false;
+    report.pluginSecretValueAccepted = false;
+    report.hostCredentialValueAccepted = false;
+  }
   report.targetCli = await verifyLocalCli(binary, report.to.slice(1), pointer, {
     env,
     hostId: host.id,
@@ -304,11 +345,18 @@ export async function upgrade(runtime) {
   report.finalOwnedProcesses = (await native("locate")).processes;
   report.otaCoreAccepted = true;
   report.otaAccepted = false;
-  report.retentionScope =
-    "Actual settings/Profile/host and same credential-item metadata; no secret read, authentication or nonempty history/plugin-storage acceptance";
-  report.remaining = [
-    "Nonempty command history",
-    "Credential authentication/value retention",
-    "Plugin fingerprint/approval/storage retention and recovery marker with an active plugin",
-  ];
+  report.retentionScope = retention
+    ? "Settings/Profile/host/credential metadata, nonempty history, real approved frontend plugin/grant/fingerprint/storage, with source active recovery marker and unrestricted target; source-only secret hash, target plugin secret value and host secret value/authentication unaccepted"
+    : "Actual settings/Profile/host and same credential-item metadata; no secret read, authentication or nonempty history/plugin-storage acceptance";
+  report.remaining = retention
+    ? [
+        "Plugin secret value retention: actual run43662161457 target read required login Keychain authorization; do not repeat or change policy in unattended mode",
+        "Host credential value/authentication (external value read requires Keychain access)",
+        "Independent review; physical desktop/input and other M05 cases remain separate",
+      ]
+    : [
+        "Nonempty command history",
+        "Credential authentication/value retention",
+        "Plugin fingerprint/approval/storage retention and recovery marker with an active plugin",
+      ];
 }

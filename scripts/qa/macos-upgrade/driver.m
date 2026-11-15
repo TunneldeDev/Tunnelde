@@ -77,8 +77,11 @@ static BOOL walk(AXUIElementRef element, NSUInteger depth, NSMutableArray *nodes
   BOOL labelMatches = [node[@"AXTitle"] isEqual:label] || [node[@"AXDescription"] isEqual:label];
   if ([selection isEqual:@"title-only"]) labelMatches = [node[@"AXTitle"] isEqual:label] && [node[@"AXDescription"] isEqual:@""];
   if ([selection isEqual:@"described"]) labelMatches = [node[@"AXDescription"] isEqual:label];
+  if ([selection isEqual:@"prefix"] || [selection isEqual:@"tab-prefix"])
+    labelMatches = [node[@"AXTitle"] isKindOfClass:NSString.class] && [node[@"AXTitle"] hasPrefix:label];
   BOOL roleMatches = [selection isEqual:@"fill"]
       ? ([role isEqualToString:@"AXTextField"] || [role isEqualToString:@"AXTextArea"] || [role isEqualToString:@"AXSecureTextField"])
+      : [selection isEqual:@"tab-prefix"] ? ([role isEqualToString:@"AXRadioButton"] || [role isEqualToString:@"AXTab"])
       : ([role isEqualToString:@"AXButton"] || [role isEqualToString:@"AXMenuItem"]);
   if (label && labelMatches && [node[@"AXEnabled"] isEqual:@YES] && roleMatches) {
     [matches addObject:(__bridge id)element];
@@ -187,15 +190,69 @@ int main(int argc, const char *argv[]) {
       if ([key isEqual:@"quit"]) code = 12;
       else if ([key isEqual:@"settings"]) code = 43; // Cmd+Comma, the product Settings command.
       else if ([key isEqual:@"new-host"]) code = 45;
+      else if ([key isEqual:@"go-to-folder"]) { code = 5; flags |= kCGEventFlagMaskShift; }
+      else if ([key isEqual:@"enter"]) { code = 36; flags = 0; }
       else return 2;
+      BOOL nativeDialogKey = [key isEqual:@"go-to-folder"] || [key isEqual:@"enter"];
+      if (nativeDialogKey &&
+          (![env[@"MACOS_OTA_MODE"] isEqual:@"retention"] ||
+           NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != pid)) return 3;
+      if (nativeDialogKey) {
+        AXUIElementRef target = AXUIElementCreateApplication(pid);
+        AXUIElementSetMessagingTimeout(target, 1.0);
+        NSMutableArray *nodes = [NSMutableArray array], *matches = [NSMutableArray array];
+        BOOL complete = walk(target, 0, nodes, matches, nil, nil, CFAbsoluteTimeGetCurrent() + 12);
+        BOOL picker = NO;
+        for (NSDictionary *node in nodes) {
+          if ([node[@"role"] isEqual:@"AXStaticText"] && [node[@"AXValue"] isEqual:@"Plugin folder"]) picker = YES;
+        }
+        CFRelease(target);
+        if (!complete || !picker) return 3;
+      }
       for (int down = 1; down >= 0; down--) {
         CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down != 0);
         if (!event) return 5;
         CGEventSetFlags(event, flags);
-        CGEventPostToPid(pid, event);
+        if (nativeDialogKey) CGEventPost(kCGSessionEventTap, event);
+        else CGEventPostToPid(pid, event);
         CFRelease(event);
       }
       return emit(@{@"identity": process, @"key": key, @"generatedOSInput": @YES});
+    }
+    if ([action isEqual:@"plugin-path"] && argc == 3) {
+      if (![env[@"MACOS_OTA_MODE"] isEqual:@"retention"]) return 2;
+      NSString *path = [root stringByAppendingPathComponent:@"retention-plugin"];
+      char resolved[PATH_MAX];
+      BOOL directory = NO;
+      if (!realpath(path.fileSystemRepresentation, resolved) ||
+          ![path isEqual:[NSString stringWithUTF8String:resolved]] ||
+          ![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory] || !directory) return 3;
+      AXUIElementRef target = AXUIElementCreateApplication(pid);
+      AXUIElementSetMessagingTimeout(target, 1.0);
+      id focused = attribute(target, kAXFocusedUIElementAttribute);
+      BOOL ready = focused && CFGetTypeID((__bridge CFTypeRef)focused) == AXUIElementGetTypeID() &&
+          ([@[@"AXComboBox", @"AXTextField"] containsObject:attribute((__bridge AXUIElementRef)focused, kAXRoleAttribute)]);
+      CFRelease(target);
+      if (!ready) return emit(@{@"pathEntered": @NO});
+      if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != pid) return 3;
+      UniChar buffer[PATH_MAX];
+      if (!path.length || path.length >= PATH_MAX) return 3;
+      [path getCharacters:buffer range:NSMakeRange(0, path.length)];
+      for (int down = 1; down >= 0; down--) {
+        CGEventRef event = CGEventCreateKeyboardEvent(NULL, 0, down != 0);
+        if (!event) return 5;
+        CGEventSetFlags(event, kCGEventFlagMaskCommand);
+        CGEventPost(kCGSessionEventTap, event); CFRelease(event);
+      }
+      usleep(100000);
+      for (int down = 1; down >= 0; down--) {
+        CGEventRef event = CGEventCreateKeyboardEvent(NULL, 0, down != 0);
+        if (!event) return 5;
+        CGEventSetFlags(event, 0);
+        CGEventKeyboardSetUnicodeString(event, path.length, buffer);
+        CGEventPost(kCGSessionEventTap, event); CFRelease(event);
+      }
+      return emit(@{@"identity": process, @"pathEntered": @YES, @"generatedOSInput": @YES});
     }
     BOOL fill = [action isEqual:@"fill"];
     if (![action isEqual:@"tree"] && ![action isEqual:@"press"] && !fill) return 2;
