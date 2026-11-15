@@ -424,6 +424,15 @@ disconnecting sibling channels. Normal cancellation still attempts the existing
 stop signal. Neither close nor cancellation proves remote process termination or
 rolls back a dispatched command; the host does not replay it automatically.
 
+`sessions.exec` uses the same channel ownership for its separate command channel.
+Sixteen exchanges may be owned across the host, including unconfirmed opens after
+caller cancellation; exhaustion returns `plugin.api.busy`. Channel opening retains
+its eight-second budget, followed by the requested execution timeout. The captured
+SSH identity and plugin authorization are checked before opening, before EXEC and
+on a fixed interval while collecting output. Continuous output does not postpone
+reauthorization. Cleanup is bounded and leaves the parent session usable; command
+effects remain uncertain after dispatch and are never replayed automatically.
+
 Views may declare `location: "sidebar"`, `kind: "chat"` and an approved activity `icon` to
 contribute a dockable controlled chat panel. `view.render` returns a `chat` block with session,
 model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.
