@@ -21,16 +21,21 @@ gh workflow run linux-ota.yml --repo TunneldeDev/Tunnelde --ref <reviewed-branch
   -f tag=v1.2.1 -f mode=upgrade -f acknowledgement=upgrade-test-only
 ```
 
-The runner seeds public preferences through the supported CLI, invokes Check for
-updates from F1, and activates Download and install through native pointer input.
+The runner seeds public preferences through the supported CLI and uses native
+keyboard/pointer input in the original GUI to save a synthetic host and named
+settings profile. It invokes Check for updates from F1 and activates Download
+and install through native pointer input.
 The application's updater performs the download, signature verification,
 installation and restart. The harness does not launch a target application.
 Acceptance requires the installed AppImage to match the target public asset's
 digest, the target live endpoint to appear, all seeded public preference values
-to survive, and normal native close to remove the target endpoint and process.
+to survive, the complete public host and nonempty profile records to match, and
+normal native close to remove the target endpoint and process. Profile inspection
+opens only this attempt's canonical SQLite database in read-only mode; it never
+seeds records directly. Fixture typing is ASCII and does not establish IME behavior.
 
-This initial upgrade matrix does not seed host/history/Profile/plugin or
-credential data, and does not establish their migration compatibility. It also
+This upgrade matrix does not seed nonempty history/plugin or credential data,
+and does not establish their migration compatibility. It also
 does not establish physical desktop behavior or all historical upgrade paths.
 Failures retain logs, accessibility trees, captures and the stage report. A
 forced cleanup is not a normal quit. Only this run's child groups and recorded

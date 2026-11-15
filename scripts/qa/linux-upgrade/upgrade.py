@@ -6,6 +6,7 @@ import os
 import subprocess
 import time
 from typing import Callable
+from retention import Retention
 
 
 @dataclass
@@ -66,8 +67,6 @@ def run_upgrade(driver, binary, data, evidence, report):
             if failure.get('error', {}).get('code') != 'stale_revision' or attempt == 2:
                 raise
     assert seeded['values']['editor']['tabSize'] == 8
-    # This initial acceptance seeds settings only. An empty host snapshot does
-    # not establish populated host/history/profile/plugin/credential migration.
     (evidence / 'preferences-before.json').write_text(json.dumps(seeded, indent=2))
 
     app = driver.application()
@@ -75,6 +74,9 @@ def run_upgrade(driver, binary, data, evidence, report):
     windows = driver.execute(['xdotool', 'search', '--onlyvisible', '--pid', str(old_pid)]).stdout.split()
     assert windows
     driver.execute(['xdotool', 'windowactivate', '--sync', windows[0]])
+    retention = Retention(driver, app, data, evidence, cli)
+    records = retention.seed()
+    upgrade['checks'].append('Native GUI saved a synthetic host and named settings profile')
     driver.execute(['xdotool', 'key', '--clearmodifiers', 'F1'])
     driver.execute(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'])
     driver.execute(['xdotool', 'type', '--clearmodifiers', '--delay', '15', '>Check for updates'])
@@ -141,6 +143,8 @@ def run_upgrade(driver, binary, data, evidence, report):
     after = cli('preferences', 'snapshot')
     (evidence / 'preferences-after.json').write_text(json.dumps(after, indent=2))
     assert after['values'] == seeded['values'], 'Seeded public preferences changed during upgrade'
+    retention.verify(new_app, records)
+    upgrade['checks'].append('Synthetic public host and nonempty named settings profile retained unchanged')
     upgrade['checks'].append('All public preference values, including seeded language/theme/tab size/close behavior/update selection, retained')
     (evidence / 'accessible-after.json').write_text(json.dumps(driver.tree(new_app), indent=2))
     def restored_tab():
@@ -161,7 +165,7 @@ def run_upgrade(driver, binary, data, evidence, report):
     upgrade['normalQuit'] = True
     upgrade['checks'].append('Native close with closeToTray=false removed the endpoint and ended the owned target process')
     upgrade['limitations'] = [
-        'No seeded host/history/Profile/plugin/credential migration acceptance',
+        'No nonempty history/plugin/credential migration acceptance',
         'Xvfb native generated input, not physical Linux desktop input',
         'Normal close observed through endpoint and owned process disappearance; target is not a Python child with an exit status',
     ]
