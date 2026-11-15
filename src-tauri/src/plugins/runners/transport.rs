@@ -131,7 +131,7 @@ async fn exchange_checked(
     )?;
     let handle = context.app.state::<AppState>().ssh.handle(session)?;
     channel::exchange(
-        async {
+        async move {
             handle
                 .channel_open_session()
                 .await

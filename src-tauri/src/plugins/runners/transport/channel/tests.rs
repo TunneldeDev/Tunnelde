@@ -15,6 +15,7 @@ struct Observation {
     hold_open: AtomicBool,
     pending: Mutex<Option<server::ChannelOpenHandle>>,
     opened: tokio::sync::Notify,
+    executed: tokio::sync::Notify,
     commands: AtomicUsize,
     bytes: AtomicUsize,
     closed: AtomicUsize,
@@ -58,6 +59,7 @@ impl server::Handler for Server {
     ) -> Result<(), Self::Error> {
         assert_eq!(command, b"owned-helper send");
         self.observation.commands.fetch_add(1, Ordering::SeqCst);
+        self.observation.executed.notify_one();
         session.channel_success(id)?;
         Ok(())
     }
@@ -103,7 +105,7 @@ impl client::Handler for Client {
     }
 }
 struct Fixture {
-    handle: client::Handle<Client>,
+    handle: Arc<client::Handle<Client>>,
     observation: Arc<Observation>,
     server: JoinHandle<()>,
 }
@@ -142,7 +144,7 @@ impl Fixture {
             .unwrap()
             .success());
         Self {
-            handle,
+            handle: Arc::new(handle),
             observation,
             server,
         }
@@ -152,9 +154,10 @@ impl Fixture {
         limits: Limits,
         current: impl Fn() -> AppResult<()>,
     ) -> Result<Output, Failure> {
+        let handle = self.handle.clone();
         exchange(
-            async {
-                self.handle
+            async move {
+                handle
                     .channel_open_session()
                     .await
                     .map_err(|e| AppError::Ssh(e.to_string()))
@@ -313,4 +316,140 @@ async fn output_budget_and_deadline_still_close_the_owned_exchange() {
         Err(Failure::Timeout)
     ));
     stalled.closed().await;
+}
+
+#[tokio::test]
+async fn dropping_confirmed_exchange_closes_only_its_channel_and_releases_capacity() {
+    let fixture = Fixture::start(false, true).await;
+    let permits = Arc::new(Semaphore::new(1));
+    let handle = fixture.handle.clone();
+    let capacity = permits.clone();
+    let task = tokio::spawn(exchange_with_capacity(
+        async move {
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::Ssh(e.to_string()))
+        },
+        "owned-helper send".into(),
+        Some("isolated-prompt".into()),
+        Limits {
+            timeout: Duration::from_secs(30),
+            ..limits()
+        },
+        || Ok(()),
+        capacity,
+    ));
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        fixture.observation.executed.notified(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(permits.available_permits(), 0);
+    task.abort();
+    assert!(task.await.err().unwrap().is_cancelled());
+    fixture.closed().await;
+    assert_eq!(permits.available_permits(), 1);
+    assert!(!fixture.handle.is_closed());
+    let sibling = fixture.handle.channel_open_session().await.unwrap();
+    sibling.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn timed_out_open_holds_capacity_and_closes_late_confirmation_without_dispatch() {
+    let fixture = Fixture::start(true, false).await;
+    let permits = Arc::new(Semaphore::new(1));
+    let handle = fixture.handle.clone();
+    let result = exchange_with_capacity(
+        async move {
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::Ssh(e.to_string()))
+        },
+        "owned-helper send".into(),
+        Some("isolated-prompt".into()),
+        Limits {
+            timeout: Duration::from_millis(150),
+            ..limits()
+        },
+        || Ok(()),
+        permits.clone(),
+    )
+    .await;
+    assert!(matches!(result, Err(Failure::Timeout)));
+    assert_eq!(permits.available_permits(), 0);
+    let busy = exchange_with_capacity(
+        async { panic!("exhausted capacity polled open") },
+        "owned-helper send".into(),
+        None,
+        limits(),
+        || Ok(()),
+        permits.clone(),
+    )
+    .await;
+    match busy {
+        Err(Failure::Connection(error)) => assert_eq!(error.to_string(), "plugin.runners.busy"),
+        _ => panic!("unconfirmed open did not retain capacity"),
+    }
+    fixture
+        .observation
+        .pending
+        .lock()
+        .await
+        .take()
+        .unwrap()
+        .accept()
+        .await;
+    fixture.closed().await;
+    assert_eq!(permits.available_permits(), 1);
+    assert_eq!(fixture.observation.commands.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.observation.bytes.load(Ordering::SeqCst), 0);
+    assert!(fixture.exchange(limits(), || Ok(())).await.is_ok());
+}
+
+#[tokio::test]
+async fn disposing_parent_settles_cancelled_unconfirmed_open() {
+    let fixture = Fixture::start(true, false).await;
+    let permits = Arc::new(Semaphore::new(1));
+    let handle = fixture.handle.clone();
+    let task = tokio::spawn(exchange_with_capacity(
+        async move {
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::Ssh(e.to_string()))
+        },
+        "owned-helper send".into(),
+        None,
+        Limits {
+            timeout: Duration::from_secs(30),
+            ..limits()
+        },
+        || Ok(()),
+        permits.clone(),
+    ));
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        fixture.observation.opened.notified(),
+    )
+    .await
+    .unwrap();
+    task.abort();
+    assert!(task.await.err().unwrap().is_cancelled());
+    assert_eq!(permits.available_permits(), 0);
+    fixture
+        .handle
+        .disconnect(russh::Disconnect::ByApplication, "", "en")
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while permits.available_permits() == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("cancelled open survived session disposal");
+    assert_eq!(fixture.observation.commands.load(Ordering::SeqCst), 0);
 }

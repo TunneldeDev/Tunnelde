@@ -1,3 +1,4 @@
+pub(crate) mod channel;
 pub(crate) mod command;
 pub mod diagnostics;
 pub mod files;

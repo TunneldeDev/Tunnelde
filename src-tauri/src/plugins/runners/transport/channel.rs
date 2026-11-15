@@ -2,20 +2,49 @@
 use super::{Failure, Limits, Output};
 use crate::error::{AppError, AppResult};
 use russh::{client, Channel, ChannelMsg};
-use std::{future::Future, time::Duration};
+use std::{
+    future::Future,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
+use tokio::sync::Semaphore;
 
 pub(super) async fn exchange(
-    open: impl Future<Output = AppResult<Channel<client::Msg>>>,
+    open: impl Future<Output = AppResult<Channel<client::Msg>>> + Send + 'static,
     command: String,
     input: Option<String>,
     limits: Limits,
     current: impl Fn() -> AppResult<()>,
 ) -> Result<Output, Failure> {
+    static OPENS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    exchange_with_capacity(
+        open,
+        command,
+        input,
+        limits,
+        current,
+        OPENS.get_or_init(|| Arc::new(Semaphore::new(16))).clone(),
+    )
+    .await
+}
+
+async fn exchange_with_capacity(
+    open: impl Future<Output = AppResult<Channel<client::Msg>>> + Send + 'static,
+    command: String,
+    input: Option<String>,
+    limits: Limits,
+    current: impl Fn() -> AppResult<()>,
+    permits: Arc<Semaphore>,
+) -> Result<Output, Failure> {
     current()?;
+    let permit = permits
+        .try_acquire_owned()
+        .map_err(|_| AppError::validation("plugin.runners.busy"))?;
     let deadline = tokio::time::Instant::now() + limits.timeout;
-    let mut channel = tokio::time::timeout_at(deadline, open)
+    let mut owned = tokio::time::timeout_at(deadline, crate::ssh::channel::open(open, permit))
         .await
         .map_err(|_| Failure::Timeout)??;
+    let channel = owned.channel();
     let result = tokio::time::timeout_at(deadline, async {
         current()?;
         channel
