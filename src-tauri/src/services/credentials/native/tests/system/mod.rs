@@ -1,4 +1,4 @@
-//! Explicit hosted-Windows acceptance of the real OS binding lifecycle.
+//! Explicit Windows/macOS acceptance of the real OS binding lifecycle.
 //! No desktop, HTTP/proxy runner, production identity or user configuration.
 use super::super::{
     bindings, AppResult, Connection, Database, Owner, Platform, Service, Stamp, Uuid,
@@ -28,7 +28,7 @@ struct Manifest {
 }
 
 #[test]
-#[ignore = "explicit isolated real-OS binding acceptance on Windows"]
+#[ignore = "explicit isolated real-OS binding acceptance on Windows/macOS"]
 fn immutable_bindings_survive_restart_and_cleanup_preserves_other_services() {
     assert_eq!(
         std::env::var("TUNNELDE_TEST_APP_KEYRING").as_deref(),

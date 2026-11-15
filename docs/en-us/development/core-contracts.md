@@ -56,6 +56,14 @@ with external OS edits, and copying a database does not create an independent
 credential namespace when both copies use the same OS service. Future-schema
 databases must be refused by older builds rather than silently downgraded.
 
+Windows and macOS CI explicitly run the binding lifecycle against their real OS
+credential stores using random QA services. The default-ignored fixture checks
+schema-5 migration, replacement, cross-process reads, durable forget, unpublished
+item recovery and exact cleanup without deleting a neighboring service. Its child
+has a 60-second deadline and its CI step a three-minute deadline. This hosted
+test does not prove installed-app Keychain authorization, physical user prompts,
+or the cause of a reported desktop freeze.
+
 The reviewed SSH saved-password fallback shares this worker budget. Its original
 route snapshot and credential-host scope are checked at actual worker admission,
 after the read and again before authentication uses the result. No database guard

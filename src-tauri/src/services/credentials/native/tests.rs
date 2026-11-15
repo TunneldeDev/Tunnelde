@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 
 mod mutations;
 mod recovery;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod system;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
