@@ -353,7 +353,7 @@ JSON 做格式化展示，不改变审批请求或用户决定。
 
 远端持久 runner 需要明确确认、单独选择的原生 helper、新建私有远端目录及明确的远端运行时；
 不安装服务或 Node。关闭应用保留远端任务；停止插件或进入受限模式会记录停止意图，通过可用连接退避重试，重连后也会继续。
-runner 记录绑定已保存主机，新连接 ID 可用于恢复同一任务，见[原生 helper](../../../en-us/development/native-helper.md)及[持久运行器生命周期](runners.md)。
+runner 记录绑定已保存主机，新连接 ID 可用于恢复同一任务，见[原生 helper](../native-helper.md)及[持久运行器生命周期](runners.md)。
 
 可选 `tunnelde-agent` 支持 MCP stdio 和远端 runner，普通 SSH、SFTP、终端、本地 API 聊天不需要。
 二进制与校验和由独立的 Tunnelde-agent 仓库维护并发布；不放在桌面安装器或主 GitHub Release 下载中。
