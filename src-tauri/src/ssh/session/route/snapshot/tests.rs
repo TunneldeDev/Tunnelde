@@ -193,3 +193,144 @@ fn route_order_and_proxy_selection_are_checked_at_admission() {
         })
         .unwrap();
 }
+
+#[test]
+fn a_displayed_host_changed_while_queued_is_rejected_before_transport_read() {
+    use std::future::{poll_fn, Future};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use std::task::Poll;
+    use std::time::Duration;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for (field, value) in [("username", "changed"), ("host", "replacement.example")] {
+            let database = Arc::new(Database::in_memory().unwrap());
+            let displayed = database.with(|conn| Ok(host(conn, "target"))).unwrap();
+            let (started, ready) = tokio::sync::oneshot::channel();
+            let (release, wait) = std::sync::mpsc::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                started.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            });
+            ready.await.unwrap();
+            let owned = database.clone();
+            let host_id = displayed.id.clone();
+            let reads = Arc::new(AtomicUsize::new(0));
+            let observed = reads.clone();
+            let mut request = Box::pin(crate::services::credentials::inspect(move || {
+                owned.with(|conn| capture_configuration(conn, &displayed))?;
+                // Models only the next transport-read boundary. This is a
+                // deterministic worker/DB regression, not a native Vault test.
+                observed.fetch_add(1, Ordering::AcqRel);
+                Ok(())
+            }));
+            // Polling posts the real inspect worker behind the sole blocker.
+            poll_fn(|cx| {
+                assert!(request.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+            assert_eq!(reads.load(Ordering::Acquire), 0);
+            database
+                .with(|conn| {
+                    conn.execute(
+                        &format!("UPDATE hosts SET {field}=?2 WHERE id=?1"),
+                        rusqlite::params![host_id, value],
+                    )?;
+                    Ok(())
+                })
+                .unwrap();
+            release.send(()).unwrap();
+            blocker.await.unwrap();
+            assert_eq!(
+                request.await.unwrap_err().to_string(),
+                "ssh.connectionChanged"
+            );
+            assert_eq!(reads.load(Ordering::Acquire), 0);
+        }
+    });
+}
+
+#[test]
+fn capture_preflight_preserves_cosmetic_edits_and_route_errors() {
+    Database::in_memory()
+        .unwrap()
+        .with(|conn| {
+            let target = host(conn, "target");
+            conn.execute("UPDATE hosts SET name='renamed' WHERE id=?1", [&target.id])?;
+            let (_, nodes) = capture_configuration(conn, &target)?;
+            assert_eq!(nodes.last().unwrap().host.name, target.name);
+            save_route(
+                conn,
+                &target.id,
+                &ConnectionRoute {
+                    proxy: "direct".into(),
+                    jump_hosts: vec![target.id.clone()],
+                },
+            );
+            assert_eq!(
+                capture_configuration(conn, &target)
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "network.jumpCycle"
+            );
+            save_route(conn, &target.id, &ConnectionRoute::default());
+            db::hosts::delete_host(conn, &target.id)?;
+            assert_eq!(
+                capture_configuration(conn, &target)
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "ssh.connectionChanged"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn dynamic_preflight_reuses_destination_and_source_scope_checks() {
+    Database::in_memory()
+        .unwrap()
+        .with(|conn| {
+            let mut dynamic = host(conn, "dynamic");
+            dynamic.id = format!("{}owned", crate::plugins::host_sources::PREFIX);
+            let node = Node {
+                host: dynamic.clone(),
+                key: None,
+            };
+            verify_dynamic(std::slice::from_ref(&node), |_| Ok(dynamic.clone()))?;
+            let mut edited = dynamic.clone();
+            edited.username = "replacement".into();
+            assert_eq!(
+                verify_dynamic(std::slice::from_ref(&node), |_| Ok(edited.clone()))
+                    .unwrap_err()
+                    .to_string(),
+                "ssh.connectionChanged"
+            );
+            assert_eq!(
+                verify_dynamic(std::slice::from_ref(&node), |_| Err(AppError::validation(
+                    "plugins.permissionDenied"
+                )))
+                .unwrap_err()
+                .to_string(),
+                "ssh.connectionChanged"
+            );
+            let saved = Node {
+                host: host(conn, "saved"),
+                key: None,
+            };
+            verify_dynamic(&[saved], |_| {
+                panic!("saved hosts must not resolve dynamic source scope")
+            })
+        })
+        .unwrap();
+}
