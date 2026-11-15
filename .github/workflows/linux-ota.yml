@@ -1,0 +1,67 @@
+name: Public Linux updater environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Unmodified public AppImage to probe
+        default: v1.2.1
+        required: true
+        type: string
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/linux-ota.yml
+      - scripts/qa/linux-upgrade/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-ota-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test scripts/qa/linux-upgrade/*.test.mjs
+      - run: python3 -m py_compile scripts/qa/linux-upgrade/probe.py
+        env:
+          PYTHONPYCACHEPREFIX: ${{ runner.temp }}/linux-ota-python-cache
+
+  probe:
+    needs: checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install disposable graphical session dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libxdo3 xvfb xauth dbus-x11 openbox at-spi2-core python3-pyatspi libatk-adaptor xdotool imagemagick tesseract-ocr
+      - name: Probe public AppImage and native accessibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OTA_SOURCE_TAG: ${{ inputs.tag || 'v1.2.1' }}
+        run: dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' node scripts/qa/linux-upgrade/run.mjs
+      - name: Retain original probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-public-updater-probe
+          path: ${{ runner.temp }}/tunnelde-linux-ota-*/evidence
+          if-no-files-found: warn
+          retention-days: 14
