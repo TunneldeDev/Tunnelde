@@ -82,7 +82,7 @@ class Retention:
         profile, = (v for v in before['profiles'] if v['name'] == PROFILE_NAME)
         assert profile['settings']['editorTabSize'] == 8
         (self.evidence / 'records-before.json').write_text(json.dumps(before, indent=2), encoding='utf-8')
-        self.driver.capture('retained-records', 'page tab', HOST_NAME, self.app)
+        self.driver.capture('retained-records', 'heading', HOST_NAME, self.app)
         return before
 
     def verify(self, app, before):
