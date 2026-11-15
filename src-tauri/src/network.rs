@@ -13,10 +13,12 @@ use crate::{
 
 pub mod diagnostics;
 pub(crate) mod http;
+mod proxy;
 pub(crate) mod requests;
 mod transport;
 pub(super) use http::client_for_proxy as http_client_for_proxy;
 pub(crate) use http::{http_client, HttpClients};
+pub use proxy::url as proxy_url;
 pub(crate) use transport::TcpRoute;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -117,47 +119,6 @@ pub fn selection<'a>(
     } else {
         &settings.default_proxy
     })
-}
-
-pub fn proxy_url(
-    vault: &Vault,
-    settings: &NetworkSettings,
-    feature: &str,
-    override_value: Option<&str>,
-) -> AppResult<Option<String>> {
-    let chosen = selection(settings, feature, override_value);
-    if chosen == "system" {
-        return Ok(None);
-    }
-    if chosen == "direct" {
-        return Ok(Some(String::new()));
-    }
-    let profile = settings
-        .profiles
-        .iter()
-        .find(|p| p.id == chosen)
-        .ok_or_else(|| AppError::validation("network.proxyMissing"))?;
-    let scheme = if profile.protocol == "socks5" {
-        "socks5h"
-    } else {
-        "http"
-    };
-    let mut url = reqwest::Url::parse(&format!(
-        "{scheme}://{}:{}",
-        authority(&profile.host),
-        profile.port
-    ))
-    .map_err(|_| AppError::validation("network.invalid"))?;
-    if !profile.username.is_empty() {
-        url.set_username(&profile.username)
-            .map_err(|_| AppError::validation("network.invalid"))?;
-        let password = vault
-            .load(&format!("proxy:{}", profile.id))?
-            .unwrap_or_default();
-        url.set_password(Some(&password))
-            .map_err(|_| AppError::validation("network.invalid"))?;
-    }
-    Ok(Some(url.to_string()))
 }
 
 pub fn process_environment(
@@ -424,12 +385,8 @@ pub fn connection_route_save(
         return Err(AppError::validation("network.jumpCycle"));
     }
     let state = app.state::<AppState>();
-    proxy_url(
-        &state.vault,
-        &state.settings().network,
-        "ssh",
-        Some(&route.proxy),
-    )?;
+    // Saving a route validates configuration; it must not prompt for a password.
+    proxy::validate_selection(&state.settings().network, "ssh", Some(&route.proxy))?;
     state.db.with(|conn| {
         crate::db::hosts::find_host(conn, &host_id)?;
         let mut seen = std::collections::HashSet::from([host_id.clone()]);
@@ -456,10 +413,7 @@ pub async fn proxy_test(app: AppHandle, proxy: String, host: String, port: u16) 
     if !valid_host(&host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
     }
-    let _ = TcpRoute::capture(&app, &host, port, &proxy)?
-        .connect(&host, port)
-        .await?;
-    Ok(())
+    transport::probe(&app, &host, port, &proxy).await
 }
 
 #[cfg(test)]

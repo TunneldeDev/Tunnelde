@@ -63,6 +63,15 @@ reused for up to 30 seconds; their backoff identity stays with that client.
 External OS proxy/secret changes are not observed as an atomic OS transaction. Other
 credential consumers retain their separately documented boundaries.
 
+Native proxy diagnostics resolve the selected TCP route on the same bounded
+workers before connecting. The 15-second TCP budget includes route preparation;
+a timed-out or abandoned preparation cannot dial when its OS read finishes late.
+The three quality samples reuse one resolved route. The optional HTTPS test has
+its own 15-second budget including worker-based client construction, and keeps
+TLS verification and the selected proxy. Saving a connection route validates
+proxy selection and URL fields without reading a saved password. This does not
+change the separate authority rules for reviewed credential mutations.
+
 ## Compatibility rules
 
 - A stable interface has an owned request/result/error schema, documented effects
