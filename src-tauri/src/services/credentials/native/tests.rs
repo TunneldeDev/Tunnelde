@@ -10,6 +10,8 @@ use tokio::sync::Semaphore;
 
 mod mutations;
 mod recovery;
+#[cfg(windows)]
+mod system;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Stage {
