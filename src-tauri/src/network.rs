@@ -13,7 +13,9 @@ use crate::{
 
 pub mod diagnostics;
 pub(crate) mod http;
+mod process;
 pub(crate) mod proxy;
+pub(crate) use process::ProcessEnvironment;
 pub(crate) mod requests;
 mod transport;
 pub(super) use http::client_for_proxy as http_client_for_proxy;
@@ -119,53 +121,6 @@ pub fn selection<'a>(
     } else {
         &settings.default_proxy
     })
-}
-
-pub fn process_environment(
-    app: &AppHandle,
-    plugin: &str,
-    command: &mut tokio::process::Command,
-) -> AppResult<()> {
-    let network = app.state::<AppState>().settings().network;
-    let feature = format!("plugin:{plugin}");
-    let value = network
-        .features
-        .get(&feature)
-        .filter(|v| !v.is_empty())
-        .map(String::as_str);
-    if let Some(url) = proxy_url(&app.state::<AppState>().vault, &network, "processes", value)? {
-        for key in [
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "http_proxy",
-            "https_proxy",
-            "all_proxy",
-            "NO_PROXY",
-            "no_proxy",
-        ] {
-            command.env_remove(key);
-        }
-        if !url.is_empty() {
-            for key in [
-                "HTTP_PROXY",
-                "HTTPS_PROXY",
-                "ALL_PROXY",
-                "http_proxy",
-                "https_proxy",
-                "all_proxy",
-            ] {
-                command.env(key, &url);
-            }
-            command
-                .env("NO_PROXY", "localhost,127.0.0.1,::1")
-                .env("no_proxy", "localhost,127.0.0.1,::1");
-            command.env("NODE_USE_ENV_PROXY", "1");
-        } else {
-            command.env_remove("NODE_USE_ENV_PROXY");
-        }
-    }
-    Ok(())
 }
 
 fn authority(host: &str) -> String {
