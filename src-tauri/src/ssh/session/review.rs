@@ -31,14 +31,18 @@ fn changed() -> AppError {
     AppError::Ssh("ssh.connectionChanged".into())
 }
 
-pub(crate) fn prepare(app: &AppHandle, displayed: &Host) -> AppResult<Plan> {
-    // Snapshot::verify compares the displayed connection fields against native
-    // storage, rejecting a stale dialog before it can send any credentials.
-    let target = Target::from_displayed(app, displayed)?;
-    Ok(Plan {
-        review: target.review(),
-        jump_hosts: target.0.jump_hosts(),
+pub(crate) async fn prepare(app: AppHandle, displayed: Host) -> AppResult<Plan> {
+    crate::services::credentials::inspect(move || {
+        // Capture at actual worker admission: the displayed connection fields
+        // must still match native storage after any queue wait. Transport
+        // inspection may read a proxy password and must not run on the UI thread.
+        let target = Target::from_displayed(&app, &displayed)?;
+        Ok(Plan {
+            review: target.review(),
+            jump_hosts: target.0.jump_hosts(),
+        })
     })
+    .await
 }
 
 impl Target {

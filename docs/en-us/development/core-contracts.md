@@ -40,6 +40,12 @@ the user's review or authenticating against edited configuration. This read-only
 boundary does not move reviewed credential writes/deletes outside their existing
 authority guard; those mutations and other consumers retain their own rules.
 
+Preparing the desktop SSH review also uses this bounded worker capacity because
+capturing the transport can read an authenticated proxy's saved password. The
+displayed host is checked against current storage when the worker actually runs;
+queueing does not refresh a stale dialog. Other review operations retain their
+existing authority and scheduling rules.
+
 ## Compatibility rules
 
 - A stable interface has an owned request/result/error schema, documented effects

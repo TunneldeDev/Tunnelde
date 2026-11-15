@@ -10,11 +10,11 @@ use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
-pub(crate) fn connection_review_prepare(
+pub(crate) async fn connection_review_prepare(
     app: AppHandle,
     displayed: Host,
 ) -> AppResult<review::Plan> {
-    review::prepare(&app, &displayed)
+    review::prepare(app, displayed).await
 }
 
 #[tauri::command]
