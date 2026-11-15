@@ -1,6 +1,33 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hasField, hasText } from "./ota.mjs";
+import { hasField, hasText, verifySeedHost } from "./ota.mjs";
+
+test("synthetic host accepts the observed stable hosts.list DTO without internal auth fields", () => {
+  verifySeedHost({
+    address: "127.0.0.1",
+    favorite: false,
+    groupId: null,
+    id: "9694d335-6ed3-44c6-9a69-3618c092ccc5",
+    name: "OTA preserved host 主机",
+    port: 2209,
+    tags: [],
+    username: "qa",
+  });
+});
+
+test("synthetic host rejects incorrect public address, port and username", () => {
+  const host = { address: "127.0.0.1", port: 2209, username: "qa" };
+  for (const [key, value] of Object.entries({
+    address: "127.0.0.2",
+    port: 22,
+    username: "other",
+  })) {
+    assert.throws(
+      () => verifySeedHost({ ...host, [key]: value }),
+      new RegExp(`Synthetic host ${key}`),
+    );
+  }
+});
 
 test("host auth summary is not an open password form (observed native AX roles)", () => {
   const summary = {

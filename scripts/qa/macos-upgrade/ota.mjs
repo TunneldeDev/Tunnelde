@@ -31,6 +31,17 @@ export function hasField(tree, label) {
   );
 }
 
+export function verifySeedHost(host) {
+  // hosts.list exposes the stable public DTO, not the internal saved Host.
+  for (const [key, value] of Object.entries({
+    address: "127.0.0.1",
+    port: 2209,
+    username: "qa",
+  })) {
+    assert.equal(host[key], value, `Synthetic host ${key}`);
+  }
+}
+
 export async function upgrade(runtime) {
   const {
     report,
@@ -144,14 +155,7 @@ export async function upgrade(runtime) {
     return host && !hasField(await tree(pid), "Password");
   });
   report.seedHost = host;
-  for (const [key, value] of Object.entries({
-    host: "127.0.0.1",
-    port: 2209,
-    username: "qa",
-    authMethod: "password",
-  })) {
-    assert.equal(host[key], value, `Synthetic host ${key}`);
-  }
+  verifySeedHost(host);
   report.credentialBefore = await native("credential", host.id);
   assert.equal(
     report.credentialBefore.status,
