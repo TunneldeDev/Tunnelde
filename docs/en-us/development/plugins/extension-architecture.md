@@ -183,4 +183,13 @@ other domains' stores or private components. Compatibility entry points re-expor
 existing symbols; generated market SDK files mirror the public dependency graph.
 The [monitoring domain](monitor-ui.md) documents one concrete example.
 
+Native runner recovery registers its pending file-browser request before route
+inspection can read OS proxy credentials. Inspection uses the bounded credential
+workers without holding the cancellation mutex. Cancellation, a changed recovery
+record, failed inspection or an abandoned preparation removes only that request;
+a late result cannot recreate it or remove a replacement. The original displayed
+host and recovery token remain authoritative. Final trust and connection
+acceptance have separate checks; this does not make all credential consumers
+asynchronous or establish the cause of a reported application freeze.
+
 [Runtime resource lifecycle](runtime-resources.md) documents the experimental owned snapshot/disposal contract and its limits.
