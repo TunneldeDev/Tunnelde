@@ -10,6 +10,8 @@ pub(in crate::ssh::session) use observation::Observed;
 pub(super) struct Node {
     pub host: Host,
     pub key: Option<String>,
+    pub incarnation: Option<uuid::Uuid>,
+    pub trust_incarnation: Option<uuid::Uuid>,
 }
 
 #[derive(Clone)]
@@ -18,6 +20,7 @@ pub(in super::super) struct Snapshot {
     route: ConnectionRoute,
     pub(super) transport: TcpRoute,
     proxy: crate::network::proxy::Selected,
+    proxy_authority: Vec<u8>,
 }
 
 fn changed() -> AppError {
@@ -51,7 +54,21 @@ fn capture_nodes(
             let host = host?;
             let key = db::known_hosts::find(conn, &host.host, host.port as i64)?
                 .map(|key| key.fingerprint);
-            Ok(Node { host, key })
+            let incarnation = if host.id.starts_with(crate::plugins::host_sources::PREFIX) {
+                None
+            } else {
+                crate::services::credentials::host_incarnation(conn, &host.id)?
+            };
+            Ok(Node {
+                trust_incarnation: crate::services::credentials::lifecycle::trust_incarnation(
+                    conn,
+                    &host.host,
+                    i64::from(host.port),
+                )?,
+                host,
+                key,
+                incarnation,
+            })
         })
         .collect()
 }
@@ -72,9 +89,16 @@ impl Snapshot {
 
     pub(in super::super) fn capture(app: &AppHandle, host: &Host) -> AppResult<Self> {
         let state = app.state::<AppState>();
-        let (route, nodes, network) = state.db.with(|conn| {
+        let (route, nodes, network, proxy_authority) = state.db.with(|conn| {
             let (route, nodes) = capture_configuration(conn, host)?;
-            Ok((route, nodes, db::settings::load_checked(conn)?.network))
+            let network = db::settings::load_checked(conn)?.network;
+            let proxy_authority = crate::services::credentials::lifecycle::selection_authority(
+                conn,
+                &network,
+                "ssh",
+                Some(&route.proxy),
+            )?;
+            Ok((route, nodes, network, proxy_authority))
         })?;
         // Reject an already-stale displayed host or revoked dynamic source
         // before transport capture can access a proxy credential. The DB guard
@@ -84,7 +108,7 @@ impl Snapshot {
         let snapshot = Self {
             proxy: crate::network::proxy::Selected::capture(&network, "ssh", Some(&route.proxy))?,
             transport: TcpRoute::capture_with(
-                &state.vault,
+                |profile| crate::services::credentials::read_proxy(&state, profile),
                 &network,
                 &first.host,
                 first.port,
@@ -92,6 +116,7 @@ impl Snapshot {
             )?,
             nodes,
             route,
+            proxy_authority,
         };
         snapshot.verify(app)?;
         Ok(snapshot)
@@ -152,6 +177,8 @@ impl Snapshot {
 
     pub(in super::super) fn revision(&self) -> String {
         review::revision(&self.nodes, &self.route, |digest| {
+            use sha2::Digest;
+            digest.update(&self.proxy_authority);
             self.transport.update_review(digest);
             self.proxy.update_review(digest);
         })
@@ -165,7 +192,7 @@ impl Snapshot {
         info: &HostKeyInfo,
         check: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<()> {
-        self.approve_checked(app, info, check)?;
+        let trust_incarnation = self.approve_checked(app, info, check)?;
         let observed = self
             .nodes
             .iter()
@@ -175,6 +202,7 @@ impl Snapshot {
         for node in &mut self.nodes {
             if (&node.host.host, node.host.port) == (&endpoint.0, endpoint.1) {
                 node.key = Some(info.fingerprint.clone());
+                node.trust_incarnation = trust_incarnation;
             }
         }
         self.verify(app)
@@ -185,6 +213,17 @@ impl Snapshot {
         let network = db::settings::load_checked(conn)
             .map_err(|_| changed())?
             .network;
+        if crate::services::credentials::lifecycle::selection_authority(
+            conn,
+            &network,
+            "ssh",
+            Some(&self.route.proxy),
+        )
+        .map_err(|_| changed())?
+            != self.proxy_authority
+        {
+            return Err(changed());
+        }
         let current =
             crate::network::proxy::Selected::capture(&network, "ssh", Some(&self.route.proxy))
                 .map_err(|_| changed())?;
@@ -226,7 +265,9 @@ impl Snapshot {
         let app = app.clone();
         let info = info.clone();
         crate::services::credentials::checked(move |job| {
-            snapshot.approve_checked(&app, &info, || job.commit())
+            snapshot
+                .approve_checked(&app, &info, || job.commit())
+                .map(|_| ())
         })
         .await
     }
@@ -236,7 +277,7 @@ impl Snapshot {
         app: &AppHandle,
         info: &HostKeyInfo,
         check: impl FnOnce() -> AppResult<()>,
-    ) -> AppResult<()> {
+    ) -> AppResult<Option<uuid::Uuid>> {
         // Never resolve an observed host ID to an edited address after probing.
         let node = self
             .nodes
@@ -253,6 +294,11 @@ impl Snapshot {
                 node.host.port as i64,
                 &info.algorithm,
                 &info.fingerprint,
+            )?;
+            crate::services::credentials::lifecycle::trust_incarnation(
+                conn,
+                &node.host.host,
+                i64::from(node.host.port),
             )
         })
     }
@@ -303,16 +349,24 @@ fn verify_nodes(conn: &rusqlite::Connection, nodes: &[Node]) -> AppResult<()> {
             .host
             .id
             .starts_with(crate::plugins::host_sources::PREFIX)
-            && !same_destination(
-                &node.host,
-                &db::hosts::find_host(conn, &node.host.id).map_err(|_| changed())?,
-            )
+            && (crate::services::credentials::host_incarnation(conn, &node.host.id)?
+                != node.incarnation
+                || !same_destination(
+                    &node.host,
+                    &db::hosts::find_host(conn, &node.host.id).map_err(|_| changed())?,
+                ))
         {
             return Err(changed());
         }
         let key = db::known_hosts::find(conn, &node.host.host, node.host.port as i64)?
             .map(|key| key.fingerprint);
-        if key != node.key {
+        if key != node.key
+            || crate::services::credentials::lifecycle::trust_incarnation(
+                conn,
+                &node.host.host,
+                i64::from(node.host.port),
+            )? != node.trust_incarnation
+        {
             return Err(changed());
         }
     }

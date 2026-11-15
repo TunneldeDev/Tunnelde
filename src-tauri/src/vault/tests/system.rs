@@ -92,9 +92,14 @@ fn application_credentials_are_isolated_and_survive_process_reconstruction() {
     first.save("proxy:shared", "first-secret");
     second.save("proxy:shared", "second-secret");
     let url = |store: &Vault| {
-        let raw = crate::network::proxy_url(store, &settings, "updates", None)
-            .unwrap()
-            .unwrap();
+        let raw = crate::network::proxy_url(
+            |p| store.load(&format!("proxy:{}", p.id)),
+            &settings,
+            "updates",
+            None,
+        )
+        .unwrap()
+        .unwrap();
         reqwest::Url::parse(&raw).unwrap()
     };
     assert!(url(&first.store).password() == Some("first-secret"));

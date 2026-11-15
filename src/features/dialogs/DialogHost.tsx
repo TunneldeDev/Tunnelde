@@ -83,10 +83,8 @@ function HostDialog({
   const settings = useSettings((state) => state.settings);
   const theme = useResolvedTheme(settings.theme);
   const groups = useHosts((state) => state.groups);
-  const createHost = useHosts((state) => state.createHost);
-  const updateHost = useHosts((state) => state.updateHost);
+  const saveHostEditor = useHosts((state) => state.saveHostEditor);
   const openHost = useWorkspace((state) => state.openHost);
-  const renameHost = useWorkspace((state) => state.renameHost);
   const [form, setForm] = useState<HostFormState>(
     host ? fromHost(host) : { ...EMPTY, groupId: groupId ?? "" },
   );
@@ -202,23 +200,30 @@ function HostDialog({
     };
 
     try {
-      const saved = persistedHost.current
-        ? await updateHost(persistedHost.current.id, input)
-        : await createHost(input);
-      if (!saved) return;
+      const result = await saveHostEditor({
+        id: persistedHost.current?.id ?? null,
+        input,
+        route,
+        credential:
+          password.length > 0 && form.authMethod !== "key" && form.authMethod !== "agent"
+            ? { action: "save", password }
+            : removePassword
+              ? { action: "forget" }
+              : { action: "keep" },
+      });
+      const saved = result.host;
       persistedHost.current = saved;
-      renameHost(saved.id, saved.name);
-      await api.saveConnectionRoute(saved.id, route);
-      if (password.length > 0 && form.authMethod !== "key" && form.authMethod !== "agent") {
-        await api.credentialSave(saved.id, password);
-      } else if (removePassword) {
-        await api.credentialForget(saved.id);
+      if (result.credentialError != null) {
+        setCredentialError(
+          t("host.credentialSaveFailed", { error: translateError(result.credentialError) }),
+        );
+        return;
       }
       if (!host || host.source) openHost(saved);
       setPassword("");
       onClose();
     } catch (cause) {
-      setCredentialError(t("host.credentialSaveFailed", { error: translateError(cause) }));
+      setCredentialError(translateError(cause));
     } finally {
       pendingSave.current = false;
       setSaving(false);

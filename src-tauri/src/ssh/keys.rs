@@ -139,6 +139,7 @@ pub(crate) async fn install_target(
     })
     .await?;
 
+    crate::services::credentials::schedule_cleanup(app);
     Ok(InstalledKey {
         public_key: public,
         key_path,

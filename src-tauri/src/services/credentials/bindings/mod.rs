@@ -10,8 +10,6 @@ mod mutations;
 #[cfg(test)]
 mod tests;
 
-pub(super) const SCHEMA: &str = include_str!("schema.sql");
-
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct Owner {
     kind: &'static str,
@@ -233,5 +231,9 @@ pub(super) fn forget(conn: &Connection, expected: &Binding) -> AppResult<()> {
     cleanup::queue(conn, expected)
 }
 
-pub(super) use cleanup::{claim, complete, recover, Retirement};
-pub(super) use mutations::{abandon, begin, publish, written, Intent};
+#[cfg(test)]
+use cleanup::Retirement;
+pub(super) use cleanup::{claim, complete, recover};
+#[cfg(test)]
+use mutations::Intent;
+pub(super) use mutations::{abandon, begin, publish, written};

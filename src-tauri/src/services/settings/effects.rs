@@ -30,22 +30,6 @@ pub(super) fn publish(app: &AppHandle, previous: &Settings, next: &Settings, kin
         if crate::update::selection_changed(previous, next) {
             app.state::<crate::state::AppState>().update.publish(app);
         }
-        for profile in &previous.network.profiles {
-            if !next
-                .network
-                .profiles
-                .iter()
-                .any(|item| item.id == profile.id)
-            {
-                if let Err(error) = app
-                    .state::<crate::state::AppState>()
-                    .vault
-                    .forget(&format!("proxy:{}", profile.id))
-                {
-                    tracing::warn!(%error, "could not remove deleted proxy credential");
-                }
-            }
-        }
         crate::plugins::forwarding::retire_selections(app);
         crate::platform::window::apply_theme(app, &next.theme);
         crate::platform::window::apply_background_dock_preference(app);

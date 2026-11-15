@@ -8,14 +8,7 @@ const AUTHORITY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const CHANGED: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 fn database() -> Database {
-    let database = Database::in_memory().unwrap();
-    database
-        .with(|conn| {
-            conn.execute_batch(SCHEMA)?;
-            Ok(())
-        })
-        .unwrap();
-    database
+    Database::in_memory().unwrap()
 }
 
 fn tx<T>(database: &Database, effect: impl FnOnce(&Connection) -> AppResult<T>) -> AppResult<T> {
@@ -208,11 +201,6 @@ fn startup_recovers_unknown_item_by_original_identity_without_replaying_write() 
     let orphan;
     {
         let db = Database::open(&path).unwrap();
-        db.with(|conn| {
-            conn.execute_batch(SCHEMA)?;
-            Ok(())
-        })
-        .unwrap();
         orphan = prepare(&db, &owner, old_run).physical();
         // The OS write may have succeeded, but its reply was lost before written.
     }

@@ -1,5 +1,5 @@
 //! Separate pure route validation from credential resolution.
-use super::{authority, selection, NetworkSettings, ProxyProfile, Vault};
+use super::{authority, selection, NetworkSettings, ProxyProfile};
 use crate::error::{AppError, AppResult};
 
 // No Debug/Serialize: even a pre-credential URL contains proxy identity.
@@ -45,14 +45,14 @@ impl<'a> Configured<'a> {
 
     fn resolve(
         self,
-        load: impl FnOnce(&str) -> AppResult<Option<String>>,
+        load: impl FnOnce(&ProxyProfile) -> AppResult<Option<String>>,
     ) -> AppResult<Option<String>> {
         match self {
             Self::System => Ok(None),
             Self::Direct => Ok(Some(String::new())),
             Self::Profile(profile, mut url) => {
                 if !profile.username.is_empty() {
-                    let password = load(&format!("proxy:{}", profile.id))?.unwrap_or_default();
+                    let password = load(profile)?.unwrap_or_default();
                     url.set_password(Some(&password))
                         .map_err(|_| AppError::validation("network.invalid"))?;
                 }
@@ -71,12 +71,12 @@ pub(super) fn validate_selection(
 }
 
 pub fn url(
-    vault: &Vault,
+    load: impl FnOnce(&ProxyProfile) -> AppResult<Option<String>>,
     settings: &NetworkSettings,
     feature: &str,
     override_value: Option<&str>,
 ) -> AppResult<Option<String>> {
-    Configured::capture(settings, feature, override_value)?.resolve(|key| vault.load(key))
+    Configured::capture(settings, feature, override_value)?.resolve(load)
 }
 
 #[cfg(test)]

@@ -1,4 +1,45 @@
 use super::*;
+
+#[test]
+fn restored_trust_fingerprint_does_not_revive_an_earlier_review() {
+    Database::in_memory()
+        .unwrap()
+        .with(|conn| {
+            let settings = crate::settings::Settings::default();
+            let initial = snapshot(conn, &settings);
+            let target = initial.target().clone();
+            db::known_hosts::upsert(
+                conn,
+                &target.host,
+                i64::from(target.port),
+                "ssh-ed25519",
+                "SHA256:original",
+            )?;
+            let mut expected = initial;
+            expected.nodes = capture_nodes(conn, &target, &expected.route)?;
+            expected.verify_saved(conn)?;
+            db::known_hosts::upsert(
+                conn,
+                &target.host,
+                i64::from(target.port),
+                "ssh-ed25519",
+                "SHA256:changed",
+            )?;
+            db::known_hosts::upsert(
+                conn,
+                &target.host,
+                i64::from(target.port),
+                "ssh-ed25519",
+                "SHA256:original",
+            )?;
+            assert_eq!(
+                expected.verify_saved(conn).unwrap_err().to_string(),
+                "ssh.connectionChanged"
+            );
+            Ok(())
+        })
+        .unwrap();
+}
 use crate::network::{proxy::Selected, NetworkSettings, ProxyProfile};
 
 fn network() -> NetworkSettings {
@@ -18,12 +59,18 @@ fn network() -> NetworkSettings {
 fn snapshot(conn: &rusqlite::Connection, settings: &crate::settings::Settings) -> Snapshot {
     let target = host(conn, "authority");
     let route = ConnectionRoute::default();
-    let vault = crate::vault::Vault::new("dev.tunnelde.qa.route-authority").unwrap();
     Snapshot {
+        proxy_authority: crate::services::credentials::lifecycle::selection_authority(
+            conn,
+            &settings.network,
+            "ssh",
+            None,
+        )
+        .unwrap(),
         nodes: capture_nodes(conn, &target, &route).unwrap(),
         route,
         transport: TcpRoute::capture_with(
-            &vault,
+            |_| panic!("direct fixture must not load a proxy secret"),
             &NetworkSettings::default(),
             &target.host,
             target.port,
@@ -44,9 +91,9 @@ fn final_admission_rejects_persisted_proxy_edits_even_before_memory_publication(
                 ..Default::default()
             };
             db::settings::save(conn, &memory)?;
-            let expected = snapshot(conn, &memory);
-            expected.verify_saved(conn)?;
             for field in 0..5 {
+                let expected = snapshot(conn, &memory);
+                expected.verify_saved(conn)?;
                 let mut durable = memory.clone();
                 let profile = &mut durable.network.profiles[0];
                 match field {
@@ -68,7 +115,8 @@ fn final_admission_rejects_persisted_proxy_edits_even_before_memory_publication(
                 );
                 assert_eq!(memory.network.profiles[0].host, "127.0.0.1");
                 db::settings::save(conn, &memory)?;
-                expected.verify_saved(conn)?;
+                assert!(expected.verify_saved(conn).is_err());
+                snapshot(conn, &memory).verify_saved(conn)?;
             }
             Ok(())
         })
@@ -136,6 +184,13 @@ fn cosmetics_unrelated_profiles_and_nonssh_features_do_not_revoke_final_admissio
             let mut explicit = expected.clone();
             explicit.route.proxy = "selected".into();
             save_route(conn, &explicit.target().id, &explicit.route);
+            explicit.proxy_authority =
+                crate::services::credentials::lifecycle::selection_authority(
+                    conn,
+                    &settings.network,
+                    "ssh",
+                    Some("selected"),
+                )?;
             settings.network.default_proxy = "direct".into();
             settings
                 .network

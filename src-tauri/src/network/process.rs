@@ -14,6 +14,25 @@ pub(crate) struct ProcessEnvironment {
     selected: proxy::Selected,
     url: Option<String>,
     expires: tokio::time::Instant,
+    authority: Vec<u8>,
+}
+
+fn process_authority(
+    conn: &rusqlite::Connection,
+    network: &NetworkSettings,
+    plugin: &str,
+) -> AppResult<Vec<u8>> {
+    let feature = format!("plugin:{plugin}");
+    let mut authority = crate::services::credentials::lifecycle::selection_authority(
+        conn,
+        network,
+        "processes",
+        configured(network, plugin),
+    )?;
+    authority.extend(serde_json::to_vec(
+        &crate::services::credentials::lifecycle::feature_incarnation(conn, &feature)?,
+    )?);
+    Ok(authority)
 }
 
 fn configured<'a>(network: &'a NetworkSettings, plugin: &str) -> Option<&'a str> {
@@ -78,8 +97,10 @@ impl ProcessEnvironment {
         let state = app.state::<AppState>();
         // Capture original persisted choice without blocking the runtime behind
         // an unrelated consumer retaining the DB mutex during an OS operation.
-        let network = available(&state.db, expires, |conn| {
-            Ok(crate::db::settings::load_checked(conn)?.network)
+        let (network, authority) = available(&state.db, expires, |conn| {
+            let network = crate::db::settings::load_checked(conn)?.network;
+            let authority = process_authority(conn, &network, plugin)?;
+            Ok((network, authority))
         })
         .await?;
         let selected = selected(&network, plugin)?;
@@ -89,11 +110,24 @@ impl ProcessEnvironment {
             move || {
                 // Reject changes while waiting for a worker before exposing a saved secret.
                 verify(&app, &selected, &plugin)?;
+                app.state::<AppState>().db.with(|conn| {
+                    if process_authority(
+                        conn,
+                        &crate::db::settings::load_checked(conn)?.network,
+                        &plugin,
+                    )? != authority
+                    {
+                        return Err(AppError::validation("network.configurationChanged"));
+                    }
+                    Ok(())
+                })?;
                 if tokio::time::Instant::now() >= expires {
                     return Err(AppError::validation("network.timeout"));
                 }
                 let url = proxy::url(
-                    &app.state::<AppState>().vault,
+                    |profile| {
+                        crate::services::credentials::read_proxy(&app.state::<AppState>(), profile)
+                    },
                     &network,
                     "processes",
                     configured(&network, &plugin),
@@ -103,6 +137,7 @@ impl ProcessEnvironment {
                     selected,
                     url,
                     expires,
+                    authority,
                 })
             },
             expires.saturating_duration_since(tokio::time::Instant::now()),
@@ -117,6 +152,14 @@ impl ProcessEnvironment {
     ) -> AppResult<()> {
         available(&app.state::<AppState>().db, self.expires, |conn| {
             verify_saved(conn, &self.selected, &self.plugin)?;
+            if process_authority(
+                conn,
+                &crate::db::settings::load_checked(conn)?.network,
+                &self.plugin,
+            )? != self.authority
+            {
+                return Err(AppError::validation("network.configurationChanged"));
+            }
             if tokio::time::Instant::now() >= self.expires {
                 return Err(AppError::validation("network.timeout"));
             }

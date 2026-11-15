@@ -60,67 +60,78 @@ pub fn find_host(conn: &Connection, id: &str) -> AppResult<Host> {
 }
 
 pub fn create_host(conn: &Connection, draft: &HostDraft) -> AppResult<Host> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let ts = now_ms();
-    conn.execute(
-        "INSERT INTO hosts
+    crate::db::atomic(conn, |conn| {
+        let id = uuid::Uuid::new_v4().to_string();
+        let ts = now_ms();
+        conn.execute(
+            "INSERT INTO hosts
          (id, group_id, name, host, port, username, auth_method, key_path, favorite, color, tags,
           note, last_used_at, created_at, updated_at, sort_order)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, ?13, ?13,
                  (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM hosts))",
-        params![
-            id,
-            draft.group_id,
-            draft.name,
-            draft.host,
-            draft.port as i64,
-            draft.username,
-            draft.auth_method,
-            draft.key_path,
-            draft.favorite as i64,
-            draft.color,
-            serde_json::to_string(&draft.tags)?,
-            draft.note,
-            ts,
-        ],
-    )?;
-    find_host(conn, &id)
+            params![
+                id,
+                draft.group_id,
+                draft.name,
+                draft.host,
+                draft.port as i64,
+                draft.username,
+                draft.auth_method,
+                draft.key_path,
+                draft.favorite as i64,
+                draft.color,
+                serde_json::to_string(&draft.tags)?,
+                draft.note,
+                ts,
+            ],
+        )?;
+        crate::services::credentials::lifecycle::host_created(conn, &id)?;
+        find_host(conn, &id)
+    })
 }
 
 pub fn update_host(conn: &Connection, id: &str, draft: &HostDraft) -> AppResult<Host> {
-    let changed = conn.execute(
-        "UPDATE hosts SET
+    crate::db::atomic(conn, |conn| {
+        let previous = find_host(conn, id)?;
+        let changed = conn.execute(
+            "UPDATE hosts SET
             group_id = ?2, name = ?3, host = ?4, port = ?5, username = ?6, auth_method = ?7,
             key_path = ?8, favorite = ?9, color = ?10, tags = ?11, note = ?12, updated_at = ?13
          WHERE id = ?1",
-        params![
-            id,
-            draft.group_id,
-            draft.name,
-            draft.host,
-            draft.port as i64,
-            draft.username,
-            draft.auth_method,
-            draft.key_path,
-            draft.favorite as i64,
-            draft.color,
-            serde_json::to_string(&draft.tags)?,
-            draft.note,
-            now_ms(),
-        ],
-    )?;
-    if changed == 0 {
-        return Err(AppError::NotFound("host.notFound".into()));
-    }
-    find_host(conn, id)
+            params![
+                id,
+                draft.group_id,
+                draft.name,
+                draft.host,
+                draft.port as i64,
+                draft.username,
+                draft.auth_method,
+                draft.key_path,
+                draft.favorite as i64,
+                draft.color,
+                serde_json::to_string(&draft.tags)?,
+                draft.note,
+                now_ms(),
+            ],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound("host.notFound".into()));
+        }
+        let next = find_host(conn, id)?;
+        crate::services::credentials::lifecycle::host_changed(conn, &previous, &next)?;
+        Ok(next)
+    })
 }
 
 pub fn delete_host(conn: &Connection, id: &str) -> AppResult<()> {
-    let changed = conn.execute("DELETE FROM hosts WHERE id = ?1", params![id])?;
-    if changed == 0 {
-        return Err(AppError::NotFound("host.notFound".into()));
-    }
-    Ok(())
+    crate::db::atomic(conn, |conn| {
+        let changed = conn.execute("DELETE FROM hosts WHERE id = ?1", params![id])?;
+        if changed == 0 {
+            return Err(AppError::NotFound("host.notFound".into()));
+        }
+        crate::services::credentials::lifecycle::host_deleted(conn, id)?;
+        Ok(())
+    })
 }
 
 pub fn mark_used(conn: &Connection, id: &str) -> AppResult<()> {
@@ -133,14 +144,19 @@ pub fn mark_used(conn: &Connection, id: &str) -> AppResult<()> {
 
 /// Points a host at the key Tunnelde installed for it.
 pub fn set_key_auth(conn: &Connection, id: &str, key_path: &str) -> AppResult<()> {
-    let changed = conn.execute(
-        "UPDATE hosts SET auth_method = 'key', key_path = ?2, updated_at = ?3 WHERE id = ?1",
-        params![id, key_path, now_ms()],
-    )?;
-    if changed == 0 {
-        return Err(AppError::NotFound("host.notFound".into()));
-    }
-    Ok(())
+    crate::db::atomic(conn, |conn| {
+        let previous = find_host(conn, id)?;
+        let changed = conn.execute(
+            "UPDATE hosts SET auth_method = 'key', key_path = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, key_path, now_ms()],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound("host.notFound".into()));
+        }
+        let next = find_host(conn, id)?;
+        crate::services::credentials::lifecycle::host_changed(conn, &previous, &next)?;
+        Ok(())
+    })
 }
 
 fn map_group(row: &rusqlite::Row<'_>) -> rusqlite::Result<Group> {

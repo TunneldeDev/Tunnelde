@@ -10,8 +10,10 @@ method to stable.
 
 Host, proxy and plugin secrets use the application-owned vault injected through
 `AppState`. The keyring service is the configured application identifier.
-Production keeps `dev.tunnelde.app` and its existing credential keys, so upgrades
-continue reading saved passwords without copying or renaming them. Isolated
+Production keeps `dev.tunnelde.app`. Existing host/proxy secrets remain readable
+through an explicit legacy binding until changed or forgotten. New saves use
+immutable random OS item names and publish a database binding after confirmation.
+Isolated
 applications use their own service and never fall back to production credentials.
 Changing the data directory alone does not isolate OS credentials; QA builds must
 also use a distinct application identifier. Instances with the same identifier
@@ -22,23 +24,45 @@ Native-save recovery tokens keep their separate, application-derived service.
 Public transports cannot select a vault service or change the application's
 identifier. No credential values enter API discovery, logs or snapshots.
 
-The native `credential_save`, `credential_forget`, `credential_status` and
-`proxy_password_save` commands await bounded blocking workers for OS credential
-access. Their shared budget admits at most 16 operations, including queued work;
+Private desktop `host_editor_save`, `proxy_profile_save`, `credential_status` and
+reviewed connection credential operations share bounded blocking workers for OS
+credential access and retirement. Their shared budget admits at most 16 operations, including queued work;
 overload returns `credentials.busy`. Cancelling the command future before worker
 admission prevents a queued operation from starting. After admission, the worker retains
 capacity until OS access settles; losing the reply does not roll back a write.
-Host/profile validation, vault service and keys, and underlying OS errors remain
-part of the same operation. Status still reads the stored credential and can
-require OS authorization.
+Original host/profile, route and trust authority, binding revision and underlying
+OS errors remain part of the operation. Host fields and route commit atomically;
+proxy fields commit with their binding authority. Editors receive committed
+fields even if the following credential operation fails, and retain the editor
+for retry against the same host/profile. Status still reads the bound credential
+and can require OS authorization. These desktop commands do not add stable API methods.
+
+Schema migration 6 stores no secret values. Short database transactions own item
+intents, CAS publication, configuration incarnations and exact-item retirement.
+No database/settings/route authority guard spans OS access. A stale write cannot
+publish its item or delete a replacement item's secret. Forget publishes a
+tombstone before deferred deletion; it never falls back to a legacy key. Host or
+profile destination changes discard implicit credentials, while cosmetic edits
+preserve them. Relevant route, proxy selection and trust A→B→A changes revoke old
+authority; unrelated selectors and display edits do not. Password publication
+changes the binding revision without invalidating its own SSH prompt review.
+
+After exclusive storage ownership, startup recovers bounded metadata pages before
+workers start. Failed OS writes retain their original unknown intent; cleanup
+addresses only the retired item, does not replay a save, and retains failed claims
+for restart recovery. All native readers use these bindings; plugin secrets keep
+their existing namespace and authorization. This is not an atomic transaction
+with external OS edits, and copying a database does not create an independent
+credential namespace when both copies use the same OS service. Future-schema
+databases must be refused by older builds rather than silently downgraded.
 
 The reviewed SSH saved-password fallback shares this worker budget. Its original
 route snapshot and credential-host scope are checked at actual worker admission,
 after the read and again before authentication uses the result. No database guard
 spans OS access. A changed review discards the read result instead of refreshing
 the user's review or authenticating against edited configuration. This read-only
-boundary does not move reviewed credential writes/deletes outside their existing
-authority guard; those mutations and other consumers retain their own rules.
+boundary shares the immutable binding repository with reviewed writes/deletes;
+their original configuration checks run before OS mutation and publication.
 
 Preparing the desktop SSH review also uses this bounded worker capacity because
 capturing the transport can read an authenticated proxy's saved password. The
@@ -88,8 +112,8 @@ retires only the matching pending object and closes its newly acquired private
 connection; reused user-owned sessions retain their separate ownership. No OS
 transaction is promised for external proxy or credential changes: the observed
 transport precedes the final pure configuration check. Reviewed credential
-writes/deletes retain their separate mutation authority and may still block
-consumers; this browser boundary does not declare those paths solved.
+writes/deletes retain their separate mutation authority and immutable-item CAS;
+the browser observation alone is not authorization for a credential write.
 
 Plugin engine and local process-task proxy environments are prepared on the same
 bounded credential worker, outside the runtime thread. Initial and final database

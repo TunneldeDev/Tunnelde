@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { reorder, update, snapshot } = vi.hoisted(() => ({
+const { reorder, update, snapshot, saveEditor } = vi.hoisted(() => ({
   reorder: vi.fn(),
   update: vi.fn(),
   snapshot: vi.fn(),
+  saveEditor: vi.fn(),
 }));
 
 vi.mock("@/lib/api/ipc", () => ({
@@ -11,11 +12,13 @@ vi.mock("@/lib/api/ipc", () => ({
     hostsReorder: reorder,
     hostsSnapshot: snapshot,
     updateHost: update,
+    saveHostEditor: saveEditor,
   },
 }));
 
 import "@/i18n/i18n";
 import type { Host } from "@/lib/api/types";
+import type { HostSaved } from "@/lib/api/credentials";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 
@@ -42,10 +45,32 @@ beforeEach(() => {
   reorder.mockReset().mockResolvedValue(undefined);
   update.mockReset().mockResolvedValue(undefined);
   snapshot.mockReset();
+  saveEditor.mockReset();
   useHosts.setState({ hosts: [host("alpha", 0), host("beta", 1), host("gamma", 2)] });
 });
 
 describe("host ordering", () => {
+  it("does not restore old host fields when credential completion follows a newer snapshot", async () => {
+    let finish!: (value: HostSaved) => void;
+    saveEditor.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const original = host("alpha", 0);
+    const saving = useHosts.getState().saveHostEditor({
+      id: original.id,
+      input: original,
+      route: { proxy: "", jumpHosts: [] },
+      credential: { action: "keep" },
+    });
+    const newer = { ...original, name: "Newer committed rename" };
+    snapshot.mockResolvedValue({ hosts: [newer], groups: [] });
+    await useHosts.getState().load();
+    finish({ host: original, credentialError: null });
+    await saving;
+    expect(useHosts.getState().hosts).toEqual([newer]);
+  });
   it("keeps current discovery during saved-host reload and excludes it from mutations", async () => {
     const discovered = {
       ...host("source:digest", 0),

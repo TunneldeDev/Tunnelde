@@ -28,17 +28,32 @@ pub fn upsert(
     algorithm: &str,
     fingerprint: &str,
 ) -> AppResult<()> {
-    let timestamp = now_ms();
-    conn.execute(
-        "INSERT INTO known_hosts (host, port, algorithm, fingerprint, created_at, updated_at)
+    super::atomic(conn, |conn| {
+        let previous: Option<(String, String)> = conn
+            .query_row(
+                "SELECT algorithm,fingerprint FROM known_hosts WHERE host=?1 AND port=?2",
+                params![host, port],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let timestamp = now_ms();
+        conn.execute(
+            "INSERT INTO known_hosts (host, port, algorithm, fingerprint, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5)
          ON CONFLICT(host, port) DO UPDATE SET
             algorithm = excluded.algorithm,
             fingerprint = excluded.fingerprint,
             updated_at = excluded.updated_at",
-        params![host, port, algorithm, fingerprint, timestamp],
-    )?;
-    Ok(())
+            params![host, port, algorithm, fingerprint, timestamp],
+        )?;
+        if previous
+            .as_ref()
+            .is_none_or(|(a, f)| a != algorithm || f != fingerprint)
+        {
+            crate::services::credentials::lifecycle::trust_changed(conn, host, port)?;
+        }
+        Ok(())
+    })
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -75,16 +90,34 @@ pub fn list(conn: &Connection) -> AppResult<Vec<KnownHostEntry>> {
 }
 
 pub fn forget(conn: &Connection, host: &str, port: i64) -> AppResult<bool> {
-    let removed = conn.execute(
-        "DELETE FROM known_hosts WHERE host = ?1 AND port = ?2",
-        params![host, port],
-    )?;
-    Ok(removed > 0)
+    super::atomic(conn, |conn| {
+        let removed = conn.execute(
+            "DELETE FROM known_hosts WHERE host = ?1 AND port = ?2",
+            params![host, port],
+        )?;
+        if removed > 0 {
+            crate::services::credentials::lifecycle::trust_changed(conn, host, port)?;
+        }
+        Ok(removed > 0)
+    })
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::Database;
+
+    #[test]
+    fn trust_metadata_failure_rolls_back_update_and_forget_even_in_outer_transactions() {
+        Database::in_memory().unwrap().with(|conn| {
+            upsert(conn,"qa.example",22,"ssh-ed25519","SHA256:original")?;
+            conn.execute_batch("CREATE TRIGGER refuse_trust BEFORE UPDATE ON settings WHEN NEW.key LIKE 'credentials.trust.%' BEGIN SELECT RAISE(ABORT,'controlled trust metadata failure'); END;")?;
+            let tx=conn.unchecked_transaction()?;
+            assert!(upsert(&tx,"qa.example",22,"ssh-ed25519","SHA256:changed").is_err());
+            assert!(forget(&tx,"qa.example",22).is_err());
+            assert_eq!(find(&tx,"qa.example",22)?.unwrap().fingerprint,"SHA256:original");
+            tx.commit()?; Ok(())
+        }).unwrap();
+    }
 
     #[test]
     fn lists_and_forgets_trusted_hosts() {

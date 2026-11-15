@@ -83,11 +83,14 @@ pub(crate) async fn connection_review_install_key(
 }
 
 #[tauri::command]
-pub(crate) fn connection_review_credential(
+pub(crate) async fn connection_review_credential(
     app: AppHandle,
     review: review::Review,
     host_id: String,
     password: Option<String>,
 ) -> AppResult<()> {
-    review::Target::capture(&app, &review)?.credential(&app, &host_id, password.as_deref())
+    review::Target::capture_background(&app, &review)
+        .await?
+        .credential(&app, &host_id, password.as_deref())
+        .await
 }

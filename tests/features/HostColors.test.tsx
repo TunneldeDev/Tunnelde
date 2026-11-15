@@ -34,7 +34,7 @@ const createHost = vi.fn(async () => host);
 beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(api, "connectionRoute").mockResolvedValue({ proxy: "", jumpHosts: [] });
-  vi.spyOn(api, "saveConnectionRoute").mockResolvedValue(undefined);
+  vi.spyOn(api, "saveHostEditor").mockResolvedValue({ host, credentialError: null });
   await i18n.changeLanguage("en-US");
   useHosts.setState({ groups: [], hosts: [host], updateHost, createHost });
   useWorkspace.setState({ renameHost: vi.fn(), openHost: vi.fn() });
@@ -53,9 +53,11 @@ describe("host color editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
-      expect(updateHost).toHaveBeenCalledWith(
-        "h1",
-        expect.objectContaining({ name: "Web renamed", color: "#123456" }),
+      expect(api.saveHostEditor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "h1",
+          input: expect.objectContaining({ name: "Web renamed", color: "#123456" }),
+        }),
       ),
     );
   });
@@ -67,7 +69,7 @@ describe("host color editing", () => {
       target: { value: "#abcdef" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(updateHost).not.toHaveBeenCalled();
+    expect(api.saveHostEditor).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Host color" }).textContent).toContain("#ABCDEF");
     fireEvent.click(screen.getByRole("button", { name: "Remove host color" }));
     await waitFor(() =>
@@ -77,7 +79,9 @@ describe("host color editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
-      expect(updateHost).toHaveBeenCalledWith("h1", expect.objectContaining({ color: null })),
+      expect(api.saveHostEditor).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "h1", input: expect.objectContaining({ color: null }) }),
+      ),
     );
   });
 
@@ -93,7 +97,7 @@ describe("host color editing", () => {
     fireEvent.click(within(picker).getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("button", { name: "Host color" }).textContent).toContain("#123456");
     expect(useDialogs.getState().dialog.kind).toBe("host");
-    expect(updateHost).not.toHaveBeenCalled();
+    expect(api.saveHostEditor).not.toHaveBeenCalled();
   });
 
   it("stores a newly chosen color when creating a host", async () => {
@@ -113,8 +117,11 @@ describe("host color editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
-      expect(createHost).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "New server", color: "#abcdef" }),
+      expect(api.saveHostEditor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: null,
+          input: expect.objectContaining({ name: "New server", color: "#abcdef" }),
+        }),
       ),
     );
   });
@@ -128,7 +135,7 @@ describe("host color editing", () => {
       "#2468ac",
     );
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(updateHost).not.toHaveBeenCalled();
+    expect(api.saveHostEditor).not.toHaveBeenCalled();
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
         false,
@@ -136,7 +143,9 @@ describe("host color editing", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
-      expect(updateHost).toHaveBeenCalledWith("h1", expect.objectContaining({ color: null })),
+      expect(api.saveHostEditor).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "h1", input: expect.objectContaining({ color: null }) }),
+      ),
     );
   });
 });

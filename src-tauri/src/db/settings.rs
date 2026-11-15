@@ -38,13 +38,21 @@ pub(crate) fn load_checked(conn: &Connection) -> AppResult<Settings> {
 }
 
 pub fn save(conn: &Connection, settings: &Settings) -> AppResult<()> {
-    let json = serde_json::to_string(settings)?;
-    conn.execute(
-        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+    crate::db::atomic(conn, |conn| {
+        let previous = load_checked(conn)?;
+        crate::services::credentials::lifecycle::network_changed(
+            conn,
+            &previous.network,
+            &settings.network,
+        )?;
+        let json = serde_json::to_string(settings)?;
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        params![SETTINGS_KEY, json, now_ms()],
-    )?;
-    Ok(())
+            params![SETTINGS_KEY, json, now_ms()],
+        )?;
+        Ok(())
+    })
 }
 
 #[cfg(test)]

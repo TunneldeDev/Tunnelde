@@ -72,7 +72,6 @@ impl Platform for Mock {
 fn fixture() -> (Arc<Database>, Arc<Mock>, Owner, Uuid) {
     let db = Arc::new(Database::in_memory().unwrap());
     db.with(|conn| {
-        conn.execute_batch(bindings::SCHEMA)?;
         conn.execute("INSERT INTO settings VALUES ('qa.scope','original',0)", [])?;
         Ok(())
     })

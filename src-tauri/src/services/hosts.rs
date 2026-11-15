@@ -30,8 +30,9 @@ impl Effects for Runtime<'_> {
         self.state.ssh.rename_host(id, name);
     }
 
-    fn forget_credential(&self, id: &str) {
-        let _ = self.state.vault.forget(id);
+    fn forget_credential(&self, _id: &str) {
+        // The owning database transaction already queued its exact item.
+        crate::services::credentials::schedule_cleanup(self.app);
     }
 
     fn changed(&self) {
@@ -41,6 +42,7 @@ impl Effects for Runtime<'_> {
             "plugin://domain-changed",
             serde_json::json!({"domain":"hosts","sessionId":null}),
         );
+        crate::services::credentials::schedule_cleanup(self.app);
     }
 }
 
@@ -80,6 +82,19 @@ pub(crate) fn snapshot(db: &Database) -> AppResult<Snapshot> {
 }
 
 impl<E: Effects> Hosts<'_, E> {
+    pub(crate) fn published_save(&self, host: &Host, created: bool) {
+        self.effects.renamed(&host.id, &host.name);
+        crate::logs::record(
+            self.db,
+            if created {
+                "host.create"
+            } else {
+                "host.update"
+            },
+            Some(&host.id),
+        );
+        self.effects.changed();
+    }
     pub fn create(&self, input: HostInput) -> AppResult<Host> {
         let draft = input.validate()?;
         let host = self.db.with(|conn| db::hosts::create_host(conn, &draft))?;

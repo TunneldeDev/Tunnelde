@@ -1,9 +1,11 @@
+mod atomic;
 pub mod history;
 pub mod hosts;
 pub mod known_hosts;
 pub mod migrations;
 pub mod settings;
 mod startup;
+pub(crate) use atomic::run as atomic;
 pub mod tabs;
 
 use std::path::Path;
