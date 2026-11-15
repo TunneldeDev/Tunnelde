@@ -2157,6 +2157,11 @@
     "truncated": "显示最近 256 KiB"
   },
   "restart": {
+    "quit": "退出 Tunnelde",
+    "quitTitle": "退出 Tunnelde？",
+    "quitWarning": "退出会断开连接、中断后台任务并丢失未保存的编辑。请先保存工作。",
+    "quitRecoveryWarning": "退出会断开连接并中断后台任务。退出前会先保存未保存文件编辑的恢复检查点。",
+    "requestChanged": "此应用操作已失效，请重新从托盘菜单选择。",
     "command": "重启 Tunnelde",
     "reload": "重新加载窗口",
     "now": "立即重启",

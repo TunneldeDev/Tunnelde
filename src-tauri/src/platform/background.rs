@@ -204,6 +204,7 @@ pub fn ready(app: &AppHandle) {
             let _ = window.emit("ui://navigate", page);
         }
     }
+    super::application_actions::deliver(app);
 }
 
 pub fn navigate(app: &AppHandle, page: &str) {
