@@ -7,8 +7,9 @@ export function upgradeTarget(env) {
   assert.equal(env.GITHUB_EVENT_NAME, "workflow_dispatch", "Upgrade requires manual dispatch");
   assert.equal(env.GITHUB_REPOSITORY, repository);
   assert.equal(env.OTA_UPGRADE_ACK, "upgrade-test-only");
-  assert.equal(env.OTA_SOURCE_TAG, "v1.2.1");
-  assert.equal(env.OTA_TARGET_TAG, "v1.3.0");
+  releaseVersion(env.OTA_SOURCE_TAG);
+  releaseVersion(env.OTA_TARGET_TAG);
+  if (env.OTA_SOURCE_TAG !== "v1.2.1") assertUpgrade("v1.2.1", env.OTA_SOURCE_TAG);
   assertUpgrade(env.OTA_SOURCE_TAG, env.OTA_TARGET_TAG);
   return env.OTA_TARGET_TAG;
 }
