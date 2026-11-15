@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchQuery } from "@/lib/search/query";
+import type { DraftSnapshot, EditorDraft } from "@/lib/editor/recovery/contracts";
 import type { HostFieldsSnapshot, HostFieldsUpdate } from "@/lib/hosts/fields";
 import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageRestartPlan, StorageStatus } from "./storage";
@@ -80,6 +81,9 @@ export interface OutputSnapshot {
 }
 
 export const api = {
+  editorDraftsRead: () => invoke<DraftSnapshot>("editor_drafts_read"),
+  editorDraftsSave: (revision: string, drafts: EditorDraft[]) =>
+    invoke<string>("editor_drafts_save", { revision, drafts }),
   hostFields: (pluginId: string, hostId: string) =>
     invoke<HostFieldsSnapshot>("host_fields_get", { pluginId, hostId }),
   updateHostFields: (pluginId: string, update: HostFieldsUpdate) =>

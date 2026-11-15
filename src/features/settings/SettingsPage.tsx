@@ -38,6 +38,7 @@ import { sameSettings as samePreference } from "@/lib/prefs/profiles";
 
 import { PreferenceSurface } from "./components/PreferenceSurface";
 import { PreferenceFields } from "./components/PreferenceFields";
+import { PreferenceRow } from "./components/PreferenceRow";
 import { preferenceMetadata, protectedPreference } from "./data/preferenceMetadata";
 
 export function SettingsPage({ visible: visiblePage = true }: { visible?: boolean }) {
@@ -328,6 +329,16 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
                   .map((definition) =>
                     definition.kind === "uiProviders" ? (
                       <UiProviderSettings key={definition.key} />
+                    ) : definition.key === "editorDraftRecovery" ? (
+                      <PreferenceRow
+                        key={definition.key}
+                        definition={definition}
+                        settings={settings}
+                        defaults={defaults}
+                        onReset={() => resetOne(definition)}
+                        resetVersion={resetVersions[definition.key] ?? 0}
+                        theme={theme}
+                      />
                     ) : definition.kind === "network" ? (
                       <NetworkSettingsSection key={definition.key} />
                     ) : definition.kind === "shortcuts" ||

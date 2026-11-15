@@ -448,6 +448,7 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     "settings.editorTabSizeHint",
   ),
   toggle("editorSpellCheck", "editor"),
+  toggle("editorDraftRecovery", "editor", "settings.editorDraftRecoveryHint"),
   select(
     "monitorIntervalMs",
     "monitor",

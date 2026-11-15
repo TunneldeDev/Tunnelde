@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   pluginStart: vi.fn(),
   transferHydrate: vi.fn(async () => {}),
   editorCleanupList: vi.fn(async () => []),
+  editorDraftsRead: vi.fn(async () => ({ revision: "", drafts: [] })),
   hosts: [] as { id: string }[],
   events: {
     onPluginActivation: vi.fn(),
@@ -55,6 +56,7 @@ vi.mock("@/store/ssh", () => ({
 }));
 vi.mock("@/store/settings", () => ({
   useSettings: {
+    subscribe: vi.fn(() => vi.fn()),
     getState: () => ({
       load: mocks.settingsLoad,
       settings: mocks.settings,

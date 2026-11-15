@@ -41,9 +41,15 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const wordWrap = useSettings((state) => state.settings.editorWordWrap);
   const tabSize = useSettings((state) => state.settings.editorTabSize);
   const spellCheck = useSettings((state) => state.settings.editorSpellCheck);
-  const hostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
+  const tabHostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
+  const hostId = tabHostId ?? entry?.recoveryTarget?.hostId;
   const candidate = useSsh((state) =>
-    state.sessions.find((session) => session.hostId === hostId && session.purpose !== "forwarding"),
+    state.sessions.find(
+      (session) =>
+        session.hostId === hostId &&
+        session.purpose !== "forwarding" &&
+        (!entry?.recoveryTarget || session.address === entry.recoveryTarget.address),
+    ),
   );
   const [reconnecting, setReconnecting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -106,7 +112,8 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     if (!candidate || reconnecting) return;
     setReconnecting(true);
     try {
-      const result = await reconnect(tabId, candidate.id);
+      const target = { hostId: candidate.hostId, address: candidate.address };
+      const result = await reconnect(tabId, candidate.id, false, target);
       if (result === "conflict")
         useDialogs.getState().confirm({
           title: t("editor.conflictTitle"),
@@ -114,7 +121,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           confirmLabel: t("common.apply"),
           danger: true,
           onConfirm: async () => {
-            await reconnect(tabId, candidate.id, true);
+            await reconnect(tabId, candidate.id, true, target);
           },
         });
     } finally {
@@ -252,6 +259,11 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       {setupFailure?.scope === `${entry.sessionId}:${entry.path}` ? (
         <div className="editor-offline" role="alert">
           <span>{setupFailure.message}</span>
+        </div>
+      ) : null}
+      {entry.recovered ? (
+        <div className="editor-offline" role="status">
+          <span>{t("editor.recoveredDraft")}</span>
         </div>
       ) : null}
       {entry.saveFailure ? (

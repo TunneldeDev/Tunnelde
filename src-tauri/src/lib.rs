@@ -148,6 +148,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            services::editor::recovery::commands::editor_drafts_read,
+            services::editor::recovery::commands::editor_drafts_save,
             window::close::main_window_close_guard_claim,
             window::close::main_window_close_guard_release,
             window::close::main_window_close_guard_finish,

@@ -10,10 +10,7 @@ import {
 
 describe("portable settings snapshots", () => {
   it("keeps the native profile allowlist identical to the frontend export contract", () => {
-    const source = readFileSync(
-      "src-tauri/src/settings_profiles.rs",
-      "utf8",
-    );
+    const source = readFileSync("src-tauri/src/settings_profiles.rs", "utf8");
     const declaration = source.match(/const PORTABLE_KEYS: &\[&str\] = &\[([\s\S]*?)\];/);
     expect(declaration, "native portable settings declaration").not.toBeNull();
     const keys = [...declaration![1]!.matchAll(/"([A-Za-z]+)"/g)].map((match) => match[1]);
@@ -36,12 +33,14 @@ describe("portable settings snapshots", () => {
       },
       showShortcutDetails: true,
       password: "should never be exported",
+      editorDraftRecovery: true,
       pluginConfig: { token: "private" },
     };
     const snapshot = portableSettings(settings);
     expect(snapshot).not.toHaveProperty("skippedVersion");
     expect(snapshot).not.toHaveProperty("lastUpdateCheck");
     expect(snapshot).not.toHaveProperty("password");
+    expect(snapshot).not.toHaveProperty("editorDraftRecovery");
     expect(snapshot).not.toHaveProperty("pluginConfig");
     expect(snapshot.showDockIconInBackground).toBe(false);
     expect(snapshot.fileIconTheme).toBe("file-icons:common");

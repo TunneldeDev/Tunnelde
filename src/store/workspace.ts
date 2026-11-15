@@ -5,7 +5,8 @@ import type { Host, SshSession, TabKind, TabRecord, FsSource } from "@/lib/api/t
 import type { FileViewPreferences } from "@/lib/files/view";
 import type { SplitDirection, PanelLayoutNode } from "@/lib/layout/types";
 export type { SplitDirection } from "@/lib/layout/types";
-import { fileName, useEditors } from "@/store/editors";
+import { fileName, useEditors, restoreEditorDraft } from "@/store/editors";
+import type { EditorDraft } from "@/lib/editor/recovery/contracts";
 import { useDialogs } from "@/store/dialogs";
 import i18n from "@/i18n/i18n";
 import { useNavigation, type SidebarView } from "@/store/navigation";
@@ -100,6 +101,7 @@ interface WorkspaceStore {
   setFileSession: (tabId: string, sessionId: string | null) => void;
   openEditor: (session: SshSession, path: string) => void;
   openLocalEditor: (path: string) => void;
+  restoreEditorDraft: (draft: EditorDraft) => void;
   openHistory: (session: SshSession) => void;
   openMonitor: (session: SshSession) => void;
   openPluginView: (
@@ -580,7 +582,9 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         }),
       );
       if (!useEditors.getState().entries[id]) {
-        void useEditors.getState().open(id, session.id, path);
+        void useEditors
+          .getState()
+          .open(id, session.id, path, { hostId: session.hostId, address: session.address });
       }
     },
 
@@ -592,6 +596,21 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       if (!useEditors.getState().entries[id]) {
         void useEditors.getState().open(id, null, path);
       }
+    },
+
+    restoreEditorDraft: (draft) => {
+      const id = `editor:recovered:${draft.id}`;
+      if (useWorkspace.getState().tabs.some((tab) => tab.id === id)) return;
+      restoreEditorDraft(id, draft);
+      set((state) =>
+        insert(state, {
+          id,
+          kind: "editor",
+          title: fileName(draft.path),
+          hostId: null,
+          pinned: false,
+        }),
+      );
     },
 
     openHistory: (session) => {

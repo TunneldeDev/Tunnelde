@@ -5,7 +5,10 @@ import { preferencePaths } from "@/lib/preferences/mapping";
 
 /** Host-owned trust, credentials and conflict resolution never move into Fields. */
 export function protectedPreference(definition: SettingDefinition): boolean {
-  return ["uiProviders", "network", "shortcuts", "shortcutRules"].includes(definition.kind);
+  return (
+    definition.key === "editorDraftRecovery" ||
+    ["uiProviders", "network", "shortcuts", "shortcutRules"].includes(definition.kind)
+  );
 }
 
 export function preferenceMetadata(

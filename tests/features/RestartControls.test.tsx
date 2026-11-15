@@ -9,6 +9,7 @@ import { useSettings } from "@/store/settings";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { requestApplicationAction } from "@/lib/session/restart";
+import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
 import type { StorageRestartPlan, StorageStatus } from "@/lib/api/storage";
 
 const api = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ const api = vi.hoisted(() => ({
   appRestart: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({ api, isTauri: () => true }));
+vi.mock("@/lib/editor/recovery/persistence", () => ({ flushEditorDrafts: vi.fn(async () => {}) }));
 const empty: StorageStatus = {
   locations: [
     {
@@ -52,7 +54,9 @@ beforeEach(async () => {
   useRestartPrompt.setState({ open: false, observed: null });
   useDialogs.getState().close();
   useEditors.setState({ entries: {} });
-  useSettings.setState((state) => ({ settings: { ...state.settings, showStatusBar: false } }));
+  useSettings.setState((state) => ({
+    settings: { ...state.settings, showStatusBar: false, editorDraftRecovery: false },
+  }));
   api.storageStatus.mockResolvedValue(empty);
   api.storageRestartPlan.mockResolvedValue(null);
   api.storagePick.mockResolvedValue("D:\\Data");
@@ -107,6 +111,21 @@ it("warns about dirty files before calling native restart", async () => {
   expect(dialog.kind).toBe("confirm");
   if (dialog.kind !== "confirm") return;
   expect(dialog.body).toContain("a.json");
+  expect(api.appRestart).not.toHaveBeenCalled();
+  await dialog.onConfirm();
+  expect(api.appRestart).toHaveBeenCalledOnce();
+});
+
+it("describes opted-in recovery and prevents restart when the checkpoint fails", async () => {
+  useSettings.setState((state) => ({ settings: { ...state.settings, editorDraftRecovery: true } }));
+  vi.mocked(flushEditorDrafts).mockRejectedValueOnce(new Error("editor.recoveryFailed"));
+  requestApplicationAction("restart");
+  const dialog = useDialogs.getState().dialog;
+  expect(dialog.kind).toBe("confirm");
+  if (dialog.kind !== "confirm") return;
+  expect(dialog.body).toContain("checkpointed for recovery");
+  expect(dialog.body).not.toContain("discards unsaved edits");
+  await dialog.onConfirm();
   expect(api.appRestart).not.toHaveBeenCalled();
   await dialog.onConfirm();
   expect(api.appRestart).toHaveBeenCalledOnce();

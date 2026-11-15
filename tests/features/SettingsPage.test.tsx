@@ -46,6 +46,17 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("offers an explicit default-off draft recovery consent with storage disclosure and reset", async () => {
+    useNavigation.setState({ settingsSection: "editor" });
+    render(<SettingsPage />);
+    const control = row("editorDraftRecovery");
+    expect(control.getByRole("switch").getAttribute("aria-checked")).toBe("false");
+    expect(control.getByText(/without encryption/)).toBeTruthy();
+    await act(async () => fireEvent.click(control.getByRole("switch")));
+    expect(update).toHaveBeenLastCalledWith({ editorDraftRecovery: true });
+    await act(async () => fireEvent.click(control.getByRole("button", { name: /^Reset / })));
+    expect(update).toHaveBeenLastCalledWith({ editorDraftRecovery: false });
+  });
   it("collapses storage locations without unmounting its contents and expands matching search results", () => {
     useNavigation.setState({ settingsSection: "advanced" });
     render(<SettingsPage />);
