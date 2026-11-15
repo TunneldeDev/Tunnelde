@@ -1,4 +1,3 @@
-use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -37,16 +36,6 @@ impl ApiBackoff {
                 Some((proxy, failure.clone()));
         }
     }
-}
-
-fn proxy_fingerprint(vault: &crate::vault::Vault, settings: &Settings) -> AppResult<u64> {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    // Never store or log a proxy URL, password, or serialized network settings.
-    crate::network::proxy_url(vault, &settings.network, "updates", None)?.hash(&mut hasher);
-    for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"] {
-        std::env::var_os(name).hash(&mut hasher);
-    }
-    Ok(hasher.finish())
 }
 
 fn source_failure(source: &'static str, error: AppError) -> UpdateSourceFailure {
@@ -367,7 +356,11 @@ pub(super) fn github_channel_feed(releases: &[GitHubRelease], channel: &str) -> 
     })
 }
 
-pub(super) async fn feeds(app: &AppHandle, settings: &Settings) -> AppResult<Vec<Feed>> {
+pub(super) async fn feeds(
+    app: &AppHandle,
+    settings: &Settings,
+    route: &crate::network::http::Prepared,
+) -> AppResult<Vec<Feed>> {
     validate_preferences(settings)?;
     if settings.update_source == "custom" {
         if settings.update_source_url.is_empty() {
@@ -408,14 +401,13 @@ pub(super) async fn feeds(app: &AppHandle, settings: &Settings) -> AppResult<Vec
             page: RELEASES_PAGE.into(),
         }]);
     }
-    let client = crate::network::http_client(app, "updates")?;
     let service = app.state::<AppState>();
     Ok(vec![
         discover_github_feed(
-            &client,
+            route.client(),
             &settings.update_channel,
             &service.update.github_api_backoff,
-            proxy_fingerprint(&service.vault, settings)?,
+            route.fingerprint(),
         )
         .await?,
     ])

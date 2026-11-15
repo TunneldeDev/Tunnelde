@@ -36,6 +36,9 @@
     "author": "Author"
   },
   "credentials": {
+    "cleanupRequired": "Some password operations still await confirmation or cleanup. Wait for running operations to finish. If this persists, check the software log and restart Tunnelde to resume recovery before retrying.",
+    "changed": "The host, proxy, trust or saved password changed while this operation was pending. Review the current settings before retrying.",
+    "invalidMetadata": "Saved password metadata is invalid. The original records were retained; open the software log for diagnosis.",
     "busy": "Password operations are still running. Wait for them to finish, then try again.",
     "cancelled": "The password operation was cancelled before it started.",
     "workerFailed": "The password operation stopped unexpectedly. Check the software log before retrying."
@@ -380,6 +383,8 @@
     "editorTabSize": "Tab display width",
     "editorTabSizeHint": "Visual width of existing tab characters. File indentation is not rewritten.",
     "editorSpellCheck": "Spell checking",
+    "editorDraftRecovery": "Recover unsaved edits after restart",
+    "editorDraftRecoveryHint": "Opt in on this device to store unsaved file text and original contents in the application database, without encryption. Turning this off removes recovery records; copies may remain in database backups. Remote drafts reconnect only to their original destination. Recent edits may be lost if the process crashes before the next checkpoint.",
     "monitorIntervalMs": "Sampling interval",
     "monitorIntervalMsHint": "Used for local and remote monitoring. Hidden views pause, and slow requests never overlap.",
     "search": "Search settings",
@@ -889,6 +894,16 @@
     "discardBody": "Close “{{name}}” without saving?",
     "discard": "Discard",
     "offline": "Disconnected. Unsaved changes are kept in this window.",
+    "recoveredDraft": "Recovered unsaved edits. The original file has not been changed. Saving still checks for changes to the original.",
+    "recoveryDestinationChanged": "This draft belongs to a different SSH destination. Connect to the original host to recover it.",
+    "recoveryInvalid": "The draft recovery record is invalid or too large. It has been preserved; disable draft recovery to explicitly remove it.",
+    "recoveryDisabled": "Draft recovery is disabled. Unsaved changes remain in this window.",
+    "recoveryChanged": "The recovery checkpoint changed. The saved recovery copy has been preserved; no stale checkpoint was written.",
+    "recoveryBusy": "Draft recovery is busy. Your edits remain in this window.",
+    "recoveryCancelled": "The draft checkpoint was cancelled. Your edits remain in this window.",
+    "recoveryFailed": "The draft checkpoint could not be completed. Keep this window open and check the application logs.",
+    "recoveryIncomplete": "An open draft is missing its original file identity. Keep this window open and save or explicitly discard that draft before closing.",
+    "recoveryConsentRequired": "Choose draft recovery in Settings on this device. Plugins cannot change this storage consent.",
     "reconnect": "Restore connection",
     "saving": "Saving…",
     "conflictTitle": "Remote file changed",
@@ -1920,6 +1935,7 @@
     "timeout": "Search timed out; narrow the search directory."
   },
   "network": {
+    "configurationChanged": "The proxy configuration changed while preparing the process. Review the selected proxy and try again.",
     "title": "Network & proxies",
     "intro": "Choose a default route, then override individual features or hosts. Passwords are stored in your system keychain.",
     "inherit": "Use default",
@@ -2108,6 +2124,10 @@
     "notOwned": "This mount belongs to another plugin.",
     "startFailed": "SSHFS stopped before the directory was mounted. Check the SSHFS installation and remote access.",
     "startTimeout": "The directory did not finish mounting in time. Check the SSH connection and FUSE driver.",
+    "negotiationTimeout": "The SSH server did not open the SFTP subsystem in time. Check the connection and retry.",
+    "subsystemRejected": "The SSH server rejected SFTP access. Check whether its SFTP subsystem is enabled and allowed for this account.",
+    "subsystemProtocol": "The SSH server sent an invalid response while starting SFTP. Check its subsystem configuration and logs.",
+    "connectionBusy": "Earlier SSHFS connection requests are still waiting for the server. Retry later or reconnect the affected SSH session.",
     "pathTimeout": "The mounted directory did not respond in time. Check the connection and try again.",
     "pathBusy": "The mounted directory is still responding to earlier requests. Try again shortly.",
     "busy": "The directory is busy. Close files and terminals using it, then retry unmounting.",
@@ -2145,6 +2165,11 @@
     "truncated": "Showing the latest 256 KiB"
   },
   "restart": {
+    "quit": "Quit Tunnelde",
+    "quitTitle": "Quit Tunnelde?",
+    "quitWarning": "Quitting disconnects sessions, interrupts background tasks and discards unsaved edits. Save your work first.",
+    "quitRecoveryWarning": "Quitting disconnects sessions and interrupts background tasks. Unsaved file edits will be checkpointed for recovery before quitting.",
+    "requestChanged": "This application action is no longer current. Select it again from the tray menu.",
     "command": "Restart Tunnelde",
     "reload": "Reload window",
     "now": "Restart now",
@@ -2154,7 +2179,9 @@
     "confirmTitle": "Restart Tunnelde?",
     "reloadTitle": "Reload window?",
     "restartWarning": "Restarting disconnects sessions, interrupts background tasks and discards unsaved edits. Save your work first.",
+    "restartRecoveryWarning": "Restarting disconnects sessions and interrupts background tasks. Unsaved file edits will be checkpointed for recovery before restarting.",
     "reloadWarning": "Reloading the window may interrupt active views and discards unsaved edits. Save your work first.",
+    "reloadRecoveryWarning": "Reloading may interrupt active views. Unsaved file edits will be checkpointed for recovery before reloading.",
     "unsaved": "Unsaved files: {{names}}",
     "nativeOnly": "Restart is available in the desktop application."
   },

@@ -10,11 +10,11 @@ use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
-pub(crate) fn connection_review_prepare(
+pub(crate) async fn connection_review_prepare(
     app: AppHandle,
     displayed: Host,
 ) -> AppResult<review::Plan> {
-    review::prepare(&app, &displayed)
+    review::prepare(app, displayed).await
 }
 
 #[tauri::command]
@@ -23,7 +23,8 @@ pub(crate) async fn connection_review_probe(
     review: review::Review,
     credentials: HashMap<String, ssh::session::HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    review::Target::capture(&app, &review)?
+    review::Target::capture_background(&app, &review)
+        .await?
         .probe(&app, &credentials)
         .await
 }
@@ -36,7 +37,8 @@ pub(crate) async fn connection_review_trust(
     expected_host_id: String,
     credentials: HashMap<String, ssh::session::HopCredential>,
 ) -> AppResult<review::Trusted> {
-    review::Target::capture(&app, &review)?
+    review::Target::capture_background(&app, &review)
+        .await?
         .trust(&app, &fingerprint, &expected_host_id, &credentials)
         .await
 }
@@ -47,7 +49,8 @@ pub(crate) async fn connection_review_connect(
     review: review::Review,
     request: SshConnectRequest,
 ) -> AppResult<SessionInfo> {
-    let session = review::Target::capture(&app, &review)?
+    let session = review::Target::capture_background(&app, &review)
+        .await?
         .connect(app.clone(), request, false, true)
         .await?;
     crate::logs::record(
@@ -75,16 +78,19 @@ pub(crate) async fn connection_review_install_key(
     password: Option<String>,
     credentials: HashMap<String, ssh::session::HopCredential>,
 ) -> AppResult<ssh::InstalledKey> {
-    let target = review::Target::capture(&app, &review)?;
+    let target = review::Target::capture_background(&app, &review).await?;
     ssh::keys::install_target(&app, target, password, credentials).await
 }
 
 #[tauri::command]
-pub(crate) fn connection_review_credential(
+pub(crate) async fn connection_review_credential(
     app: AppHandle,
     review: review::Review,
     host_id: String,
     password: Option<String>,
 ) -> AppResult<()> {
-    review::Target::capture(&app, &review)?.credential(&app, &host_id, password.as_deref())
+    review::Target::capture_background(&app, &review)
+        .await?
+        .credential(&app, &host_id, password.as_deref())
+        .await
 }

@@ -5,6 +5,7 @@ import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
 import { isIpcError } from "@/lib/api/types";
+import type { EditorDraft } from "@/lib/editor/recovery/contracts";
 
 import {
   createFileReadResource,
@@ -15,6 +16,8 @@ import {
 export const EDITOR_DOCUMENT_MAX_BYTES = 128 * 1024;
 
 export interface EditorEntry {
+  recoveryTarget?: { hostId: string; address: string };
+  recovered?: boolean;
   tabId: string;
   sessionId: string | null;
   path: string;
@@ -35,7 +38,12 @@ export interface EditorEntry {
 
 interface EditorsStore {
   entries: Record<string, EditorEntry>;
-  open: (tabId: string, sessionId: string | null, path: string) => Promise<void>;
+  open: (
+    tabId: string,
+    sessionId: string | null,
+    path: string,
+    target?: EditorEntry["recoveryTarget"],
+  ) => Promise<void>;
   change: (tabId: string, content: string) => void;
   save: (tabId: string) => Promise<boolean>;
   resolveConflict: (
@@ -50,6 +58,7 @@ interface EditorsStore {
     tabId: string,
     sessionId: string,
     acceptChanges?: boolean,
+    target?: EditorEntry["recoveryTarget"],
   ) => Promise<"ready" | "conflict" | "failed">;
 }
 
@@ -216,10 +225,40 @@ export function fileName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+export function restoreEditorDraft(tabId: string, draft: EditorDraft): void {
+  if (useEditors.getState().entries[tabId]) return;
+  versions.set(tabId, Symbol());
+  const remote = draft.source.kind === "remote";
+  useEditors.setState((state) => ({
+    entries: {
+      ...state.entries,
+      [tabId]: {
+        tabId,
+        sessionId: remote ? "recovered" : null,
+        path: draft.path,
+        name: fileName(draft.path),
+        content: draft.content,
+        baseline: draft.baseline,
+        baselineLoaded: true,
+        loading: false,
+        saving: false,
+        error: null,
+        disconnected: remote,
+        documentId: draft.id,
+        version: 0,
+        recovered: true,
+        ...(draft.source.kind === "remote"
+          ? { recoveryTarget: { hostId: draft.source.hostId, address: draft.source.address } }
+          : {}),
+      },
+    },
+  }));
+}
+
 export const useEditors = create<EditorsStore>((set, get) => ({
   entries: {},
 
-  open: async (tabId, sessionId, path) => {
+  open: async (tabId, sessionId, path, target) => {
     histories.delete(tabId);
     saves.delete(tabId);
     const resource = beginRead(tabId, sessionId, path);
@@ -242,6 +281,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           disconnected: false,
           documentId: crypto.randomUUID(),
           version: 0,
+          recoveryTarget: target,
         },
       },
     }));
@@ -454,9 +494,17 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       return { entries };
     }),
 
-  reconnect: async (tabId, sessionId, acceptChanges = false) => {
+  reconnect: async (tabId, sessionId, acceptChanges = false, target) => {
     const current = get().entries[tabId];
     if (!current || !current.disconnected) return "failed";
+    if (
+      current.recoveryTarget &&
+      (current.recoveryTarget.hostId !== target?.hostId ||
+        current.recoveryTarget.address !== target?.address)
+    ) {
+      toast(i18n.t("editor.recoveryDestinationChanged"), "error");
+      return "failed";
+    }
     const version = versions.get(tabId);
     const resource = beginRead(tabId, sessionId, current.path);
     try {

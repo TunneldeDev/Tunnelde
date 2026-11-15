@@ -21,14 +21,38 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
     }
 }
 
+/// Authority checks must not silently accept defaults after stored JSON corruption.
+/// Startup's legacy fallback remains separate from this fail-closed read.
+pub(crate) fn load_checked(conn: &Connection) -> AppResult<Settings> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![SETTINGS_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match raw {
+        Some(json) => Ok(serde_json::from_str(&json)?),
+        None => Ok(Settings::default()),
+    }
+}
+
 pub fn save(conn: &Connection, settings: &Settings) -> AppResult<()> {
-    let json = serde_json::to_string(settings)?;
-    conn.execute(
-        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+    crate::db::atomic(conn, |conn| {
+        let previous = load_checked(conn)?;
+        crate::services::credentials::lifecycle::network_changed(
+            conn,
+            &previous.network,
+            &settings.network,
+        )?;
+        let json = serde_json::to_string(settings)?;
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        params![SETTINGS_KEY, json, now_ms()],
-    )?;
-    Ok(())
+            params![SETTINGS_KEY, json, now_ms()],
+        )?;
+        Ok(())
+    })
 }
 
 #[cfg(test)]

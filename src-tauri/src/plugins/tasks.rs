@@ -15,6 +15,7 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
 mod lifecycle;
+mod preparation;
 pub(super) use lifecycle::{cancel_owned_resource, owned_resources};
 
 const MAX_BUFFER: usize = 4 * 1024 * 1024;
@@ -434,6 +435,7 @@ async fn run_local(
     timeout: u64,
     input: TaskInput,
 ) -> AppResult<()> {
+    let expires = tokio::time::Instant::now() + Duration::from_millis(timeout);
     authorize(context, &["process.exec"])?;
     let TaskInput {
         receiver,
@@ -466,7 +468,32 @@ async fn run_local(
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    crate::network::process_environment(&context.app, &context.id, &mut command)?;
+    match preparation::prepare(
+        async {
+            let environment =
+                crate::network::ProcessEnvironment::capture(&context.app, &context.id).await?;
+            environment.apply_current(&context.app, &mut command).await
+        },
+        &mut cancellation,
+        expires,
+        || authorize(context, &["process.exec"]),
+    )
+    .await?
+    {
+        preparation::Outcome::Ready(()) => {}
+        preparation::Outcome::Stopped(reason) => {
+            publish(context, id, "status", String::new(), Some(reason), None);
+            return Ok(());
+        }
+    };
+    // No await from final admission through spawn. A dropped OS read has no
+    // child; cancellation after launch uses the existing owned process cleanup.
+    if let Some(reason) = preparation::stopped(&cancellation, expires, || {
+        authorize(context, &["process.exec"])
+    }) {
+        publish(context, id, "status", String::new(), Some(reason), None);
+        return Ok(());
+    }
     let mut child = command.spawn()?;
     let stdin = child.stdin.take().expect("piped stdin");
     let mut writer_cancel = cancellation.clone();
@@ -486,7 +513,7 @@ async fn run_local(
         sender.clone(),
     ));
     drop(sender);
-    let deadline = tokio::time::sleep(Duration::from_millis(timeout));
+    let deadline = tokio::time::sleep_until(expires);
     tokio::pin!(deadline);
     let mut decoders = [Decoder::default(), Decoder::default()];
     let mut interval = tokio::time::interval(Duration::from_millis(200));

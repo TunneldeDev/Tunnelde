@@ -49,6 +49,7 @@ impl Vault {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn has(&self, host_id: &str) -> AppResult<bool> {
         Ok(self.load(host_id)?.is_some())
     }

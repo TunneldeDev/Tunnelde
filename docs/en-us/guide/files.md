@@ -196,3 +196,31 @@ its title or tab to move it, and drag the shared divider to resize it. **Open in
 Quick Look** returns to the dialog. Closing the panel releases the file while
 remembering its position and size. Use F1 → **Show file preview panel** to reopen
 its empty slot; preview another file with Space.
+
+## Recover unsaved edits
+
+Enable **Settings → Editor → Recover unsaved edits after restart** on each device.
+It is off by default. Recovery stores unsaved text and its original contents in
+the application database, without encryption; it is separate from saving the file.
+This consent is not included in exported settings or profiles. Moving the database
+storage location also moves recovery records. Turning recovery off removes the
+records, although old database pages and backups may retain copies.
+
+The application checkpoints edits after a short idle interval. Closing the main
+window, reloading, restarting from the UI, and installing an update wait for the
+current checkpoint; a failed checkpoint keeps the window open on ordinary close.
+Tray **Quit** and **Restart** first restore the window and use the same confirmation
+and checkpoint flow, including when the lightweight background mode released the
+WebView. Cancelling keeps the application running; a failed checkpoint prevents
+the action. An abrupt process exit may lose the latest uncheckpointed edits.
+Closing an individual dirty tab still asks before discarding it.
+
+After restart, recovered drafts reopen without changing the original files, even
+when workspace restoration is disabled. Remote drafts stay offline until you
+connect to their original destination. File changes are checked before reconnect
+or save; resolve a conflict explicitly before replacing newer contents. Draft
+recovery never replays an interrupted save whose result is unknown.
+
+Recovery holds up to 40 drafts, with at most 128 KiB of UTF-8 text and 128 KiB of
+original contents per draft. A rejected, unreadable, or conflicting checkpoint
+preserves the previous record and reports an error rather than replacing it.

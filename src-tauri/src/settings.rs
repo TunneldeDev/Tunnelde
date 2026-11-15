@@ -127,6 +127,8 @@ pub struct Settings {
     pub editor_word_wrap: bool,
     pub editor_tab_size: u16,
     pub editor_spell_check: bool,
+    /// Per-device consent to retain unsaved file text in the application database.
+    pub editor_draft_recovery: bool,
     pub monitor_interval_ms: u32,
 }
 
@@ -203,6 +205,7 @@ impl Default for Settings {
             editor_word_wrap: false,
             editor_tab_size: 4,
             editor_spell_check: false,
+            editor_draft_recovery: false,
             monitor_interval_ms: 3000,
         }
     }

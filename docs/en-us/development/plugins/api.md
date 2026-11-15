@@ -244,6 +244,16 @@ snapshots do not return saved SSH passwords or private keys, and plugin approval
 replace SSH host-key verification. See the detailed guide for recovery behavior, limits,
 WASM restrictions and platform-specific invocation.
 
+The experimental `secrets.*` methods share the host's bounded OS-credential worker
+budget. Requests rejected for capacity return `credentials.busy`; cancelled requests
+that have not been admitted cannot later start a keyring operation. Native admission
+checks the original runtime generation, declared/granted permission and any tool request
+under short authorization gates, then releases those gates before OS access. A write or
+delete already admitted can settle after cancellation or revocation; cancellation is
+not rollback and a lost reply does not establish failure. The normal RPC response fence
+still rejects a revoked runtime. This does not change the method payloads, plugin-scoped
+key identity or secret-size limit, and does not promote these methods to stable.
+
 ## Extension points
 
 See [extension architecture](extension-architecture.md) for the experimental `extensions.describe` directory and [host-list decorations](host-list.md). Existing stable API contracts remain unchanged.

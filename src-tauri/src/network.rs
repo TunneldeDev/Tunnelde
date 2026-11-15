@@ -1,25 +1,25 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    pin::Pin,
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, pin::Pin, time::Duration};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
-    vault::Vault,
 };
 
 pub mod diagnostics;
+pub(crate) mod http;
+mod process;
+pub(crate) mod proxy;
+pub(crate) use process::ProcessEnvironment;
 pub(crate) mod requests;
 mod transport;
+pub(super) use http::client_for_proxy as http_client_for_proxy;
+pub(crate) use http::{http_client, HttpClients};
+pub use proxy::url as proxy_url;
 pub(crate) use transport::TcpRoute;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -122,162 +122,6 @@ pub fn selection<'a>(
     })
 }
 
-pub fn proxy_url(
-    vault: &Vault,
-    settings: &NetworkSettings,
-    feature: &str,
-    override_value: Option<&str>,
-) -> AppResult<Option<String>> {
-    let chosen = selection(settings, feature, override_value);
-    if chosen == "system" {
-        return Ok(None);
-    }
-    if chosen == "direct" {
-        return Ok(Some(String::new()));
-    }
-    let profile = settings
-        .profiles
-        .iter()
-        .find(|p| p.id == chosen)
-        .ok_or_else(|| AppError::validation("network.proxyMissing"))?;
-    let scheme = if profile.protocol == "socks5" {
-        "socks5h"
-    } else {
-        "http"
-    };
-    let mut url = reqwest::Url::parse(&format!(
-        "{scheme}://{}:{}",
-        authority(&profile.host),
-        profile.port
-    ))
-    .map_err(|_| AppError::validation("network.invalid"))?;
-    if !profile.username.is_empty() {
-        url.set_username(&profile.username)
-            .map_err(|_| AppError::validation("network.invalid"))?;
-        let password = vault
-            .load(&format!("proxy:{}", profile.id))?
-            .unwrap_or_default();
-        url.set_password(Some(&password))
-            .map_err(|_| AppError::validation("network.invalid"))?;
-    }
-    Ok(Some(url.to_string()))
-}
-
-struct CachedClient {
-    route: [u8; 32],
-    created: Instant,
-    client: reqwest::Client,
-}
-#[derive(Default)]
-pub struct HttpClients(Mutex<HashMap<String, CachedClient>>);
-
-pub fn http_client(app: &AppHandle, feature: &str) -> AppResult<reqwest::Client> {
-    let state = app.state::<AppState>();
-    let settings = state.settings();
-    let url = proxy_url(&state.vault, &settings.network, feature, None)?;
-    // Reuse TLS connections without retaining plaintext credentials as cache keys.
-    // Periodically rebuild system routes so changed OS proxy settings take effect.
-    let route: [u8; 32] = Sha256::digest(serde_json::to_vec(&url)?).into();
-    let mut clients = state
-        .http_clients
-        .0
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    if let Some(cached) = clients.get(feature).filter(|cached| {
-        cached.route == route
-            && (url.is_some() || cached.created.elapsed() < Duration::from_secs(30))
-    }) {
-        return Ok(cached.client.clone());
-    }
-    let client = http_client_for_proxy(url.as_deref())?;
-    clients.insert(
-        feature.to_owned(),
-        CachedClient {
-            route,
-            created: Instant::now(),
-            client: client.clone(),
-        },
-    );
-    Ok(client)
-}
-
-/// Shared HTTPS transport for real requests and proxy diagnostics. Explicit
-/// routes always disable ambient proxy inheritance; TLS verification stays on.
-pub(super) fn http_client_for_proxy(url: Option<&str>) -> AppResult<reqwest::Client> {
-    let mut builder = reqwest::Client::builder()
-        .https_only(true)
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(300))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .user_agent(concat!("Tunnelde/", env!("CARGO_PKG_VERSION")));
-    // Some Windows proxy routes close the Rustls handshake even when the same
-    // verified HTTPS request succeeds through Schannel. Use the native backend
-    // consistently for diagnostics and real traffic; never disable verification
-    // or change the selected proxy to compensate for a failed handshake.
-    #[cfg(windows)]
-    {
-        builder = builder.tls_backend_native();
-    }
-    if let Some(url) = url {
-        builder = builder.no_proxy();
-        if !url.is_empty() {
-            builder = builder.proxy(
-                reqwest::Proxy::all(url).map_err(|_| AppError::validation("network.invalid"))?,
-            );
-        }
-    }
-    builder
-        .build()
-        .map_err(|_| AppError::validation("network.failed"))
-}
-
-pub fn process_environment(
-    app: &AppHandle,
-    plugin: &str,
-    command: &mut tokio::process::Command,
-) -> AppResult<()> {
-    let network = app.state::<AppState>().settings().network;
-    let feature = format!("plugin:{plugin}");
-    let value = network
-        .features
-        .get(&feature)
-        .filter(|v| !v.is_empty())
-        .map(String::as_str);
-    if let Some(url) = proxy_url(&app.state::<AppState>().vault, &network, "processes", value)? {
-        for key in [
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "http_proxy",
-            "https_proxy",
-            "all_proxy",
-            "NO_PROXY",
-            "no_proxy",
-        ] {
-            command.env_remove(key);
-        }
-        if !url.is_empty() {
-            for key in [
-                "HTTP_PROXY",
-                "HTTPS_PROXY",
-                "ALL_PROXY",
-                "http_proxy",
-                "https_proxy",
-                "all_proxy",
-            ] {
-                command.env(key, &url);
-            }
-            command
-                .env("NO_PROXY", "localhost,127.0.0.1,::1")
-                .env("no_proxy", "localhost,127.0.0.1,::1");
-            command.env("NODE_USE_ENV_PROXY", "1");
-        } else {
-            command.env_remove("NODE_USE_ENV_PROXY");
-        }
-    }
-    Ok(())
-}
-
 fn authority(host: &str) -> String {
     if host.contains(':') {
         format!("[{host}]")
@@ -327,8 +171,51 @@ fn tcp_proxy(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<S
     if !valid_host(host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
     }
-    let network = app.state::<AppState>().settings().network;
-    let configured = proxy_url(&app.state::<AppState>().vault, &network, "ssh", Some(proxy))?;
+    let state = app.state::<AppState>();
+    let (network, authority) = state.db.with(|conn| {
+        let network = crate::db::settings::load_checked(conn)?.network;
+        let authority = crate::services::credentials::lifecycle::selection_authority(
+            conn,
+            &network,
+            "ssh",
+            Some(proxy),
+        )?;
+        Ok((network, authority))
+    })?;
+    let resolved = tcp_proxy_with(
+        |profile| crate::services::credentials::read_proxy(&state, profile),
+        &network,
+        host,
+        port,
+        proxy,
+    )?;
+    state.db.with(|conn| {
+        let current = crate::db::settings::load_checked(conn)?.network;
+        if crate::services::credentials::lifecycle::selection_authority(
+            conn,
+            &current,
+            "ssh",
+            Some(proxy),
+        )? != authority
+        {
+            return Err(AppError::validation("network.configurationChanged"));
+        }
+        Ok(())
+    })?;
+    Ok(resolved)
+}
+
+fn tcp_proxy_with(
+    load: impl FnOnce(&ProxyProfile) -> AppResult<Option<String>>,
+    network: &NetworkSettings,
+    host: &str,
+    port: u16,
+    proxy: &str,
+) -> AppResult<String> {
+    if !valid_host(host) || port == 0 {
+        return Err(AppError::validation("network.invalid"));
+    }
+    let configured = proxy_url(load, network, "ssh", Some(proxy))?;
     match configured {
         Some(value) => Ok(value),
         None => system_proxy(host, port),
@@ -491,35 +378,38 @@ pub fn connection_route_save(
     host_id: String,
     route: ConnectionRoute,
 ) -> AppResult<()> {
+    app.state::<AppState>()
+        .db
+        .with(|conn| crate::db::atomic(conn, |conn| save_route_at(conn, &host_id, &route)))
+}
+
+pub(crate) fn save_route_at(
+    conn: &rusqlite::Connection,
+    host_id: &str,
+    route: &ConnectionRoute,
+) -> AppResult<()> {
+    if conn.is_autocommit() {
+        return Err(AppError::internal("credentials.transactionRequired"));
+    }
     if route.jump_hosts.len() > 8 {
         return Err(AppError::validation("network.jumpCycle"));
     }
-    let state = app.state::<AppState>();
-    proxy_url(
-        &state.vault,
-        &state.settings().network,
-        "ssh",
-        Some(&route.proxy),
-    )?;
-    state.db.with(|conn| {
-        crate::db::hosts::find_host(conn, &host_id)?;
-        let mut seen = std::collections::HashSet::from([host_id.clone()]);
-        for id in &route.jump_hosts {
-            if !seen.insert(id.clone()) { return Err(AppError::validation("network.jumpCycle")); }
-            crate::db::hosts::find_host(conn, id)?;
+    let previous = route_at(conn, host_id)?;
+    let network = crate::db::settings::load_checked(conn)?.network;
+    proxy::validate_selection(&network, "ssh", Some(&route.proxy))?;
+    crate::db::hosts::find_host(conn, host_id)?;
+    let mut seen = std::collections::HashSet::from([host_id.to_owned()]);
+    for id in &route.jump_hosts {
+        if !seen.insert(id.clone()) {
+            return Err(AppError::validation("network.jumpCycle"));
         }
-        conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![format!("route:{host_id}"), serde_json::to_string(&route)?, crate::models::now_ms()])?;
-        Ok(())
-    })
-}
-
-#[tauri::command]
-pub async fn proxy_password_save(
-    app: AppHandle,
-    id: String,
-    password: Option<String>,
-) -> AppResult<()> {
-    crate::services::credentials::proxy_password(app, id, password).await
+        crate::db::hosts::find_host(conn, id)?;
+    }
+    conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![format!("route:{host_id}"),serde_json::to_string(route)?,crate::models::now_ms()])?;
+    if previous != *route {
+        crate::services::credentials::lifecycle::route_changed(conn, host_id)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -527,10 +417,7 @@ pub async fn proxy_test(app: AppHandle, proxy: String, host: String, port: u16) 
     if !valid_host(&host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
     }
-    let _ = TcpRoute::capture(&app, &host, port, &proxy)?
-        .connect(&host, port)
-        .await?;
-    Ok(())
+    transport::probe(&app, &host, port, &proxy).await
 }
 
 #[cfg(test)]

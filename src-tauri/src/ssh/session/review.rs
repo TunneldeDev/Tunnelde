@@ -27,21 +27,56 @@ pub(crate) struct Trusted {
 /// Opaque captured acquisition; callers cannot replace its hosts or transport.
 pub(crate) struct Target(route::Snapshot);
 
+/// An OS observation awaiting final pure native admission.
+pub(crate) struct Observed(route::Observed);
+impl Observed {
+    pub(crate) fn with_current<T>(
+        &self,
+        app: &AppHandle,
+        effect: impl FnOnce(&rusqlite::Connection) -> AppResult<T>,
+    ) -> AppResult<T> {
+        self.0.with_current(app, effect)
+    }
+    pub(crate) fn approve(
+        self,
+        app: &AppHandle,
+        info: HostKeyInfo,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<Trusted> {
+        let target = Target(self.0.approve(app, &info, check)?);
+        Ok(target.trusted(info))
+    }
+}
+
 fn changed() -> AppError {
     AppError::Ssh("ssh.connectionChanged".into())
 }
 
-pub(crate) fn prepare(app: &AppHandle, displayed: &Host) -> AppResult<Plan> {
-    // Snapshot::verify compares the displayed connection fields against native
-    // storage, rejecting a stale dialog before it can send any credentials.
-    let target = Target::from_displayed(app, displayed)?;
-    Ok(Plan {
-        review: target.review(),
-        jump_hosts: target.0.jump_hosts(),
+pub(crate) async fn prepare(app: AppHandle, displayed: Host) -> AppResult<Plan> {
+    crate::services::credentials::inspect(move || {
+        // Capture at actual worker admission: the displayed connection fields
+        // must still match native storage after any queue wait. Transport
+        // inspection may read a proxy password and must not run on the UI thread.
+        let target = Target::from_displayed(&app, &displayed)?;
+        Ok(Plan {
+            review: target.review(),
+            jump_hosts: target.0.jump_hosts(),
+        })
     })
+    .await
 }
 
 impl Target {
+    pub(crate) async fn observe_background(&self, app: &AppHandle) -> AppResult<Observed> {
+        Ok(Observed(self.0.observe_background(app).await?))
+    }
+
+    pub(crate) async fn capture_background(app: &AppHandle, review: &Review) -> AppResult<Self> {
+        let app = app.clone();
+        let review = review.clone();
+        crate::services::credentials::inspect(move || Self::capture(&app, &review)).await
+    }
+
     pub(crate) fn jump_hosts(&self) -> Vec<Host> {
         self.0.jump_hosts()
     }
@@ -74,11 +109,15 @@ impl Target {
         self.0.verify(app)
     }
 
+    pub(crate) async fn verify_background(&self, app: &AppHandle) -> AppResult<()> {
+        self.0.verify_background(app).await
+    }
+
     pub(crate) fn host_id(&self) -> &str {
         &self.0.target().id
     }
 
-    pub(crate) fn credential(
+    pub(crate) async fn credential(
         &self,
         app: &AppHandle,
         host_id: &str,
@@ -90,13 +129,16 @@ impl Target {
         if password == Some("") {
             return Err(AppError::validation("ssh.passwordRequired"));
         }
-        self.with_current(app, |conn| {
-            db::hosts::find_host(conn, host_id)?;
-            match password {
-                Some(password) => app.state::<AppState>().vault.save(host_id, password),
-                None => app.state::<AppState>().vault.forget(host_id),
-            }
-        })
+        let observed = std::sync::Arc::new(self.0.observe_background(app).await?);
+        let before = observed.clone();
+        crate::services::credentials::mutate_reviewed(
+            app.clone(),
+            host_id.into(),
+            password.map(str::to_owned),
+            move |app| before.before(app),
+            move |conn| observed.credential_stamp(conn),
+        )
+        .await
     }
 
     pub(crate) fn with_current<T>(
@@ -136,16 +178,15 @@ impl Target {
         if info.fingerprint != fingerprint || info.host_id != expected_host_id {
             return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
         }
-        self.approve(app, info)
+        let app = app.clone();
+        crate::services::credentials::checked(move |job| {
+            self.approve_checked(&app, info, || job.commit())
+        })
+        .await
     }
 
     /// The requester may hold its own synchronous authority guard across the
     /// final trust write, after probing without locks.
-    pub(crate) fn approve(mut self, app: &AppHandle, info: HostKeyInfo) -> AppResult<Trusted> {
-        self.0.approve_reviewed(app, &info)?;
-        Ok(self.trusted(info))
-    }
-
     pub(crate) fn approve_checked(
         mut self,
         app: &AppHandle,

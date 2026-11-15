@@ -9,6 +9,7 @@ import { useSettings } from "@/store/settings";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { requestApplicationAction } from "@/lib/session/restart";
+import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
 import type { StorageRestartPlan, StorageStatus } from "@/lib/api/storage";
 
 const api = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ const api = vi.hoisted(() => ({
   appRestart: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({ api, isTauri: () => true }));
+vi.mock("@/lib/editor/recovery/persistence", () => ({ flushEditorDrafts: vi.fn(async () => {}) }));
 const empty: StorageStatus = {
   locations: [
     {
@@ -52,7 +54,9 @@ beforeEach(async () => {
   useRestartPrompt.setState({ open: false, observed: null });
   useDialogs.getState().close();
   useEditors.setState({ entries: {} });
-  useSettings.setState((state) => ({ settings: { ...state.settings, showStatusBar: false } }));
+  useSettings.setState((state) => ({
+    settings: { ...state.settings, showStatusBar: false, editorDraftRecovery: false },
+  }));
   api.storageStatus.mockResolvedValue(empty);
   api.storageRestartPlan.mockResolvedValue(null);
   api.storagePick.mockResolvedValue("D:\\Data");
@@ -111,6 +115,45 @@ it("warns about dirty files before calling native restart", async () => {
   await dialog.onConfirm();
   expect(api.appRestart).toHaveBeenCalledOnce();
 });
+
+it("describes opted-in recovery and prevents restart when the checkpoint fails", async () => {
+  useSettings.setState((state) => ({ settings: { ...state.settings, editorDraftRecovery: true } }));
+  vi.mocked(flushEditorDrafts).mockRejectedValueOnce(new Error("editor.recoveryFailed"));
+  requestApplicationAction("restart");
+  const dialog = useDialogs.getState().dialog;
+  expect(dialog.kind).toBe("confirm");
+  if (dialog.kind !== "confirm") return;
+  expect(dialog.body).toContain("checkpointed for recovery");
+  expect(dialog.body).not.toContain("discards unsaved edits");
+  await dialog.onConfirm();
+  expect(api.appRestart).not.toHaveBeenCalled();
+  await dialog.onConfirm();
+  expect(api.appRestart).toHaveBeenCalledOnce();
+});
+
+it.each(["quit", "restart"] as const)(
+  "flushes recovery before finishing native tray %s and never calls the direct restart path",
+  async (action) => {
+    useSettings.setState((state) => ({
+      settings: { ...state.settings, editorDraftRecovery: true },
+    }));
+    const finish = vi.fn(async () => {});
+    requestApplicationAction(action, finish);
+    const dialog = useDialogs.getState().dialog;
+    if (dialog.kind !== "confirm") throw Error("Missing confirmation");
+    expect(dialog.body).toContain("checkpointed for recovery");
+    expect(finish).not.toHaveBeenCalled();
+    vi.mocked(flushEditorDrafts).mockRejectedValueOnce(Error("checkpoint failed"));
+    await dialog.onConfirm();
+    expect(finish).not.toHaveBeenCalled();
+    await dialog.onConfirm();
+    expect(finish).toHaveBeenCalledOnce();
+    expect(vi.mocked(flushEditorDrafts).mock.invocationCallOrder.at(-1)).toBeLessThan(
+      finish.mock.invocationCallOrder[0]!,
+    );
+    expect(api.appRestart).not.toHaveBeenCalled();
+  },
+);
 
 it("ignores an older pending-status response after a plan is cancelled", async () => {
   let resolve!: (pending: StorageRestartPlan | null) => void;

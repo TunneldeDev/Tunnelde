@@ -1,5 +1,7 @@
+import type { HostEdit, HostSaved, ProxyEdit, ProxySaved } from "./credentials";
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchQuery } from "@/lib/search/query";
+import type { DraftSnapshot, EditorDraft } from "@/lib/editor/recovery/contracts";
 import type { HostFieldsSnapshot, HostFieldsUpdate } from "@/lib/hosts/fields";
 import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageRestartPlan, StorageStatus } from "./storage";
@@ -80,6 +82,9 @@ export interface OutputSnapshot {
 }
 
 export const api = {
+  editorDraftsRead: () => invoke<DraftSnapshot>("editor_drafts_read"),
+  editorDraftsSave: (revision: string, drafts: EditorDraft[]) =>
+    invoke<string>("editor_drafts_save", { revision, drafts }),
   hostFields: (pluginId: string, hostId: string) =>
     invoke<HostFieldsSnapshot>("host_fields_get", { pluginId, hostId }),
   updateHostFields: (pluginId: string, update: HostFieldsUpdate) =>
@@ -106,8 +111,8 @@ export const api = {
   connectionRoute: (hostId: string) => invoke<ConnectionRoute>("connection_route_get", { hostId }),
   saveConnectionRoute: (hostId: string, route: ConnectionRoute) =>
     invoke<void>("connection_route_save", { hostId, route }),
-  saveProxyPassword: (id: string, password: string | null) =>
-    invoke<void>("proxy_password_save", { id, password }),
+  saveProxyProfile: ({ profile, credential }: ProxyEdit) =>
+    invoke<ProxySaved>("proxy_profile_save", { profile, credential }),
   testProxy: (proxy: string, host: string, port: number) =>
     invoke<void>("proxy_test", { proxy, host, port }),
   testProxyQuality: (proxy: string, host: string, port: number) =>
@@ -349,9 +354,7 @@ export const api = {
     }),
   transferCancel: (transferId: string) => invoke<void>("transfer_cancel", { transferId }),
 
-  credentialSave: (hostId: string, password: string) =>
-    invoke<void>("credential_save", { hostId, password }),
-  credentialForget: (hostId: string) => invoke<void>("credential_forget", { hostId }),
+  saveHostEditor: (edit: HostEdit) => invoke<HostSaved>("host_editor_save", { edit }),
   credentialStatus: (hostId: string) => invoke<boolean>("credential_status", { hostId }),
 
   importCss: () => invoke<string | null>("user_css_import"),

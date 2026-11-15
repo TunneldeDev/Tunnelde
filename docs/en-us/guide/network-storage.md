@@ -81,6 +81,20 @@ session. If saved connection settings change after the server accepted the key
 addition, setup reports the change instead of overwriting those new settings;
 the key already added to the original server may remain there.
 
+The managed private key is published without replacing an existing key, including
+concurrent first-time setup. It uses the platform's atomic non-replacing rename;
+publication failures preserve any existing key instead of overwriting it.
+Remote setup creates a missing `.ssh` directory with mode `0700` and a missing
+`authorized_keys` file with mode `0600`, while leaving existing permissions alone.
+It appends only the new line, preserving concurrent additions; repeating setup
+skips a line already present. Simultaneous setup may append duplicate valid lines.
+An unreadable, invalid UTF-8 or larger-than-4-MiB authorized file stops setup.
+Write and file-close acknowledgements are required before switching the saved
+host to key authentication. A lost acknowledgement can leave the remote addition
+in place while the saved host remains unchanged; these are separate effects,
+and cancellation is not a rollback. OS credential inspection and local key I/O
+run on bounded background workers without holding the database across OS access.
+
 ## Transfer performance
 
 In **Settings → Files → Transfers**, total upload and download limits are set
@@ -518,6 +532,22 @@ The native service pipes an authenticated SFTP subsystem directly to SSHFS.
 Passwords and private keys are not passed in process arguments, and no local TCP
 bridge is exposed. Mount completion is reported after the mount appears in the
 operating system. Mount points are reserved across providers.
+
+SSH channel and SFTP startup share a 15-second deadline. SSHFS starts only after
+the server accepts the subsystem; rejection and timeout show separate errors.
+Negotiation and mount-readiness polling do not hold the global mount registry
+lock. Cancelling a request closes its confirmed channel; a late confirmation is
+also closed. At most eight unconfirmed/negotiating requests can remain pending.
+If a server never confirms a channel, its slot stays occupied until that session
+closes or confirms, so repeated retries cannot create unlimited waiters. Existing
+SSH channels remain usable; reconnect the affected session to clear stalled opens.
+
+When either transport direction ends, the bridge closes the other endpoint's
+write side and allows up to two seconds to drain the other direction. If SSHFS
+keeps its output open, the bridge expires and the registry can retire the failed
+transport. The deadline starts only after EOF, not during an idle connection.
+This does not confirm pending writes, complete the operating system's unmount,
+or restart a disconnected mount automatically.
 
 Use Unmount before disconnecting. Disconnect, plugin stop/revocation and app exit
 close authenticated access and attempt normal cleanup. If a directory is busy,

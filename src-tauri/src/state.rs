@@ -18,6 +18,7 @@ use crate::update::UpdateService;
 pub struct AppState {
     pub db: Database,
     pub(crate) vault: crate::vault::Vault,
+    pub(crate) credentials: crate::services::credentials::Runtime,
     pub settings: RwLock<Settings>,
     /// Serializes read/validate/persist/publish for every settings writer.
     pub(crate) settings_commit: tokio::sync::Mutex<()>,
@@ -126,6 +127,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         );
     })?;
 
+    let credentials = crate::services::credentials::Runtime::initialize(&database, &vault)?;
     crate::storage::relocate_key_references(&database, &storage)?;
     let plugins_dir = storage
         .dir(crate::storage::layout::Category::Plugins)
@@ -152,6 +154,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     app.manage(AppState {
         db: database,
         vault,
+        credentials,
         settings: RwLock::new(settings),
         settings_commit: tokio::sync::Mutex::new(()),
         ui_provider_revision: AtomicU64::new(0),
@@ -177,5 +180,6 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         storage_ownership: storage_lease,
     });
 
+    crate::services::credentials::schedule_cleanup(app);
     Ok(())
 }

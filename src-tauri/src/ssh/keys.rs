@@ -1,9 +1,4 @@
-use std::path::{Path, PathBuf};
-
-use russh::keys::ssh_key::LineEnding;
-use russh::keys::{Algorithm, PrivateKey};
-use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::StatusCode;
+use russh_sftp::client::RawSftpSession;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
@@ -11,6 +6,10 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::ssh::session::{disconnect, review::Target, SshConnectRequest};
 use crate::state::AppState;
+
+mod authorized;
+mod keypair;
+use keypair::ensure_keypair;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,58 +20,6 @@ pub struct InstalledKey {
 
 fn key_error(error: impl std::fmt::Display) -> AppError {
     AppError::Ssh(format!("ssh.keyError: {error}"))
-}
-
-/// Tunnelde keeps one dedicated key pair under its data folder. It is created
-/// on first use and never leaves the machine except as the public half.
-fn ensure_keypair(data_dir: &Path) -> AppResult<(PathBuf, String)> {
-    let directory = data_dir;
-    std::fs::create_dir_all(directory)?;
-    let private = directory.join("tunnelde_ed25519");
-
-    if !private.exists() {
-        let key = PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).map_err(key_error)?;
-        let pem = key.to_openssh(LineEnding::LF).map_err(key_error)?;
-        std::fs::write(&private, pem.as_bytes())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o600));
-        }
-    }
-
-    let key = russh::keys::load_secret_key(&private, None).map_err(key_error)?;
-    let public = key.public_key().to_openssh().map_err(key_error)?;
-    Ok((private, public.trim().to_string()))
-}
-
-/// Adds the line to the file content unless it is already there.
-fn merge_authorized(existing: &str, public: &str) -> Option<String> {
-    let line = public.trim();
-    if line.is_empty() || existing.lines().any(|entry| entry.trim() == line) {
-        return None;
-    }
-    let mut next = existing.to_string();
-    if !next.is_empty() && !next.ends_with('\n') {
-        next.push('\n');
-    }
-    next.push_str(line);
-    next.push('\n');
-    Some(next)
-}
-
-fn authorized_contents(
-    result: Result<Vec<u8>, russh_sftp::client::error::Error>,
-) -> AppResult<String> {
-    match result {
-        Ok(bytes) => String::from_utf8(bytes).map_err(key_error),
-        Err(russh_sftp::client::error::Error::Status(status))
-            if status.status_code == StatusCode::NoSuchFile =>
-        {
-            Ok(String::new())
-        }
-        Err(error) => Err(key_error(error)),
-    }
 }
 
 async fn append_authorized(
@@ -90,27 +37,12 @@ async fn append_authorized(
         .request_subsystem(true, "sftp")
         .await
         .map_err(|error| AppError::Ssh(format!("sftp.subsystem: {error}")))?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .map_err(|error| AppError::Ssh(format!("sftp.error: {error}")))?;
-
-    let home = sftp.canonicalize(".").await.unwrap_or_else(|_| ".".into());
-    let directory = format!("{}/.ssh", home.trim_end_matches('/'));
-    let _ = sftp.create_dir(&directory).await;
-    let file = format!("{directory}/authorized_keys");
-    let existing = authorized_contents(sftp.read(&file).await)?;
-
-    let mut written = false;
-    if let Some(next) = merge_authorized(&existing, public) {
-        target.verify(app)?;
-        sftp.write(&file, next.as_bytes())
-            .await
-            .map_err(|error| AppError::Ssh(format!("sftp.error: {error}")))?;
-        written = true;
-    }
-
-    let _ = sftp.close().await;
-    Ok(written)
+    // Dropping this private raw session closes its stream and outstanding
+    // handles, including cancellation/error paths. WRITE and CLOSE statuses
+    // themselves must be acknowledged before the host's auth settings change.
+    let sftp = RawSftpSession::new(channel.into_stream());
+    sftp.init().await.map_err(key_error)?;
+    authorized::append(&sftp, public, || target.verify_background(app)).await
 }
 
 /// Authenticates with the password the user just typed, appends the public key
@@ -125,7 +57,10 @@ pub async fn install(
         .state::<AppState>()
         .db
         .with(|conn| db::hosts::find_host(conn, host_id))?;
-    let target = Target::from_displayed(app, &host)?;
+    let captured_app = app.clone();
+    let target =
+        crate::services::credentials::inspect(move || Target::from_displayed(&captured_app, &host))
+            .await?;
     install_target(app, target, password, jump_credentials).await
 }
 
@@ -146,18 +81,33 @@ pub(crate) async fn install_target(
     password: Option<String>,
     jump_credentials: std::collections::HashMap<String, super::session::HopCredential>,
 ) -> AppResult<InstalledKey> {
-    let state = app.state::<AppState>();
-    let host_id = target.host_id();
-    target.verify(app)?;
-    state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
-    let (path, public) = ensure_keypair(state.storage.dir(crate::storage::layout::Category::Keys))?;
+    let host_id = target.host_id().to_owned();
+    let directory = app
+        .state::<AppState>()
+        .storage
+        .dir(crate::storage::layout::Category::Keys)
+        .to_owned();
+    let preparing_app = app.clone();
+    let (target, (path, public)) = crate::services::credentials::checked(move |job| {
+        // No database guard spans OS proxy reads or filesystem/key generation.
+        // Local key publication is distinct from the later remote/DB effects.
+        target.verify(&preparing_app)?;
+        preparing_app
+            .state::<AppState>()
+            .db
+            .with(|conn| db::hosts::find_host(conn, target.host_id()))?;
+        job.commit()?;
+        let pair = ensure_keypair(&directory)?;
+        Ok((target, pair))
+    })
+    .await?;
 
     let session = target
         .connect(
             app.clone(),
             SshConnectRequest {
                 jump_credentials,
-                host_id: host_id.to_string(),
+                host_id: host_id.clone(),
                 background: true,
                 purpose: None,
                 password,
@@ -177,66 +127,21 @@ pub(crate) async fn install_target(
     append_authorized(app, &session.id, &public, &target).await?;
 
     let key_path = path.to_string_lossy().into_owned();
-    target.with_current(app, |conn| {
-        db::hosts::set_key_auth(conn, host_id, &key_path)
-    })?;
+    let committing_app = app.clone();
+    let committing_path = key_path.clone();
+    crate::services::credentials::checked(move |job| {
+        // with_current performs slow transport inspection before taking the
+        // short DB guard, then validates the ORIGINAL captured configuration.
+        target.with_current(&committing_app, |conn| {
+            job.commit()?;
+            db::hosts::set_key_auth(conn, &host_id, &committing_path)
+        })
+    })
+    .await?;
 
+    crate::services::credentials::schedule_cleanup(app);
     Ok(InstalledKey {
         public_key: public,
         key_path,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const LINE: &str = "ssh-ed25519 AAAAC3Nza tunnelde";
-
-    #[test]
-    fn appends_a_missing_key() {
-        assert_eq!(
-            merge_authorized("", LINE),
-            Some("ssh-ed25519 AAAAC3Nza tunnelde\n".into())
-        );
-        assert_eq!(
-            merge_authorized("ssh-rsa AAAA other", LINE),
-            Some("ssh-rsa AAAA other\nssh-ed25519 AAAAC3Nza tunnelde\n".into())
-        );
-    }
-
-    #[test]
-    fn skips_an_existing_key() {
-        assert_eq!(merge_authorized(LINE, LINE), None);
-        assert_eq!(
-            merge_authorized("ssh-rsa AAAA other\nssh-ed25519 AAAAC3Nza tunnelde\n", LINE),
-            None
-        );
-    }
-
-    #[test]
-    fn only_a_missing_authorized_file_is_treated_as_empty() {
-        use russh_sftp::client::error::Error;
-        use russh_sftp::protocol::Status;
-
-        let status = |status_code| {
-            Error::Status(Status {
-                id: 0,
-                status_code,
-                error_message: String::new(),
-                language_tag: String::new(),
-            })
-        };
-        assert_eq!(
-            authorized_contents(Err(status(StatusCode::NoSuchFile))).unwrap(),
-            ""
-        );
-        assert!(authorized_contents(Err(status(StatusCode::PermissionDenied))).is_err());
-        assert!(authorized_contents(Err(Error::Timeout)).is_err());
-        assert!(authorized_contents(Ok(vec![0xff])).is_err());
-        assert_eq!(
-            authorized_contents(Ok(b"existing key\n".to_vec())).unwrap(),
-            "existing key\n"
-        );
-    }
 }

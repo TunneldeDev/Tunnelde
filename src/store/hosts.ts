@@ -6,6 +6,7 @@ import type { Group, Host, HostInput } from "@/lib/api/types";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 import { useSsh } from "@/store/ssh";
+import type { HostEdit, HostSaved } from "@/lib/api/credentials";
 
 interface HostsStore {
   groups: Group[];
@@ -14,6 +15,8 @@ interface HostsStore {
   loading: boolean;
   load: () => Promise<boolean>;
   setSourceHosts: (hosts: Host[]) => void;
+  receiveSavedHost: (host: Host) => void;
+  saveHostEditor: (edit: HostEdit) => Promise<HostSaved>;
   createHost: (input: HostInput) => Promise<Host | null>;
   updateHost: (id: string, input: HostInput) => Promise<Host | null>;
   deleteHost: (id: string) => Promise<boolean>;
@@ -101,6 +104,31 @@ export const useHosts = create<HostsStore>((set, get) => ({
   loading: false,
   setSourceHosts: (hosts) =>
     set((state) => ({ hosts: [...state.hosts.filter((host) => !host.source), ...hosts] })),
+
+  receiveSavedHost: (host) => {
+    editVersion++;
+    set((state) => ({
+      hosts: state.hosts.some((item) => item.id === host.id)
+        ? state.hosts.map((item) => (item.id === host.id ? host : item))
+        : [...state.hosts, host],
+      loading: false,
+    }));
+    useSsh.getState().renameHost(host.id, host.name);
+  },
+
+  saveHostEditor: async (edit) => {
+    const snapshot = snapshotVersion;
+    const revision = editVersion;
+    const result = await api.saveHostEditor(edit);
+    // The native command may wait on an OS prompt after fields are committed.
+    // A newer snapshot/edit must win over those earlier committed fields.
+    if (snapshot === snapshotVersion && revision === editVersion) {
+      get().receiveSavedHost(result.host);
+    } else {
+      await get().load();
+    }
+    return result;
+  },
 
   load: async () => {
     if (running) await new Promise<void>((resolve) => idleWaiters.push(resolve));

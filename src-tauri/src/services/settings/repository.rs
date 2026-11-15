@@ -47,6 +47,10 @@ pub(super) fn save_guarded(
     let revision = uuid::Uuid::new_v4().to_string();
     let transaction = conn.unchecked_transaction()?;
     before(&transaction)?;
+    if !next.editor_draft_recovery && crate::db::settings::load(&transaction)?.editor_draft_recovery
+    {
+        crate::services::editor::recovery::clear(&transaction)?;
+    }
     crate::db::settings::save(&transaction, next)?;
     transaction.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)

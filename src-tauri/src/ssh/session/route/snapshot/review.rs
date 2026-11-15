@@ -23,7 +23,7 @@ pub(super) fn revision(
             let host = &node.host;
             serde_json::json!([
                 host.id, host.host, host.port, host.username,
-                host.auth_method, host.key_path, node.key
+                host.auth_method, host.key_path, node.key, node.incarnation, node.trust_incarnation
             ])
         }).collect::<Vec<_>>()
     });

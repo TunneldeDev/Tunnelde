@@ -42,7 +42,8 @@ pub async fn forwarding_provider_connect(
         .guard(state.plugins.security.guard(&scope.lease, async {
             let session = tokio::time::timeout(std::time::Duration::from_secs(120), async {
                 if let Some(review) = &review {
-                    crate::ssh::session::review::Target::capture(&app, review)?
+                    crate::ssh::session::review::Target::capture_background(&app, review)
+                        .await?
                         .connect(app.clone(), request, false, false)
                         .await
                 } else {

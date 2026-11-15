@@ -72,7 +72,12 @@ fn independent_schema_covers_exactly_the_public_projection() {
             assert!(!values[group.id][public].is_null() || public == "sort");
         }
     }
-    let excluded = ["uiProviders", "lastUpdateCheck", "skippedVersion"];
+    let excluded = [
+        "uiProviders",
+        "lastUpdateCheck",
+        "skippedVersion",
+        "editorDraftRecovery",
+    ];
     let covered: std::collections::HashSet<_> = mapped
         .iter()
         .map(|path| path.split('.').next().unwrap())

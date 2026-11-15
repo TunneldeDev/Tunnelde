@@ -9,6 +9,7 @@ import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 import type { ApplySettingsProfile } from "@/lib/prefs/profiles";
+import type { ProxyEdit, ProxySaved } from "@/lib/api/credentials";
 
 let requestedLocale: string | undefined;
 let appliedLocale: string | undefined;
@@ -47,6 +48,7 @@ interface SettingsStore {
   applyProfile: (request: ApplySettingsProfile) => Promise<boolean>;
   reset: () => Promise<void>;
   applyRemote: (settings: Settings) => void;
+  saveProxyProfile: (edit: ProxyEdit) => Promise<ProxySaved>;
 }
 
 export function applySettings(settings: Settings): void {
@@ -75,6 +77,9 @@ export const useSettings = create<SettingsStore>((set, get) => {
   let loading: Promise<void> | null = null;
   let confirmed = DEFAULT_SETTINGS;
   let remoteRevision = 0;
+  let requestOrder = 0;
+  let appliedOrder = 0;
+  let proxySaving = 0;
   const pending: SettingsPatch[] = [];
   const display = () => {
     const settings = pending.reduce<Settings>(
@@ -82,7 +87,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
       confirmed,
     );
     applySettings(settings);
-    set({ settings, saving: pending.length > 0 });
+    set({ settings, saving: pending.length > 0 || proxySaving > 0 });
   };
   const commit = (
     patch: SettingsPatch,
@@ -96,6 +101,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
       let ok = true;
       try {
         const revision = remoteRevision;
+        const order = ++requestOrder;
         const saved = isTauri()
           ? await (profile
               ? api.applySettingsProfile(profile)
@@ -105,7 +111,10 @@ export const useSettings = create<SettingsStore>((set, get) => {
           : { ...confirmed, ...patch };
         // Native events can overtake their invocation response. A confirmed
         // later event must not be replaced by an older write's return value.
-        if (revision === remoteRevision) confirmed = saved;
+        if (revision === remoteRevision && order >= appliedOrder) {
+          confirmed = saved;
+          appliedOrder = order;
+        }
         set({ error: null });
       } catch (error) {
         ok = false;
@@ -136,9 +145,15 @@ export const useSettings = create<SettingsStore>((set, get) => {
           return;
         }
         const revision = remoteRevision;
+        const order = ++requestOrder;
         const [settings, info] = await Promise.allSettled([api.settings(), api.appInfo()]);
-        if (settings.status === "fulfilled" && revision === remoteRevision) {
+        if (
+          settings.status === "fulfilled" &&
+          revision === remoteRevision &&
+          order >= appliedOrder
+        ) {
           confirmed = settings.value;
+          appliedOrder = order;
         }
         if (info.status === "fulfilled") set({ info: info.value });
         const failed =
@@ -154,6 +169,30 @@ export const useSettings = create<SettingsStore>((set, get) => {
     },
 
     update: (patch) => commit(patch),
+    saveProxyProfile: (edit) => {
+      const captured = structuredClone(edit);
+      if (pending.length === 0) confirmed = get().settings;
+      proxySaving++;
+      display();
+      const task = queue.then(async () => {
+        const revision = remoteRevision;
+        const order = ++requestOrder;
+        try {
+          const result = await api.saveProxyProfile(captured);
+          if (revision === remoteRevision && order >= appliedOrder) {
+            confirmed = result.settings;
+            appliedOrder = order;
+          }
+          return result;
+        } finally {
+          proxySaving--;
+          display();
+        }
+      });
+      // Native field persistence uses its ordered writer, which ends before
+      // OS access. A Keychain prompt must not stall unrelated preference IPC.
+      return task;
+    },
     // The server selects the saved body. Do not optimistically apply a stale UI copy.
     applyProfile: (request) =>
       isTauri() ? commit({}, false, structuredClone(request)) : Promise.resolve(false),

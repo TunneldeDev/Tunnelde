@@ -23,6 +23,7 @@ import { registerBackgroundTaskSources } from "./backgroundTaskSources";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import { createPluginActivationBridge } from "./plugins/activationBridge";
 import { reportError } from "@/lib/diagnostics";
+import { startDraftRecovery } from "@/lib/editor/recovery/persistence";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
@@ -94,8 +95,9 @@ async function start(signal: AbortSignal): Promise<void> {
   await Promise.all([usePluginSecurity.getState().load(), usePlugins.getState().load()]);
   if (signal.aborted) return;
   let restored = false;
+  let resumed = false;
   try {
-    const resumed = await restoreBackgroundSnapshot();
+    resumed = await restoreBackgroundSnapshot();
     const records = resumed ? [] : await api.tabs();
     if (signal.aborted) return;
     // A slow snapshot must not replace tabs opened while startup is in progress.
@@ -111,6 +113,12 @@ async function start(signal: AbortSignal): Promise<void> {
   const hostsLoaded = await useHosts.getState().load();
   if (signal.aborted) return;
   if (hostsLoaded) pruneMissingHosts();
+  try {
+    cleanups.push(await startDraftRecovery(signal, resumed));
+  } catch (error) {
+    if (!signal.aborted) toast(translateError(error), "error");
+  }
+  if (signal.aborted) return;
   await useSsh.getState().refresh();
   if (signal.aborted) return;
   // The global background task list must work before any file page is opened.

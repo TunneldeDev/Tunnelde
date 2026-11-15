@@ -227,6 +227,59 @@ fn registrations_and_early_cancellations_have_bounded_capacity() {
     assert_eq!(ssh.diagnostics.lock().unwrap().cancelled.len(), 64);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn cancelling_during_route_capture_releases_registration_and_prevents_late_measurement() {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    let ssh = Arc::new(SshManager::default());
+    let id = uuid::Uuid::new_v4().to_string();
+    let request_id = id.clone();
+    let owned = ssh.clone();
+    let (started, ready) = tokio::sync::oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let (finished, completion) = tokio::sync::oneshot::channel();
+    let measured = Arc::new(AtomicBool::new(false));
+    let observed = measured.clone();
+    let request = tokio::spawn(async move {
+        run_registered(&owned, &request_id, "target", async {
+            crate::services::credentials::checked(move |job| {
+                started.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
+                let admitted = job.commit();
+                finished.send(admitted.is_ok()).unwrap();
+                admitted
+            })
+            .await?;
+            observed.store(true, Ordering::Release);
+            Ok::<_, AppError>(())
+        })
+        .await
+    });
+    ready.await.unwrap();
+    cancel(&ssh, &id);
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), request)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err()
+            .to_string(),
+        "ssh.testCancelled"
+    );
+    assert!(ssh.diagnostics.lock().unwrap().running.is_empty());
+    let replacement_id = uuid::Uuid::new_v4().to_string();
+    let (_guard, _) = register(&ssh, &replacement_id, "target").unwrap();
+    release.send(()).unwrap();
+    assert!(!tokio::time::timeout(Duration::from_secs(2), completion)
+        .await
+        .unwrap()
+        .unwrap());
+    assert!(!measured.load(Ordering::Acquire));
+}
+
 #[tokio::test]
 #[ignore = "requires the explicitly configured disposable SSH test host and its reviewed fingerprint"]
 async fn live_handshakes_without_login_or_remote_commands() {

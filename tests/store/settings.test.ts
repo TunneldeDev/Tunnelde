@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppInfo, Settings } from "@/lib/api/types";
+import type { ProxySaved } from "@/lib/api/credentials";
 import { createDefaultSettings, DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   resetSettings: vi.fn(),
   setLocale: vi.fn(),
   setLanguage: vi.fn(),
+  saveProxyProfile: vi.fn(),
   toast: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks, isTauri: () => true }));
@@ -49,6 +51,57 @@ beforeEach(() => {
 });
 
 describe("settings persistence", () => {
+  it("allows unrelated preferences to commit during a slow proxy password prompt", async () => {
+    const store = await fresh();
+    await store.getState().load();
+    const response = deferred<ProxySaved>();
+    mocks.saveProxyProfile.mockReturnValueOnce(response.promise);
+    const saving = store.getState().saveProxyProfile({
+      profile: {
+        id: "qa",
+        name: "QA",
+        protocol: "http",
+        host: "localhost",
+        port: 7890,
+        username: "",
+      },
+      credential: { action: "save", password: "test-only" },
+    });
+    await vi.waitFor(() => expect(mocks.saveProxyProfile).toHaveBeenCalledOnce());
+    expect(await store.getState().update({ monoFontSize: 23 })).toBe(true);
+    expect(store.getState().settings.monoFontSize).toBe(23);
+    response.resolve({ settings: DEFAULT_SETTINGS, credentialError: null });
+    await saving;
+    expect(store.getState().settings.monoFontSize).toBe(23);
+    expect(store.getState().saving).toBe(false);
+  });
+  it("retains newer native preferences while a compound proxy credential response is pending", async () => {
+    const store = await fresh();
+    await store.getState().load();
+    const response = deferred<ProxySaved>();
+    mocks.saveProxyProfile.mockReturnValueOnce(response.promise);
+    const saving = store.getState().saveProxyProfile({
+      profile: {
+        id: "qa",
+        name: "QA",
+        protocol: "http",
+        host: "localhost",
+        port: 7890,
+        username: "",
+      },
+      credential: { action: "save", password: "test-only" },
+    });
+    await vi.waitFor(() => expect(mocks.saveProxyProfile).toHaveBeenCalledOnce());
+    const newer = { ...DEFAULT_SETTINGS, monoFontSize: 23 };
+    store.getState().applyRemote(newer);
+    response.resolve({
+      settings: { ...DEFAULT_SETTINGS, monoFontSize: 18 },
+      credentialError: null,
+    });
+    await saving;
+    expect(store.getState().settings).toEqual(newer);
+    expect(store.getState().saving).toBe(false);
+  });
   it.each(["profile", "write", "reset"] as const)(
     "keeps newer native events when a %s response arrives late",
     async (kind) => {

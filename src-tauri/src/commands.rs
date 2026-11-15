@@ -552,16 +552,6 @@ pub async fn ssh_install_key(
 }
 
 #[tauri::command]
-pub async fn credential_save(app: AppHandle, host_id: String, password: String) -> AppResult<()> {
-    crate::services::credentials::save(app, host_id, password).await
-}
-
-#[tauri::command]
-pub async fn credential_forget(app: AppHandle, host_id: String) -> AppResult<()> {
-    crate::services::credentials::forget(app, host_id).await
-}
-
-#[tauri::command]
 pub async fn credential_status(app: AppHandle, host_id: String) -> AppResult<bool> {
     crate::services::credentials::status(app, host_id).await
 }

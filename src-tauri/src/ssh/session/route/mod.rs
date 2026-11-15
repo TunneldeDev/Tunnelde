@@ -1,7 +1,7 @@
 //! Connect only captured endpoints, with explicit cleanup across every await.
 mod snapshot;
 use super::*;
-pub(super) use snapshot::Snapshot;
+pub(super) use snapshot::{Observed, Snapshot};
 
 pub(super) async fn open(
     app: &AppHandle,
@@ -20,7 +20,7 @@ pub(super) async fn open(
     }
     let mut pending = PendingRoute::default();
     for (index, node) in snapshot.nodes.iter().enumerate() {
-        snapshot.verify(app)?;
+        snapshot.verify_background(app).await?;
         let host = &node.host;
         let expected = if let Some(destination) = destination.filter(|_| host.id == target.id) {
             Some(destination.server_key.clone())
@@ -50,7 +50,7 @@ pub(super) async fn open(
         pending.target = Some(handle);
         // No credentials are sent after a host, route, proxy or trust edit.
         // The sockets still use the snapshot even if an edit races this check.
-        snapshot.verify(app)?;
+        snapshot.verify_background(app).await?;
         let status = match node.key.as_deref() {
             None => HostKeyStatus::Unknown,
             Some(key) if key == observed.fingerprint => HostKeyStatus::Known,
@@ -84,7 +84,7 @@ pub(super) async fn open(
             cols: 120,
             rows: 32,
         };
-        let request = snapshot.authentication(app, host, &request)?;
+        let request = snapshot.authentication(app, host, &request).await?;
         tokio::time::timeout(
             CONNECT_TIMEOUT,
             authenticate(
@@ -95,7 +95,7 @@ pub(super) async fn open(
         )
         .await
         .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
-        snapshot.verify(app)?;
+        snapshot.verify_background(app).await?;
         pending
             .jumps
             .push(Arc::new(pending.target.take().expect("authenticated jump")));
@@ -122,6 +122,6 @@ pub(super) async fn probe(
     .await;
     pending.target.take();
     pending.jumps.clear();
-    snapshot.verify(app)?;
+    snapshot.verify_background(app).await?;
     Ok(info)
 }

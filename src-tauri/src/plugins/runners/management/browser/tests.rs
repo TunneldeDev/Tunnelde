@@ -8,7 +8,7 @@ use crate::{
 };
 use std::sync::{Arc, Mutex};
 
-fn pending() -> Arc<Pending> {
+pub(super) fn pending() -> Arc<Pending> {
     let coordinator = Coordinator::default();
     let record: Record = serde_json::from_value(serde_json::json!({
         "runnerId":"task", "stopPending":false,
@@ -159,4 +159,27 @@ fn saved_destination_changes_are_rejected_before_transport_acquisition() {
     let mut renamed = host;
     renamed.name = "Renamed".into();
     assert!(expected.verify_host(&renamed).is_ok());
+}
+
+#[test]
+fn final_registry_admission_never_runs_for_a_removed_or_replacement_pending() {
+    let registry = Registry::default();
+    let old = pending();
+    registry.insert("same".into(), old.clone()).unwrap();
+    registry.with_current(&old, || Ok(())).unwrap();
+    registry.remove("same").unwrap();
+    let next = pending();
+    registry.insert("same".into(), next.clone()).unwrap();
+    assert_eq!(
+        registry
+            .with_current(&old, || -> crate::error::AppResult<()> {
+                panic!("stale effect admitted")
+            })
+            .err()
+            .unwrap()
+            .to_string(),
+        "plugin.runners.browserExpired"
+    );
+    registry.with_current(&next, || Ok(())).unwrap();
+    assert!(!*next.cancelled.borrow());
 }

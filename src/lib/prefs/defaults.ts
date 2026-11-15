@@ -73,6 +73,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     editorWordWrap: false,
     editorTabSize: 4,
     editorSpellCheck: false,
+    editorDraftRecovery: false,
     monitorIntervalMs: 3000,
   };
 }

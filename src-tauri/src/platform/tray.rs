@@ -110,37 +110,11 @@ fn handle_menu(app: &AppHandle, id: &str) {
             crate::update::spawn_check(app.clone());
         }
         "restart" => {
-            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-            let chinese = is_chinese(&app.state::<AppState>().locale());
-            let (title, message, yes, no) = if chinese {
-                (
-                    "重启 Tunnelde？",
-                    "重启会断开连接、中断后台任务并丢失未保存的编辑。请先保存工作。",
-                    "重启",
-                    "取消",
-                )
-            } else {
-                ("Restart Tunnelde?", "Restarting disconnects sessions, interrupts background tasks and discards unsaved edits. Save your work first.", "Restart", "Cancel")
-            };
-            let handle = app.clone();
-            app.dialog()
-                .message(message)
-                .title(title)
-                .buttons(MessageDialogButtons::OkCancelCustom(yes.into(), no.into()))
-                .show(move |confirmed| {
-                    if confirmed {
-                        if let Err(error) = crate::platform::restart::restart(&handle) {
-                            tracing::error!(%error, "could not restart Tunnelde");
-                            handle
-                                .dialog()
-                                .message(error.to_string())
-                                .title("Tunnelde")
-                                .show(|_| {});
-                        }
-                    }
-                });
+            super::application_actions::request(app, super::application_actions::Action::Restart);
         }
-        "quit" => app.exit(0),
+        "quit" => {
+            super::application_actions::request(app, super::application_actions::Action::Quit)
+        }
         _ => {}
     }
 }

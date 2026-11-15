@@ -41,6 +41,23 @@ impl Registry {
             .ok_or_else(|| AppError::validation("plugin.runners.browserExpired"))
     }
 
+    /// Final short native admission. Lock order is registry -> connection -> metadata.
+    /// No OS access or await may run inside the effect.
+    pub(super) fn with_current<T>(
+        &self,
+        expected: &Pending,
+        effect: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        if !entries
+            .values()
+            .any(|pending| std::ptr::eq(pending.as_ref(), expected))
+        {
+            return Err(AppError::validation("plugin.runners.browserExpired"));
+        }
+        effect()
+    }
+
     pub(super) fn insert(&self, id: String, pending: Arc<Pending>) -> AppResult<()> {
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         if entries.len() >= 8 || entries.contains_key(&id) {
