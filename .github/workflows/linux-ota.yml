@@ -51,7 +51,7 @@ jobs:
       - name: Install disposable graphical session dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libxdo3 xvfb xauth dbus-x11 openbox at-spi2-core python3-pyatspi libatk-adaptor xdotool imagemagick
+          sudo apt-get install --no-install-recommends -y libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libxdo3 xvfb xauth dbus-x11 openbox at-spi2-core python3-pyatspi libatk-adaptor xdotool imagemagick tesseract-ocr
       - name: Probe public AppImage and native accessibility
         env:
           GH_TOKEN: ${{ github.token }}

@@ -83,9 +83,12 @@ def main():
 
     def capture(label, role, prefix):
         path = evidence / (label + '.png')
+        control = evidence / (label + '-control.png')
         samples = report.setdefault('captureColorCounts', {}).setdefault(label, [])
+        matching_frames = 0
 
         def painted():
+            nonlocal matching_frames
             target = find_element(accessible, role, prefix)
             if target is None:
                 return False
@@ -94,16 +97,20 @@ def main():
                 return False
             execute(['import', '-window', 'root', str(path)])
             crop = f'{rect.width}x{rect.height}+{rect.x}+{rect.y}'
-            colors = int(execute(['convert', str(path), '-crop', crop, '+repage',
-                                  '-format', '%k', 'info:']).stdout)
-            samples.append(dict(colors=colors, bounds=crop))
-            # Restrict the gate to the expected native control. The window frame
-            # itself has hundreds of colors even when the web content is blank.
-            # Actual screenshots still require review; this does not recognize text.
-            return colors > 32
+            execute(['convert', str(path), '-crop', crop, '+repage', str(control)])
+            colors = int(execute(['identify', '-format', '%k', str(control)]).stdout)
+            text = execute(['tesseract', str(control), 'stdout', '--psm', '6']).stdout
+            expected_visible = prefix.lower() in ' '.join(text.lower().split())
+            samples.append(dict(colors=colors, bounds=crop, text=text,
+                                expectedVisible=expected_visible))
+            # Accessibility and paint can advance at different times. Colors from
+            # an older list are insufficient: require the expected control's text
+            # in two actual captures. Screenshots still require human review.
+            matching_frames = matching_frames + 1 if expected_visible and colors > 32 else 0
+            return matching_frames >= 2
 
         time.sleep(.5)  # AT-SPI state can precede the corresponding painted frame.
-        wait(painted, 8)
+        wait(painted, 12)
 
     try:
         import pyatspi
