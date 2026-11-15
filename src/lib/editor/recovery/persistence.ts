@@ -55,8 +55,14 @@ export async function startDraftRecovery(
       consentChanged = true;
     }
   });
-  const snapshot = await api.editorDraftsRead().finally(stopWatchingConsent);
-  if (signal.aborted) return () => {};
+  const snapshot = await api.editorDraftsRead().catch((error) => {
+    stopWatchingConsent();
+    throw error;
+  });
+  if (signal.aborted) {
+    stopWatchingConsent();
+    return () => {};
+  }
   let revision = snapshot.revision;
   if (!resumed && !consentChanged && useSettings.getState().settings.editorDraftRecovery) {
     for (const draft of snapshot.drafts) useWorkspace.getState().restoreEditorDraft(draft);
@@ -155,6 +161,9 @@ export async function startDraftRecovery(
     if (enabled && !state.saving) schedule();
     else clearTimeout(timer);
   });
+  // Transfer observation without a promise-delivery gap: even an off/on
+  // interleaved with the read response must retire the old recovery snapshot.
+  stopWatchingConsent();
   const stop = () => {
     stopped = true;
     if (activeFlush === flush) activeFlush = undefined;
