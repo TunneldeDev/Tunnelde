@@ -145,7 +145,11 @@ environment with explicitly authorized native GUI access is then needed.
 
 The separate **Original public macOS GUI and OTA acceptance** workflow implements
 the next inspection stage. Dispatch `macos-public-ota.yml` from the reviewed
-branch with `acknowledgement=original-public-ota`. Mode `inspect` checks controls
+branch with `acknowledgement=original-public-ota` and explicit `from`/`to` tags
+(for example `from=v1.3.1`, `to=v1.4.0`, once both are public). Both must be
+canonical stable versions and the target must be numerically newer; drafts,
+prereleases, equal versions and downgrades are rejected. The separate capability
+probe retains its historical fixed pair. Mode `inspect` checks controls
 and normal Quit; mode `upgrade` attempts the real signed update; `retention` adds
 the nonempty-data checks described below. PR checks test archive rejection, compile the
 external native driver and verify refusal before GUI/profile access.
@@ -179,7 +183,12 @@ Using native GUI controls, it saves a named settings profile and a synthetic hos
 with a random password in the disposable account's credential store. The password
 is neither passed in arguments nor captured in AX trees. Credential checks read
 only an opaque persistent item's reference and record its SHA-256, never its
-secret. The GUI must select exactly the fixed public target before installation.
+secret. The GUI must select exactly the requested public target before installation.
+For hosts saved by newer versions, the read-only profile reader resolves the
+published immutable credential binding before the native metadata lookup. Legacy
+hosts retain their original account. Tombstones, corrupt bindings and unpublished
+items fail; the runner neither falls back nor reads secret values. Both the
+binding identity and persistent item reference must survive the update.
 The runner never starts the target: it observes the updater's automatic relaunch,
 checks PID/start identity, installed version/code signature/reference binary hash,
 and actual native database path. It compares settings, profile and host records,
@@ -251,7 +260,7 @@ outside the core result:
    automatic relaunch need not inherit a temporary data override. Verify this
    location in both processes rather than assuming it.
 4. Use the real GUI's update check and install controls and ordinary public feed.
-   Require the selected version to equal `1.3.0`; if another release is selected,
+   Require the selected version to equal the requested `to` version; if another release is selected,
    stop and review the pair instead of pinning a fake feed or downgrading. Save
    screenshots, download/progress/error logs and the application's signature and
    native-bundle validation outcomes. Metadata selection alone is insufficient.
