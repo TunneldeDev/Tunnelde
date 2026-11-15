@@ -676,7 +676,8 @@ pub async fn probe_route(
     host_id: &str,
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    ProbeTarget::capture(app, host_id)?
+    ProbeTarget::capture(app, host_id)
+        .await?
         .probe(app, &credentials)
         .await
 }
@@ -688,15 +689,14 @@ pub async fn trust_route(
     expected_host_id: Option<&str>,
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    let host = crate::services::hosts::resolve(app, host_id)?;
-    let snapshot = route::Snapshot::capture(app, &host)?;
+    let snapshot = route::Snapshot::capture_background(app, host_id).await?;
     let info = route::probe(app, &snapshot, &credentials, None).await?;
     // Record only the key the user actually reviewed, never a newly observed key.
     if info.fingerprint != fingerprint || info.host_id != expected_host_id.unwrap_or(host_id) {
         return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
     }
 
-    snapshot.approve(app, &info)?;
+    snapshot.approve_background(app, &info).await?;
 
     Ok(HostKeyInfo {
         status: HostKeyStatus::Known,
@@ -724,8 +724,7 @@ async fn connect_for_auth(
     published: bool,
     destination: Option<&SessionIdentity>,
 ) -> AppResult<SessionInfo> {
-    let host = crate::services::hosts::resolve(&app, &request.host_id)?;
-    let snapshot = route::Snapshot::capture(&app, &host)?;
+    let snapshot = route::Snapshot::capture_background(&app, &request.host_id).await?;
     connect_captured(
         app,
         request,
@@ -745,8 +744,7 @@ async fn connect_captured(
     destination: Option<&SessionIdentity>,
     snapshot: &route::Snapshot,
 ) -> AppResult<SessionInfo> {
-    snapshot.verify(&app)?;
-    let state = app.state::<AppState>();
+    snapshot.verify_background(&app).await?;
     let mut host = snapshot.target().clone();
     if password_auth {
         host.auth_method = "password".into();
@@ -772,7 +770,7 @@ async fn connect_captured(
     .await
     .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
 
-    snapshot.verify(&app)?;
+    snapshot.verify_background(&app).await?;
     let terminal = prepare_terminal(
         pending.target.as_ref().expect("route target"),
         request.cols,
@@ -782,7 +780,7 @@ async fn connect_captured(
     .await?;
 
     let session_id = uuid::Uuid::new_v4().to_string();
-    let mut info = SessionInfo {
+    let info = SessionInfo {
         id: session_id.clone(),
         host_id: host.id.clone(),
         title: host.name.clone(),
@@ -798,81 +796,90 @@ async fn connect_captured(
         },
     };
 
-    snapshot.with_current(&app, |conn| {
-        if !host.id.starts_with(crate::plugins::host_sources::PREFIX) {
-            info.title = db::hosts::find_host(conn, &host.id)?.name;
-        }
-        let (handle, jumps) = pending.release();
-        let shared_handle = Arc::new(handle);
-        let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
-        let task_app = app.clone();
-        let task_session = session_id.clone();
+    let snapshot = snapshot.clone();
+    crate::services::credentials::checked(move |job| {
+        let info = snapshot.with_current(&app, |conn| {
+            job.commit()?;
+            let state = app.state::<AppState>();
+            let mut info = info;
+            if !host.id.starts_with(crate::plugins::host_sources::PREFIX) {
+                info.title = db::hosts::find_host(conn, &host.id)?.name;
+            }
+            let (handle, jumps) = pending.release();
+            let shared_handle = Arc::new(handle);
+            let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
+            let task_app = app.clone();
+            let task_session = session_id.clone();
 
-        let task_handle = Arc::clone(&shared_handle);
-        let task = tokio::spawn(async move {
-            if let Some((channel, startup)) = terminal {
-                pump_terminal(channel, rx, startup, |sequence, data| {
-                    emit_data(&task_app, &task_session, sequence, data)
-                })
-                .await;
-            } else {
-                loop {
-                    tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                            if task_handle.is_closed() { break; }
-                        }
-                        message = rx.recv() => match message {
-                            Some(WriterMsg::Detach(reply)) => { let _ = reply.send(0); }
-                            Some(WriterMsg::Close) | None => break,
-                            _ => {}
+            let task_handle = Arc::clone(&shared_handle);
+            let task = tokio::spawn(async move {
+                if let Some((channel, startup)) = terminal {
+                    pump_terminal(channel, rx, startup, |sequence, data| {
+                        emit_data(&task_app, &task_session, sequence, data)
+                    })
+                    .await;
+                } else {
+                    loop {
+                        tokio::select! {
+                            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                                if task_handle.is_closed() { break; }
+                            }
+                            message = rx.recv() => match message {
+                                Some(WriterMsg::Detach(reply)) => { let _ = reply.send(0); }
+                                Some(WriterMsg::Close) | None => break,
+                                _ => {}
+                            }
                         }
                     }
                 }
-            }
 
-            let removed = if let Some(state) = task_app.try_state::<AppState>() {
-                state.forwards.stop_session(&task_session);
-                state.monitor.forget(&task_session);
-                let removed = state.ssh.remove(&task_session);
-                state.plugins.forget_connection(&task_session);
-                removed
-            } else {
-                false
-            };
-            if removed {
-                let _ = task_app.emit(
-                    CLOSED_EVENT,
-                    ClosedPayload {
-                        session_id: task_session.clone(),
-                        reason: "closed".into(),
-                    },
-                );
-            }
-            if let Some(state) = task_app.try_state::<AppState>() {
-                state.mounts.stop_session(&task_session).await;
-            }
-        });
+                let removed = if let Some(state) = task_app.try_state::<AppState>() {
+                    state.forwards.stop_session(&task_session);
+                    state.monitor.forget(&task_session);
+                    let removed = state.ssh.remove(&task_session);
+                    state.plugins.forget_connection(&task_session);
+                    removed
+                } else {
+                    false
+                };
+                if removed {
+                    let _ = task_app.emit(
+                        CLOSED_EVENT,
+                        ClosedPayload {
+                            session_id: task_session.clone(),
+                            reason: "closed".into(),
+                        },
+                    );
+                }
+                if let Some(state) = task_app.try_state::<AppState>() {
+                    state.mounts.stop_session(&task_session).await;
+                }
+            });
 
-        state.ssh.insert(SessionHandle {
-            published,
-            user_managed: published,
-            server_key: observed.fingerprint,
-            _jumps: jumps,
-            remote_forwards,
-            info: info.clone(),
-            writer: tx,
-            task,
-            handle: shared_handle,
-        });
+            state.ssh.insert(SessionHandle {
+                published,
+                user_managed: published,
+                server_key: observed.fingerprint,
+                _jumps: jumps,
+                remote_forwards,
+                info: info.clone(),
+                writer: tx,
+                task,
+                handle: shared_handle,
+            });
 
-        Ok(())
-    })?;
+            Ok(info)
+        })?;
 
-    tracing::info!(host = %info.title, session = %session_id, "ssh session opened");
-    if published {
-        announce_connection(&app);
-    }
-    Ok(info)
+        // Publication owns its notifications even if reply delivery is lost.
+        // The database guard has ended before reconnect consumers are started.
+        tracing::info!(host = %info.title, session = %info.id, "ssh session opened");
+        if published {
+            announce_connection(&app);
+        }
+        Ok(info)
+    })
+    .await
 }
 
 pub(crate) fn announce_connection(app: &AppHandle) {

@@ -54,6 +54,19 @@ fn capture_nodes(
 }
 
 impl Snapshot {
+    pub(in super::super) async fn capture_background(
+        app: &AppHandle,
+        host_id: &str,
+    ) -> AppResult<Self> {
+        let app = app.clone();
+        let host_id = host_id.to_owned();
+        crate::services::credentials::inspect(move || {
+            let host = crate::services::hosts::resolve(&app, &host_id)?;
+            Self::capture(&app, &host)
+        })
+        .await
+    }
+
     pub(in super::super) fn capture(app: &AppHandle, host: &Host) -> AppResult<Self> {
         let state = app.state::<AppState>();
         let (route, nodes) = state.db.with(|conn| capture_configuration(conn, host))?;
@@ -95,7 +108,7 @@ impl Snapshot {
         host: &Host,
         request: &SshConnectRequest,
     ) -> AppResult<SshConnectRequest> {
-        self.verify(app)?;
+        self.verify_background(app).await?;
         let mut request = request.clone();
         if !matches!(host.auth_method.as_str(), "key" | "agent")
             && request
@@ -119,7 +132,7 @@ impl Snapshot {
             .await?;
             // Recheck after asynchronous delivery, before returning any value
             // to the route's next authentication step.
-            self.verify(app)?;
+            self.verify_background(app).await?;
         }
         Ok(request)
     }
@@ -132,14 +145,6 @@ impl Snapshot {
 
     /// Advance only the key the user approved, including saved aliases of the
     /// same endpoint. Other edits cannot be folded into a new review revision.
-    pub(in super::super) fn approve_reviewed(
-        &mut self,
-        app: &AppHandle,
-        info: &HostKeyInfo,
-    ) -> AppResult<()> {
-        self.approve_reviewed_checked(app, info, || Ok(()))
-    }
-
     pub(in super::super) fn approve_reviewed_checked(
         &mut self,
         app: &AppHandle,
@@ -190,8 +195,27 @@ impl Snapshot {
         self.with_current(app, |_| Ok(()))
     }
 
-    pub(in super::super) fn approve(&self, app: &AppHandle, info: &HostKeyInfo) -> AppResult<()> {
-        self.approve_checked(app, info, || Ok(()))
+    pub(in super::super) async fn verify_background(&self, app: &AppHandle) -> AppResult<()> {
+        let snapshot = self.clone();
+        let app = app.clone();
+        crate::services::credentials::checked(move |job| {
+            snapshot.with_current(&app, |_| job.check())
+        })
+        .await
+    }
+
+    pub(in super::super) async fn approve_background(
+        &self,
+        app: &AppHandle,
+        info: &HostKeyInfo,
+    ) -> AppResult<()> {
+        let snapshot = self.clone();
+        let app = app.clone();
+        let info = info.clone();
+        crate::services::credentials::checked(move |job| {
+            snapshot.approve_checked(&app, &info, || job.commit())
+        })
+        .await
     }
 
     fn approve_checked(
