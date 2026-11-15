@@ -398,6 +398,7 @@ jobs:
           if [ -r /dev/fuse ] && [ -w /dev/fuse ]; then
             cargo test --manifest-path src-tauri/Cargo.toml real_passive_sshfs_mount_resolves_owned_files -- --ignored --nocapture
             cargo test --locked --manifest-path src-tauri/Cargo.toml real_sshfs_session_bridge_is_owned_readonly_and_disconnects -- --ignored --nocapture
+            cargo test --locked --manifest-path src-tauri/Cargo.toml real_sshfs_pending_negotiation_and_readiness_do_not_block_registry -- --ignored --nocapture
           else
             echo 'FUSE device unavailable on this runner; real SSHFS mount test skipped.'
           fi
