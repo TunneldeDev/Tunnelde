@@ -2,11 +2,20 @@ use super::super::*;
 use russh::server::{self, Server as _, Session};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[derive(Clone, Copy, Default)]
+enum Mode {
+    #[default]
+    Normal,
+    PendingSubsystem,
+    PendingFilesystem,
+}
+
 #[derive(Default)]
 struct Server {
     channels: HashMap<russh::ChannelId, Channel<server::Msg>>,
     workers: Vec<JoinHandle<()>>,
     subsystems: Arc<AtomicUsize>,
+    mode: Mode,
 }
 
 impl server::Server for Server {
@@ -17,6 +26,7 @@ impl server::Server for Server {
             channels: HashMap::new(),
             workers: Vec::new(),
             subsystems: self.subsystems.clone(),
+            mode: self.mode,
         }
     }
 }
@@ -57,6 +67,13 @@ impl server::Handler for Server {
             session.channel_failure(id)?;
             return Ok(());
         }
+        if !matches!(self.mode, Mode::Normal) {
+            if matches!(self.mode, Mode::PendingFilesystem) {
+                session.channel_success(id)?;
+            }
+            self.subsystems.fetch_add(1, Ordering::SeqCst);
+            return Ok(());
+        }
         let channel = self.channels.remove(&id).expect("owned subsystem channel");
         let mut child = tokio::process::Command::new("/usr/lib/openssh/sftp-server")
             .stdin(std::process::Stdio::piped())
@@ -92,6 +109,18 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) async fn start() -> Self {
+        Self::start_configured(Mode::Normal).await
+    }
+
+    pub(super) async fn stalled() -> Self {
+        Self::start_configured(Mode::PendingSubsystem).await
+    }
+
+    pub(super) async fn pending_filesystem() -> Self {
+        Self::start_configured(Mode::PendingFilesystem).await
+    }
+
+    async fn start_configured(mode: Mode) -> Self {
         let socket = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
@@ -104,7 +133,12 @@ impl Fixture {
             keys: vec![key],
             ..server::Config::default()
         };
-        let mut server = Server::default();
+        let mut server = Server {
+            mode,
+            channels: HashMap::new(),
+            workers: Vec::new(),
+            subsystems: Arc::default(),
+        };
         let subsystems = server.subsystems.clone();
         let server = tokio::spawn(async move {
             server

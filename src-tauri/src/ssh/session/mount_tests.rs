@@ -5,6 +5,130 @@ use std::path::{Path, PathBuf};
 
 mod fixture;
 
+async fn pending_mount_keeps_registry_responsive(root: PathBuf, waiting_for_filesystem: bool) {
+    let ssh = Arc::new(SshManager::default());
+    let mounts = Arc::new(MountRegistry::default());
+    let fixture = if waiting_for_filesystem {
+        fixture::Fixture::pending_filesystem().await
+    } else {
+        fixture::Fixture::stalled().await
+    };
+    fixture.connect(&ssh, "pending").await;
+    let task_ssh = ssh.clone();
+    let task_mounts = mounts.clone();
+    let mount_request = request(&root, "mount", "pending");
+    let task = tokio::spawn(async move {
+        task_mounts
+            .mount(&task_ssh, "pending-owner", 1, mount_request)
+            .await
+    });
+    let assertions = async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while fixture.subsystem_count() == 0 {
+                assert!(
+                    !task.is_finished(),
+                    "mount exited before reaching subsystem negotiation"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("fixture never received SFTP request");
+        if waiting_for_filesystem {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let entries =
+                        tokio::time::timeout(Duration::from_millis(500), mounts.list(None))
+                            .await
+                            .expect("pending mount blocked list");
+                    if !entries.is_empty() {
+                        break;
+                    }
+                    assert!(!task.is_finished(), "mount exited before readiness wait");
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("mount was never registered");
+        }
+        tokio::time::timeout(Duration::from_millis(500), mounts.list(None))
+            .await
+            .expect("negotiation blocked mount list");
+        tokio::time::timeout(
+            Duration::from_millis(500),
+            mounts.stop_generation("unrelated", 99),
+        )
+        .await
+        .expect("negotiation blocked unrelated cleanup");
+        if waiting_for_filesystem {
+            tokio::time::timeout(
+                Duration::from_secs(4),
+                mounts.stop_generation("pending-owner", 1),
+            )
+            .await
+            .expect("readiness wait blocked owner revocation");
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while !task.is_finished() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("retired mount continued waiting");
+        }
+    };
+    // Keep cleanup outside the assertion task so a failed regression cannot
+    // leave an owned process or mount behind.
+    let result = std::panic::AssertUnwindSafe(assertions);
+    use futures_util::FutureExt;
+    let result = result.catch_unwind().await;
+    task.abort();
+    let mount_result = task.await;
+    if let Some(disposal) = ssh.begin_disconnect("pending") {
+        let _ = disposal.finish().await;
+    }
+    for mount in mounts.list(None).await {
+        mounts.unmount(&mount.owner, &mount.id, true).await.unwrap();
+    }
+    assert!(mounts.list(None).await.is_empty());
+    // The fixture never returns an SFTP VERSION, so FUSE must not publish a
+    // mount. Verify before the caller removes its isolated directories.
+    let table = std::fs::read_to_string("/proc/self/mountinfo").unwrap();
+    let mount_path = root
+        .join("mount")
+        .to_str()
+        .unwrap()
+        .replace('\\', "\\134")
+        .replace(' ', "\\040");
+    assert!(
+        !table
+            .lines()
+            .any(|line| line.split_whitespace().nth(4) == Some(mount_path.as_str())),
+        "pending mount still visible; preserve {}",
+        root.display()
+    );
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+    if waiting_for_filesystem {
+        assert!(mount_result.unwrap().is_err());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Linux sshfs and a usable FUSE device"]
+async fn real_sshfs_pending_negotiation_and_readiness_do_not_block_registry() {
+    assert_eq!(std::env::consts::OS, "linux");
+    for readiness in [false, true] {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-pending-mount-{}", uuid::Uuid::new_v4()));
+        for directory in ["source", "mount"] {
+            std::fs::create_dir_all(root.join(directory)).unwrap();
+        }
+        pending_mount_keeps_registry_responsive(root.clone(), readiness).await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
 fn request(root: &Path, directory: &str, session: &str) -> MountRequest {
     MountRequest {
         session_id: session.into(),

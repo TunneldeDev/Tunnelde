@@ -1,6 +1,7 @@
 //! SSHFS transports reuse an authenticated SSH channel. No credentials or
 //! unauthenticated local listening sockets are exposed to the mount program.
 mod lifecycle;
+mod negotiation;
 mod transport;
 use crate::{
     error::{AppError, AppResult},
@@ -613,8 +614,17 @@ impl MountRegistry {
         let transport = dependencies
             .transport
             .ok_or_else(|| AppError::validation("mounts.dependencies.required"))?;
-        // Serialize creation so two plugins cannot reserve the same drive or directory.
+        // Network negotiation must not hold the registry lock: a stalled server
+        // must not block unrelated mounts, listings, or revocation cleanup.
+        let handle = ssh.handle(&request.session_id)?;
+        let channel = negotiation::prepare(handle.clone()).await?;
+        // Serialize only publication so concurrent negotiations cannot spawn
+        // two processes targeting the same drive or directory.
         let mut mounts = self.mounts.lock().await;
+        if handle.is_closed() || !std::sync::Arc::ptr_eq(&handle, &ssh.handle(&request.session_id)?)
+        {
+            return Err(AppError::validation("mounts.transportClosed"));
+        }
         if mounts.values().any(|m| {
             if cfg!(windows) {
                 m.info
@@ -626,15 +636,6 @@ impl MountRegistry {
         }) {
             return Err(AppError::validation("mounts.mountPoint.inUse"));
         }
-        let handle = ssh.handle(&request.session_id)?;
-        let channel = handle
-            .channel_open_session()
-            .await
-            .map_err(|e| AppError::Ssh(e.to_string()))?;
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| AppError::Ssh(e.to_string()))?;
         let mut cmd = command(program);
         cmd.arg(format!("tunnelde:{}", request.remote_path))
             .arg(&request.mount_point)
@@ -659,8 +660,9 @@ impl MountRegistry {
             .take()
             .ok_or_else(|| AppError::internal("mounts.stdout"))?;
         let bridge = tokio::spawn(async move {
-            let _ = transport::bridge(channel.into_stream(), input, output).await;
+            let _ = transport::bridge(channel, input, output).await;
         });
+        let pending = lifecycle::PendingMount::new(&bridge);
         let info = MountInfo {
             id: uuid::Uuid::new_v4().to_string(),
             owner: owner.into(),
@@ -685,29 +687,50 @@ impl MountRegistry {
                 mount_device: None,
             },
         );
+        drop(mounts);
         // Register before awaiting readiness so cancellation/revocation still owns
         // the process and bridge. A live process alone is not a mounted filesystem.
         let ready = tokio::time::timeout(std::time::Duration::from_secs(15), async {
             loop {
-                let active = mounts.get_mut(&info.id).expect("registered mount");
-                if active.child.try_wait()?.is_some() || active.bridge.is_finished() {
-                    return Err(AppError::validation("mounts.startFailed"));
+                {
+                    let mut mounts = self.mounts.lock().await;
+                    let active = mounts
+                        .get_mut(&info.id)
+                        .ok_or_else(|| AppError::validation("mounts.transportClosed"))?;
+                    if active.child.try_wait()?.is_some() || active.bridge.is_finished() {
+                        return Err(AppError::validation("mounts.startFailed"));
+                    }
                 }
                 if mount_visible(&info.mount_point).await? {
                     #[cfg(windows)]
+                    let mapping = windows_device_mapping(&info.mount_point);
+                    #[cfg(target_os = "linux")]
+                    let mapping = {
+                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+                        mount_id_in_table(&table, &info.mount_point)
+                    };
+                    #[cfg(target_os = "macos")]
+                    let mapping = mac_mount_device(PathBuf::from(&info.mount_point))
+                        .await
+                        .ok();
+                    let mut mounts = self.mounts.lock().await;
+                    let active = mounts
+                        .get_mut(&info.id)
+                        .ok_or_else(|| AppError::validation("mounts.transportClosed"))?;
+                    if active.child.try_wait()?.is_some() || active.bridge.is_finished() {
+                        return Err(AppError::validation("mounts.startFailed"));
+                    }
+                    #[cfg(windows)]
                     {
-                        active.device_mapping = windows_device_mapping(&info.mount_point);
+                        active.device_mapping = mapping;
                     }
                     #[cfg(target_os = "linux")]
                     {
-                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
-                        active.mount_id = mount_id_in_table(&table, &info.mount_point);
+                        active.mount_id = mapping;
                     }
                     #[cfg(target_os = "macos")]
                     {
-                        active.mount_device = mac_mount_device(PathBuf::from(&info.mount_point))
-                            .await
-                            .ok();
+                        active.mount_device = mapping;
                     }
                     return Ok(());
                 }
@@ -716,11 +739,11 @@ impl MountRegistry {
         })
         .await
         .unwrap_or_else(|_| Err(AppError::validation("mounts.startTimeout")));
-        drop(mounts);
         if let Err(error) = ready {
             self.stop_resource(&info).await;
             return Err(error);
         }
+        pending.complete();
         Ok(info)
     }
     pub async fn unmount(&self, owner: &str, id: &str, force: bool) -> AppResult<()> {

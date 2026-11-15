@@ -533,6 +533,15 @@ Passwords and private keys are not passed in process arguments, and no local TCP
 bridge is exposed. Mount completion is reported after the mount appears in the
 operating system. Mount points are reserved across providers.
 
+SSH channel and SFTP startup share a 15-second deadline. SSHFS starts only after
+the server accepts the subsystem; rejection and timeout show separate errors.
+Negotiation and mount-readiness polling do not hold the global mount registry
+lock. Cancelling a request closes its confirmed channel; a late confirmation is
+also closed. At most eight unconfirmed/negotiating requests can remain pending.
+If a server never confirms a channel, its slot stays occupied until that session
+closes or confirms, so repeated retries cannot create unlimited waiters. Existing
+SSH channels remain usable; reconnect the affected session to clear stalled opens.
+
 When either transport direction ends, the bridge closes the other endpoint's
 write side and allows up to two seconds to drain the other direction. If SSHFS
 keeps its output open, the bridge expires and the registry can retire the failed
