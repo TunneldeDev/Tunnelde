@@ -23,6 +23,8 @@ pub const CLOSED_EVENT: &str = "ssh://closed";
 
 mod cleanup;
 mod identity;
+#[cfg(test)]
+mod mount_tests;
 mod probe;
 pub(crate) mod review;
 mod route;

@@ -533,6 +533,11 @@ Passwords and private keys are not passed in process arguments, and no local TCP
 bridge is exposed. Mount completion is reported after the mount appears in the
 operating system. Mount points are reserved across providers.
 
+When either transport direction ends, the bridge closes the other endpoint's
+write side and drains any remaining response. A closed SSH subsystem therefore
+does not leave SSHFS waiting indefinitely for input EOF. This does not complete
+the operating system's unmount or restart a disconnected mount automatically.
+
 Use Unmount before disconnecting. Disconnect, plugin stop/revocation and app exit
 close authenticated access and attempt normal cleanup. If a directory is busy,
 close files using it and retry; forced unmount requires confirmation. Mounts do
