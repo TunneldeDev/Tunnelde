@@ -88,9 +88,10 @@ def main():
                     return found
         return None
 
-    def capture(label, role, prefix, root_node=None):
+    def capture(label, role, prefix, root_node=None, light_text=False):
         path = evidence / (label + '.png')
         control = evidence / (label + '-control.png')
+        ocr = evidence / (label + '-ocr.png')
         samples = report.setdefault('captureColorCounts', {}).setdefault(label, [])
         matching_frames = 0
 
@@ -106,7 +107,12 @@ def main():
             crop = f'{rect.width}x{rect.height}+{rect.x}+{rect.y}'
             execute(['convert', str(path), '-crop', crop, '+repage', str(control)])
             colors = int(execute(['identify', '-format', '%k', str(control)]).stdout)
-            text = execute(['tesseract', str(control), 'stdout', '--psm', '6']).stdout
+            # Small UI text needs scaling; primary buttons also need their light
+            # glyphs inverted onto a light background. Keep the original capture.
+            execute(['convert', str(control), '-resize', '300%', '-colorspace', 'Gray',
+                     *(['-negate'] if light_text else []), '-auto-level',
+                     '-bordercolor', 'white', '-border', '10', str(ocr)])
+            text = execute(['tesseract', str(ocr), 'stdout', '--psm', '6']).stdout
             expected_visible = prefix.lower() in ' '.join(text.lower().split())
             samples.append(dict(colors=colors, bounds=crop, text=text,
                                 expectedVisible=expected_visible))

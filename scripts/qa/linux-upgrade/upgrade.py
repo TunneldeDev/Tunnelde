@@ -91,7 +91,7 @@ def run_upgrade(driver, binary, data, evidence, report):
         return None
 
     button = driver.wait(install_button, 90)[0]
-    driver.capture('update-available', 'push button', 'Download and install', app)
+    driver.capture('update-available', 'push button', 'Download and install', app, light_text=True)
     rect = button.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
     assert rect.x >= 0 and rect.y >= 0 and rect.width > 0 and rect.height > 0
     initial_stat = binary.stat()
