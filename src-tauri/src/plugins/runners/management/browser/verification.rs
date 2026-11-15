@@ -22,10 +22,8 @@ pub(super) async fn probe(
         target.probe_bound(app, credentials, destination::identity(&pending.record)?),
     )
     .await?;
-    op.with_current(|_| {
-        target.verify(app)?;
-        Ok(info)
-    })
+    let observed = registry::guard(pending, target.observe_background(app)).await?;
+    op.with_current(|_| observed.with_current(app, |_| Ok(info)))
 }
 
 pub(super) async fn trust(
@@ -44,10 +42,11 @@ pub(super) async fn trust(
     if info.fingerprint != fingerprint || expected_host_id != Some(info.host_id.as_str()) {
         return Err(AppError::validation("ssh.hostKeyChanged"));
     }
+    let observed = registry::guard(pending, target.observe_background(app)).await?;
     op.with_current(|connection| {
         // Exact-record and cancellation authority remain held through the key
         // write and review advance. Only the captured endpoint can be approved.
-        let trusted = target.approve_checked(app, info, || {
+        let trusted = observed.approve(app, info, || {
             if *pending.cancelled.borrow() {
                 return Err(AppError::validation("plugin.runners.browserExpired"));
             }

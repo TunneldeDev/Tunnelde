@@ -81,3 +81,62 @@ pub fn url(
 
 #[cfg(test)]
 mod tests;
+
+/// Pure effective configuration; unrelated profiles and display names are excluded.
+/// No serialization/debug surface: this is native admission metadata only.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum Selected {
+    System,
+    Direct,
+    Profile {
+        id: String,
+        protocol: String,
+        host: String,
+        port: u16,
+        username: String,
+    },
+}
+impl Selected {
+    pub(crate) fn capture(
+        settings: &NetworkSettings,
+        feature: &str,
+        value: Option<&str>,
+    ) -> AppResult<Self> {
+        Ok(match Configured::capture(settings, feature, value)? {
+            Configured::System => Self::System,
+            Configured::Direct => Self::Direct,
+            Configured::Profile(p, _) => Self::Profile {
+                id: p.id.clone(),
+                protocol: p.protocol.clone(),
+                host: p.host.clone(),
+                port: p.port,
+                username: p.username.clone(),
+            },
+        })
+    }
+    pub(crate) fn update_review(&self, digest: &mut sha2::Sha256) {
+        use sha2::Digest;
+        let fields = match self {
+            Self::System => vec!["system".to_owned()],
+            Self::Direct => vec!["direct".to_owned()],
+            Self::Profile {
+                id,
+                protocol,
+                host,
+                port,
+                username,
+            } => vec![
+                "profile".to_owned(),
+                id.clone(),
+                protocol.clone(),
+                host.clone(),
+                port.to_string(),
+                username.clone(),
+            ],
+        };
+        for field in fields {
+            digest.update((field.len() as u64).to_le_bytes());
+            digest.update(field.as_bytes());
+        }
+    }
+}

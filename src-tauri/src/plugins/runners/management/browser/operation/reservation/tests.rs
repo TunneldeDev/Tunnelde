@@ -217,3 +217,106 @@ async fn absent_review_fails_without_occupying_the_connection() {
     assert!(result.is_err());
     assert!(!pending.connection.lock().unwrap().busy);
 }
+
+fn connected(acquired: bool) -> Arc<Pending> {
+    let pending = pending();
+    {
+        let mut connection = pending.connection.lock().unwrap();
+        connection.acquired = acquired;
+        connection.session = Some(crate::ssh::SessionInfo {
+            id: "private-session".into(),
+            host_id: "original".into(),
+            title: "Original".into(),
+            address: "qa@original:22".into(),
+            cols: 80,
+            rows: 24,
+            connected_at: 0,
+            terminal: false,
+            purpose: None,
+        });
+    }
+    pending
+}
+
+#[test]
+fn acceptance_reserves_existing_private_connection_and_preserves_its_original_review() {
+    let pending = connected(true);
+    let (reservation, review) = Reservation::accept(&pending, || Ok(())).unwrap();
+    assert_eq!(review.unwrap().identity(), "a".repeat(64));
+    assert!(pending.connection.lock().unwrap().busy);
+    assert_eq!(
+        Reservation::accept(&pending, || Ok(()))
+            .err()
+            .unwrap()
+            .to_string(),
+        "plugin.runners.busy"
+    );
+    assert!(pending.connection.lock().unwrap().session.is_some());
+    drop(reservation);
+    assert!(!pending.connection.lock().unwrap().busy);
+}
+
+#[test]
+fn reusable_session_acceptance_does_not_require_or_create_an_ssh_review() {
+    let pending = connected(false);
+    pending.connection.lock().unwrap().review = None;
+    let (reservation, review) = Reservation::accept(&pending, || Ok(())).unwrap();
+    assert!(review.is_none());
+    drop(reservation);
+    let mut connection = pending.connection.lock().unwrap();
+    connection.acquired = true;
+    drop(connection);
+    assert_eq!(
+        Reservation::accept(&pending, || Ok(()))
+            .err()
+            .unwrap()
+            .to_string(),
+        "plugin.runners.browserExpired"
+    );
+    assert!(!pending.connection.lock().unwrap().busy);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn final_acceptance_os_observation_can_be_cancelled_without_waiting_for_the_read() {
+    let pending = connected(true);
+    let registry = Arc::new(Registry::default());
+    registry.insert("accept".into(), pending.clone()).unwrap();
+    let (started, ready) = tokio::sync::oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let (settled, done) = tokio::sync::oneshot::channel();
+    let task_pending = pending.clone();
+    let task = tokio::spawn(async move {
+        let (_reservation, review) = Reservation::accept(&task_pending, || Ok(()))?;
+        assert_eq!(review.unwrap().identity(), "a".repeat(64));
+        registry::guard(
+            &task_pending,
+            crate::services::credentials::inspect(move || {
+                started.send(()).unwrap();
+                wait.recv_timeout(Duration::from_secs(10)).unwrap();
+                settled.send(()).unwrap();
+                Ok(())
+            }),
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), ready)
+        .await
+        .unwrap()
+        .unwrap();
+    // Final observation has no registry/connection guard. A separate current
+    // operation and the cancellation path remain available while the OS waits.
+    registry
+        .with_current(&pending, || {
+            assert!(pending.connection.try_lock().unwrap().busy);
+            Ok(())
+        })
+        .unwrap();
+    let cancelled = registry.remove("accept").unwrap();
+    assert!(Arc::ptr_eq(&pending, &cancelled));
+    let ended = tokio::time::timeout(Duration::from_secs(2), task).await;
+    release.send(()).unwrap();
+    done.await.unwrap();
+    assert!(ended.unwrap().unwrap().is_err());
+    assert!(!pending.connection.lock().unwrap().busy);
+    assert!(pending.connection.lock().unwrap().acquired);
+}

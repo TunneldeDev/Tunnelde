@@ -27,6 +27,27 @@ pub(crate) struct Trusted {
 /// Opaque captured acquisition; callers cannot replace its hosts or transport.
 pub(crate) struct Target(route::Snapshot);
 
+/// An OS observation awaiting final pure native admission.
+pub(crate) struct Observed(route::Observed);
+impl Observed {
+    pub(crate) fn with_current<T>(
+        &self,
+        app: &AppHandle,
+        effect: impl FnOnce(&rusqlite::Connection) -> AppResult<T>,
+    ) -> AppResult<T> {
+        self.0.with_current(app, effect)
+    }
+    pub(crate) fn approve(
+        self,
+        app: &AppHandle,
+        info: HostKeyInfo,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<Trusted> {
+        let target = Target(self.0.approve(app, &info, check)?);
+        Ok(target.trusted(info))
+    }
+}
+
 fn changed() -> AppError {
     AppError::Ssh("ssh.connectionChanged".into())
 }
@@ -46,6 +67,10 @@ pub(crate) async fn prepare(app: AppHandle, displayed: Host) -> AppResult<Plan> 
 }
 
 impl Target {
+    pub(crate) async fn observe_background(&self, app: &AppHandle) -> AppResult<Observed> {
+        Ok(Observed(self.0.observe_background(app).await?))
+    }
+
     pub(crate) async fn capture_background(app: &AppHandle, review: &Review) -> AppResult<Self> {
         let app = app.clone();
         let review = review.clone();

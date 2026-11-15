@@ -2,7 +2,9 @@
 //! resolves a later hop from mutable storage after starting network I/O.
 use super::*;
 use crate::network::{ConnectionRoute, TcpRoute};
+mod observation;
 mod review;
+pub(in crate::ssh::session) use observation::Observed;
 
 #[derive(Clone)]
 pub(super) struct Node {
@@ -15,6 +17,7 @@ pub(in super::super) struct Snapshot {
     pub(super) nodes: Vec<Node>,
     route: ConnectionRoute,
     pub(super) transport: TcpRoute,
+    proxy: crate::network::proxy::Selected,
 }
 
 fn changed() -> AppError {
@@ -69,14 +72,24 @@ impl Snapshot {
 
     pub(in super::super) fn capture(app: &AppHandle, host: &Host) -> AppResult<Self> {
         let state = app.state::<AppState>();
-        let (route, nodes) = state.db.with(|conn| capture_configuration(conn, host))?;
+        let (route, nodes, network) = state.db.with(|conn| {
+            let (route, nodes) = capture_configuration(conn, host)?;
+            Ok((route, nodes, db::settings::load_checked(conn)?.network))
+        })?;
         // Reject an already-stale displayed host or revoked dynamic source
         // before transport capture can access a proxy credential. The DB guard
         // has ended; verification after OS access still checks concurrent edits.
         verify_dynamic(&nodes, |id| crate::services::hosts::resolve(app, id))?;
         let first = &nodes[0].host;
         let snapshot = Self {
-            transport: TcpRoute::capture(app, &first.host, first.port, &route.proxy)?,
+            proxy: crate::network::proxy::Selected::capture(&network, "ssh", Some(&route.proxy))?,
+            transport: TcpRoute::capture_with(
+                &state.vault,
+                &network,
+                &first.host,
+                first.port,
+                &route.proxy,
+            )?,
             nodes,
             route,
         };
@@ -140,6 +153,7 @@ impl Snapshot {
     pub(in super::super) fn revision(&self) -> String {
         review::revision(&self.nodes, &self.route, |digest| {
             self.transport.update_review(digest);
+            self.proxy.update_review(digest);
         })
     }
 
@@ -167,7 +181,17 @@ impl Snapshot {
     }
 
     fn verify_saved(&self, conn: &rusqlite::Connection) -> AppResult<()> {
-        verify_configuration(conn, &self.target().id, &self.route, &self.nodes)
+        verify_configuration(conn, &self.target().id, &self.route, &self.nodes)?;
+        let network = db::settings::load_checked(conn)
+            .map_err(|_| changed())?
+            .network;
+        let current =
+            crate::network::proxy::Selected::capture(&network, "ssh", Some(&self.route.proxy))
+                .map_err(|_| changed())?;
+        if current != self.proxy {
+            return Err(changed());
+        }
+        Ok(())
     }
 
     /// The database lock covers the final check and synchronous admission/write.
@@ -177,18 +201,7 @@ impl Snapshot {
         app: &AppHandle,
         operation: impl FnOnce(&rusqlite::Connection) -> AppResult<T>,
     ) -> AppResult<T> {
-        let first = &self.nodes[0].host;
-        if TcpRoute::capture(app, &first.host, first.port, &self.route.proxy)
-            .map_err(|_| changed())?
-            != self.transport
-        {
-            return Err(changed());
-        }
-        verify_dynamic(&self.nodes, |id| crate::services::hosts::resolve(app, id))?;
-        app.state::<AppState>().db.with(|conn| {
-            self.verify_saved(conn)?;
-            operation(conn)
-        })
+        self.observe(app)?.with_current(app, operation)
     }
 
     pub(in super::super) fn verify(&self, app: &AppHandle) -> AppResult<()> {

@@ -21,6 +21,22 @@ pub fn load(conn: &Connection) -> AppResult<Settings> {
     }
 }
 
+/// Authority checks must not silently accept defaults after stored JSON corruption.
+/// Startup's legacy fallback remains separate from this fail-closed read.
+pub(crate) fn load_checked(conn: &Connection) -> AppResult<Settings> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![SETTINGS_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match raw {
+        Some(json) => Ok(serde_json::from_str(&json)?),
+        None => Ok(Settings::default()),
+    }
+}
+
 pub fn save(conn: &Connection, settings: &Settings) -> AppResult<()> {
     let json = serde_json::to_string(settings)?;
     conn.execute(
