@@ -2417,7 +2417,12 @@
   },
   "preferences": {
     "invalidValue": "偏好设置值无效：{{field}}。",
-    "staleRevision": "偏好设置已发生变化，请读取新快照后重新保存。"
+    "staleRevision": "偏好设置已发生变化，请读取新快照后重新保存。",
+    "read": {
+      "busy": "偏好设置读取繁忙，请等待当前读取完成后重试。",
+      "cancelled": "偏好设置读取已取消。",
+      "unavailable": "无法读取偏好设置，请查看软件日志后重试。"
+    }
   },
   "configuration": {
     "title": "插件配置",

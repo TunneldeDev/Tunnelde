@@ -3,7 +3,7 @@ mod schema;
 use super::{AppHandle, Failure, Manager, Value};
 use crate::{
     error::AppError,
-    services::settings::{preferences, writer},
+    services::settings::{preferences, read, writer},
     state::AppState,
 };
 pub(super) use schema::{describe, methods};
@@ -21,9 +21,8 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
             if method == "preferences.schema" {
                 Ok(serde_json::to_value(describe()))
             } else {
-                writer(app, &state)
+                read::snapshot(app, || Ok(()))
                     .await
-                    .preferences()
                     .map(serde_json::to_value)
             }
         }
@@ -105,5 +104,11 @@ mod tests {
         );
         let failure = map_error(AppError::internal("secret database file"));
         assert!(!failure.message.contains("secret"));
+        for reason in ["preferences.read.busy", "preferences.read.cancelled"] {
+            assert_eq!(
+                map_error(AppError::validation(reason)).code,
+                "operation_rejected"
+            );
+        }
     }
 }

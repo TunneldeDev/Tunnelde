@@ -2,7 +2,7 @@
 use super::{contracts, projection};
 use crate::{error::AppResult, settings::Settings};
 
-pub(super) fn project(
+pub(in crate::services::settings) fn project(
     current: &Settings,
     revision: String,
     request: contracts::Observe,

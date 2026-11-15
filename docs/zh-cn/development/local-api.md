@@ -99,6 +99,11 @@ tunnelde-cli preferences update --params '{"revision":"REVISION_FROM_SNAPSHOT","
 代理地址和用户名，快照应妥善保管。本接口不会请求应用重启；延迟生效的设置沿用
 普通桌面设置行为。存储迁移属于独立领域，不能通过 preferences.update 执行。
 
+公共设置快照与插件设置读取、Profile 激活前审查共用四个有界阻塞读取名额。读取取得
+与设置写入相同的串行锁，再读取一致的设置值和修订号；等待锁不会阻塞异步运行时。
+获得锁后及返回前复核取消状态，已经开始的 SQLite 查询不会被中断，worker 实际退出
+才释放名额。名额用尽返回 `operation_rejected`。设置更新沿用原有的有序提交和发布行为。
+
 ## 端口转发状态（实验）
 
 `forwards.list` 复用原生转发管理器的已保存规则和运行注册表，无需打开终端或另建 SSH

@@ -464,6 +464,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::forwarding
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::runtime
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::preferences
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
@@ -555,6 +556,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::forwarding
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::runtime
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::preferences
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops

@@ -25,6 +25,16 @@ describe structure, while host semantics also check proxy references, shortcuts,
 theme identities and update-source configuration. Character limits count Unicode
 scalar values; `x-maxBytes` is an additional UTF-8 byte limit.
 
+Snapshots, observations and Profile activation review share four bounded blocking
+readers with local CLI snapshots. Waiting for settings serialization or the
+database does not block async runtime threads. Workers retain their slot until
+they exit, even after cancellation; exhaustion returns `preferences.read.busy`.
+Cancellation is checked after acquiring each lock. Runtime authorization is
+rechecked outside the database lock after waiting and before returning; revocation
+can reject a completed read, but does not interrupt a started SQLite query.
+Cancelled reads return `preferences.read.cancelled`; worker failures use
+`preferences.read.unavailable`. The ordered write/commit boundary is unchanged.
+
 ## Updating a snapshot
 
 ```ts

@@ -4,6 +4,7 @@ mod effects;
 mod mutation;
 mod patch;
 pub(crate) mod preferences;
+pub(crate) mod read;
 mod repository;
 
 use crate::{error::AppResult, settings::Settings, state::AppState};

@@ -12,15 +12,19 @@ pub(super) async fn dispatch(
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
-    use crate::services::settings::{preferences, writer};
+    use crate::services::settings::{preferences, read, writer};
     let state = context.app.state::<AppState>();
     match method {
         "preferences.observe" => {
             let request: preferences::contracts::Observe = serde_json::from_value(params)
                 .map_err(|_| AppError::validation("plugin.api.invalid:params"))?;
-            let writer = writer(&context.app, &state).await;
-            authorize(context, &["settings.read"])?;
-            encode(writer.observe_preferences(request)?)
+            let worker = context.clone();
+            encode(
+                read::observe(&context.app, request, move || {
+                    authorize(&worker, &["settings.read"])
+                })
+                .await?,
+            )
         }
         "preferences.schema" | "preferences.snapshot" => {
             if params.as_object().is_none_or(|fields| !fields.is_empty()) {
@@ -29,9 +33,11 @@ pub(super) async fn dispatch(
             if method == "preferences.schema" {
                 return encode(preferences::describe());
             }
-            let writer = writer(&context.app, &state).await;
-            authorize(context, &["settings.read"])?;
-            encode(writer.preferences()?)
+            let worker = context.clone();
+            encode(
+                read::snapshot(&context.app, move || authorize(&worker, &["settings.read"]))
+                    .await?,
+            )
         }
         "preferences.update" => {
             let request: preferences::contracts::Update = serde_json::from_value(params)

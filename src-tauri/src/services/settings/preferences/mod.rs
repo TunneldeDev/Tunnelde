@@ -1,8 +1,8 @@
 //! Public preferences domain: schema, projection and mutation have separate owners.
 pub(crate) mod contracts;
 mod mapping;
-mod observation;
-mod projection;
+pub(super) mod observation;
+pub(super) mod projection;
 mod schema;
 mod update;
 
@@ -35,21 +35,6 @@ pub(crate) fn apply_profile_values(
     values: serde_json::Value,
 ) -> AppResult<crate::settings::Settings> {
     update::full(previous, values)
-}
-
-impl Writer<'_> {
-    pub(crate) fn observe_preferences(
-        &self,
-        request: contracts::Observe,
-    ) -> AppResult<contracts::Observation> {
-        let (current, revision) = self.current()?;
-        observation::project(&current, revision, request)
-    }
-
-    pub(crate) fn preferences(&self) -> AppResult<contracts::Snapshot> {
-        let (current, revision) = self.current()?;
-        projection::snapshot(&current, revision)
-    }
 }
 
 impl<'a> Writer<'a> {
