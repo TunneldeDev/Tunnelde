@@ -193,11 +193,28 @@ int main(int argc, const char *argv[]) {
       else if ([key isEqual:@"go-to-folder"]) { code = 5; flags |= kCGEventFlagMaskShift; }
       else if ([key isEqual:@"enter"]) { code = 36; flags = 0; }
       else return 2;
+      BOOL nativeDialogKey = [key isEqual:@"go-to-folder"] || [key isEqual:@"enter"];
+      if (nativeDialogKey &&
+          (![env[@"MACOS_OTA_MODE"] isEqual:@"retention"] ||
+           NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != pid)) return 3;
+      if (nativeDialogKey) {
+        AXUIElementRef target = AXUIElementCreateApplication(pid);
+        AXUIElementSetMessagingTimeout(target, 1.0);
+        NSMutableArray *nodes = [NSMutableArray array], *matches = [NSMutableArray array];
+        BOOL complete = walk(target, 0, nodes, matches, nil, nil, CFAbsoluteTimeGetCurrent() + 12);
+        BOOL picker = NO;
+        for (NSDictionary *node in nodes) {
+          if ([node[@"role"] isEqual:@"AXStaticText"] && [node[@"AXValue"] isEqual:@"Plugin folder"]) picker = YES;
+        }
+        CFRelease(target);
+        if (!complete || !picker) return 3;
+      }
       for (int down = 1; down >= 0; down--) {
         CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down != 0);
         if (!event) return 5;
         CGEventSetFlags(event, flags);
-        CGEventPostToPid(pid, event);
+        if (nativeDialogKey) CGEventPost(kCGSessionEventTap, event);
+        else CGEventPostToPid(pid, event);
         CFRelease(event);
       }
       return emit(@{@"identity": process, @"key": key, @"generatedOSInput": @YES});
@@ -217,6 +234,7 @@ int main(int argc, const char *argv[]) {
           ([@[@"AXComboBox", @"AXTextField"] containsObject:attribute((__bridge AXUIElementRef)focused, kAXRoleAttribute)]);
       CFRelease(target);
       if (!ready) return emit(@{@"pathEntered": @NO});
+      if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != pid) return 3;
       UniChar buffer[PATH_MAX];
       if (!path.length || path.length >= PATH_MAX) return 3;
       [path getCharacters:buffer range:NSMakeRange(0, path.length)];
@@ -224,7 +242,7 @@ int main(int argc, const char *argv[]) {
         CGEventRef event = CGEventCreateKeyboardEvent(NULL, 0, down != 0);
         if (!event) return 5;
         CGEventSetFlags(event, kCGEventFlagMaskCommand);
-        CGEventPostToPid(pid, event); CFRelease(event);
+        CGEventPost(kCGSessionEventTap, event); CFRelease(event);
       }
       usleep(100000);
       for (int down = 1; down >= 0; down--) {
@@ -232,7 +250,7 @@ int main(int argc, const char *argv[]) {
         if (!event) return 5;
         CGEventSetFlags(event, 0);
         CGEventKeyboardSetUnicodeString(event, path.length, buffer);
-        CGEventPostToPid(pid, event); CFRelease(event);
+        CGEventPost(kCGSessionEventTap, event); CFRelease(event);
       }
       return emit(@{@"identity": process, @"pathEntered": @YES, @"generatedOSInput": @YES});
     }
