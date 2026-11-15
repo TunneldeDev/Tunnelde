@@ -3,30 +3,33 @@ use super::{
     destination,
     registry::{Connection, Pending},
 };
-use crate::{
-    error::{AppError, AppResult},
-    ssh::session::review::Target,
-};
+use crate::{error::AppResult, ssh::session::review::Target};
 use tauri::AppHandle;
+
+mod reservation;
+use reservation::Reservation;
 
 pub(super) struct Operation<'a> {
     app: &'a AppHandle,
     pending: &'a Pending,
+    _reservation: Reservation<'a>,
 }
 impl<'a> Operation<'a> {
-    pub fn begin(app: &'a AppHandle, pending: &'a Pending) -> AppResult<(Self, Target)> {
-        let mut connection = pending.connection.lock().unwrap_or_else(|e| e.into_inner());
-        destination::current(app, pending)?;
-        if connection.busy || connection.session.is_some() {
-            return Err(AppError::validation("plugin.runners.busy"));
-        }
-        let review = connection
-            .review
-            .as_ref()
-            .ok_or_else(|| AppError::validation("plugin.runners.browserExpired"))?;
-        let target = Target::capture(app, review)?;
-        connection.busy = true;
-        Ok((Self { app, pending }, target))
+    pub async fn begin(app: &'a AppHandle, pending: &'a Pending) -> AppResult<(Self, Target)> {
+        let (reservation, target) = Reservation::capture(
+            pending,
+            || destination::current(app, pending),
+            |review| async move { Target::capture_background(app, &review).await },
+        )
+        .await?;
+        Ok((
+            Self {
+                app,
+                pending,
+                _reservation: reservation,
+            },
+            target,
+        ))
     }
     pub fn with_current<T>(
         &self,
@@ -38,14 +41,5 @@ impl<'a> Operation<'a> {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         destination::with_current(self.app, self.pending, || operation(&mut connection))
-    }
-}
-impl Drop for Operation<'_> {
-    fn drop(&mut self) {
-        self.pending
-            .connection
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .busy = false;
     }
 }

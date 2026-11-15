@@ -16,7 +16,7 @@ pub(super) async fn probe(
     pending: &Pending,
     credentials: &HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    let (op, target) = Operation::begin(app, pending)?;
+    let (op, target) = Operation::begin(app, pending).await?;
     let info = registry::guard(
         pending,
         target.probe_bound(app, credentials, destination::identity(&pending.record)?),
@@ -35,7 +35,7 @@ pub(super) async fn trust(
     expected_host_id: Option<&str>,
     credentials: &HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    let (op, target) = Operation::begin(app, pending)?;
+    let (op, target) = Operation::begin(app, pending).await?;
     let info = registry::guard(
         pending,
         target.probe_bound(app, credentials, destination::identity(&pending.record)?),

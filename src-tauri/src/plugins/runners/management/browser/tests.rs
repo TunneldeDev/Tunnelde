@@ -8,7 +8,7 @@ use crate::{
 };
 use std::sync::{Arc, Mutex};
 
-fn pending() -> Arc<Pending> {
+pub(super) fn pending() -> Arc<Pending> {
     let coordinator = Coordinator::default();
     let record: Record = serde_json::from_value(serde_json::json!({
         "runnerId":"task", "stopPending":false,

@@ -28,7 +28,7 @@ pub(super) async fn connect(
     pending: &Pending,
     mut request: SshConnectRequest,
 ) -> AppResult<SessionInfo> {
-    let (op, target) = Operation::begin(app, pending)?;
+    let (op, target) = Operation::begin(app, pending).await?;
     let expected = destination::identity(&pending.record)?;
     if request.host_id != expected.host_id {
         return Err(AppError::validation("plugin.runners.destinationChanged"));
