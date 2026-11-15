@@ -8,10 +8,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-struct Staging(PathBuf);
+struct Staging {
+    path: PathBuf,
+    published: bool,
+}
 impl Drop for Staging {
     fn drop(&mut self) {
-        if let Err(error) = fs::remove_file(&self.0) {
+        if self.published {
+            return;
+        }
+        if let Err(error) = fs::remove_file(&self.path) {
             tracing::warn!(target: "ssh.keys", stage = "staging-cleanup", reason = %error,
                 "Could not remove an owned private-key staging file");
         }
@@ -50,13 +56,16 @@ fn ensure_with(
             options.mode(0o600);
         }
         let mut file = options.open(&staging)?;
-        let staging = Staging(staging);
+        let mut staging = Staging {
+            path: staging,
+            published: false,
+        };
         file.write_all(pem.as_bytes())?;
         file.sync_all()?;
         drop(file);
         before_publication(&private)?;
-        match fs::hard_link(&staging.0, &private) {
-            Ok(()) => {}
+        match crate::platform::file_ops::rename_noreplace(&staging.path, &private) {
+            Ok(()) => staging.published = true,
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 // Another process published first. Read its complete file;
                 // never fall back to an overwriting rename or direct write.
