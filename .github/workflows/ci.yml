@@ -429,6 +429,8 @@ jobs:
       - name: Test macOS platform behavior
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib update::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
@@ -438,6 +440,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
@@ -493,6 +496,8 @@ jobs:
       - name: Test Windows file operations and guarded backup cleanup
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
           TUNNELDE_TEST_APP_KEYRING=1 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::tests::system::application_credentials_are_isolated_and_survive_process_reconstruction -- --ignored --exact
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
@@ -503,6 +508,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::

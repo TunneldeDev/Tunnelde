@@ -2,6 +2,7 @@ use crate::plugins::api::{encode, field, optional, HostContext};
 use crate::{
     commands,
     error::{AppError, AppResult},
+    ssh::files,
 };
 use serde_json::Value;
 
@@ -12,15 +13,18 @@ pub(in crate::plugins::api) async fn dispatch(
 ) -> AppResult<Value> {
     match method {
         "files.local.home" => encode(commands::local_home()),
-        "files.local.list" => encode(commands::local_list(optional(&params, "path")?)?),
+        // Keep plugin filesystem calls immediate after the dispatcher's
+        // authorization. Native worker queuing must not introduce a new
+        // revoke/close-before-commit window into this adapter.
+        "files.local.list" => encode(files::local_list(optional(&params, "path")?)?),
         "files.local.readText" => super::text::local_read(field(&params, "path")?).await,
         "files.local.writeText" => super::text::write_local(context, &params, |_, _| Ok(())).await,
         "files.local.createFile" => {
-            commands::local_create_file(field(&params, "path")?)?;
+            files::local_create_file(field(&params, "path")?)?;
             Ok(Value::Null)
         }
         "files.local.mkdir" => {
-            commands::local_mkdir(field(&params, "path")?)?;
+            files::local_mkdir(field(&params, "path")?)?;
             Ok(Value::Null)
         }
         "files.local.rename" => {
@@ -34,7 +38,7 @@ pub(in crate::plugins::api) async fn dispatch(
             Ok(Value::Null)
         }
         "files.local.delete" => {
-            commands::local_delete(field(&params, "path")?, field(&params, "isDir")?)?;
+            files::local_delete(field(&params, "path")?, field(&params, "isDir")?)?;
             Ok(Value::Null)
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),

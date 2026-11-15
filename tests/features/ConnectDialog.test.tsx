@@ -23,6 +23,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
 import "@/i18n/i18n";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
+import { translateError } from "@/lib/api/errors";
 import type { Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
@@ -188,6 +189,74 @@ beforeEach(() => {
 });
 
 describe("ConnectDialog", () => {
+  it.each([
+    ["validation", "credentials.busy", "Password operations are still running."],
+    ["internal", "credentials.workerFailed", "The password operation stopped unexpectedly."],
+    ["ssh", "vault.load: access denied", null],
+  ])("shows a live target credential status failure: %s/%s", async (code, message, text) => {
+    let rejectStatus!: (cause: unknown) => void;
+    apiMock.credentialStatus.mockReturnValueOnce(
+      new Promise<boolean>((_resolve, reject) => {
+        rejectStatus = reject;
+      }),
+    );
+    render(<ConnectDialog host={host} onClose={() => undefined} />);
+    await screen.findByText("Trusted");
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "typed-password" } });
+    await act(async () => rejectStatus({ code, message }));
+    expect(
+      (await screen.findByText(text ?? translateError({ code, message }), { exact: false }))
+        .className,
+    ).toBe("connect__error");
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("typed-password");
+    expect(apiMock.credentialStatus).toHaveBeenCalledExactlyOnceWith(host.id);
+    expect(apiMock.credentialSave).not.toHaveBeenCalled();
+    expect(apiMock.credentialForget).not.toHaveBeenCalled();
+  });
+
+  it.each(["success", "failure"])(
+    "ignores an old target's late credential status %s after switching hosts",
+    async (outcome) => {
+      let resolveStatus!: (value: boolean) => void;
+      let rejectStatus!: (cause: unknown) => void;
+      apiMock.credentialStatus.mockReturnValueOnce(
+        new Promise<boolean>((resolve, reject) => {
+          resolveStatus = resolve;
+          rejectStatus = reject;
+        }),
+      );
+      const { rerender } = render(<ConnectDialog host={host} onClose={() => undefined} />);
+      await screen.findByText("Trusted");
+      rerender(<ConnectDialog host={{ ...host, id: "other" }} onClose={() => undefined} />);
+      await waitFor(() => expect(apiMock.credentialStatus).toHaveBeenCalledWith("other"));
+      await act(async () => {
+        if (outcome === "success") resolveStatus(true);
+        else rejectStatus({ code: "validation", message: "credentials.busy" });
+      });
+      expect(screen.queryByText(/Password operations are still running/)).toBeNull();
+      expect(screen.queryByText(/The password saved in your system credential store/)).toBeNull();
+      expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      expect(apiMock.credentialStatus).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("does not report a target credential failure after the dialog unmounts", async () => {
+    let rejectStatus!: (cause: unknown) => void;
+    apiMock.credentialStatus.mockReturnValueOnce(
+      new Promise<boolean>((_resolve, reject) => {
+        rejectStatus = reject;
+      }),
+    );
+    const { unmount } = render(<ConnectDialog host={host} onClose={() => undefined} />);
+    await screen.findByText("Trusted");
+    unmount();
+    await act(async () => rejectStatus({ code: "internal", message: "credentials.workerFailed" }));
+    expect(screen.queryByText(/The password operation stopped unexpectedly/)).toBeNull();
+    expect(apiMock.credentialStatus).toHaveBeenCalledOnce();
+  });
+
   it("invalidates trust and clears typed credentials after a reviewed target changes", async () => {
     connect.mockImplementationOnce(async (_request, onError) => {
       onError({ code: "ssh", message: "ssh.connectionChanged" });

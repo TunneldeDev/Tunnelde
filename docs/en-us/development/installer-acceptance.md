@@ -86,3 +86,192 @@ not exist before the test. NSIS restarts through Explorer and does not inherit
 the harness's temporary data-directory environment override. Both processes must
 report the same actual database location; logs are collected from the reported
 location. Installer-only checks continue using a temporary data override.
+
+## Disposable macOS OTA environment probe
+
+The **Public macOS OTA environment probe** workflow is the first stage of public
+macOS OTA acceptance. It compiles a native capability reader, checks the hosted
+console session, displays, Accessibility trust and screen-capture preflight, and
+attempts a desktop screenshot only after those checks pass. It then selects the
+public `v1.2.1` and `v1.3.0` archive metadata using the existing packaged-CLI
+selector for the actual architecture. It does not download, extract, launch,
+modify or update either application. A passing probe is **not OTA acceptance**,
+nor proof that a later GUI driver has the same TCC identity.
+
+Run it manually from a reviewed branch in `TunneldeDev/Tunnelde`, entering
+`probe-only` as `acknowledgement`. Once GitHub has registered the workflow:
+
+```sh
+gh workflow run macos-ota-probe.yml --repo TunneldeDev/Tunnelde \
+  --ref <reviewed-branch> -f acknowledgement=probe-only
+```
+
+Check registration before dispatching a newly introduced workflow. If GitHub
+reports it unavailable, retain the response and wait for the maintainer's normal
+integration; do not merge or publish solely to enable this probe. The selected
+`--ref` identifies the reviewed code to execute, not the default branch.
+Pull requests run environment-rejection and release-selection tests on Linux,
+macOS and Windows. The POSIX ownership/mode/symlink test runs only on Linux/macOS;
+the real-entry refusal and context tests run on all three. macOS also compiles
+the reader and verifies native JSON serialization without invoking GUI APIs.
+
+The manual job uses fixed GitHub-hosted `macos-15`, a read-only contents token,
+checkout without persisted credentials and an eight-minute timeout. Before
+creating files, the entry point checks the actual OS, architecture, account and
+home; hosted/manual/repository/workflow context; fixed release pair; and canonical
+workspace/temp directories without symlink ancestors. It refuses root,
+self-hosted, other repositories and ordinary workstations. These checks prevent
+accidental execution; environment strings do not attest against a deliberately
+spoofing administrator. Do not copy the hosted environment onto a user machine.
+
+Each attempt creates a new owner-only directory at
+`$RUNNER_TEMP/tunnelde-macos-ota-probe-<run-id>-<attempt>`. Existing directories
+are refused. Helper commands have time and output limits. No application or
+service is started; nothing is recursively deleted. Runner disposal owns cleanup.
+The `evidence` subdirectory is uploaded for 14 days even when capability checks
+fail. `results.json` separates probe success from `otaAttempted: false` and
+`otaAccepted: false`; `native.json` preserves capability observations. An early
+environment rejection creates no evidence directory and leaves its assertion in
+the job log. Screenshots require actual review.
+
+The reader calls `AXIsProcessTrusted()` and `CGPreflightScreenCaptureAccess()`;
+it never requests permission, edits TCC, invokes `sudo`, changes security policy
+or installs a persistent service. Missing GUI/Accessibility/capture capability
+fails the job instead of producing a successful skip. Do not grant permissions
+or re-sign the public application to work around failure. A different one-use
+environment with explicitly authorized native GUI access is then needed.
+
+### Original public app GUI inspection
+
+The separate **Original public macOS GUI and OTA acceptance** workflow implements
+the next inspection stage. Dispatch `macos-public-ota.yml` from the reviewed
+branch with `acknowledgement=original-public-ota`. Mode `inspect` checks controls
+and normal Quit; mode `upgrade` attempts the real signed update; `retention` adds
+the nonempty-data checks described below. PR checks test archive rejection, compile the
+external native driver and verify refusal before GUI/profile access.
+
+Before launching, the driver repeats its own capability checks and requires no
+installed production bundle, native app data/preferences/cache, running app or
+credential entry for the production service in the disposable account. The
+credential query requests no secret data and forbids authentication UI. No
+profile or credential store on a developer machine is inspected.
+
+The runner downloads the unchanged public source archive, verifies its published
+size/SHA-256, validates every archive member before extraction, and verifies the
+original plist, architecture and code signature. It launches the original binary
+with no injected code, data override or GitHub token, confirms the actual database
+path with `lsof`, writes synthetic preferences through the stable CLI, and tests
+the seven stable methods. A separate native process uses bounded AX traversal,
+uniquely matched AXPress and generated OS shortcuts to inspect Settings/Updates
+and request normal Quit. This is generated input, not physical keyboard testing.
+
+Each run retains screenshots, AX trees, source/binary hashes, command results and
+normal-exit versus forced-cleanup evidence under
+`$RUNNER_TEMP/tunnelde-macos-public-ota-<run-id>-<attempt>/evidence` for 14 days.
+The original endpoint capability and credential values are not uploaded. Failure
+stops the still-owned direct source child and, after an update attempt, an updater
+target whose bundle path, user, PID and start identity still match this run.
+Forced cleanup is recorded separately; profile cleanup belongs to VM disposal.
+`otaAttempted` and `otaAccepted` remain false in inspection mode.
+
+Upgrade mode downloads the original target archive as an unexecuted reference.
+Using native GUI controls, it saves a named settings profile and a synthetic host
+with a random password in the disposable account's credential store. The password
+is neither passed in arguments nor captured in AX trees. Credential checks read
+only an opaque persistent item's reference and record its SHA-256, never its
+secret. The GUI must select exactly the fixed public target before installation.
+The runner never starts the target: it observes the updater's automatic relaunch,
+checks PID/start identity, installed version/code signature/reference binary hash,
+and actual native database path. It compares settings, profile and host records,
+credential-item identity, stable CLI behavior and normal target Quit. The
+restarted process is not its child; observed exit does not supply an exit code.
+Cleanup signals require the same PID/start time, bundle path and user identity.
+
+`otaCoreAccepted` records only this actual update/retention scope. Full
+`otaAccepted` remains false until nonempty history, credential authentication/value
+retention and plugin fingerprint/approval/storage with an active recovery marker
+have also been verified. A passing staged workflow does not complete that matrix.
+The native profile reader opens only the disposable account's canonical database
+in read-only mode; it accepts no alternative data path and performs no seeding.
+
+Mode `retention` uses the same disposable-account guard. The actual plugin install
+dialog, native folder picker, manifest preview and explicit permission approval
+install a small trusted frontend fixture; it needs no Node runtime. Its declared
+SDK permissions allow reading the synthetic host and recording/reading history,
+plus its own secret store. It writes nonempty history and plugin JSON storage,
+then verifies the original values after update without reseeding. No private
+bridge invocation, globals carrying an API context or product-package changes
+are used. Installation, approval, source writes and target reads have AX records
+and screenshots. Changing approved package bytes is rejected.
+
+The approved source fixture reads its own synthetic secret through `secrets.get`
+and displays only SHA-256. No secret, command-line secret argument or second
+plaintext copy is captured. After actual public 1.2.1 to 1.3.0 OTA, the target
+app's own secret read opened a login Keychain authorization dialog. The unattended
+runner does not repeat that read, operate the dialog or change credential access.
+Its target `Verify OTA data` action checks only host/history/storage through the
+public SDK; `Verify OTA secret` is a separate action requiring appropriate system
+authorization and is not driven by this runner. Neither action reseeds data.
+
+Installed fixture bytes, approved fingerprint/permissions and nonempty history
+must match. The source must have a running plugin's unclean marker before the
+planned update; the target must remain unrestricted and reactivate using its
+retained grant. `pluginRecordsAccepted` records these ordinary data checks.
+`pluginSecretValueAccepted` and `pluginDataAccepted` remain false until a target
+secret read can be completed and compared with the source hash. Host password
+value/actual SSH authentication also remains unaccepted. An earlier external value
+query opened a legacy Keychain dialog despite noninteractive LAContext and was
+removed. `otaAccepted` remains false for these gaps, independent review and the
+wider platform matrix. Guard/unit checks do not count as real OTA acceptance.
+
+### Public-package OTA acceptance checklist
+
+The public-app harness implements the core update steps below. Keep its actual
+evidence separate from the first-stage capability probe. Complete data acceptance
+still requires nonempty history, credential authentication/value retention and
+plugin fingerprint/approval/storage with an active recovery marker; those remain
+outside the core result:
+
+1. Re-run the hosted guard and inspect the actual GUI driver's capabilities.
+   Require a clean disposable native profile, no pre-existing Tunnelde process,
+   application data, preferences or app credential entries. Public `1.2.1` uses
+   the production Keychain service; a custom data directory or changed plist is
+   insufficient on a user account. Do not inspect a real user's credential store.
+2. Reuse release selection and CLI helpers to fetch the original source and
+   target architecture archives. Record asset IDs, published SHA-256/size,
+   independently computed download hashes, original bundle identifier, plist
+   version, executable hash, architecture and `codesign --verify --deep --strict`
+   results. Do not re-sign, inject libraries, replace runtime code or relax
+   TLS/updater signatures. Keep the target archive as a reference; the harness
+   must never install or start it on behalf of the updater.
+3. Place the unchanged source bundle in a writable, attempt-owned installation
+   directory. Start it without GitHub tokens. Through existing services/CLI, seed
+   synthetic settings, host metadata and supported storage; record the actual
+   database/endpoint location. Use the disposable account's native profile so
+   automatic relaunch need not inherit a temporary data override. Verify this
+   location in both processes rather than assuming it.
+4. Use the real GUI's update check and install controls and ordinary public feed.
+   Require the selected version to equal `1.3.0`; if another release is selected,
+   stop and review the pair instead of pinning a fake feed or downgrading. Save
+   screenshots, download/progress/error logs and the application's signature and
+   native-bundle validation outcomes. Metadata selection alone is insufficient.
+5. Observe the old process exit and updater-owned automatic restart into the same
+   install path; never manually launch the target. Verify the new version,
+   original identity/signature, executable hash against the reference and retained
+   synthetic values without recovery mode. Reuse the seven stable CLI checks,
+   including stale-write rejection/restoration. Record exit codes only where
+   observable; non-child process disappearance is not an exit code.
+6. Quit through the restarted GUI and verify process/endpoint removal. Record
+   normal-quit evidence separately from forced cleanup. Bound waits and clean up
+   only processes whose PID, start identity and owned bundle path match this run;
+   retain failure and unknown-outcome evidence until runner disposal. Upload
+   synthetic results/logs/screenshots without endpoint capabilities or secrets.
+
+This staged workflow needs no signing or release key and adds no product API.
+CLI checks, synthetic GUI input and hosted execution do not substitute for
+physical keyboard/IME, Gatekeeper or all historical migration acceptance.
+
+References: GitHub's [manual workflow trigger](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)
+and [runner variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables);
+Apple's [Accessibility trust query](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrusted)
+and [screen-capture preflight](<https://developer.apple.com/documentation/coregraphics/cgpreflightscreencaptureaccess()>).

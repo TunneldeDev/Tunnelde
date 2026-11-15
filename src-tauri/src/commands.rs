@@ -552,26 +552,18 @@ pub async fn ssh_install_key(
 }
 
 #[tauri::command]
-pub fn credential_save(
-    state: State<'_, AppState>,
-    host_id: String,
-    password: String,
-) -> AppResult<()> {
-    if password.is_empty() {
-        return Err(AppError::validation("ssh.passwordRequired"));
-    }
-    state.db.with(|conn| db::hosts::find_host(conn, &host_id))?;
-    state.vault.save(&host_id, &password)
+pub async fn credential_save(app: AppHandle, host_id: String, password: String) -> AppResult<()> {
+    crate::services::credentials::save(app, host_id, password).await
 }
 
 #[tauri::command]
-pub fn credential_forget(state: State<'_, AppState>, host_id: String) -> AppResult<()> {
-    state.vault.forget(&host_id)
+pub async fn credential_forget(app: AppHandle, host_id: String) -> AppResult<()> {
+    crate::services::credentials::forget(app, host_id).await
 }
 
 #[tauri::command]
-pub fn credential_status(state: State<'_, AppState>, host_id: String) -> AppResult<bool> {
-    state.vault.has(&host_id)
+pub async fn credential_status(app: AppHandle, host_id: String) -> AppResult<bool> {
+    crate::services::credentials::status(app, host_id).await
 }
 
 #[tauri::command]
@@ -584,8 +576,8 @@ pub async fn sftp_list(
 }
 
 #[tauri::command]
-pub fn local_list(path: Option<String>) -> AppResult<Listing> {
-    sftp::local_list(path)
+pub async fn local_list(path: Option<String>) -> AppResult<Listing> {
+    crate::services::files::local::list(path).await
 }
 
 #[tauri::command]
@@ -651,8 +643,8 @@ pub async fn sftp_delete(
 }
 
 #[tauri::command]
-pub fn local_mkdir(path: String) -> AppResult<()> {
-    sftp::local_mkdir(path)
+pub async fn local_mkdir(path: String) -> AppResult<()> {
+    crate::services::files::local::mkdir(path).await
 }
 
 #[tauri::command]
@@ -681,8 +673,8 @@ pub async fn local_rename(
 }
 
 #[tauri::command]
-pub fn local_delete(path: String, is_dir: bool) -> AppResult<()> {
-    sftp::local_delete(path, is_dir)
+pub async fn local_delete(path: String, is_dir: bool) -> AppResult<()> {
+    crate::services::files::local::delete(path, is_dir).await
 }
 
 #[tauri::command]
@@ -711,8 +703,8 @@ pub fn fs_transfer(
 }
 
 #[tauri::command]
-pub fn local_create_file(path: String) -> AppResult<()> {
-    sftp::local_create_file(path)
+pub async fn local_create_file(path: String) -> AppResult<()> {
+    crate::services::files::local::create_file(path).await
 }
 
 #[tauri::command]

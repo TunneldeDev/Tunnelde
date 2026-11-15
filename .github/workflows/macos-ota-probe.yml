@@ -1,0 +1,79 @@
+name: Public macOS OTA environment probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      acknowledgement:
+        description: Type probe-only to inspect a disposable hosted Mac (does not perform OTA)
+        required: true
+        type: string
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/macos-ota-probe.yml
+      - scripts/qa/macos-upgrade/**
+      - scripts/qa/local-cli/**
+      - scripts/qa/windows-upgrade/assets.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-ota-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guards:
+    name: Hosted Mac safety gates
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test environment rejection and release selection
+        run: node --test scripts/qa/macos-upgrade/*.test.mjs scripts/qa/local-cli/*.test.mjs scripts/qa/windows-upgrade/assets.test.mjs
+      - name: Compile and check native JSON without executing GUI APIs
+        if: runner.os == 'macOS'
+        run: |
+          xcrun clang -fobjc-arc -Wall -Wextra -Werror \
+            -framework AppKit -framework ApplicationServices -framework SystemConfiguration \
+            scripts/qa/macos-upgrade/probe.m -o "$RUNNER_TEMP/tunnelde-ota-probe-compile-check"
+          "$RUNNER_TEMP/tunnelde-ota-probe-compile-check" --format-test > "$RUNNER_TEMP/probe-format.json"
+          node --input-type=module -e 'import { readFileSync } from "node:fs"; import { requireCapabilities } from "./scripts/qa/macos-upgrade/guard.mjs"; requireCapabilities(JSON.parse(readFileSync(process.argv[1], "utf8")));' "$RUNNER_TEMP/probe-format.json"
+
+  probe:
+    name: Disposable Mac capabilities (no OTA)
+    needs: guards
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Probe native desktop capabilities without requesting permissions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACOS_OTA_ACK: ${{ inputs.acknowledgement }}
+          UPGRADE_FROM: v1.2.1
+          UPGRADE_TO: v1.3.0
+        run: node scripts/qa/macos-upgrade/run.mjs
+      - name: Retain successful or failed probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-ota-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tunnelde-macos-ota-probe-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: warn
+          retention-days: 14
