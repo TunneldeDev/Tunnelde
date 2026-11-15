@@ -10,7 +10,18 @@ export const workflow = "macos-ota-probe.yml";
 
 // These checks prevent accidental execution. Environment variables are not an
 // attestation against an operator deliberately impersonating a hosted runner.
-export function hostedContext({ env, platform, architecture, user, home, cwd }) {
+export function hostedContext({
+  env,
+  platform,
+  architecture,
+  user,
+  home,
+  cwd,
+  workflowFile = workflow,
+  acknowledgement = "probe-only",
+}) {
+  assert([workflow, "macos-public-ota.yml"].includes(workflowFile));
+  assert.equal(acknowledgement, workflowFile === workflow ? "probe-only" : "original-public-ota");
   assert.equal(platform, "darwin", "Requires a disposable macOS runner");
   assert(["arm64", "x64"].includes(architecture));
   assert.equal(env.GITHUB_ACTIONS, "true");
@@ -24,11 +35,11 @@ export function hostedContext({ env, platform, architecture, user, home, cwd }) 
   assert.equal(env.HOME, home);
   assert.equal(env.GITHUB_REPOSITORY, repository);
   assert.equal(env.GITHUB_EVENT_NAME, "workflow_dispatch", "Manual dispatch only");
-  assert.equal(env.MACOS_OTA_ACK, "probe-only", "Explicit probe-only acknowledgement required");
+  assert.equal(env.MACOS_OTA_ACK, acknowledgement, "Explicit manual acknowledgement required");
   assert.match(env.GITHUB_REF ?? "", /^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]*$/);
   assert.equal(
     env.GITHUB_WORKFLOW_REF,
-    `${repository}/.github/workflows/${workflow}@${env.GITHUB_REF}`,
+    `${repository}/.github/workflows/${workflowFile}@${env.GITHUB_REF}`,
   );
   assert.match(env.GITHUB_SHA ?? "", /^[a-f0-9]{40}$/);
   assert.match(env.GITHUB_RUN_ID ?? "", /^[1-9]\d{0,19}$/);
@@ -45,7 +56,7 @@ export function hostedContext({ env, platform, architecture, user, home, cwd }) 
     temp: env.RUNNER_TEMP,
     root: join(
       env.RUNNER_TEMP,
-      `tunnelde-macos-ota-probe-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`,
+      `${workflowFile === workflow ? "tunnelde-macos-ota-probe" : "tunnelde-macos-public-ota"}-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`,
     ),
   };
 }

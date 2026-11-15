@@ -141,6 +141,36 @@ fails the job instead of producing a successful skip. Do not grant permissions
 or re-sign the public application to work around failure. A different one-use
 environment with explicitly authorized native GUI access is then needed.
 
+### Original public app GUI inspection
+
+The separate **Original public macOS GUI and OTA acceptance** workflow implements
+the next inspection stage. Dispatch `macos-public-ota.yml` from the reviewed
+branch with `acknowledgement=original-public-ota`. Its current mode is `inspect`:
+it does not attempt an update. PR checks test archive rejection, compile the
+external native driver and verify refusal before GUI/profile access.
+
+Before launching, the driver repeats its own capability checks and requires no
+installed production bundle, native app data/preferences/cache, running app or
+credential entry for the production service in the disposable account. The
+credential query requests no secret data and forbids authentication UI. No
+profile or credential store on a developer machine is inspected.
+
+The runner downloads the unchanged public source archive, verifies its published
+size/SHA-256, validates every archive member before extraction, and verifies the
+original plist, architecture and code signature. It launches the original binary
+with no injected code, data override or GitHub token, confirms the actual database
+path with `lsof`, writes synthetic preferences through the stable CLI, and tests
+the seven stable methods. A separate native process uses bounded AX traversal,
+uniquely matched AXPress and generated OS shortcuts to inspect Settings/Updates
+and request normal Quit. This is generated input, not physical keyboard testing.
+
+Each run retains screenshots, AX trees, source/binary hashes, command results and
+normal-exit versus forced-cleanup evidence under
+`$RUNNER_TEMP/tunnelde-macos-public-ota-<run-id>-<attempt>/evidence` for 14 days.
+The original endpoint capability and credential values are not uploaded. Failure
+only stops the still-owned direct child; profile cleanup belongs to VM disposal.
+`otaAttempted` and `otaAccepted` remain false in this inspection stage.
+
 ### Remaining public-package OTA stages
 
 These requirements belong to a subsequent harness; the probe does not implement

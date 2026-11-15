@@ -106,6 +106,29 @@ workspace／temp 路径。拒绝 root、自托管、其他仓库及普通工作�
 缺少图形／辅助功能／截图能力时作业失败，不以成功跳过代替。不能为绕过失败而
 授予权限或重签公开应用；此时需要另一个已明确授权原生图形访问的一次性环境。
 
+### 原始公开应用 GUI 检查
+
+独立的 **Original public macOS GUI and OTA acceptance** 工作流实现后继检查阶段。
+从已审查分支手动触发 `macos-public-ota.yml`，填写
+`acknowledgement=original-public-ota`。当前模式为 `inspect`，不尝试更新。
+PR 检查验证归档拒绝、编译外部原生驱动，并确认在访问 GUI／Profile 前拒绝普通环境。
+
+启动前驱动重新检查自身权限，要求一次性账户没有生产 bundle、原生应用数据／偏好／
+缓存、既存应用进程或正式 service 的凭据条目。凭据查询不读取秘密，禁止认证弹窗。
+不检查开发者机器的 Profile 或凭据库。
+
+Runner 下载未改动的公开起始包，核对发布大小／SHA-256，验证全部归档成员后才解包，
+并检查原始 plist、架构和代码签名。不注入代码、不覆盖数据目录、不向应用传入 GitHub
+令牌；直接启动原始二进制后用 `lsof` 核实实际数据库位置，通过 stable CLI 写入合成
+设置并检查七个 stable 方法。独立原生进程用有界 AX 遍历、唯一匹配 AXPress 和生成式
+系统快捷键检查 Settings／Updates 并请求正常 Quit。这不属于物理键盘验收。
+
+每次运行在
+`$RUNNER_TEMP/tunnelde-macos-public-ota-<run-id>-<attempt>/evidence` 保留截图、AX 树、
+源码／二进制摘要、命令结果，以及正常退出和强制清理的区别，上传后保存 14 天。
+不上传端点 capability 或凭据值。失败只停止仍拥有的直接子进程，Profile 由 VM 销毁清理。
+本检查阶段的 `otaAttempted` 和 `otaAccepted` 均保持 false。
+
 ### 后续公开包 OTA 阶段
 
 以下是后继验收程序的要求，尚未由本探针实现；证据须与第一阶段分开：

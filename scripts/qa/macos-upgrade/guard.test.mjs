@@ -49,6 +49,24 @@ test("accepts the manual hosted context for each supported native architecture",
   assert.equal(hostedContext(context).temp, join(runnerHome, "work", "_temp"));
 });
 
+test("original-public execution needs its separate workflow and acknowledgement", () => {
+  const context = hosted();
+  context.workflowFile = "macos-public-ota.yml";
+  context.acknowledgement = "original-public-ota";
+  context.env.GITHUB_WORKFLOW_REF = context.env.GITHUB_WORKFLOW_REF.replace(
+    "macos-ota-probe.yml",
+    "macos-public-ota.yml",
+  );
+  assert.throws(() => hostedContext(context));
+  context.env.MACOS_OTA_ACK = "original-public-ota";
+  assert.equal(
+    hostedContext(context).root,
+    join(runnerHome, "work", "_temp", "tunnelde-macos-public-ota-123456-1"),
+  );
+  assert.throws(() => hostedContext({ ...context, workflowFile: "other.yml" }));
+  assert.throws(() => hostedContext({ ...context, acknowledgement: "probe-only" }));
+});
+
 for (const [key, value] of [
   ["GITHUB_ACTIONS", "false"],
   ["RUNNER_ENVIRONMENT", "self-hosted"],
@@ -166,6 +184,24 @@ test("the real entry point refuses a non-manual context before touching its root
       env: { ...process.env, GITHUB_EVENT_NAME: "pull_request", RUNNER_ENVIRONMENT: "self-hosted" },
       timeout: 10000,
     }),
+    (error) => error.code === 1 && /AssertionError/.test(error.stderr),
+  );
+});
+
+test("the original-public entry refuses a local machine before profile access", async () => {
+  await assert.rejects(
+    promisify(execFile)(
+      process.execPath,
+      [fileURLToPath(new URL("./public.mjs", import.meta.url))],
+      {
+        env: {
+          ...process.env,
+          GITHUB_EVENT_NAME: "pull_request",
+          RUNNER_ENVIRONMENT: "self-hosted",
+        },
+        timeout: 10000,
+      },
+    ),
     (error) => error.code === 1 && /AssertionError/.test(error.stderr),
   );
 });
