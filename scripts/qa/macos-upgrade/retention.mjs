@@ -24,10 +24,13 @@ export function secretHash(tree) {
 
 async function openPlugin(runtime, pid) {
   const { native, waitUntil, hasText, tree } = runtime;
-  await native("press", pid, "Plugins", "described");
-  await waitUntil("installed plugin tab", async () =>
-    (await tree(pid)).nodes.some((node) => node.AXTitle?.startsWith("Installed")),
-  );
+  const installedTabVisible = (value) =>
+    value.traversalCompleted === true &&
+    value.nodes.some((node) => node.AXTitle?.startsWith("Installed"));
+  if (!installedTabVisible(await tree(pid))) {
+    await native("press", pid, "Plugins", "described");
+  }
+  await waitUntil("installed plugin tab", async () => installedTabVisible(await tree(pid)));
   await native("press", pid, "Installed", "tab-prefix");
   await waitUntil("installed retention package", async () =>
     (await tree(pid)).nodes.some((node) => node.AXTitle?.startsWith(pluginName)),
