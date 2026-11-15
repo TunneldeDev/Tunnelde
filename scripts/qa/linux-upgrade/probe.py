@@ -69,6 +69,20 @@ def main():
                 result.extend(tree(child, depth + 1))
         return result
 
+    def capture(label):
+        path = evidence / (label + '.png')
+        samples = report.setdefault('captureColorCounts', {}).setdefault(label, [])
+
+        def painted():
+            execute(['import', '-window', 'root', str(path)])
+            colors = int(execute(['identify', '-format', '%k', str(path)]).stdout)
+            samples.append(colors)
+            # The default application has substantially more colors than an empty
+            # display or its title bar. This is a paint-readiness gate, not visual QA.
+            return colors > 128
+
+        wait(painted, 8)
+
     try:
         import pyatspi
         offline = json.loads(execute([str(binary), 'cli', '--version'], timeout=30).stdout)
@@ -102,6 +116,7 @@ def main():
             return observed if any(v['role'] == 'page tab' and v['name'].startswith('Welcome') for v in observed) else None
 
         wait(welcome)  # The CLI endpoint is published before frontend/window readiness.
+        capture('before')
         # Select only windows belonging to this exact isolated process.
         windows = execute(['xdotool', 'search', '--onlyvisible', '--pid', str(report['ownedPid'])]).stdout.split()
         assert windows
@@ -120,7 +135,7 @@ def main():
 
         after = wait(palette, 15)
         (evidence / 'accessible-palette.json').write_text(json.dumps(after, indent=2))
-        execute(['import', '-window', 'root', str(evidence / 'palette.png')])
+        capture('palette')
         execute(['xdotool', 'key', '--clearmodifiers', 'Escape'])
         report['passed'] = True
     except Exception:
