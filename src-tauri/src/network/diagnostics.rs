@@ -69,13 +69,26 @@ struct HttpsQuality {
 async fn check_https(host: &str, url: &str) -> HttpsQuality {
     let started = std::time::Instant::now();
     let result = async {
-        let client = super::http_client_for_proxy(Some(url))?;
+        let deadline = tokio::time::Instant::now() + BUDGET;
+        let proxy = url.to_owned();
+        let client = tokio::time::timeout_at(
+            deadline,
+            crate::services::credentials::inspect(move || {
+                super::http_client_for_proxy(Some(&proxy))
+            }),
+        )
+        .await
+        .map_err(|_| AppError::validation("network.timeout"))??;
         let target = reqwest::Url::parse(&format!("https://{}/", super::authority(host)))
             .map_err(|_| AppError::validation("network.invalid"))?;
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(AppError::validation("network.timeout"));
+        }
         // Complete TLS and HTTP through the same explicit route as the TCP test.
         let response = client
             .head(target)
-            .timeout(Duration::from_secs(15))
+            .timeout(remaining)
             .send()
             .await
             .map_err(|error| {
@@ -134,6 +147,10 @@ where
     let mut samples = Vec::with_capacity(SAMPLES);
     let mut last_error = None;
     for _ in 0..SAMPLES {
+        if tokio::time::Instant::now() >= deadline {
+            last_error = Some(AppError::validation("network.timeout"));
+            break;
+        }
         match tokio::time::timeout_at(deadline, connect()).await {
             Ok(Ok(ms)) => samples.push(Some(ms)),
             Ok(Err(error)) => {
@@ -156,7 +173,12 @@ where
     Ok(summarize(samples, last_error))
 }
 
-async fn measure_route(host: &str, port: u16, url: &str) -> AppResult<ConnectionQuality> {
+async fn measure_route(
+    host: &str,
+    port: u16,
+    url: &str,
+    budget: Duration,
+) -> AppResult<ConnectionQuality> {
     measure(
         || async {
             let started = std::time::Instant::now();
@@ -166,7 +188,7 @@ async fn measure_route(host: &str, port: u16, url: &str) -> AppResult<Connection
             drop(stream);
             Ok(ms)
         },
-        BUDGET,
+        budget,
     )
     .await
 }
@@ -179,10 +201,22 @@ pub async fn proxy_test_quality(
     port: u16,
 ) -> AppResult<ConnectionQuality> {
     // Freeze the selected route across all samples, including system proxy resolution.
-    let url = super::tcp_proxy(&app, &host, port, &proxy)?;
-    let mut quality = measure_route(&host, port, &url).await?;
+    let deadline = tokio::time::Instant::now() + BUDGET;
+    let route = tokio::time::timeout_at(
+        deadline,
+        super::TcpRoute::capture_background(&app, &host, port, &proxy),
+    )
+    .await
+    .map_err(|_| AppError::validation("network.timeout"))??;
+    let mut quality = measure_route(
+        &host,
+        port,
+        route.proxy(),
+        deadline.saturating_duration_since(tokio::time::Instant::now()),
+    )
+    .await?;
     if port == 443 && quality.successful > 0 {
-        quality.https = Some(check_https(&host, &url).await);
+        quality.https = Some(check_https(&host, route.proxy()).await);
     }
     Ok(quality)
 }
