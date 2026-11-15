@@ -4,6 +4,14 @@ const key = "ota-preserved";
 const command = "echo ota-preserved-history";
 const hostName = "OTA preserved host 主机";
 
+async function digest(value) {
+  const bytes = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new globalThis.TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function verifyData(call, expectedSecret) {
   const saved = await call("storage.get", { key });
   if (
@@ -24,9 +32,14 @@ export async function verifyData(call, expectedSecret) {
     (expectedSecret !== undefined && secret !== expectedSecret)
   )
     throw new Error("Secret missing or changed");
-  // The external native driver independently compares the OS item value's SHA-256
-  // before/after update. The plugin never persists a second plaintext copy.
-  return { hostRetained: true, nonemptyHistory: true, storageRetained: true, secretReadable: true };
+  // Only this approved app reads its own secret. Export a hash through its view,
+  // never a plaintext copy, so the external runner can compare source and target.
+  return {
+    hostRetained: true,
+    nonemptyHistory: true,
+    storageRetained: true,
+    secretSha256: await digest(secret),
+  };
 }
 
 export async function seedData(call) {

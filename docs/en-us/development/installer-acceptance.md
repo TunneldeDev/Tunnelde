@@ -204,15 +204,17 @@ bridge invocation, globals carrying an API context or product-package changes
 are used. Installation, approval, source writes and target reads have AX records
 and screenshots. Changing approved package bytes is rejected.
 
-In this mode only, fixed native queries read the newly created synthetic host
-password and the fixture's own secret without authentication UI and return only
-SHA-256 values. No secret, command-line secret argument or second plaintext copy
-is captured. Source/target password and plugin-secret hashes, installed fixture
-bytes, approved fingerprint/permissions and nonempty history must match. The
+The approved fixture reads its own secret through `secrets.get` and displays
+only SHA-256 for external AX comparison. No secret, command-line secret argument
+or second plaintext copy is captured. Source/target plugin-secret hashes,
+installed fixture bytes, approved fingerprint/permissions and nonempty history must match. The
 source must have a running plugin's unclean marker before the planned update;
 the target must remain unrestricted and reactivate using its retained grant.
-`otaDataAccepted` records this extra scope while `otaAccepted` remains false for
-independent review and the wider platform matrix. Guard/unit checks do not count
+`pluginDataAccepted` records this extra scope. Host password value/authentication
+remains unaccepted: an external value query opened a legacy Keychain permission
+dialog despite noninteractive LAContext, so that query was removed. The runner
+does not operate that dialog or change credential access. `otaAccepted` remains
+false for this gap, independent review and the wider platform matrix. Guard/unit checks do not count
 as real OTA acceptance.
 
 ### Public-package OTA acceptance checklist

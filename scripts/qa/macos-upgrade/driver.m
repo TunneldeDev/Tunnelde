@@ -138,29 +138,25 @@ int main(int argc, const char *argv[]) {
       }
       return emit(@{@"processes": owned});
     }
-    BOOL pluginCredentialValue = [action isEqual:@"plugin-credential-value"];
-    BOOL credentialValue = [action isEqual:@"credential-value"] || pluginCredentialValue;
-    if (([action isEqual:@"credential"] || credentialValue) && argc == (pluginCredentialValue ? 2 : 3)) {
-      if (credentialValue && ![env[@"MACOS_OTA_MODE"] isEqual:@"retention"]) return 2;
-      NSString *account = pluginCredentialValue ? @"plugin:qa-macos-ota-retention:ota-preserved" : [NSString stringWithUTF8String:argv[2]];
-      if (!pluginCredentialValue && ![[NSUUID alloc] initWithUUIDString:account]) return 2;
+    if ([action isEqual:@"credential"] && argc == 3) {
+      NSString *account = [NSString stringWithUTF8String:argv[2]];
+      if (![[NSUUID alloc] initWithUUIDString:account]) return 2;
       LAContext *authentication = [LAContext new];
       authentication.interactionNotAllowed = YES;
       NSDictionary *query = @{(__bridge NSString *)kSecClass: (__bridge id)kSecClassGenericPassword,
         (__bridge NSString *)kSecAttrService: @"dev.tunnelde.app", (__bridge NSString *)kSecAttrAccount: account,
-        (credentialValue ? (__bridge NSString *)kSecReturnData : (__bridge NSString *)kSecReturnPersistentRef): @YES,
-        (__bridge NSString *)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
+        (__bridge NSString *)kSecReturnPersistentRef: @YES, (__bridge NSString *)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
         (__bridge NSString *)kSecUseAuthenticationContext: authentication};
       CFTypeRef result = NULL;
       OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
       NSData *reference = CFBridgingRelease(result);
-      NSMutableDictionary *value = [NSMutableDictionary dictionaryWithDictionary:@{@"status": @(status), @"account": account, @"secretRead": credentialValue ? @YES : @NO}];
+      NSMutableDictionary *value = [NSMutableDictionary dictionaryWithDictionary:@{@"status": @(status), @"account": account, @"secretRead": @NO}];
       if (status == errSecSuccess && [reference isKindOfClass:NSData.class]) {
         unsigned char digest[CC_SHA256_DIGEST_LENGTH];
         CC_SHA256(reference.bytes, (CC_LONG)reference.length, digest);
         NSMutableString *hash = [NSMutableString string];
         for (NSUInteger i = 0; i < sizeof(digest); i++) [hash appendFormat:@"%02x", digest[i]];
-        value[credentialValue ? @"valueSha256" : @"persistentReferenceSha256"] = hash;
+        value[@"persistentReferenceSha256"] = hash;
       }
       return emit(value);
     }

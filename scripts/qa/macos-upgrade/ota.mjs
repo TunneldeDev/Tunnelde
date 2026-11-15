@@ -146,10 +146,8 @@ export async function upgrade(runtime) {
   ])
     await fill(label, value);
   // Only the disposable original app receives this synthetic credential. Never
-  // put it in argv, results, AX values or screenshots. Retention mode reads only
-  // this new synthetic item's value through the native driver and emits its hash.
-  const password = randomBytes(32).toString("base64url");
-  await fill("Password", password);
+  // put it in argv, results, AX values or screenshots; no host credential is read.
+  await fill("Password", randomBytes(32).toString("base64url"));
   await native("press", pid, "Save");
   let host;
   await waitUntil("host and credential save", async () => {
@@ -169,17 +167,7 @@ export async function upgrade(runtime) {
   assert.match(report.credentialBefore.persistentReferenceSha256, /^[a-f0-9]{64}$/);
   const retentionRuntime = { ...runtime, tree, waitUntil, hasText };
   if (retention) {
-    report.credentialValueBefore = await native("credential-value", host.id);
-    assert.equal(report.credentialValueBefore.status, 0);
-    assert.equal(
-      report.credentialValueBefore.valueSha256,
-      createHash("sha256").update(password).digest("hex"),
-      "Saved synthetic host password differs from the generated value",
-    );
     await seedRetention(retentionRuntime);
-    report.pluginCredentialValueBefore = await native("plugin-credential-value");
-    assert.equal(report.pluginCredentialValueBefore.status, 0);
-    assert.match(report.pluginCredentialValueBefore.valueSha256, /^[a-f0-9]{64}$/);
   }
   report.profileBeforeUpdate = await profile(host.id);
   assert(
@@ -327,11 +315,8 @@ export async function upgrade(runtime) {
       report.profileAfterUpdate.security.grants,
       report.profileBeforeUpdate.security.grants,
     );
-    report.credentialValueAfter = await native("credential-value", host.id);
-    assert.deepEqual(report.credentialValueAfter, report.credentialValueBefore);
-    report.pluginCredentialValueAfter = await native("plugin-credential-value");
-    assert.deepEqual(report.pluginCredentialValueAfter, report.pluginCredentialValueBefore);
-    report.otaDataAccepted = true;
+    report.pluginDataAccepted = true;
+    report.hostCredentialValueAccepted = false;
   }
   report.targetCli = await verifyLocalCli(binary, report.to.slice(1), pointer, {
     env,
@@ -359,10 +344,13 @@ export async function upgrade(runtime) {
   report.otaCoreAccepted = true;
   report.otaAccepted = false;
   report.retentionScope = retention
-    ? "Settings/Profile/host/password hash, nonempty history, real approved frontend plugin/grant/fingerprint/storage and own secret value, with source active recovery marker and unrestricted target"
+    ? "Settings/Profile/host/credential metadata, nonempty history, real approved frontend plugin/grant/fingerprint/storage and own secret hash, with source active recovery marker and unrestricted target; host secret value/authentication unaccepted"
     : "Actual settings/Profile/host and same credential-item metadata; no secret read, authentication or nonempty history/plugin-storage acceptance";
   report.remaining = retention
-    ? ["Independent review; physical desktop/input and other M05 cases remain separate"]
+    ? [
+        "Host credential value/authentication (external value read requires Keychain access)",
+        "Independent review; physical desktop/input and other M05 cases remain separate",
+      ]
     : [
         "Nonempty command history",
         "Credential authentication/value retention",

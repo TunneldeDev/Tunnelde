@@ -7,6 +7,21 @@ export const pluginId = "qa-macos-ota-retention";
 export const pluginName = "QA Mac OTA retention";
 export const permissions = ["ui.trusted", "hosts.read", "history.read", "history.write", "secrets"];
 
+export function secretHash(tree) {
+  assert.equal(tree.traversalCompleted, true);
+  const summaries = tree.nodes.flatMap((node) => {
+    if (node.role !== "AXStaticText" || !node.AXValue?.startsWith('{"hostRetained":')) return [];
+    const value = JSON.parse(node.AXValue);
+    assert.equal(value.hostRetained, true);
+    assert.equal(value.nonemptyHistory, true);
+    assert.equal(value.storageRetained, true);
+    assert.match(value.secretSha256, /^[a-f0-9]{64}$/);
+    return [value.secretSha256];
+  });
+  assert.equal(summaries.length, 1, "Expected exactly one synthetic secret digest");
+  return summaries[0];
+}
+
 async function openPlugin(runtime, pid) {
   const { native, waitUntil, hasText, tree } = runtime;
   await native("press", pid, "Plugins", "described");
@@ -87,12 +102,12 @@ export async function seedRetention(runtime) {
     assert(!hasText(value, "OTA retention failed"), "Public SDK retention seed failed");
     return hasText(value, "OTA retention seeded");
   });
-  await tree(pid, "plugin-seeded");
+  report.pluginSecretBeforeSha256 = secretHash(await tree(pid, "plugin-seeded"));
   await screenshot("plugin-seeded");
 }
 
 export async function verifyRetention(runtime, pid) {
-  const { native, tree, waitUntil, hasText, screenshot } = runtime;
+  const { report, native, tree, waitUntil, hasText, screenshot } = runtime;
   await openPlugin(runtime, pid);
   await waitUntil("retained plugin approval and activation", async () => {
     const value = await tree(pid);
@@ -105,6 +120,7 @@ export async function verifyRetention(runtime, pid) {
     assert(!hasText(value, "OTA retention failed"), "Retained data verification failed");
     return hasText(value, "OTA retention verified");
   });
-  await tree(pid, "plugin-verified");
+  report.pluginSecretAfterSha256 = secretHash(await tree(pid, "plugin-verified"));
+  assert.equal(report.pluginSecretAfterSha256, report.pluginSecretBeforeSha256);
   await screenshot("plugin-verified");
 }
