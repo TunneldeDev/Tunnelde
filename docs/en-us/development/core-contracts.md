@@ -91,6 +91,18 @@ transport precedes the final pure configuration check. Reviewed credential
 writes/deletes retain their separate mutation authority and may still block
 consumers; this browser boundary does not declare those paths solved.
 
+Plugin engine and local process-task proxy environments are prepared on the same
+bounded credential worker, outside the runtime thread. Initial and final database
+admission yield on mutex contention and share the preparation deadline instead of
+blocking behind a credential writer. Effective plugin/process proxy selection is captured from persisted settings before queueing and checked
+again before applying the native environment. Direct and system inheritance retain
+their existing meanings. A local task's deadline includes preparation; cancellation,
+revocation or expiry during preparation prevents late launch admission. After
+preparation, the original runtime grant and cancellation are checked immediately
+before spawning, without an intervening await. This is prelaunch admission, not
+an OS transaction with external credential changes or concurrent revocation after
+admission; launched children retain their existing owned cleanup rules.
+
 ## Compatibility rules
 
 - A stable interface has an owned request/result/error schema, documented effects

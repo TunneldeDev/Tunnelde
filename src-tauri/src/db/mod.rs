@@ -68,6 +68,22 @@ impl Database {
         })
     }
 
+    /// Nonblocking admission for bounded local work. None means the caller can
+    /// yield/retry without holding a runtime thread behind another DB consumer.
+    /// The callback must not perform OS credential, process or network access.
+    pub(crate) fn try_with<T>(
+        &self,
+        run: impl FnOnce(&Connection) -> AppResult<T>,
+    ) -> AppResult<Option<T>> {
+        match self.conn.try_lock() {
+            Ok(guard) => run(&guard).map(Some),
+            Err(std::sync::TryLockError::WouldBlock) => Ok(None),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                Err(AppError::internal("database lock poisoned"))
+            }
+        }
+    }
+
     pub fn with<T>(&self, run: impl FnOnce(&Connection) -> AppResult<T>) -> AppResult<T> {
         let guard = self
             .conn

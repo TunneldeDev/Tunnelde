@@ -1932,6 +1932,7 @@
     "timeout": "Search timed out; narrow the search directory."
   },
   "network": {
+    "configurationChanged": "The proxy configuration changed while preparing the process. Review the selected proxy and try again.",
     "title": "Network & proxies",
     "intro": "Choose a default route, then override individual features or hosts. Passwords are stored in your system keychain.",
     "inherit": "Use default",

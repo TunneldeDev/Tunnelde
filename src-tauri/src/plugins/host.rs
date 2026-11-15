@@ -74,7 +74,13 @@ impl PluginHost {
         #[cfg(windows)]
         command.creation_flags(0x08000000);
         if let Some(context) = &context {
-            crate::network::process_environment(&context.app, &context.id, &mut command)?;
+            let environment =
+                crate::network::ProcessEnvironment::capture(&context.app, &context.id).await?;
+            environment
+                .apply_current(&context.app, &mut command)
+                .await?;
+            // Preparation yields: the original runtime grant must still be current.
+            api::authorize(context, &[])?;
         }
         let mut child = command
             .arg(node_path(entry))
