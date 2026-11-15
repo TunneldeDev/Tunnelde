@@ -760,7 +760,7 @@ async fn connect_captured(
     )
     .await?;
 
-    let authentication = snapshot.authentication(&app, &host, &request)?;
+    let authentication = snapshot.authentication(&app, &host, &request).await?;
     tokio::time::timeout(
         CONNECT_TIMEOUT,
         authenticate(

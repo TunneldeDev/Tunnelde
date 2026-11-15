@@ -4,11 +4,13 @@ use super::*;
 use crate::network::{ConnectionRoute, TcpRoute};
 mod review;
 
+#[derive(Clone)]
 pub(super) struct Node {
     pub host: Host,
     pub key: Option<String>,
 }
 
+#[derive(Clone)]
 pub(in super::super) struct Snapshot {
     pub(super) nodes: Vec<Node>,
     route: ConnectionRoute,
@@ -84,28 +86,42 @@ impl Snapshot {
         self.nodes.iter().any(|node| node.host.id == id)
     }
 
-    /// Read the host-ID vault fallback while the reviewed configuration is
-    /// still current under the DB guard. Authentication itself must never
-    /// resolve mutable storage after this point.
-    pub(in super::super) fn authentication(
+    /// Acquire a saved password off the runtime without retaining the DB lock.
+    /// The worker revalidates the original review before and after the read;
+    /// only a still-current value may reach authentication.
+    pub(in super::super) async fn authentication(
         &self,
         app: &AppHandle,
         host: &Host,
         request: &SshConnectRequest,
     ) -> AppResult<SshConnectRequest> {
-        self.with_current(app, |_| {
-            let mut request = request.clone();
-            if !matches!(host.auth_method.as_str(), "key" | "agent")
-                && request
-                    .password
-                    .as_ref()
-                    .is_none_or(|value| value.is_empty())
-                && !host.id.starts_with(crate::plugins::host_sources::PREFIX)
-            {
-                request.password = app.state::<AppState>().vault.load(&host.id)?;
-            }
-            Ok(request)
-        })
+        self.verify(app)?;
+        let mut request = request.clone();
+        if !matches!(host.auth_method.as_str(), "key" | "agent")
+            && request
+                .password
+                .as_ref()
+                .is_none_or(|value| value.is_empty())
+            && !host.id.starts_with(crate::plugins::host_sources::PREFIX)
+        {
+            let reviewed = self.clone();
+            let host_id = host.id.clone();
+            request.password = crate::services::credentials::load_reviewed(
+                app.clone(),
+                host_id.clone(),
+                move |app| {
+                    if !reviewed.contains_host(&host_id) {
+                        return Err(changed());
+                    }
+                    reviewed.verify(app)
+                },
+            )
+            .await?;
+            // Recheck after asynchronous delivery, before returning any value
+            // to the route's next authentication step.
+            self.verify(app)?;
+        }
+        Ok(request)
     }
 
     pub(in super::super) fn revision(&self) -> String {
