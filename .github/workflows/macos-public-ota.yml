@@ -13,6 +13,14 @@ on:
         default: inspect
         type: choice
         options: [inspect, upgrade, retention]
+      from:
+        description: Original public stable source tag (for example v1.3.1)
+        required: true
+        type: string
+      to:
+        description: Newer public stable target tag (must match the actual GUI selection)
+        required: true
+        type: string
   pull_request:
     branches: [dev]
     paths:
@@ -44,6 +52,8 @@ jobs:
         run: node --test scripts/qa/macos-upgrade/*.test.mjs scripts/qa/local-cli/*.test.mjs scripts/qa/windows-upgrade/assets.test.mjs
       - name: Reject unsafe archives before extraction
         run: python3 -B scripts/qa/macos-upgrade/archive_test.py
+      - name: Check read-only legacy and immutable credential identities
+        run: python3 -B scripts/qa/macos-upgrade/credential_test.py
       - name: Compile the native driver and prove local-context refusal
         run: |
           xcrun clang -fobjc-arc -Wall -Wextra -Werror \
@@ -70,8 +80,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MACOS_OTA_ACK: ${{ inputs.acknowledgement }}
           MACOS_OTA_MODE: ${{ inputs.mode }}
-          UPGRADE_FROM: v1.2.1
-          UPGRADE_TO: v1.3.0
+          UPGRADE_FROM: ${{ inputs.from }}
+          UPGRADE_TO: ${{ inputs.to }}
         run: node scripts/qa/macos-upgrade/public.mjs
       - name: Retain successful or failed native evidence
         if: always()

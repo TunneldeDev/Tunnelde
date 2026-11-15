@@ -2,7 +2,7 @@ use super::*;
 use russh::{
     keys::HashAlg,
     server::{self, Server as _, Session},
-    ChannelId,
+    Channel, ChannelId,
 };
 use std::{
     collections::HashMap,

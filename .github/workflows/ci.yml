@@ -436,6 +436,8 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::preparation
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::remote
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::connections::execution
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib update::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
@@ -447,7 +449,10 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::application_actions
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::runners::transport::channel
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib mounts::negotiation
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::monitor
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
@@ -522,6 +527,8 @@ jobs:
           TUNNELDE_TEST_APP_KEYRING=1 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::tests::system::application_credentials_are_isolated_and_survive_process_reconstruction -- --ignored --exact
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::preparation
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::remote
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::connections::execution
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
@@ -532,7 +539,10 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::application_actions
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::runners::transport::channel
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib mounts::negotiation
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::monitor
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file

@@ -138,9 +138,12 @@ int main(int argc, const char *argv[]) {
       }
       return emit(@{@"processes": owned});
     }
-    if ([action isEqual:@"credential"] && argc == 3) {
-      NSString *account = [NSString stringWithUTF8String:argv[2]];
-      if (![[NSUUID alloc] initWithUUIDString:account]) return 2;
+    if (([action isEqual:@"credential"] || [action isEqual:@"credential-item"]) && argc == 3) {
+      NSString *identifier = [NSString stringWithUTF8String:argv[2]];
+      NSUUID *uuid = [[NSUUID alloc] initWithUUIDString:identifier];
+      if (!uuid || ![uuid.UUIDString.lowercaseString isEqual:identifier]) return 2;
+      NSString *account = [action isEqual:@"credential-item"]
+          ? [@"tunnelde.credential.v1:" stringByAppendingString:identifier] : identifier;
       LAContext *authentication = [LAContext new];
       authentication.interactionNotAllowed = YES;
       NSDictionary *query = @{(__bridge NSString *)kSecClass: (__bridge id)kSecClassGenericPassword,

@@ -38,6 +38,92 @@ function hosted() {
   };
 }
 
+function publicHosted(from = "v1.3.1", to = "v1.4.0") {
+  const context = hosted();
+  context.workflowFile = "macos-public-ota.yml";
+  context.acknowledgement = "original-public-ota";
+  context.env.GITHUB_WORKFLOW_REF = context.env.GITHUB_WORKFLOW_REF.replace(
+    "macos-ota-probe.yml",
+    "macos-public-ota.yml",
+  );
+  context.env.MACOS_OTA_ACK = context.acknowledgement;
+  context.env.UPGRADE_FROM = from;
+  context.env.UPGRADE_TO = to;
+  return context;
+}
+
+test("original-public OTA accepts explicit stable upgrades using numeric component ordering", () => {
+  for (const [from, to] of [
+    ["v1.2.1", "v1.3.0"],
+    ["v1.3.1", "v1.4.0"],
+    ["v1.9.9", "v1.10.0"],
+    ["v1.99.0", "v2.0.0"],
+    ["v1.9007199254740992.0", "v1.9007199254740993.0"],
+  ]) {
+    for (const architecture of ["arm64", "x64"]) {
+      const context = publicHosted(from, to);
+      context.architecture = architecture;
+      context.env.RUNNER_ARCH = architecture === "arm64" ? "ARM64" : "X64";
+      assert.equal(
+        hostedContext(context).root,
+        join(runnerHome, "work", "_temp", "tunnelde-macos-public-ota-123456-1"),
+      );
+    }
+  }
+});
+
+test("original-public OTA rejects equal, older, missing, noncanonical and prerelease tags", () => {
+  for (const [from, to] of [
+    ["v1.3.1", "v1.3.1"],
+    ["v1.4.0", "v1.3.1"],
+    ["v1.10.0", "v1.9.9"],
+    [undefined, "v1.4.0"],
+    ["v1.3.1", undefined],
+    ["v01.3.1", "v1.4.0"],
+    ["v1.3.1", "1.4.0"],
+    ["v1.3.1", "v1.4.0+build"],
+    ["v1.3.1", "v1.4.0\n"],
+    ["v1.3.1", "nightly"],
+    ["v1.3.1", "v1.4.0-beta.3"],
+    ["v1.4.0-beta.3", "v1.4.0"],
+  ]) {
+    const context = publicHosted();
+    context.env.UPGRADE_FROM = from;
+    context.env.UPGRADE_TO = to;
+    assert.throws(() => hostedContext(context));
+  }
+});
+
+test("a valid public stable pair cannot bypass the disposable manual runner checks", () => {
+  for (const mutate of [
+    (c) => {
+      c.env.RUNNER_ENVIRONMENT = "self-hosted";
+    },
+    (c) => {
+      c.env.GITHUB_EVENT_NAME = "pull_request";
+    },
+    (c) => {
+      c.env.MACOS_OTA_ACK = "probe-only";
+    },
+    (c) => {
+      c.env.GITHUB_WORKFLOW_REF = c.env.GITHUB_WORKFLOW_REF.replace(
+        "macos-public-ota.yml",
+        "macos-ota-probe.yml",
+      );
+    },
+    (c) => {
+      c.user.username = "qysyw";
+    },
+    (c) => {
+      c.cwd = join(runnerHome, "work", "other");
+    },
+  ]) {
+    const context = publicHosted();
+    mutate(context);
+    assert.throws(() => hostedContext(context));
+  }
+});
+
 test("accepts the manual hosted context for each supported native architecture", () => {
   const context = hosted();
   assert.equal(

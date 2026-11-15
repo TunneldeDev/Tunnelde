@@ -107,13 +107,18 @@ fn expanding_transfer_and_native_reservation_have_one_transactional_winner() {
             .into_iter()
             .map(|worker| worker.join().unwrap())
             .collect();
-        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results.iter().filter(|result| result.is_ok()).count(),
+            1,
+            "native reservation then transfer extension: {results:?}"
+        );
         assert_eq!(
             results
                 .iter()
                 .filter(|result| matches!(result, Err(Error::Occupied)))
                 .count(),
-            1
+            1,
+            "native reservation then transfer extension: {results:?}"
         );
         drop(permit); // Unknown/dispatched ownership survives loss of the worker.
         let mut journal = Journal::open(&fixture.path()).unwrap();

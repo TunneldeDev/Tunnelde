@@ -46,3 +46,12 @@ components and shared sampling live in `features/monitor/components/` and
 checks dependency cycles and rejects private type imports. The compatibility entry
 point only re-exports domain types. This provider is experimental and does not
 change the stable RPC contract or imply that every domain is ready for 1.0.
+
+## Sampling transport lifetime
+
+Sampling commands share at most 64 owned SSH channels across the application.
+Waiting for a slot, opening the channel and collecting output use the same
+eight-second deadline. Cancelled or timed-out unconfirmed opens retain their slot
+until a reply or session disposal; late channels close without running a sample.
+Cleanup closes only the sampling channel and preserves the parent SSH connection.
+Closing a channel does not prove that an already dispatched remote command exited.

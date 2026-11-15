@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assertUpgrade, releaseAsset } from "./assets.mjs";
+import { assertUpgrade, releaseAsset, releaseVersion } from "./assets.mjs";
 
 const release = () => ({
   tag_name: "v0.37.0",
@@ -8,6 +8,21 @@ const release = () => ({
   assets: [
     { name: "Tunnelde_0.37.0_x64-setup.exe", digest: `sha256:${"a".repeat(64)}`, size: 123 },
   ],
+});
+
+test("release tags reject missing values and surrounding whitespace", () => {
+  for (const value of [
+    undefined,
+    null,
+    123,
+    " v1.4.0",
+    "v1.4.0 ",
+    "v1.4.0\n",
+    "v1.4.0\r\n",
+    "v1.4.0-beta.1\n",
+  ]) {
+    assert.throws(() => releaseVersion(value));
+  }
 });
 
 test("upgrade order is numeric and beta precedes the same stable release", () => {
