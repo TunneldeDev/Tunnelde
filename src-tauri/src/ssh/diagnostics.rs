@@ -182,6 +182,18 @@ fn register<'a>(
     Ok((Registration { ssh, id }, registration))
 }
 
+async fn run_registered<T>(
+    ssh: &SshManager,
+    id: &str,
+    host_id: &str,
+    operation: impl Future<Output = AppResult<T>>,
+) -> AppResult<T> {
+    let (_guard, cancellation) = register(ssh, id, host_id)?;
+    Abortable::new(operation, cancellation)
+        .await
+        .map_err(|_| AppError::Ssh("ssh.testCancelled".into()))?
+}
+
 pub async fn test(
     app: AppHandle,
     id: String,
@@ -189,14 +201,11 @@ pub async fn test(
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<ConnectionQuality> {
     let state = app.state::<AppState>();
-    let (_guard, cancellation) = register(&state.ssh, &id, &host_id)?;
-    let target = ProbeTarget::capture(&app, &host_id)?;
-    Abortable::new(
-        measure(&host_id, || target.probe(&app, &credentials), BUDGET),
-        cancellation,
-    )
+    run_registered(&state.ssh, &id, &host_id, async {
+        let target = ProbeTarget::capture(&app, &host_id).await?;
+        measure(&host_id, || target.probe(&app, &credentials), BUDGET).await
+    })
     .await
-    .map_err(|_| AppError::Ssh("ssh.testCancelled".into()))?
 }
 
 pub(crate) async fn test_reviewed(
@@ -206,14 +215,11 @@ pub(crate) async fn test_reviewed(
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<ConnectionQuality> {
     let state = app.state::<AppState>();
-    let (_guard, cancellation) = register(&state.ssh, &id, &review.host_id)?;
-    let target = super::session::review::Target::capture(&app, &review)?;
-    Abortable::new(
-        measure(&review.host_id, || target.probe(&app, &credentials), BUDGET),
-        cancellation,
-    )
+    run_registered(&state.ssh, &id, &review.host_id, async {
+        let target = super::session::review::Target::capture_background(&app, &review).await?;
+        measure(&review.host_id, || target.probe(&app, &credentials), BUDGET).await
+    })
     .await
-    .map_err(|_| AppError::Ssh("ssh.testCancelled".into()))?
 }
 
 pub fn cancel(ssh: &SshManager, id: &str) {

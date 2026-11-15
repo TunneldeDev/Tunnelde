@@ -46,6 +46,12 @@ pub(crate) async fn prepare(app: AppHandle, displayed: Host) -> AppResult<Plan> 
 }
 
 impl Target {
+    pub(crate) async fn capture_background(app: &AppHandle, review: &Review) -> AppResult<Self> {
+        let app = app.clone();
+        let review = review.clone();
+        crate::services::credentials::inspect(move || Self::capture(&app, &review)).await
+    }
+
     pub(crate) fn jump_hosts(&self) -> Vec<Host> {
         self.0.jump_hosts()
     }
@@ -140,16 +146,15 @@ impl Target {
         if info.fingerprint != fingerprint || info.host_id != expected_host_id {
             return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
         }
-        self.approve(app, info)
+        let app = app.clone();
+        crate::services::credentials::checked(move |job| {
+            self.approve_checked(&app, info, || job.commit())
+        })
+        .await
     }
 
     /// The requester may hold its own synchronous authority guard across the
     /// final trust write, after probing without locks.
-    pub(crate) fn approve(mut self, app: &AppHandle, info: HostKeyInfo) -> AppResult<Trusted> {
-        self.0.approve_reviewed(app, &info)?;
-        Ok(self.trusted(info))
-    }
-
     pub(crate) fn approve_checked(
         mut self,
         app: &AppHandle,

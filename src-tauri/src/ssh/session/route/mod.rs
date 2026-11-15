@@ -20,7 +20,7 @@ pub(super) async fn open(
     }
     let mut pending = PendingRoute::default();
     for (index, node) in snapshot.nodes.iter().enumerate() {
-        snapshot.verify(app)?;
+        snapshot.verify_background(app).await?;
         let host = &node.host;
         let expected = if let Some(destination) = destination.filter(|_| host.id == target.id) {
             Some(destination.server_key.clone())
@@ -50,7 +50,7 @@ pub(super) async fn open(
         pending.target = Some(handle);
         // No credentials are sent after a host, route, proxy or trust edit.
         // The sockets still use the snapshot even if an edit races this check.
-        snapshot.verify(app)?;
+        snapshot.verify_background(app).await?;
         let status = match node.key.as_deref() {
             None => HostKeyStatus::Unknown,
             Some(key) if key == observed.fingerprint => HostKeyStatus::Known,
@@ -95,7 +95,7 @@ pub(super) async fn open(
         )
         .await
         .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
-        snapshot.verify(app)?;
+        snapshot.verify_background(app).await?;
         pending
             .jumps
             .push(Arc::new(pending.target.take().expect("authenticated jump")));
@@ -122,6 +122,6 @@ pub(super) async fn probe(
     .await;
     pending.target.take();
     pending.jumps.clear();
-    snapshot.verify(app)?;
+    snapshot.verify_background(app).await?;
     Ok(info)
 }

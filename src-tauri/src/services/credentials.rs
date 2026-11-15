@@ -120,5 +120,14 @@ pub(crate) async fn inspect<T: Send + 'static>(
     run(&WORKERS, inspection).await
 }
 
+/// A domain check can perform slow OS reads before its final synchronous
+/// publication. Mutations must commit at that publication, so cancellation
+/// while a read or DB check is pending cannot publish a late session/trust write.
+pub(crate) async fn checked<T: Send + 'static>(
+    operation: impl FnOnce(&crate::services::operations::Cancellation) -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    WORKERS.blocking(operation).await
+}
+
 #[cfg(test)]
 mod tests;

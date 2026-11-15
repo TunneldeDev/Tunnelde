@@ -302,3 +302,78 @@ async fn an_unchanged_review_returns_the_value_and_native_errors_are_preserved()
         "vault.load: native failure"
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_slow_route_check_keeps_runtime_and_database_available_and_rejects_changed_authority() {
+    let database = reviewed_database();
+    let owned = database.clone();
+    let (started, ready) = tokio::sync::oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let published = Arc::new(AtomicBool::new(false));
+    let publication = published.clone();
+    let owner_thread = std::thread::current().id();
+    let request = tokio::spawn(async move {
+        checked(move |job| {
+            check_review(&owned)?;
+            started.send(std::thread::current().id()).unwrap();
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            // Models the route's final saved-authority and cancellation check,
+            // after a platform credential read and before any publication.
+            check_review(&owned)?;
+            job.commit()?;
+            publication.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+    });
+    let worker = tokio::time::timeout(Duration::from_secs(2), ready)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(worker, owner_thread);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::task::yield_now().await;
+        tokio::task::spawn_blocking(move || change_review(&database))
+            .await
+            .unwrap()
+            .unwrap();
+    })
+    .await
+    .unwrap();
+    release.send(()).unwrap();
+    assert_eq!(
+        request.await.unwrap().unwrap_err().to_string(),
+        "ssh.connectionChanged"
+    );
+    assert!(!published.load(Ordering::Acquire));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_admitted_route_publication_finishes_its_runtime_notifications_after_caller_loss() {
+    let (started, ready) = tokio::sync::oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let (notified, notification) = tokio::sync::oneshot::channel();
+    let request = tokio::spawn(async move {
+        checked(move |job| {
+            job.commit()?;
+            started.send(()).unwrap();
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            // Session pumps/reconnect consumers must use this same runtime
+            // from a blocking worker and survive losing the original caller.
+            tokio::spawn(async move { notified.send("published").unwrap() });
+            Ok(())
+        })
+        .await
+    });
+    ready.await.unwrap();
+    request.abort();
+    assert!(request.await.unwrap_err().is_cancelled());
+    release.send(()).unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), notification)
+            .await
+            .unwrap()
+            .unwrap(),
+        "published"
+    );
+}
