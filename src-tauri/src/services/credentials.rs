@@ -112,5 +112,13 @@ pub(crate) async fn proxy_password(
     .await
 }
 
+/// Read-only inspection may need several OS credential reads while assembling
+/// a route. Share the same capacity and cancellation boundary as direct access.
+pub(crate) async fn inspect<T: Send + 'static>(
+    inspection: impl FnOnce() -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    run(&WORKERS, inspection).await
+}
+
 #[cfg(test)]
 mod tests;
