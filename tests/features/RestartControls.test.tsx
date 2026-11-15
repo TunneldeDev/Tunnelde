@@ -131,6 +131,30 @@ it("describes opted-in recovery and prevents restart when the checkpoint fails",
   expect(api.appRestart).toHaveBeenCalledOnce();
 });
 
+it.each(["quit", "restart"] as const)(
+  "flushes recovery before finishing native tray %s and never calls the direct restart path",
+  async (action) => {
+    useSettings.setState((state) => ({
+      settings: { ...state.settings, editorDraftRecovery: true },
+    }));
+    const finish = vi.fn(async () => {});
+    requestApplicationAction(action, finish);
+    const dialog = useDialogs.getState().dialog;
+    if (dialog.kind !== "confirm") throw Error("Missing confirmation");
+    expect(dialog.body).toContain("checkpointed for recovery");
+    expect(finish).not.toHaveBeenCalled();
+    vi.mocked(flushEditorDrafts).mockRejectedValueOnce(Error("checkpoint failed"));
+    await dialog.onConfirm();
+    expect(finish).not.toHaveBeenCalled();
+    await dialog.onConfirm();
+    expect(finish).toHaveBeenCalledOnce();
+    expect(vi.mocked(flushEditorDrafts).mock.invocationCallOrder.at(-1)).toBeLessThan(
+      finish.mock.invocationCallOrder[0]!,
+    );
+    expect(api.appRestart).not.toHaveBeenCalled();
+  },
+);
+
 it("ignores an older pending-status response after a plan is cancelled", async () => {
   let resolve!: (pending: StorageRestartPlan | null) => void;
   api.storageRestartPlan.mockReturnValue(

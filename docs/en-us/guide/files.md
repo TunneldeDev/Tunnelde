@@ -209,7 +209,10 @@ records, although old database pages and backups may retain copies.
 The application checkpoints edits after a short idle interval. Closing the main
 window, reloading, restarting from the UI, and installing an update wait for the
 current checkpoint; a failed checkpoint keeps the window open on ordinary close.
-An abrupt process exit or native tray Quit may lose the latest uncheckpointed edits.
+Tray **Quit** and **Restart** first restore the window and use the same confirmation
+and checkpoint flow, including when the lightweight background mode released the
+WebView. Cancelling keeps the application running; a failed checkpoint prevents
+the action. An abrupt process exit may lose the latest uncheckpointed edits.
 Closing an individual dirty tab still asks before discarding it.
 
 After restart, recovered drafts reopen without changing the original files, even

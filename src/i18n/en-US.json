@@ -2157,6 +2157,11 @@
     "truncated": "Showing the latest 256 KiB"
   },
   "restart": {
+    "quit": "Quit Tunnelde",
+    "quitTitle": "Quit Tunnelde?",
+    "quitWarning": "Quitting disconnects sessions, interrupts background tasks and discards unsaved edits. Save your work first.",
+    "quitRecoveryWarning": "Quitting disconnects sessions and interrupts background tasks. Unsaved file edits will be checkpointed for recovery before quitting.",
+    "requestChanged": "This application action is no longer current. Select it again from the tray menu.",
     "command": "Restart Tunnelde",
     "reload": "Reload window",
     "now": "Restart now",
