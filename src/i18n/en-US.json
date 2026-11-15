@@ -36,6 +36,7 @@
     "author": "Author"
   },
   "credentials": {
+    "cleanupRequired": "Some password operations still await confirmation or cleanup. Wait for running operations to finish. If this persists, check the software log and restart Tunnelde to resume recovery before retrying.",
     "changed": "The host, proxy, trust or saved password changed while this operation was pending. Review the current settings before retrying.",
     "invalidMetadata": "Saved password metadata is invalid. The original records were retained; open the software log for diagnosis.",
     "busy": "Password operations are still running. Wait for them to finish, then try again.",
