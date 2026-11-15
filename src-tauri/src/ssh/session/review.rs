@@ -84,6 +84,10 @@ impl Target {
         self.0.verify(app)
     }
 
+    pub(crate) async fn verify_background(&self, app: &AppHandle) -> AppResult<()> {
+        self.0.verify_background(app).await
+    }
+
     pub(crate) fn host_id(&self) -> &str {
         &self.0.target().id
     }

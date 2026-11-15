@@ -81,6 +81,20 @@ session. If saved connection settings change after the server accepted the key
 addition, setup reports the change instead of overwriting those new settings;
 the key already added to the original server may remain there.
 
+The managed private key is published without replacing an existing key, including
+concurrent first-time setup. Its storage filesystem must support hard links;
+publication failures preserve any existing key instead of overwriting it.
+Remote setup creates a missing `.ssh` directory with mode `0700` and a missing
+`authorized_keys` file with mode `0600`, while leaving existing permissions alone.
+It appends only the new line, preserving concurrent additions; repeating setup
+skips a line already present. Simultaneous setup may append duplicate valid lines.
+An unreadable, invalid UTF-8 or larger-than-4-MiB authorized file stops setup.
+Write and file-close acknowledgements are required before switching the saved
+host to key authentication. A lost acknowledgement can leave the remote addition
+in place while the saved host remains unchanged; these are separate effects,
+and cancellation is not a rollback. OS credential inspection and local key I/O
+run on bounded background workers without holding the database across OS access.
+
 ## Transfer performance
 
 In **Settings → Files → Transfers**, total upload and download limits are set
