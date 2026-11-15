@@ -285,3 +285,19 @@ it("allows a corrected draft after a definite size rejection without replaying a
     expect.objectContaining({ content: "corrected draft" }),
   ]);
 });
+
+it("keeps the startup consent fence until the recovery subscription takes ownership", async () => {
+  vi.mocked(api.editorDraftsRead).mockResolvedValue({ revision: "old-startup", drafts: [remote] });
+  const starting = start();
+  // Interleave a completed preference write with the read's promise delivery.
+  await Promise.resolve();
+  useSettings.setState((state) => ({
+    settings: { ...state.settings, editorDraftRecovery: false },
+  }));
+  useSettings.setState((state) => ({ settings: { ...state.settings, editorDraftRecovery: true } }));
+  vi.mocked(api.editorDraftsRead).mockResolvedValue({ revision: "new-tombstone", drafts: [] });
+  await starting;
+  expect(useWorkspace.getState().tabs).toHaveLength(0);
+  await flushEditorDrafts();
+  expect(api.editorDraftsSave).toHaveBeenLastCalledWith("new-tombstone", []);
+});
