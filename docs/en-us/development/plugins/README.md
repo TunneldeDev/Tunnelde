@@ -413,6 +413,17 @@ or process errors with generic executable/login advice. Older hosts may omit thi
 field; `tasks.status` also exposes failure details. Drain terminal output before
 reporting failure to preserve the agent's final protocol response.
 
+Ordinary remote `tasks.*` retain ownership of pending SSH channel opens after a
+timeout or cancellation. These opens share a host-wide budget of 128; an
+unconfirmed open keeps its slot until confirmation or parent-session disposal,
+even after its task record is retired. At capacity, new opens fail with
+`plugin.tasks.busy` rather than accumulating unbounded waiters. A late channel
+confirmation is closed without executing the command. Retiring a running task's
+owner aborts its input writer and attempts a bounded channel close without
+disconnecting sibling channels. Normal cancellation still attempts the existing
+stop signal. Neither close nor cancellation proves remote process termination or
+rolls back a dispatched command; the host does not replay it automatically.
+
 Views may declare `location: "sidebar"`, `kind: "chat"` and an approved activity `icon` to
 contribute a dockable controlled chat panel. `view.render` returns a `chat` block with session,
 model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.

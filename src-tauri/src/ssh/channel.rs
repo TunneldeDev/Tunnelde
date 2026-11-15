@@ -1,12 +1,12 @@
 //! Own confirmed and pending channels across cancellation without owning a session.
 use crate::error::{AppError, AppResult};
-use russh::{client, Channel, ChannelStream};
-use std::future::Future;
+use russh::{client, Channel, ChannelReadHalf, ChannelStream, ChannelWriteHalf};
+use std::{future::Future, sync::Arc, time::Duration};
 use tokio::sync::{oneshot, OwnedSemaphorePermit};
 
 pub(crate) struct OwnedChannel {
     channel: Option<Channel<client::Msg>>,
-    _permit: OwnedSemaphorePermit,
+    permit: Option<OwnedSemaphorePermit>,
 }
 
 impl OwnedChannel {
@@ -20,13 +20,51 @@ impl OwnedChannel {
             .expect("owned SSH channel")
             .into_stream()
     }
+
+    pub(crate) fn split(mut self) -> SplitChannel {
+        let (reader, writer) = self.channel.take().expect("owned SSH channel").split();
+        SplitChannel {
+            reader,
+            writer: Arc::new(writer),
+            permit: self.permit.take(),
+        }
+    }
+}
+
+/// Keep close-on-drop ownership after giving an input task its write handle.
+pub(crate) struct SplitChannel {
+    reader: ChannelReadHalf,
+    writer: Arc<ChannelWriteHalf<client::Msg>>,
+    permit: Option<OwnedSemaphorePermit>,
+}
+
+impl SplitChannel {
+    pub(crate) fn parts(&mut self) -> (&mut ChannelReadHalf, Arc<ChannelWriteHalf<client::Msg>>) {
+        (&mut self.reader, self.writer.clone())
+    }
+}
+
+impl Drop for SplitChannel {
+    fn drop(&mut self) {
+        let writer = self.writer.clone();
+        let permit = self.permit.take();
+        tokio::spawn(async move {
+            let _ = tokio::time::timeout(Duration::from_millis(100), writer.close()).await;
+            drop(permit);
+        });
+    }
 }
 
 impl Drop for OwnedChannel {
     fn drop(&mut self) {
-        // A plain russh Channel does not close on drop; its stream wrapper does.
+        // Plain russh Channels do not close on drop. Avoid its stream wrapper's
+        // unbounded background send: keep capacity through our bounded attempt.
         if let Some(channel) = self.channel.take() {
-            drop(channel.into_stream());
+            let permit = self.permit.take();
+            tokio::spawn(async move {
+                let _ = tokio::time::timeout(Duration::from_millis(100), channel.close()).await;
+                drop(permit);
+            });
         }
     }
 }
@@ -42,7 +80,7 @@ pub(crate) async fn open(
     tokio::spawn(async move {
         let result = request.await.map(|channel| OwnedChannel {
             channel: Some(channel),
-            _permit: permit,
+            permit: Some(permit),
         });
         let _ = sender.send(result);
     });
