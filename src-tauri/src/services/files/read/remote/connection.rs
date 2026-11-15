@@ -18,28 +18,46 @@ impl RemoteReader {
         validate_path(&path)?;
         let permit = reserve_connection()?;
         budget::run_async(move |job| async move {
-            let result = tokio::time::timeout(OPEN_TIMEOUT, async {
-                let channel = app
-                    .state::<AppState>()
-                    .ssh
-                    .handle(&session_id)?
-                    .channel_open_session()
-                    .await
-                    .map_err(|error| AppError::Ssh(format!("sftp.channel: {error}")))?;
-                job.check()?;
-                channel
-                    .request_subsystem(true, "sftp")
-                    .await
-                    .map_err(|error| AppError::Ssh(format!("sftp.subsystem: {error}")))?;
-                job.check()?;
-                Self::negotiate(channel.into_stream(), path, &job, permit).await
-            })
-            .await
-            .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?;
             job.check()?;
-            result
+            let handle = app.state::<AppState>().ssh.handle(&session_id)?;
+            Self::open_on(handle, path, &job, permit, OPEN_TIMEOUT).await
         })
         .await
+    }
+
+    async fn open_on<H: russh::client::Handler + 'static>(
+        handle: Arc<russh::client::Handle<H>>,
+        path: String,
+        job: &budget::Cancellation,
+        permit: OwnedSemaphorePermit,
+        deadline: std::time::Duration,
+    ) -> AppResult<(Self, u64)> {
+        job.check()?;
+        let result = tokio::time::timeout(deadline, async {
+            let mut owned = crate::ssh::channel::open(
+                async move {
+                    handle
+                        .channel_open_session()
+                        .await
+                        .map_err(|error| AppError::Ssh(format!("sftp.channel: {error}")))
+                },
+                permit,
+            )
+            .await?;
+            job.check()?;
+            owned
+                .channel()
+                .request_subsystem(true, "sftp")
+                .await
+                .map_err(|error| AppError::Ssh(format!("sftp.subsystem: {error}")))?;
+            job.check()?;
+            let (stream, permit) = owned.into_stream_with_permit();
+            Self::negotiate(stream, path, job, permit).await
+        })
+        .await
+        .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?;
+        job.check()?;
+        result
     }
 
     #[cfg(test)]
@@ -136,3 +154,6 @@ fn validate_path(path: &str) -> AppResult<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
