@@ -241,6 +241,7 @@ async fn gateway_retry_recovers_once_and_preserves_final_status_without_retrying
 #[tokio::test]
 async fn retry_wait_and_response_body_share_the_original_request_deadline() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let budget = Duration::from_secs(30);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/latest.json", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
@@ -249,6 +250,12 @@ async fn retry_wait_and_response_body_share_the_original_request_deadline() {
             let mut request = [0; 4096];
             assert!(socket.read(&mut request).await.unwrap() > 0);
             if status == 504 {
+                // Consume a substantial part of the original budget after real
+                // socket readiness, without depending on a loaded CI runner
+                // delivering the first headers within a 200ms window.
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_secs(15)).await;
+                tokio::time::resume();
                 socket.write_all(b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
             } else {
                 socket
@@ -264,15 +271,24 @@ async fn retry_wait_and_response_body_share_the_original_request_deadline() {
     });
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let started = tokio::time::Instant::now();
-    let result = tokio::time::timeout(Duration::from_millis(1100), async {
-        let response =
-            request_with_timeout(&client, &url, Duration::from_millis(700), false).await?;
-        read_response(response).await
-    })
-    .await
-    .expect("headers, retry wait and body must share the 700ms budget");
+    let response = tokio::time::timeout(budget, request_with_timeout(&client, &url, budget, false))
+        .await
+        .expect("both real HTTP attempts must finish within the original budget")
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert!(started.elapsed() < budget);
+
+    // Keep time running while sockets and the retry delay make progress. Once
+    // the second response arrives, freeze it and let Tokio reach the deadline.
+    // A fresh timeout on retry or body read would exceed this original bound.
+    tokio::time::pause();
+    let limit = started + budget + Duration::from_millis(100);
+    let result = tokio::time::timeout_at(limit, read_response(response))
+        .await
+        .expect("headers, retry wait and body must share the original deadline");
     assert_eq!(result.unwrap_err().to_string(), "updates.timeout");
-    assert!(started.elapsed() >= Duration::from_millis(600));
+    assert!(started.elapsed() >= budget);
+    assert!(tokio::time::Instant::now() < limit);
     server.abort();
     assert!(server.await.unwrap_err().is_cancelled());
 }
