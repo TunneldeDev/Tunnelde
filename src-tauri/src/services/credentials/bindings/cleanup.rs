@@ -83,12 +83,15 @@ pub(in crate::services::credentials) fn recover(
     }
     // Recover lost cleanup replies by the original queue identity. This never
     // resurrects a binding, repeats a save, or grants arbitrary OS enumeration.
-    conn.execute(
+    let released = conn.execute(
         "UPDATE credential_cleanup SET claimed_run=NULL WHERE id IN
         (SELECT id FROM credential_cleanup WHERE claimed_run<>?1 ORDER BY created_at,id LIMIT ?2)",
-        params![run.to_string(), limit as i64],
+        params![run.to_string(), (limit - rows.len()) as i64],
     )?;
-    Ok(rows.len())
+    // Every recovered record consumes this page's budget. Report released
+    // cleanup claims too: returning zero while releasing a full page would
+    // strand further old claims when the startup caller stops at zero progress.
+    Ok(rows.len() + released)
 }
 
 /// Claim in a short transaction, release it, then delete this exact OS item.
