@@ -69,18 +69,40 @@ def main():
                 result.extend(tree(child, depth + 1))
         return result
 
-    def capture(label):
+    def find_element(node, role, prefix, depth=0):
+        if depth > 30:
+            return None
+        if node.getRoleName() == role and (node.name or '').startswith(prefix):
+            return node
+        for child in node:
+            if child is not None:
+                found = find_element(child, role, prefix, depth + 1)
+                if found is not None:
+                    return found
+        return None
+
+    def capture(label, role, prefix):
         path = evidence / (label + '.png')
         samples = report.setdefault('captureColorCounts', {}).setdefault(label, [])
 
         def painted():
+            target = find_element(accessible, role, prefix)
+            if target is None:
+                return False
+            rect = target.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if rect.x < 0 or rect.y < 0 or rect.width <= 0 or rect.height <= 0:
+                return False
             execute(['import', '-window', 'root', str(path)])
-            colors = int(execute(['identify', '-format', '%k', str(path)]).stdout)
-            samples.append(colors)
-            # The default application has substantially more colors than an empty
-            # display or its title bar. This is a paint-readiness gate, not visual QA.
-            return colors > 128
+            crop = f'{rect.width}x{rect.height}+{rect.x}+{rect.y}'
+            colors = int(execute(['convert', str(path), '-crop', crop, '+repage',
+                                  '-format', '%k', 'info:']).stdout)
+            samples.append(dict(colors=colors, bounds=crop))
+            # Restrict the gate to the expected native control. The window frame
+            # itself has hundreds of colors even when the web content is blank.
+            # Actual screenshots still require review; this does not recognize text.
+            return colors > 32
 
+        time.sleep(.5)  # AT-SPI state can precede the corresponding painted frame.
         wait(painted, 8)
 
     try:
@@ -116,7 +138,7 @@ def main():
             return observed if any(v['role'] == 'page tab' and v['name'].startswith('Welcome') for v in observed) else None
 
         wait(welcome)  # The CLI endpoint is published before frontend/window readiness.
-        capture('before')
+        capture('before', 'page tab', 'Welcome')
         # Select only windows belonging to this exact isolated process.
         windows = execute(['xdotool', 'search', '--onlyvisible', '--pid', str(report['ownedPid'])]).stdout.split()
         assert windows
@@ -135,7 +157,7 @@ def main():
 
         after = wait(palette, 15)
         (evidence / 'accessible-palette.json').write_text(json.dumps(after, indent=2))
-        capture('palette')
+        capture('palette', 'list item', 'Check for updates')
         execute(['xdotool', 'key', '--clearmodifiers', 'Escape'])
         report['passed'] = True
     except Exception:
