@@ -1,5 +1,17 @@
 import assert from "node:assert/strict";
-import { releaseVersion } from "../windows-upgrade/assets.mjs";
+import { assertUpgrade, releaseVersion, repository } from "../windows-upgrade/assets.mjs";
+
+export function upgradeTarget(env) {
+  if (env.OTA_MODE === undefined || env.OTA_MODE === "probe") return undefined;
+  assert.equal(env.OTA_MODE, "upgrade");
+  assert.equal(env.GITHUB_EVENT_NAME, "workflow_dispatch", "Upgrade requires manual dispatch");
+  assert.equal(env.GITHUB_REPOSITORY, repository);
+  assert.equal(env.OTA_UPGRADE_ACK, "upgrade-test-only");
+  assert.equal(env.OTA_SOURCE_TAG, "v1.2.1");
+  assert.equal(env.OTA_TARGET_TAG, "v1.3.0");
+  assertUpgrade(env.OTA_SOURCE_TAG, env.OTA_TARGET_TAG);
+  return env.OTA_TARGET_TAG;
+}
 
 export function requireHostedLinux(env, platform, architecture) {
   assert.equal(platform, "linux", "This probe is Linux-only");
