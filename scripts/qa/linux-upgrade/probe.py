@@ -31,7 +31,8 @@ def main():
     report = dict(passed=False, packageChanged=False, version=version, actions=[])
     target = os.environ.get('OTA_TARGET_VERSION')
     if target:
-        assert target == '1.3.0' and version == '1.2.1'
+        from selection import validate_pair
+        validate_pair(version, target)
         assert os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch'
         assert os.environ.get('GITHUB_REPOSITORY') == 'TunneldeDev/Tunnelde'
         assert os.environ.get('OTA_UPGRADE_ACK') == 'upgrade-test-only'

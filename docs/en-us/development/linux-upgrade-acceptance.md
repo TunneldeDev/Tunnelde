@@ -11,20 +11,27 @@ filtered update command. Accessibility state can precede painting: capture waits
 for the expected control's text in two actual images. Review the screenshots as
 well as the assertions.
 
-The manual `upgrade` mode requires `upgrade-test-only` acknowledgement and the
-fixed reviewed pair `v1.2.1` to `v1.3.0`. It is refused outside the expected
-repository's manual hosted workflow. Check workflow registration and the reviewed
-branch head before dispatching:
+The manual `upgrade` mode requires `upgrade-test-only` acknowledgement and explicit
+source (`tag`) and target (`to`) public tags. The source must be at least `v1.2.1`
+and the target strictly newer by numeric SemVer ordering; Beta suffixes are limited
+to `.1` through `.9`. It is refused outside the expected repository's manual hosted
+workflow. Check workflow registration and the reviewed branch head before dispatching:
 
 ```sh
 gh workflow run linux-ota.yml --repo TunneldeDev/Tunnelde --ref <reviewed-branch> \
-  -f tag=v1.2.1 -f mode=upgrade -f acknowledgement=upgrade-test-only
+  -f tag=<public-source-tag> -f to=<public-target-tag> \
+  -f mode=upgrade -f acknowledgement=upgrade-test-only
 ```
 
 The runner seeds public preferences through the supported CLI and uses native
 keyboard/pointer input in the original GUI to save a synthetic host and named
 settings profile. It invokes Check for updates from F1 and activates Download
 and install through native pointer input.
+The target determines the stable or Beta channel. Before clicking install, the
+driver requires the exact source-to-target release-notes heading in the native
+accessibility tree; a version mentioned in changelog text is insufficient. If the
+public feed selects a different version, the run fails before installation. Review
+the pair rather than replacing the public feed or weakening the selection check.
 The application's updater performs the download, signature verification,
 installation and restart. The harness does not launch a target application.
 Acceptance requires the installed AppImage to match the target public asset's
