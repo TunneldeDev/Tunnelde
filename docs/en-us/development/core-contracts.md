@@ -50,6 +50,19 @@ locks are released before OS access. A concurrent edit can still require discard
 a completed read. Other review operations retain their existing authority and
 scheduling rules.
 
+HTTP proxy credential reads and client construction for updates, release history,
+the marketplace and helper downloads share the bounded credential workers. A check
+captures its network settings once; discovery, backoff identity, manifests and the
+retained package updater use the same resolved proxy. Existing source/channel
+generation checks still govern publication. Cancelling a marketplace download
+while preparation waits prevents its later GET; an already admitted OS read can
+continue holding capacity until it settles. The history deadline includes route
+preparation and preserves selected notes when history is unavailable. No TLS,
+signature or explicit-proxy fallback policy is relaxed. System clients can be
+reused for up to 30 seconds; their backoff identity stays with that client.
+External OS proxy/secret changes are not observed as an atomic OS transaction. Other
+credential consumers retain their separately documented boundaries.
+
 ## Compatibility rules
 
 - A stable interface has an owned request/result/error schema, documented effects
