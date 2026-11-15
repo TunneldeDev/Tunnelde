@@ -22,6 +22,15 @@ export function hasText(tree, label) {
   );
 }
 
+export function hasField(tree, label) {
+  assert.equal(tree.traversalCompleted, true, "AX traversal hit its time, depth or node limit");
+  return tree.nodes.some(
+    (node) =>
+      ["AXTextField", "AXTextArea", "AXSecureTextField"].includes(node.role) &&
+      [node.AXTitle, node.AXDescription].includes(label),
+  );
+}
+
 export async function upgrade(runtime) {
   const {
     report,
@@ -114,7 +123,7 @@ export async function upgrade(runtime) {
   await native("press", pid, "Save");
   await waitUntil("profile dialog close", async () => !hasText(await tree(pid), "Profile name"));
   await native("press", pid, "New host", "described");
-  await waitUntil("new host form", async () => hasText(await tree(pid), "Password"));
+  await waitUntil("new host form", async () => hasField(await tree(pid), "Password"));
   await tree(pid, "host-form");
   for (const [label, value] of [
     ["Name", "OTA preserved host 主机"],
@@ -132,7 +141,7 @@ export async function upgrade(runtime) {
     host = (await live("hosts", "list")).hosts.find(
       (entry) => entry.name === "OTA preserved host 主机",
     );
-    return host && !hasText(await tree(pid), "Password");
+    return host && !hasField(await tree(pid), "Password");
   });
   report.seedHost = host;
   for (const [key, value] of Object.entries({

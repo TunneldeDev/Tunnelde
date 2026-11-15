@@ -386,6 +386,18 @@ try {
 } catch (error) {
   report.passed = false;
   report.failure = String(error?.stack ?? error);
+  if (child) {
+    try {
+      const pid = ownedTarget?.pid ?? child.pid;
+      await writeFile(
+        join(evidence, "failure-ax.json"),
+        JSON.stringify(await native("tree", pid), null, 2),
+      );
+      await screenshot("failure");
+    } catch (error) {
+      report.failureCaptureError = String(error);
+    }
+  }
   process.exitCode = 1;
 } finally {
   if (child && !exit) {
