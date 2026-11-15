@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use russh::ChannelMsg;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
@@ -12,6 +11,8 @@ use crate::models::now_ms;
 use crate::state::AppState;
 
 const SAMPLE_TIMEOUT: Duration = Duration::from_secs(8);
+
+mod execution;
 
 const SCRIPT: &str = r#"LANG=C
 echo '#cpu'; head -1 /proc/stat
@@ -148,38 +149,16 @@ impl MonitorCache {
 
 async fn exec(app: &AppHandle, session_id: &str, command: &str) -> AppResult<String> {
     let handle = app.state::<AppState>().ssh.handle(session_id)?;
-    let collect = async {
-        let mut channel = handle
-            .channel_open_session()
-            .await
-            .map_err(|error| AppError::Ssh(format!("monitor.channel: {error}")))?;
-        channel
-            .exec(true, command)
-            .await
-            .map_err(|error| AppError::Ssh(format!("monitor.exec: {error}")))?;
-
-        let mut output = Vec::new();
-        while let Some(message) = channel.wait().await {
-            match message {
-                ChannelMsg::Data { data } => {
-                    if output.len().saturating_add(data.len()) > 8 * 1024 * 1024 {
-                        let _ = channel.close().await;
-                        return Err(AppError::Ssh("monitor.outputLimit".into()));
-                    }
-                    output.extend_from_slice(&data);
-                }
-                ChannelMsg::Close => break,
-                _ => {}
-            }
-        }
-        Ok::<_, AppError>(output)
-    };
-
-    let output = tokio::time::timeout(SAMPLE_TIMEOUT, collect)
-        .await
-        .map_err(|_| AppError::Ssh("monitor.timeout".into()))??;
-
-    Ok(String::from_utf8_lossy(&output).into_owned())
+    static CAPACITY: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    execution::run(
+        handle,
+        command.to_owned(),
+        SAMPLE_TIMEOUT,
+        CAPACITY
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(64)))
+            .clone(),
+    )
+    .await
 }
 
 fn parse_kb(value: &str) -> u64 {

@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hasField, hasText, verifySeedHost } from "./ota.mjs";
+import { credentialCommand, hasField, hasText, verifySeedHost } from "./ota.mjs";
+
+test("credential metadata lookup accepts only a resolved UUID and explicit identity kind", () => {
+  const id = "9694d335-6ed3-44c6-9a69-3618c092ccc5";
+  assert.deepEqual(credentialCommand({ kind: "legacy", id }), ["credential", id]);
+  assert.deepEqual(credentialCommand({ kind: "immutable", id }), ["credential-item", id]);
+  for (const identity of [
+    null,
+    {},
+    { kind: "other", id },
+    { kind: "legacy", id: id + "\n" },
+    { kind: "immutable", id: "tunnelde.credential.v1:" + id },
+  ]) {
+    assert.throws(() => credentialCommand(identity));
+  }
+});
 
 test("synthetic host accepts the observed stable hosts.list DTO without internal auth fields", () => {
   verifySeedHost({

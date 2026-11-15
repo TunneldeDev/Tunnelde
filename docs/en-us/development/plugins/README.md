@@ -413,6 +413,26 @@ or process errors with generic executable/login advice. Older hosts may omit thi
 field; `tasks.status` also exposes failure details. Drain terminal output before
 reporting failure to preserve the agent's final protocol response.
 
+Ordinary remote `tasks.*` retain ownership of pending SSH channel opens after a
+timeout or cancellation. These opens share a host-wide budget of 128; an
+unconfirmed open keeps its slot until confirmation or parent-session disposal,
+even after its task record is retired. At capacity, new opens fail with
+`plugin.tasks.busy` rather than accumulating unbounded waiters. A late channel
+confirmation is closed without executing the command. Retiring a running task's
+owner aborts its input writer and attempts a bounded channel close without
+disconnecting sibling channels. Normal cancellation still attempts the existing
+stop signal. Neither close nor cancellation proves remote process termination or
+rolls back a dispatched command; the host does not replay it automatically.
+
+`sessions.exec` uses the same channel ownership for its separate command channel.
+Sixteen exchanges may be owned across the host, including unconfirmed opens after
+caller cancellation; exhaustion returns `plugin.api.busy`. Channel opening retains
+its eight-second budget, followed by the requested execution timeout. The captured
+SSH identity and plugin authorization are checked before opening, before EXEC and
+on a fixed interval while collecting output. Continuous output does not postpone
+reauthorization. Cleanup is bounded and leaves the parent session usable; command
+effects remain uncertain after dispatch and are never replayed automatically.
+
 Views may declare `location: "sidebar"`, `kind: "chat"` and an approved activity `icon` to
 contribute a dockable controlled chat panel. `view.render` returns a `chat` block with session,
 model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.
@@ -737,6 +757,15 @@ and retain opened file handles rather than resolving arbitrary protocol paths. A
 and two concurrent requests per ticket are allowed. Requests support GET/HEAD and single byte ranges
 capped at 1 MiB; multipart ranges are rejected. Whole-file reads are capped at 32 MiB. Revocation
 interrupts queued/active reads; remote file and SFTP handles close without creating remote files.
+
+Dedicated remote readers share a host limit of 64 connections. An unconfirmed SSH
+open still occupies its slot after cancellation or the 15-second negotiation
+deadline, until confirmation or parent-session disposal. A late confirmation is
+closed without starting SFTP. Confirmed channels stay owned through negotiation;
+the same slot transfers to the accepted read-only reader until its last owner is
+dropped. Cleanup affects that reader channel, not sibling channels or the parent
+SSH session. Cancellation of a queued worker is checked at each negotiation
+boundary; it does not forcibly interrupt an in-flight server operation.
 
 Images are limited to 32 MiB, PDFs to 128 MiB, text/Markdown to 2 MiB; audio/video use bounded Range
 requests. Playback depends on OS codecs and starts only on user action. PDF.js is lazy-loaded with

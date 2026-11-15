@@ -29,6 +29,27 @@ fn record() -> Record {
 }
 
 #[test]
+fn dispatch_requires_the_exact_original_record_without_mutating_metadata() {
+    let scratch = Scratch::new();
+    let observed = record();
+    save(&scratch.file(), std::slice::from_ref(&observed)).unwrap();
+    let bytes = std::fs::read(scratch.file()).unwrap();
+    assert!(require_observed(&load(&scratch.file()).unwrap(), &observed).is_ok());
+    let mut stopped = observed.clone();
+    stopped.stop_pending = true;
+    stopped.advance().unwrap();
+    let mut replaced = observed.clone();
+    replaced.deployment.directory = "/replacement".into();
+    let mut rebound = observed.clone();
+    rebound.controller_fingerprint = Some("new-controller".into());
+    for changed in [stopped, replaced, rebound] {
+        assert!(require_observed(&[changed], &observed).is_err());
+    }
+    assert!(require_observed(&[], &observed).is_err());
+    assert_eq!(std::fs::read(scratch.file()).unwrap(), bytes);
+}
+
+#[test]
 fn legacy_records_have_stable_revisions_and_acknowledged_launches() {
     let first = record();
     let second = record();

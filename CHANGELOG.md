@@ -6,6 +6,45 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.1](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.0...v1.4.1) - 2026-11-15
+
+### 更新概览 | Highlights
+
+- **runners:** reject stale launches and messages before SSH dispatch
+- **ssh:** retain bounded channel ownership through cancellation
+- **tasks:** retain remote channel ownership through cancellation
+- **ssh:** own plugin command channels through cancellation
+- **monitor:** retain owned sampling channels through cancellation
+
+<details open>
+<summary>详细变更 | Details (11)</summary>
+
+### 修复 | Fix
+
+- **runners:** reject stale launches and messages before SSH dispatch ([#399](https://github.com/TunneldeDev/Tunnelde/pull/399), [3fb5b05](https://github.com/TunneldeDev/Tunnelde/commit/3fb5b053f5f3b15cd87bd72d5758d68e7c569435)) @quyansiyuanwang
+- **ssh:** retain bounded channel ownership through cancellation ([#400](https://github.com/TunneldeDev/Tunnelde/pull/400)) @quyansiyuanwang
+- **tasks:** retain remote channel ownership through cancellation ([#401](https://github.com/TunneldeDev/Tunnelde/pull/401)) @quyansiyuanwang
+- **ssh:** own plugin command channels through cancellation ([#402](https://github.com/TunneldeDev/Tunnelde/pull/402)) @quyansiyuanwang
+- **monitor:** retain owned sampling channels through cancellation ([#405](https://github.com/TunneldeDev/Tunnelde/pull/405)) @quyansiyuanwang
+- **files:** own remote reader channels through cancellation ([#403](https://github.com/TunneldeDev/Tunnelde/pull/403), [c4feabd](https://github.com/TunneldeDev/Tunnelde/commit/c4feabd39327e917c8f60eb2196e93a22ec5e5f6)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- keep Chinese helper links in the selected language ([#404](https://github.com/TunneldeDev/Tunnelde/pull/404)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **macos:** accept explicit public stable OTA versions ([#397](https://github.com/TunneldeDev/Tunnelde/pull/397)) @quyansiyuanwang
+- **runners:** exercise SSH dispatch fences on macOS and Windows ([#399](https://github.com/TunneldeDev/Tunnelde/pull/399)) @quyansiyuanwang
+- **files:** observe completed SFTP stream ownership directly ([#403](https://github.com/TunneldeDev/Tunnelde/pull/403), [e9123d5](https://github.com/TunneldeDev/Tunnelde/commit/e9123d5cfcb772063448483301865a273f03e40f)) @quyansiyuanwang
+- **files:** report competing journal admission outcomes ([#403](https://github.com/TunneldeDev/Tunnelde/pull/403)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.4.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.3.1...v1.4.0) - 2026-11-15
 
 ### 更新概览 | Highlights
