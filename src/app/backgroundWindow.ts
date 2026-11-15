@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { api, events, isTauri } from "@/lib/api/ipc";
+import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
 import {
   prepareTerminalCheckpoints,
   resumeTerminalCheckpoints,
@@ -136,6 +137,7 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
       .tabs.filter((tab) => tab.kind === "terminal")
       .map((tab) => tab.id.replace("terminal:", ""));
     const terminals = await prepareTerminalCheckpoints(terminalIds);
+    await flushEditorDrafts();
     if (cancellation !== revision || busy()) return;
     const snapshot: WindowSnapshot = {
       version: 1,

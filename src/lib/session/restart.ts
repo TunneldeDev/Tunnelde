@@ -3,15 +3,26 @@ import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
+import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
 import { prepareWindowReload } from "./reload";
+import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
 
 export type ApplicationAction = "reload" | "restart";
 
 export function requestApplicationAction(action: ApplicationAction): void {
   const editors = useEditors.getState();
   const dirty = Object.values(editors.entries).filter((entry) => editors.isDirty(entry.tabId));
-  const warning = i18n.t(action === "restart" ? "restart.restartWarning" : "restart.reloadWarning");
+  const recovery = useSettings.getState().settings.editorDraftRecovery;
+  const warning = i18n.t(
+    action === "restart"
+      ? recovery
+        ? "restart.restartRecoveryWarning"
+        : "restart.restartWarning"
+      : recovery
+        ? "restart.reloadRecoveryWarning"
+        : "restart.reloadWarning",
+  );
   const body = dirty.length
     ? `${warning}\n\n${i18n.t("restart.unsaved", { names: dirty.map((entry) => entry.name).join(", ") })}`
     : warning;
@@ -22,6 +33,7 @@ export function requestApplicationAction(action: ApplicationAction): void {
     danger: dirty.length > 0,
     onConfirm: async () => {
       try {
+        await flushEditorDrafts();
         if (action === "reload") {
           await prepareWindowReload();
           window.location.reload();
