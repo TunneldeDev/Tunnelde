@@ -315,7 +315,9 @@ export async function upgrade(runtime) {
       report.profileAfterUpdate.security.grants,
       report.profileBeforeUpdate.security.grants,
     );
-    report.pluginDataAccepted = true;
+    report.pluginRecordsAccepted = true;
+    report.pluginDataAccepted = false;
+    report.pluginSecretValueAccepted = false;
     report.hostCredentialValueAccepted = false;
   }
   report.targetCli = await verifyLocalCli(binary, report.to.slice(1), pointer, {
@@ -344,10 +346,11 @@ export async function upgrade(runtime) {
   report.otaCoreAccepted = true;
   report.otaAccepted = false;
   report.retentionScope = retention
-    ? "Settings/Profile/host/credential metadata, nonempty history, real approved frontend plugin/grant/fingerprint/storage and own secret hash, with source active recovery marker and unrestricted target; host secret value/authentication unaccepted"
+    ? "Settings/Profile/host/credential metadata, nonempty history, real approved frontend plugin/grant/fingerprint/storage, with source active recovery marker and unrestricted target; source-only secret hash, target plugin secret value and host secret value/authentication unaccepted"
     : "Actual settings/Profile/host and same credential-item metadata; no secret read, authentication or nonempty history/plugin-storage acceptance";
   report.remaining = retention
     ? [
+        "Plugin secret value retention: actual run43662161457 target read required login Keychain authorization; do not repeat or change policy in unattended mode",
         "Host credential value/authentication (external value read requires Keychain access)",
         "Independent review; physical desktop/input and other M05 cases remain separate",
       ]

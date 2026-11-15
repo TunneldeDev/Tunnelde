@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { seedData, verifyData } from "./retention-plugin.mjs";
-import { secretHash } from "./retention.mjs";
+import { seedData, verifyData, verifyStoredData } from "./retention-plugin.mjs";
+import { pluginName, secretHash, verifyRetention } from "./retention.mjs";
 
 function fixture() {
   const host = {
@@ -79,4 +79,68 @@ test("source refuses to overwrite an earlier uncertain seed", async () => {
   await assert.rejects(seedData(call), /already exists/);
   assert.equal(state.secret, secret);
   assert.deepEqual(state.calls, ["storage.get"]);
+});
+
+test("ordinary target data verification never reads a Keychain secret or repairs records", async () => {
+  const { state, call } = fixture();
+  await seedData(call);
+  state.calls = [];
+  state.secret = null;
+  assert.deepEqual(await verifyStoredData(call), {
+    hostRetained: true,
+    nonemptyHistory: true,
+    storageRetained: true,
+  });
+  assert.deepEqual(state.calls, ["storage.get", "hosts.snapshot", "history.list"]);
+  state.history = [];
+  await assert.rejects(verifyStoredData(call), /History missing/);
+  assert(!state.calls.some((name) => /\.(set|record|delete)$/.test(name)));
+});
+
+test("native plugin navigation preserves an open sidebar and opens a closed one once", async () => {
+  for (const initiallyOpen of [true, false]) {
+    let open = initiallyOpen;
+    let toggles = 0;
+    const hash = "a".repeat(64);
+    const summary = JSON.stringify({
+      hostRetained: true,
+      nonemptyHistory: true,
+      storageRetained: true,
+    });
+    await verifyRetention(
+      {
+        report: { pluginSecretBeforeSha256: hash },
+        tree: async () => ({
+          traversalCompleted: true,
+          nodes: open
+            ? [
+                // Actual native tab role/title from run 43661498187, where
+                // pressing the activity toggle again hid the Installed tab.
+                { role: "AXRadioButton", AXTitle: "Installed 1" },
+                { role: "AXButton", AXTitle: pluginName },
+                { role: "AXButton", AXTitle: "OTA retention" },
+                { role: "AXButton", AXTitle: "Verify OTA data" },
+                { role: "AXStaticText", AXValue: "OTA retention verified" },
+                { role: "AXStaticText", AXValue: summary },
+              ]
+            : [],
+        }),
+        native: async (action, pid, label) => {
+          assert.equal(action, "press");
+          assert.equal(pid, 123);
+          if (label === "Plugins") {
+            open = !open;
+            toggles++;
+          }
+          assert.equal(open, true, "A closed sidebar cannot supply plugin controls");
+        },
+        waitUntil: async (label, predicate) => assert(await predicate(), label),
+        hasText: (value, label) =>
+          value.nodes.some((node) => node.AXTitle === label || node.AXValue === label),
+        screenshot: async () => {},
+      },
+      123,
+    );
+    assert.equal(toggles, initiallyOpen ? 0 : 1);
+  }
 });

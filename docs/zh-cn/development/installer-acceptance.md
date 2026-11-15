@@ -147,13 +147,19 @@ PID／启动时间、bundle 路径和用户身份仍一致。
 不直接调用私有 bridge，不用全局变量携带 API context，不改产品包。安装、审批、
 升级前写入和升级后读回均保存 AX 和截图；已授权包字节变化必须拒绝。
 
-获准夹具通过公开 `secrets.get` 读取自身秘密，界面只显示 SHA-256 供外部 AX 比较。
-秘密不进入参数、日志、截图或另一份明文存储。两端插件秘密摘要、
+获准的源端夹具通过公开 `secrets.get` 读取自身合成秘密，界面只显示 SHA-256。
+秘密不进入参数、日志、截图或另一份明文存储。实际公开 1.2.1→1.3.0 更新后，
+目标应用自身读取秘密时弹出登录 Keychain 授权框。无人值守 runner 不重复该读取，
+不操作系统权限框或修改凭据访问策略。目标 `Verify OTA data` 仅通过公开 SDK
+检查主机/历史/存储；`Verify OTA secret` 独立保留为需要相应系统授权的操作，
+runner 不驱动它。两种验证均不得重新 seed。
+
 安装夹具字节、授权 fingerprint/permissions 和非空历史必须一致。升级前必须存在实际
 运行插件的 unclean 标记；计划内更新后不得进入 restricted，原授权可重新激活。
-`pluginDataAccepted` 只记录此增量。主机密码值/实际认证仍未验：外部值查询曾在
-非交互 LAContext 下弹出旧式 Keychain 权限框，因此已移除；不操作该框或修改凭据权限。
-`otaAccepted` 保持 false，保留此缺口，独立审查与平台其余矩阵
+`pluginRecordsAccepted` 仅记录这些普通数据检查。目标秘密能够实际读回并与源摘要比较前，
+`pluginSecretValueAccepted` 和 `pluginDataAccepted` 均保持 false。主机密码值/真实 SSH
+认证也仍未验。先前外部值查询曾在非交互 LAContext 下弹出旧式 Keychain 权限框，
+已经移除。`otaAccepted` 保持 false，保留这些缺口，独立审查与平台其余矩阵
 仍分开推进。门禁/单元检查不代替真实 OTA。
 
 `otaCoreAccepted` 仅表示上述实际更新／保留范围。非空历史、凭据实际认证／值保留、

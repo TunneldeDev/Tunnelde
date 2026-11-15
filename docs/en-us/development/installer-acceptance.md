@@ -204,18 +204,25 @@ bridge invocation, globals carrying an API context or product-package changes
 are used. Installation, approval, source writes and target reads have AX records
 and screenshots. Changing approved package bytes is rejected.
 
-The approved fixture reads its own secret through `secrets.get` and displays
-only SHA-256 for external AX comparison. No secret, command-line secret argument
-or second plaintext copy is captured. Source/target plugin-secret hashes,
-installed fixture bytes, approved fingerprint/permissions and nonempty history must match. The
-source must have a running plugin's unclean marker before the planned update;
-the target must remain unrestricted and reactivate using its retained grant.
-`pluginDataAccepted` records this extra scope. Host password value/authentication
-remains unaccepted: an external value query opened a legacy Keychain permission
-dialog despite noninteractive LAContext, so that query was removed. The runner
-does not operate that dialog or change credential access. `otaAccepted` remains
-false for this gap, independent review and the wider platform matrix. Guard/unit checks do not count
-as real OTA acceptance.
+The approved source fixture reads its own synthetic secret through `secrets.get`
+and displays only SHA-256. No secret, command-line secret argument or second
+plaintext copy is captured. After actual public 1.2.1 to 1.3.0 OTA, the target
+app's own secret read opened a login Keychain authorization dialog. The unattended
+runner does not repeat that read, operate the dialog or change credential access.
+Its target `Verify OTA data` action checks only host/history/storage through the
+public SDK; `Verify OTA secret` is a separate action requiring appropriate system
+authorization and is not driven by this runner. Neither action reseeds data.
+
+Installed fixture bytes, approved fingerprint/permissions and nonempty history
+must match. The source must have a running plugin's unclean marker before the
+planned update; the target must remain unrestricted and reactivate using its
+retained grant. `pluginRecordsAccepted` records these ordinary data checks.
+`pluginSecretValueAccepted` and `pluginDataAccepted` remain false until a target
+secret read can be completed and compared with the source hash. Host password
+value/actual SSH authentication also remains unaccepted. An earlier external value
+query opened a legacy Keychain dialog despite noninteractive LAContext and was
+removed. `otaAccepted` remains false for these gaps, independent review and the
+wider platform matrix. Guard/unit checks do not count as real OTA acceptance.
 
 ### Public-package OTA acceptance checklist
 

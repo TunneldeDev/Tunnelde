@@ -7,7 +7,7 @@ export const pluginId = "qa-macos-ota-retention";
 export const pluginName = "QA Mac OTA retention";
 export const permissions = ["ui.trusted", "hosts.read", "history.read", "history.write", "secrets"];
 
-export function secretHash(tree) {
+export function dataSummary(tree) {
   assert.equal(tree.traversalCompleted, true);
   const summaries = tree.nodes.flatMap((node) => {
     if (node.role !== "AXStaticText" || !node.AXValue?.startsWith('{"hostRetained":')) return [];
@@ -15,11 +15,16 @@ export function secretHash(tree) {
     assert.equal(value.hostRetained, true);
     assert.equal(value.nonemptyHistory, true);
     assert.equal(value.storageRetained, true);
-    assert.match(value.secretSha256, /^[a-f0-9]{64}$/);
-    return [value.secretSha256];
+    return [value];
   });
-  assert.equal(summaries.length, 1, "Expected exactly one synthetic secret digest");
+  assert.equal(summaries.length, 1, "Expected exactly one retention summary");
   return summaries[0];
+}
+
+export function secretHash(tree) {
+  const value = dataSummary(tree);
+  assert.match(value.secretSha256, /^[a-f0-9]{64}$/);
+  return value.secretSha256;
 }
 
 async function openPlugin(runtime, pid) {
@@ -123,7 +128,8 @@ export async function verifyRetention(runtime, pid) {
     assert(!hasText(value, "OTA retention failed"), "Retained data verification failed");
     return hasText(value, "OTA retention verified");
   });
-  report.pluginSecretAfterSha256 = secretHash(await tree(pid, "plugin-verified"));
-  assert.equal(report.pluginSecretAfterSha256, report.pluginSecretBeforeSha256);
+  report.pluginTargetSummary = dataSummary(await tree(pid, "plugin-verified"));
+  assert.equal(report.pluginTargetSummary.secretSha256, undefined);
+  report.pluginTargetVerifiedWithoutSecretRead = true;
   await screenshot("plugin-verified");
 }

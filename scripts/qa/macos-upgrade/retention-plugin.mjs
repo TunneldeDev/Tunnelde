@@ -12,7 +12,7 @@ async function digest(value) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function verifyData(call, expectedSecret) {
+export async function verifyStoredData(call) {
   const saved = await call("storage.get", { key });
   if (
     saved?.marker !== "OTA 插件数据保留" ||
@@ -25,6 +25,11 @@ export async function verifyData(call, expectedSecret) {
     throw new Error("Saved host missing");
   const history = await call("history.list", { hostId: saved.hostId, limit: 20 });
   if (!history.some((entry) => entry.command === command)) throw new Error("History missing");
+  return { hostRetained: true, nonemptyHistory: true, storageRetained: true };
+}
+
+export async function verifyData(call, expectedSecret) {
+  const stored = await verifyStoredData(call);
   const secret = await call("secrets.get", { key });
   if (
     typeof secret !== "string" ||
@@ -35,9 +40,7 @@ export async function verifyData(call, expectedSecret) {
   // Only this approved app reads its own secret. Export a hash through its view,
   // never a plaintext copy, so the external runner can compare source and target.
   return {
-    hostRetained: true,
-    nonemptyHistory: true,
-    storageRetained: true,
+    ...stored,
     secretSha256: await digest(secret),
   };
 }
@@ -77,13 +80,19 @@ export function activate(context) {
     const [status, setStatus] = React.useState("OTA retention ready");
     const [busy, setBusy] = React.useState(false);
     const [summary, setSummary] = React.useState(null);
-    const perform = async (seed) => {
+    const perform = async (mode) => {
       if (busy) return;
       setBusy(true);
       setStatus("OTA retention working");
       try {
-        setSummary(await (seed ? seedData(call) : verifyData(call)));
-        setStatus(seed ? "OTA retention seeded" : "OTA retention verified");
+        setSummary(
+          await (mode === "seed"
+            ? seedData(call)
+            : mode === "secret"
+              ? verifyData(call)
+              : verifyStoredData(call)),
+        );
+        setStatus(mode === "seed" ? "OTA retention seeded" : "OTA retention verified");
       } catch {
         // Never render or log a credential, RPC input or arbitrary error detail.
         setStatus("OTA retention failed");
@@ -97,8 +106,9 @@ export function activate(context) {
       h("h2", null, "OTA retained data"),
       h("p", { role: "status" }, status),
       summary && h("p", null, JSON.stringify(summary)),
-      h(Button, { disabled: busy, onClick: () => void perform(true) }, "Seed OTA data"),
-      h(Button, { disabled: busy, onClick: () => void perform(false) }, "Verify OTA data"),
+      h(Button, { disabled: busy, onClick: () => void perform("seed") }, "Seed OTA data"),
+      h(Button, { disabled: busy, onClick: () => void perform("stored") }, "Verify OTA data"),
+      h(Button, { disabled: busy, onClick: () => void perform("secret") }, "Verify OTA secret"),
     );
   }
   context.views.register("main", Retention);
