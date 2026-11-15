@@ -797,7 +797,7 @@ async fn connect_captured(
     };
 
     let snapshot = snapshot.clone();
-    crate::services::credentials::checked(move |job| {
+    let delivery = crate::services::credentials::checked(move |job| {
         let info = snapshot.with_current(&app, |conn| {
             job.commit()?;
             let state = app.state::<AppState>();
@@ -877,9 +877,18 @@ async fn connect_captured(
         if published {
             announce_connection(&app);
         }
-        Ok(info)
+        // The worker may outlive the awaiter, including an unpublished plugin
+        // acquisition whose caller has not installed its own cleanup guard yet.
+        // JoinHandle drops an unreceived result, releasing this session too.
+        Ok(crate::services::operations::Delivery::new(
+            info,
+            move |info: &SessionInfo| {
+                let _ = disconnect(&app, &info.id);
+            },
+        ))
     })
-    .await
+    .await?;
+    Ok(delivery.accept())
 }
 
 pub(crate) fn announce_connection(app: &AppHandle) {

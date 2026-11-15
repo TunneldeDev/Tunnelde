@@ -7,6 +7,9 @@ use std::sync::{
 };
 use tokio::sync::Semaphore;
 
+mod delivery;
+pub(crate) use delivery::Delivery;
+
 #[cfg(test)]
 mod tests;
 
