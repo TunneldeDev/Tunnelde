@@ -82,6 +82,14 @@ This mechanism is independent of a particular view or Zustand store.
 
 ## Runtime resource ownership
 
+After a WebView reload, bootstrap subscribes to native activation requests and
+reconciles already running frontend plugins from an authoritative snapshot, even
+when the first subscription succeeds. This does not start stopped plugins or
+grant permissions. Each module must activate and acknowledge readiness for its
+exact runtime again; old frontend tokens cannot supply readiness to a replacement.
+An activation failure does not skip other plugins during reconciliation. Failed
+snapshot recovery retries without reinstalling a healthy event listener.
+
 The frontend's internal resource scope owns subscriptions and asynchronous work.
 `use` registers an existing cleanup; `acquire` reserves capacity before opening a
 resource and retains its cleanup; `run` releases its reservation when work finishes.
