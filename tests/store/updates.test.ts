@@ -5,6 +5,7 @@ import { matchingUpdateState, useUpdates } from "@/store/updates";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import { useNavigation } from "@/store/navigation";
+import type * as ToastModule from "@/store/toasts";
 
 const mock = vi.hoisted(() => ({
   installUpdate: vi.fn(),
@@ -15,7 +16,10 @@ const mock = vi.hoisted(() => ({
   updateHistory: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true, api: mock }));
-vi.mock("@/store/toasts", () => ({ toast: mock.toast }));
+vi.mock("@/store/toasts", async (original) => ({
+  ...(await original<typeof ToastModule>()),
+  toast: mock.toast,
+}));
 const settings = createDefaultSettings();
 const state: UpdateState = {
   phase: "available",
@@ -187,6 +191,14 @@ describe("update operation state", () => {
     mock.installUpdate.mockRejectedValueOnce(new Error("download failed"));
     await useUpdates.getState().install();
     expect(mock.toast).toHaveBeenCalledWith("download failed", "error");
+    expect(useUpdates.getState().busy).toBe(false);
+  });
+
+  it("retains the application and unlocks installation when opted-in recovery is unavailable", async () => {
+    useSettings.setState({ settings: { ...settings, editorDraftRecovery: true } });
+    await useUpdates.getState().install();
+    expect(mock.installUpdate).not.toHaveBeenCalled();
+    expect(mock.toast).toHaveBeenCalledOnce();
     expect(useUpdates.getState().busy).toBe(false);
   });
 

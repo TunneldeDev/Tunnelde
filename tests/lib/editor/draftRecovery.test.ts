@@ -6,6 +6,9 @@ import type { EditorDraft } from "@/lib/editor/recovery/contracts";
 import { useEditors } from "@/store/editors";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
 import { useSettings } from "@/store/settings";
+import { useDialogs } from "@/store/dialogs";
+import { useToasts, toast } from "@/store/toasts";
+import { requestApplicationAction } from "@/lib/session/restart";
 
 const remote: EditorDraft = {
   id: "a440472a-731d-459e-9c0e-9701e29b5a32",
@@ -20,6 +23,8 @@ const start = async (resumed = false) => {
 };
 beforeEach(() => {
   vi.useFakeTimers();
+  useToasts.setState({ items: [] });
+  useDialogs.getState().close();
   useSettings.setState({
     settings: { ...createDefaultSettings(), editorDraftRecovery: true },
     saving: false,
@@ -300,4 +305,113 @@ it("keeps the startup consent fence until the recovery subscription takes owners
   expect(useWorkspace.getState().tabs).toHaveLength(0);
   await flushEditorDrafts();
   expect(api.editorDraftsSave).toHaveBeenLastCalledWith("new-tombstone", []);
+});
+
+it("shows one recovery failure when background save and native Quit share a failed checkpoint", async () => {
+  await start();
+  useWorkspace.getState().restoreEditorDraft(remote);
+  vi.mocked(api.editorDraftsSave).mockRejectedValueOnce({
+    code: "validation",
+    message: "editor.recoveryChanged",
+  });
+  await vi.advanceTimersByTimeAsync(400);
+  expect(useToasts.getState().items).toHaveLength(1);
+  const originalNotice = useToasts.getState().items[0];
+  const finish = vi.fn(async () => {});
+  requestApplicationAction("quit", finish);
+  const dialog = useDialogs.getState().dialog;
+  if (dialog.kind !== "confirm") throw Error("Missing quit confirmation");
+  await dialog.onConfirm();
+  expect(finish).not.toHaveBeenCalled();
+  expect(api.editorDraftsSave).toHaveBeenCalledOnce();
+  expect(useToasts.getState().items).toEqual([originalNotice]);
+  expect(Object.values(useEditors.getState().entries)[0]?.content).toBe(remote.content);
+});
+
+it("coalesces a background rejection arriving while native Restart awaits the same write", async () => {
+  let reject!: (error: unknown) => void;
+  vi.mocked(api.editorDraftsSave).mockImplementationOnce(
+    () =>
+      new Promise((_, failed) => {
+        reject = failed;
+      }),
+  );
+  await start();
+  useWorkspace.getState().restoreEditorDraft(remote);
+  await vi.advanceTimersByTimeAsync(400);
+  const finish = vi.fn(async () => {});
+  requestApplicationAction("restart", finish);
+  const dialog = useDialogs.getState().dialog;
+  if (dialog.kind !== "confirm") throw Error("Missing restart confirmation");
+  const confirming = dialog.onConfirm();
+  reject({ code: "validation", message: "editor.recoveryChanged" });
+  await confirming;
+  expect(useToasts.getState().items).toHaveLength(1);
+  expect(api.editorDraftsSave).toHaveBeenCalledOnce();
+  expect(finish).not.toHaveBeenCalled();
+});
+
+it.each(["dismissed", "expired"])(
+  "reports a cached checkpoint again after its notice was %s",
+  async (removal) => {
+    await start();
+    useWorkspace.getState().restoreEditorDraft(remote);
+    vi.mocked(api.editorDraftsSave).mockRejectedValueOnce(Error("checkpoint failed"));
+    await vi.advanceTimersByTimeAsync(400);
+    const previous = useToasts.getState().items[0]!;
+    if (removal === "dismissed") useToasts.getState().dismiss(previous.id);
+    else await vi.advanceTimersByTimeAsync(5000);
+    expect(useToasts.getState().items).toHaveLength(0);
+    requestApplicationAction(
+      "quit",
+      vi.fn(async () => {}),
+    );
+    const dialog = useDialogs.getState().dialog;
+    if (dialog.kind !== "confirm") throw Error("Missing quit confirmation");
+    await dialog.onConfirm();
+    expect(useToasts.getState().items).toHaveLength(1);
+    expect(useToasts.getState().items[0]?.id).not.toBe(previous.id);
+    expect(api.editorDraftsSave).toHaveBeenCalledOnce();
+  },
+);
+
+it("keeps independent task and native completion failures visible even with the same error text", async () => {
+  await start();
+  useWorkspace.getState().restoreEditorDraft(remote);
+  const error = Error("checkpoint failed");
+  vi.mocked(api.editorDraftsSave).mockRejectedValueOnce(error);
+  await vi.advanceTimersByTimeAsync(400);
+  toast(error.message, "error");
+  useSettings.setState((state) => ({
+    settings: { ...state.settings, editorDraftRecovery: false },
+  }));
+  requestApplicationAction(
+    "restart",
+    vi.fn(async () => {
+      throw error;
+    }),
+  );
+  const dialog = useDialogs.getState().dialog;
+  if (dialog.kind !== "confirm") throw Error("Missing restart confirmation");
+  await dialog.onConfirm();
+  expect(useToasts.getState().items).toHaveLength(3);
+});
+
+it("does not merge separate checkpoint failures just because their messages match", async () => {
+  await start();
+  useWorkspace.getState().restoreEditorDraft(remote);
+  vi.mocked(api.editorDraftsSave)
+    .mockRejectedValueOnce({ code: "validation", message: "editor.recoveryInvalid" })
+    .mockRejectedValueOnce({ code: "validation", message: "editor.recoveryInvalid" });
+  await vi.advanceTimersByTimeAsync(400);
+  requestApplicationAction(
+    "quit",
+    vi.fn(async () => {}),
+  );
+  const dialog = useDialogs.getState().dialog;
+  if (dialog.kind !== "confirm") throw Error("Missing quit confirmation");
+  await dialog.onConfirm();
+  expect(api.editorDraftsSave).toHaveBeenCalledTimes(2);
+  expect(useToasts.getState().items).toHaveLength(2);
+  expect(useToasts.getState().items[0]?.message).toBe(useToasts.getState().items[1]?.message);
 });
