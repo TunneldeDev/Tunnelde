@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type * as IpcModule from "@/lib/api/ipc";
+import type * as ToastModule from "@/store/toasts";
 
 const mocks = vi.hoisted(() => ({
   native: vi.fn(),
@@ -16,7 +17,10 @@ vi.mock("@/lib/api/ipc", async (original) => ({
   ...(await original<typeof IpcModule>()),
   isTauri: mocks.native,
 }));
-vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
+vi.mock("@/store/toasts", async (original) => ({
+  ...(await original<typeof ToastModule>()),
+  toast: mocks.toast,
+}));
 vi.mock("@/lib/editor/recovery/persistence", () => ({ flushEditorDrafts: mocks.flushRecovery }));
 import "@/i18n/i18n";
 import type { AppInfo } from "@/lib/api/types";
@@ -192,6 +196,24 @@ it("does not ask to discard for macOS or tray hiding", async () => {
   });
   await requestClose();
   expect(useDialogs.getState().dialog.kind).toBe("none");
+  expect(mocks.invoke).not.toHaveBeenCalledWith(
+    "main_window_close_guard_finish",
+    expect.anything(),
+  );
+});
+it("does not report a late checkpoint failure after its close guard unmounts", async () => {
+  let reject!: (error: unknown) => void;
+  mocks.flushRecovery.mockImplementationOnce(
+    () =>
+      new Promise<void>((_, failed) => {
+        reject = failed;
+      }),
+  );
+  const rendered = await mount();
+  await requestClose();
+  rendered.unmount();
+  await act(async () => reject(Error("late checkpoint failure")));
+  expect(mocks.toast).not.toHaveBeenCalled();
   expect(mocks.invoke).not.toHaveBeenCalledWith(
     "main_window_close_guard_finish",
     expect.anything(),

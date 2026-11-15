@@ -1,11 +1,10 @@
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
 import { isIpcError } from "@/lib/api/types";
 import { useEditors, type EditorEntry } from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
-import { toast } from "@/store/toasts";
 import type { EditorDraft } from "./contracts";
+import { reportDraftRecoveryFailure } from "./notifications";
 
 let activeFlush: (() => Promise<void>) | undefined;
 
@@ -132,7 +131,7 @@ export async function startDraftRecovery(
     timer = setTimeout(
       () =>
         void persist().catch((error) => {
-          if (!stopped) toast(translateError(error), "error");
+          if (!stopped) reportDraftRecoveryFailure(error);
         }),
       400,
     );

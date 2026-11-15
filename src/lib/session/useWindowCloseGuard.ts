@@ -10,7 +10,7 @@ import { useEditors } from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
 import { beforeWindowReload } from "./reload";
-import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
+import { checkpointEditorDrafts } from "@/lib/editor/recovery/checkpoint";
 
 /** Native ownership is replaced when a document navigates. Ordinary event
  * listeners cannot retain a Tauri close veto after their JavaScript is gone. */
@@ -31,7 +31,7 @@ export function useWindowCloseGuard(): void {
       if (!alive || closing) return;
       closing = true;
       try {
-        await flushEditorDrafts();
+        if (!(await checkpointEditorDrafts(() => alive))) return;
         await invoke("main_window_close_guard_finish", { owner });
       } catch (error) {
         // A failed close retains both the guard and the user's in-memory draft.

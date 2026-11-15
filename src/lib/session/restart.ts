@@ -6,7 +6,7 @@ import { useEditors } from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
 import { prepareWindowReload } from "./reload";
-import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
+import { checkpointEditorDrafts } from "@/lib/editor/recovery/checkpoint";
 
 export type ApplicationAction = "reload" | "restart" | "quit";
 
@@ -34,7 +34,7 @@ export function requestApplicationAction(
     danger: dirty.length > 0,
     onConfirm: async () => {
       try {
-        await flushEditorDrafts();
+        if (!(await checkpointEditorDrafts())) return;
         if (finishNativeRequest) {
           await finishNativeRequest();
         } else if (action === "reload") {
