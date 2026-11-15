@@ -26,7 +26,10 @@ const context = hostedContext({
   acknowledgement: "original-public-ota",
 });
 const mode = process.env.MACOS_OTA_MODE;
-assert(["inspect", "upgrade"].includes(mode), "Expected inspect or upgrade mode");
+assert(
+  ["inspect", "upgrade", "retention"].includes(mode),
+  "Expected inspect, upgrade or retention mode",
+);
 for (const path of [context.home, context.workspace, context.temp])
   await checkedDirectory(path, user.uid);
 const source = dirname(fileURLToPath(import.meta.url));
@@ -149,6 +152,8 @@ try {
     "guard.mjs",
     "archive.py",
     "profile.py",
+    "retention.mjs",
+    "retention-plugin.mjs",
   ]) {
     report.sourceFiles[name] = createHash("sha256")
       .update(await readFile(join(source, name)))
@@ -353,7 +358,7 @@ try {
     JSON.stringify(await native("tree", child.pid), null, 2),
   );
   await screenshot("original-updates-controls");
-  if (mode === "upgrade") {
+  if (mode !== "inspect") {
     await upgrade({
       report,
       native,

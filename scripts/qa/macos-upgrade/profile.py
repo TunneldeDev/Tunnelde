@@ -1,5 +1,6 @@
 """Read only the synthetic hosted profile; never accept a developer data path."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import pwd
@@ -28,9 +29,19 @@ def snapshot(host):
         profiles = connection.execute("SELECT value FROM settings WHERE key='settings.profiles.v1'").fetchone()
         security = connection.execute("SELECT value FROM settings WHERE key='plugin_security'").fetchone()
         history = connection.execute("SELECT command,executed_at FROM command_history WHERE host_id=? ORDER BY id", (host,)).fetchall()
-        return {"profiles": json.loads(profiles[0]) if profiles else [],
+        result = {"profiles": json.loads(profiles[0]) if profiles else [],
                 "security": json.loads(security[0]) if security else None,
                 "history": history, "readOnly": True}
+        if os.environ.get("MACOS_OTA_MODE") == "retention":
+            package = database.parent / "plugins/qa-macos-ota-retention"
+            hashes = {}
+            for name in ["tunnelde-plugin.json", "ui/main.mjs"]:
+                path = package / name
+                if path.resolve() != path or not path.is_file() or path.stat().st_size > 128 * 1024:
+                    raise ValueError("Unsafe synthetic plugin path or size")
+                hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            result["pluginPackageSha256"] = hashes
+        return result
 
 
 if __name__ == "__main__":

@@ -77,8 +77,11 @@ static BOOL walk(AXUIElementRef element, NSUInteger depth, NSMutableArray *nodes
   BOOL labelMatches = [node[@"AXTitle"] isEqual:label] || [node[@"AXDescription"] isEqual:label];
   if ([selection isEqual:@"title-only"]) labelMatches = [node[@"AXTitle"] isEqual:label] && [node[@"AXDescription"] isEqual:@""];
   if ([selection isEqual:@"described"]) labelMatches = [node[@"AXDescription"] isEqual:label];
+  if ([selection isEqual:@"prefix"] || [selection isEqual:@"tab-prefix"])
+    labelMatches = [node[@"AXTitle"] isKindOfClass:NSString.class] && [node[@"AXTitle"] hasPrefix:label];
   BOOL roleMatches = [selection isEqual:@"fill"]
       ? ([role isEqualToString:@"AXTextField"] || [role isEqualToString:@"AXTextArea"] || [role isEqualToString:@"AXSecureTextField"])
+      : [selection isEqual:@"tab-prefix"] ? ([role isEqualToString:@"AXRadioButton"] || [role isEqualToString:@"AXTab"])
       : ([role isEqualToString:@"AXButton"] || [role isEqualToString:@"AXMenuItem"]);
   if (label && labelMatches && [node[@"AXEnabled"] isEqual:@YES] && roleMatches) {
     [matches addObject:(__bridge id)element];
@@ -135,25 +138,29 @@ int main(int argc, const char *argv[]) {
       }
       return emit(@{@"processes": owned});
     }
-    if ([action isEqual:@"credential"] && argc == 3) {
-      NSString *account = [NSString stringWithUTF8String:argv[2]];
-      if (![[NSUUID alloc] initWithUUIDString:account]) return 2;
+    BOOL pluginCredentialValue = [action isEqual:@"plugin-credential-value"];
+    BOOL credentialValue = [action isEqual:@"credential-value"] || pluginCredentialValue;
+    if (([action isEqual:@"credential"] || credentialValue) && argc == (pluginCredentialValue ? 2 : 3)) {
+      if (credentialValue && ![env[@"MACOS_OTA_MODE"] isEqual:@"retention"]) return 2;
+      NSString *account = pluginCredentialValue ? @"plugin:qa-macos-ota-retention:ota-preserved" : [NSString stringWithUTF8String:argv[2]];
+      if (!pluginCredentialValue && ![[NSUUID alloc] initWithUUIDString:account]) return 2;
       LAContext *authentication = [LAContext new];
       authentication.interactionNotAllowed = YES;
       NSDictionary *query = @{(__bridge NSString *)kSecClass: (__bridge id)kSecClassGenericPassword,
         (__bridge NSString *)kSecAttrService: @"dev.tunnelde.app", (__bridge NSString *)kSecAttrAccount: account,
-        (__bridge NSString *)kSecReturnPersistentRef: @YES, (__bridge NSString *)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
+        (credentialValue ? (__bridge NSString *)kSecReturnData : (__bridge NSString *)kSecReturnPersistentRef): @YES,
+        (__bridge NSString *)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
         (__bridge NSString *)kSecUseAuthenticationContext: authentication};
       CFTypeRef result = NULL;
       OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
       NSData *reference = CFBridgingRelease(result);
-      NSMutableDictionary *value = [NSMutableDictionary dictionaryWithDictionary:@{@"status": @(status), @"account": account, @"secretRead": @NO}];
+      NSMutableDictionary *value = [NSMutableDictionary dictionaryWithDictionary:@{@"status": @(status), @"account": account, @"secretRead": credentialValue ? @YES : @NO}];
       if (status == errSecSuccess && [reference isKindOfClass:NSData.class]) {
         unsigned char digest[CC_SHA256_DIGEST_LENGTH];
         CC_SHA256(reference.bytes, (CC_LONG)reference.length, digest);
         NSMutableString *hash = [NSMutableString string];
         for (NSUInteger i = 0; i < sizeof(digest); i++) [hash appendFormat:@"%02x", digest[i]];
-        value[@"persistentReferenceSha256"] = hash;
+        value[credentialValue ? @"valueSha256" : @"persistentReferenceSha256"] = hash;
       }
       return emit(value);
     }
@@ -187,6 +194,8 @@ int main(int argc, const char *argv[]) {
       if ([key isEqual:@"quit"]) code = 12;
       else if ([key isEqual:@"settings"]) code = 43; // Cmd+Comma, the product Settings command.
       else if ([key isEqual:@"new-host"]) code = 45;
+      else if ([key isEqual:@"go-to-folder"]) { code = 5; flags |= kCGEventFlagMaskShift; }
+      else if ([key isEqual:@"enter"]) { code = 36; flags = 0; }
       else return 2;
       for (int down = 1; down >= 0; down--) {
         CGEventRef event = CGEventCreateKeyboardEvent(NULL, code, down != 0);
@@ -196,6 +205,40 @@ int main(int argc, const char *argv[]) {
         CFRelease(event);
       }
       return emit(@{@"identity": process, @"key": key, @"generatedOSInput": @YES});
+    }
+    if ([action isEqual:@"plugin-path"] && argc == 3) {
+      if (![env[@"MACOS_OTA_MODE"] isEqual:@"retention"]) return 2;
+      NSString *path = [root stringByAppendingPathComponent:@"retention-plugin"];
+      char resolved[PATH_MAX];
+      BOOL directory = NO;
+      if (!realpath(path.fileSystemRepresentation, resolved) ||
+          ![path isEqual:[NSString stringWithUTF8String:resolved]] ||
+          ![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory] || !directory) return 3;
+      AXUIElementRef target = AXUIElementCreateApplication(pid);
+      AXUIElementSetMessagingTimeout(target, 1.0);
+      id focused = attribute(target, kAXFocusedUIElementAttribute);
+      BOOL ready = focused && CFGetTypeID((__bridge CFTypeRef)focused) == AXUIElementGetTypeID() &&
+          ([@[@"AXComboBox", @"AXTextField"] containsObject:attribute((__bridge AXUIElementRef)focused, kAXRoleAttribute)]);
+      CFRelease(target);
+      if (!ready) return emit(@{@"pathEntered": @NO});
+      UniChar buffer[PATH_MAX];
+      if (!path.length || path.length >= PATH_MAX) return 3;
+      [path getCharacters:buffer range:NSMakeRange(0, path.length)];
+      for (int down = 1; down >= 0; down--) {
+        CGEventRef event = CGEventCreateKeyboardEvent(NULL, 0, down != 0);
+        if (!event) return 5;
+        CGEventSetFlags(event, kCGEventFlagMaskCommand);
+        CGEventPostToPid(pid, event); CFRelease(event);
+      }
+      usleep(100000);
+      for (int down = 1; down >= 0; down--) {
+        CGEventRef event = CGEventCreateKeyboardEvent(NULL, 0, down != 0);
+        if (!event) return 5;
+        CGEventSetFlags(event, 0);
+        CGEventKeyboardSetUnicodeString(event, path.length, buffer);
+        CGEventPostToPid(pid, event); CFRelease(event);
+      }
+      return emit(@{@"identity": process, @"pathEntered": @YES, @"generatedOSInput": @YES});
     }
     BOOL fill = [action isEqual:@"fill"];
     if (![action isEqual:@"tree"] && ![action isEqual:@"press"] && !fill) return 2;

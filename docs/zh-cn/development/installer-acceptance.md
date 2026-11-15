@@ -111,7 +111,7 @@ workspace／temp 路径。拒绝 root、自托管、其他仓库及普通工作�
 独立的 **Original public macOS GUI and OTA acceptance** 工作流实现后继检查阶段。
 从已审查分支手动触发 `macos-public-ota.yml`，填写
 `acknowledgement=original-public-ota`。`inspect` 模式检查控件与正常 Quit；
-`upgrade` 模式尝试真实签名更新。
+`upgrade` 模式尝试真实签名更新；`retention` 另补下述非空数据验收。
 PR 检查验证归档拒绝、编译外部原生驱动，并确认在访问 GUI／Profile 前拒绝普通环境。
 
 启动前驱动重新检查自身权限，要求一次性账户没有生产 bundle、原生应用数据／偏好／
@@ -140,6 +140,19 @@ GUI 选择版本必须准确等于固定公开目标，之后才点击安装。R
 实际原生数据库位置；比较设置、Profile、主机、凭据条目身份、stable CLI 与正常 Quit。
 重启进程不是 Runner 的子进程，只能记录退出观测，不能虚报退出码。清理信号要求
 PID／启动时间、bundle 路径和用户身份仍一致。
+
+`retention` 复用一次性账户门禁，通过真实插件安装对话框、原生文件夹选择器、包预览和
+显式权限审批安装小型可信 frontend 夹具，不需要 Node。仅通过声明授权的公开 SDK
+读取合成主机、写入/读取历史和插件自身存储、秘密；升级后只验证原值，绝不重新 seed。
+不直接调用私有 bridge，不用全局变量携带 API context，不改产品包。安装、审批、
+升级前写入和升级后读回均保存 AX 和截图；已授权包字节变化必须拒绝。
+
+仅此模式下，固定原生查询读取本轮新建合成主机密码与夹具自身秘密，禁止认证交互，
+只返回 SHA-256。秘密不进入参数、日志、截图或另一份明文存储。两端密码/插件秘密摘要、
+安装夹具字节、授权 fingerprint/permissions 和非空历史必须一致。升级前必须存在实际
+运行插件的 unclean 标记；计划内更新后不得进入 restricted，原授权可重新激活。
+`otaDataAccepted` 只记录此增量；`otaAccepted` 保持 false，独立审查与平台其余矩阵
+仍分开推进。门禁/单元检查不代替真实 OTA。
 
 `otaCoreAccepted` 仅表示上述实际更新／保留范围。非空历史、凭据实际认证／值保留、
 插件指纹／授权／存储和活动恢复标记尚待验证时，完整 `otaAccepted` 保持 false。

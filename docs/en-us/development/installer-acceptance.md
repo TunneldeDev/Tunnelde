@@ -146,7 +146,8 @@ environment with explicitly authorized native GUI access is then needed.
 The separate **Original public macOS GUI and OTA acceptance** workflow implements
 the next inspection stage. Dispatch `macos-public-ota.yml` from the reviewed
 branch with `acknowledgement=original-public-ota`. Mode `inspect` checks controls
-and normal Quit; mode `upgrade` attempts the real signed update. PR checks test archive rejection, compile the
+and normal Quit; mode `upgrade` attempts the real signed update; `retention` adds
+the nonempty-data checks described below. PR checks test archive rejection, compile the
 external native driver and verify refusal before GUI/profile access.
 
 Before launching, the driver repeats its own capability checks and requires no
@@ -192,6 +193,27 @@ retention and plugin fingerprint/approval/storage with an active recovery marker
 have also been verified. A passing staged workflow does not complete that matrix.
 The native profile reader opens only the disposable account's canonical database
 in read-only mode; it accepts no alternative data path and performs no seeding.
+
+Mode `retention` uses the same disposable-account guard. The actual plugin install
+dialog, native folder picker, manifest preview and explicit permission approval
+install a small trusted frontend fixture; it needs no Node runtime. Its declared
+SDK permissions allow reading the synthetic host and recording/reading history,
+plus its own secret store. It writes nonempty history and plugin JSON storage,
+then verifies the original values after update without reseeding. No private
+bridge invocation, globals carrying an API context or product-package changes
+are used. Installation, approval, source writes and target reads have AX records
+and screenshots. Changing approved package bytes is rejected.
+
+In this mode only, fixed native queries read the newly created synthetic host
+password and the fixture's own secret without authentication UI and return only
+SHA-256 values. No secret, command-line secret argument or second plaintext copy
+is captured. Source/target password and plugin-secret hashes, installed fixture
+bytes, approved fingerprint/permissions and nonempty history must match. The
+source must have a running plugin's unclean marker before the planned update;
+the target must remain unrestricted and reactivate using its retained grant.
+`otaDataAccepted` records this extra scope while `otaAccepted` remains false for
+independent review and the wider platform matrix. Guard/unit checks do not count
+as real OTA acceptance.
 
 ### Public-package OTA acceptance checklist
 
