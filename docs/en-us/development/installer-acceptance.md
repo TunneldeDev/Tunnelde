@@ -141,10 +141,65 @@ fails the job instead of producing a successful skip. Do not grant permissions
 or re-sign the public application to work around failure. A different one-use
 environment with explicitly authorized native GUI access is then needed.
 
-### Remaining public-package OTA stages
+### Original public app GUI inspection
 
-These requirements belong to a subsequent harness; the probe does not implement
-them. Keep their evidence separate from the first-stage result:
+The separate **Original public macOS GUI and OTA acceptance** workflow implements
+the next inspection stage. Dispatch `macos-public-ota.yml` from the reviewed
+branch with `acknowledgement=original-public-ota`. Mode `inspect` checks controls
+and normal Quit; mode `upgrade` attempts the real signed update. PR checks test archive rejection, compile the
+external native driver and verify refusal before GUI/profile access.
+
+Before launching, the driver repeats its own capability checks and requires no
+installed production bundle, native app data/preferences/cache, running app or
+credential entry for the production service in the disposable account. The
+credential query requests no secret data and forbids authentication UI. No
+profile or credential store on a developer machine is inspected.
+
+The runner downloads the unchanged public source archive, verifies its published
+size/SHA-256, validates every archive member before extraction, and verifies the
+original plist, architecture and code signature. It launches the original binary
+with no injected code, data override or GitHub token, confirms the actual database
+path with `lsof`, writes synthetic preferences through the stable CLI, and tests
+the seven stable methods. A separate native process uses bounded AX traversal,
+uniquely matched AXPress and generated OS shortcuts to inspect Settings/Updates
+and request normal Quit. This is generated input, not physical keyboard testing.
+
+Each run retains screenshots, AX trees, source/binary hashes, command results and
+normal-exit versus forced-cleanup evidence under
+`$RUNNER_TEMP/tunnelde-macos-public-ota-<run-id>-<attempt>/evidence` for 14 days.
+The original endpoint capability and credential values are not uploaded. Failure
+stops the still-owned direct source child and, after an update attempt, an updater
+target whose bundle path, user, PID and start identity still match this run.
+Forced cleanup is recorded separately; profile cleanup belongs to VM disposal.
+`otaAttempted` and `otaAccepted` remain false in inspection mode.
+
+Upgrade mode downloads the original target archive as an unexecuted reference.
+Using native GUI controls, it saves a named settings profile and a synthetic host
+with a random password in the disposable account's credential store. The password
+is neither passed in arguments nor captured in AX trees. Credential checks read
+only an opaque persistent item's reference and record its SHA-256, never its
+secret. The GUI must select exactly the fixed public target before installation.
+The runner never starts the target: it observes the updater's automatic relaunch,
+checks PID/start identity, installed version/code signature/reference binary hash,
+and actual native database path. It compares settings, profile and host records,
+credential-item identity, stable CLI behavior and normal target Quit. The
+restarted process is not its child; observed exit does not supply an exit code.
+Cleanup signals require the same PID/start time, bundle path and user identity.
+
+`otaCoreAccepted` records only this actual update/retention scope. Full
+`otaAccepted` remains false until nonempty history, credential authentication/value
+retention and plugin fingerprint/approval/storage with an active recovery marker
+have also been verified. A passing staged workflow does not complete that matrix.
+The native profile reader opens only the disposable account's canonical database
+in read-only mode; it accepts no alternative data path and performs no seeding.
+
+### Public-package OTA acceptance checklist
+
+The public-app harness implements the core update steps below. Keep its actual
+evidence separate from the first-stage capability probe. Complete data acceptance
+still requires nonempty history, credential authentication/value retention and
+plugin fingerprint/approval/storage with an active recovery marker; those remain
+outside the core result:
 
 1. Re-run the hosted guard and inspect the actual GUI driver's capabilities.
    Require a clean disposable native profile, no pre-existing Tunnelde process,

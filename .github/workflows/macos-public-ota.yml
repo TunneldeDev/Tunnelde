@@ -1,0 +1,83 @@
+name: Original public macOS GUI and OTA acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      acknowledgement:
+        description: Type original-public-ota to run the original app in this disposable hosted account
+        required: true
+        type: string
+      mode:
+        description: Inspect original controls, or perform the actual signed update
+        required: true
+        default: inspect
+        type: choice
+        options: [inspect, upgrade]
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/macos-public-ota.yml
+      - scripts/qa/macos-upgrade/**
+      - scripts/qa/local-cli/**
+      - scripts/qa/windows-upgrade/assets.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-public-ota-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guards:
+    name: Original Mac safety and archive checks
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check rejection and release selection
+        run: node --test scripts/qa/macos-upgrade/*.test.mjs scripts/qa/local-cli/*.test.mjs scripts/qa/windows-upgrade/assets.test.mjs
+      - name: Reject unsafe archives before extraction
+        run: python3 -B scripts/qa/macos-upgrade/archive_test.py
+      - name: Compile the native driver and prove local-context refusal
+        run: |
+          xcrun clang -fobjc-arc -Wall -Wextra -Werror \
+            -framework AppKit -framework ApplicationServices -framework Security \
+            -framework LocalAuthentication -framework SystemConfiguration \
+            scripts/qa/macos-upgrade/driver.m -o "$RUNNER_TEMP/tunnelde-public-driver-check"
+          node --input-type=module -e 'import assert from "node:assert/strict"; import { spawnSync } from "node:child_process"; const r = spawnSync(process.argv[1], ["capabilities"], { env: { ...process.env, GITHUB_EVENT_NAME: "pull_request" }, encoding: "utf8", timeout: 10000 }); assert.equal(r.status, 2); assert.match(r.stderr, /Refusing/);' "$RUNNER_TEMP/tunnelde-public-driver-check"
+
+  original:
+    name: Original public app GUI and update
+    needs: guards
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Inspect original signed public app using an external native driver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACOS_OTA_ACK: ${{ inputs.acknowledgement }}
+          MACOS_OTA_MODE: ${{ inputs.mode }}
+          UPGRADE_FROM: v1.2.1
+          UPGRADE_TO: v1.3.0
+        run: node scripts/qa/macos-upgrade/public.mjs
+      - name: Retain successful or failed native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-public-ota-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tunnelde-macos-public-ota-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          if-no-files-found: warn
+          retention-days: 14
