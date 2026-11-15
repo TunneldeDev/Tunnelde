@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: 24
       - run: node --test scripts/qa/linux-upgrade/*.test.mjs
-      - run: python3 -m py_compile scripts/qa/linux-upgrade/probe.py scripts/qa/linux-upgrade/upgrade.py
+      - run: python3 -m py_compile scripts/qa/linux-upgrade/probe.py scripts/qa/linux-upgrade/upgrade.py scripts/qa/linux-upgrade/retention.py
         env:
           PYTHONPYCACHEPREFIX: ${{ runner.temp }}/linux-ota-python-cache
 

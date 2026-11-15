@@ -19,7 +19,7 @@ await mkdir(evidence);
 const report = {
   tag: process.env.OTA_SOURCE_TAG,
   scope: targetTag
-    ? "Original public Linux AppImage: native application-initiated signed installation, automatic restart, seeded public settings retention and normal close on disposable Xvfb. Not populated host/history/Profile/plugin/credential migration or physical desktop acceptance."
+    ? "Original public Linux AppImage: native application-initiated signed installation, automatic restart, public settings and synthetic host/Profile retention, normal close on disposable Xvfb. Not nonempty history/plugin/credential migration or physical desktop acceptance."
     : "Unmodified public AppImage in its extraction runtime on disposable Xvfb/AT-SPI. Environment probe only: no update download, install, restart or physical desktop claim.",
 };
 try {
