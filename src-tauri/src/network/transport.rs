@@ -2,7 +2,7 @@
 //! this type deliberately has no Debug or serialization implementation.
 use super::*;
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct TcpRoute(String);
 
 impl TcpRoute {

@@ -30,9 +30,15 @@ admission prevents a queued operation from starting. After admission, the worker
 capacity until OS access settles; losing the reply does not roll back a write.
 Host/profile validation, vault service and keys, and underlying OS errors remain
 part of the same operation. Status still reads the stored credential and can
-require OS authorization. This scheduling boundary covers these four commands;
-reviewed SSH-route mutations and other credential consumers keep their existing
-admission rules.
+require OS authorization.
+
+The reviewed SSH saved-password fallback shares this worker budget. Its original
+route snapshot and credential-host scope are checked at actual worker admission,
+after the read and again before authentication uses the result. No database guard
+spans OS access. A changed review discards the read result instead of refreshing
+the user's review or authenticating against edited configuration. This read-only
+boundary does not move reviewed credential writes/deletes outside their existing
+authority guard; those mutations and other consumers retain their own rules.
 
 ## Compatibility rules
 

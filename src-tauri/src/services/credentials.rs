@@ -30,6 +30,42 @@ async fn run<T: Send + 'static>(
         .await
 }
 
+async fn read_checked<T: Send + 'static>(
+    budget: &Budget,
+    check: impl Fn() -> AppResult<()> + Send + 'static,
+    read: impl FnOnce() -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    budget
+        .blocking(move |job| {
+            // Validate at actual admission, including time spent waiting for
+            // the database. Cancellation may still win before OS access starts.
+            check()?;
+            job.commit()?;
+            let value = read()?;
+            // A read has no publication to roll back. Discard its value if
+            // the original review changed while the OS operation was pending.
+            check()?;
+            Ok(value)
+        })
+        .await
+}
+
+/// Read-only acquisition: the caller owns the original review check. No DB
+/// guard may span OS access, and the value stays private until revalidated.
+pub(crate) async fn load_reviewed(
+    app: AppHandle,
+    host_id: String,
+    check: impl Fn(&AppHandle) -> AppResult<()> + Send + 'static,
+) -> AppResult<Option<String>> {
+    let checked_app = app.clone();
+    read_checked(
+        &WORKERS,
+        move || check(&checked_app),
+        move || app.state::<AppState>().vault.load(&host_id),
+    )
+    .await
+}
+
 pub(crate) async fn save(app: AppHandle, host_id: String, password: String) -> AppResult<()> {
     run(&WORKERS, move || {
         if password.is_empty() {
