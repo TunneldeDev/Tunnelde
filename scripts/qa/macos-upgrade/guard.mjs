@@ -47,9 +47,16 @@ export function hostedContext({
   assert.equal(env.RUNNER_TEMP, join(runnerWork, "_temp"));
   assert.equal(env.GITHUB_WORKSPACE, join(runnerWork, "Tunnelde", "Tunnelde"));
   assert.equal(cwd, env.GITHUB_WORKSPACE);
-  assert.equal(env.UPGRADE_FROM, "v1.2.1");
-  assert.equal(env.UPGRADE_TO, "v1.3.0");
+  if (workflowFile === workflow) {
+    assert.equal(env.UPGRADE_FROM, "v1.2.1");
+    assert.equal(env.UPGRADE_TO, "v1.3.0");
+  }
   assertUpgrade(env.UPGRADE_FROM, env.UPGRADE_TO);
+  if (workflowFile === "macos-public-ota.yml") {
+    for (const tag of [env.UPGRADE_FROM, env.UPGRADE_TO]) {
+      assert(!tag.includes("-"), "Original public OTA requires stable release tags");
+    }
+  }
   return {
     workspace: cwd,
     home,

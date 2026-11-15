@@ -152,6 +152,7 @@ try {
     "guard.mjs",
     "archive.py",
     "profile.py",
+    "credential.py",
     "retention.mjs",
     "retention-plugin.mjs",
   ]) {

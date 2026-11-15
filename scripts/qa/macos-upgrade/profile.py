@@ -7,6 +7,7 @@ import pwd
 import sqlite3
 import sys
 import uuid
+from credential import credential_identity
 
 
 def snapshot(host):
@@ -31,7 +32,8 @@ def snapshot(host):
         history = connection.execute("SELECT command,executed_at FROM command_history WHERE host_id=? ORDER BY id", (host,)).fetchall()
         result = {"profiles": json.loads(profiles[0]) if profiles else [],
                 "security": json.loads(security[0]) if security else None,
-                "history": history, "readOnly": True}
+                "history": history, "readOnly": True,
+                "credentialIdentity": credential_identity(connection, host)}
         if os.environ.get("MACOS_OTA_MODE") == "retention":
             package = database.parent / "plugins/qa-macos-ota-retention"
             hashes = {}

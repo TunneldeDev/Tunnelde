@@ -43,6 +43,14 @@ export function verifySeedHost(host) {
   }
 }
 
+export function credentialCommand(identity) {
+  assert(identity && ["legacy", "immutable"].includes(identity.kind));
+  assert.equal(typeof identity.id, "string");
+  assert.match(identity.id, /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
+  assert.equal(identity.id.length, 36);
+  return [identity.kind === "immutable" ? "credential-item" : "credential", identity.id];
+}
+
 export async function upgrade(runtime) {
   const retention = runtime.report.mode === "retention";
   const {
@@ -158,7 +166,8 @@ export async function upgrade(runtime) {
   });
   report.seedHost = host;
   verifySeedHost(host);
-  report.credentialBefore = await native("credential", host.id);
+  const initialProfile = await profile(host.id);
+  report.credentialBefore = await native(...credentialCommand(initialProfile.credentialIdentity));
   assert.equal(
     report.credentialBefore.status,
     0,
@@ -170,6 +179,10 @@ export async function upgrade(runtime) {
     await seedRetention(retentionRuntime);
   }
   report.profileBeforeUpdate = await profile(host.id);
+  assert.deepEqual(
+    report.profileBeforeUpdate.credentialIdentity,
+    initialProfile.credentialIdentity,
+  );
   assert(
     report.profileBeforeUpdate.profiles.some(
       (entry) => entry.name === "OTA preserved profile 升级保留",
@@ -304,7 +317,13 @@ export async function upgrade(runtime) {
   assert.deepEqual(report.profileAfterUpdate.history, report.profileBeforeUpdate.history);
   assert.equal(report.profileAfterUpdate.security?.restricted, false);
   assert.equal(report.profileAfterUpdate.security?.unclean, retention);
-  report.credentialAfter = await native("credential", host.id);
+  assert.deepEqual(
+    report.profileAfterUpdate.credentialIdentity,
+    report.profileBeforeUpdate.credentialIdentity,
+  );
+  report.credentialAfter = await native(
+    ...credentialCommand(report.profileAfterUpdate.credentialIdentity),
+  );
   assert.deepEqual(report.credentialAfter, report.credentialBefore);
   if (retention) {
     assert.deepEqual(

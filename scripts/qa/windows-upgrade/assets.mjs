@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 export const repository = "TunneldeDev/Tunnelde";
 
 export function releaseVersion(tag) {
+  assert.equal(typeof tag, "string");
+  assert.equal(tag.trim(), tag, "Release tags cannot contain surrounding whitespace");
   assert.match(tag, /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.([1-9]))?$/);
   assert(tag.length < 64);
   const [version, beta] = tag.slice(1).split("-beta.");
