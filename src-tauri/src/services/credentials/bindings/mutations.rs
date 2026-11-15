@@ -10,6 +10,10 @@ pub(crate) struct Intent {
 }
 
 impl Intent {
+    pub(in crate::services::credentials) fn id(&self) -> Uuid {
+        self.id
+    }
+
     pub(in crate::services::credentials) fn physical(&self) -> Physical {
         Physical::Immutable(self.id)
     }

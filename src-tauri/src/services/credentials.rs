@@ -136,3 +136,6 @@ mod tests;
 // its schema and switching every native reader/writer in the same change.
 #[cfg(test)]
 mod bindings;
+
+#[cfg(test)]
+mod native;
