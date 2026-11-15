@@ -18,6 +18,14 @@ the owned channel; it does not replay the message or prove that an already queue
 command has not run. A transport error after dispatch remains uncertain. Host-owned
 stop recovery and inspection continue to work after plugin retirement.
 
+Confirmed helper channels have cancellation-safe owners. If a caller times out
+or is cancelled before channel-open confirmation, its pending owner retains a
+bounded slot until that confirmation or SSH transport disposal. A late confirmed
+channel is closed without sending a command or input. Sixteen helper exchanges may
+be owned at once; exhaustion returns `plugin.runners.busy`, including when earlier
+opens remain unconfirmed. Cancelling the caller does not release those pending
+slots, replay a request or terminate the parent SSH session.
+
 This lifecycle does not make the runner API stable, replace active resource handles, grant access to other plugins, or validate account-specific AI configuration. Remote deployment, initialization and credentials still require the appropriate authorization.
 
 ## Interrupted deployment
