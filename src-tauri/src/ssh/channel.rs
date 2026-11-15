@@ -21,6 +21,19 @@ impl OwnedChannel {
             .into_stream()
     }
 
+    /// Transfer the same admission slot into a long-lived SFTP reader.
+    pub(crate) fn into_stream_with_permit(
+        mut self,
+    ) -> (ChannelStream<client::Msg>, OwnedSemaphorePermit) {
+        let stream = self
+            .channel
+            .take()
+            .expect("owned SSH channel")
+            .into_stream();
+        let permit = self.permit.take().expect("owned SSH channel capacity");
+        (stream, permit)
+    }
+
     pub(crate) fn split(mut self) -> SplitChannel {
         let (reader, writer) = self.channel.take().expect("owned SSH channel").split();
         SplitChannel {

@@ -758,6 +758,15 @@ and two concurrent requests per ticket are allowed. Requests support GET/HEAD an
 capped at 1 MiB; multipart ranges are rejected. Whole-file reads are capped at 32 MiB. Revocation
 interrupts queued/active reads; remote file and SFTP handles close without creating remote files.
 
+Dedicated remote readers share a host limit of 64 connections. An unconfirmed SSH
+open still occupies its slot after cancellation or the 15-second negotiation
+deadline, until confirmation or parent-session disposal. A late confirmation is
+closed without starting SFTP. Confirmed channels stay owned through negotiation;
+the same slot transfers to the accepted read-only reader until its last owner is
+dropped. Cleanup affects that reader channel, not sibling channels or the parent
+SSH session. Cancellation of a queued worker is checked at each negotiation
+boundary; it does not forcibly interrupt an in-flight server operation.
+
 Images are limited to 32 MiB, PDFs to 128 MiB, text/Markdown to 2 MiB; audio/video use bounded Range
 requests. Playback depends on OS codecs and starts only on user action. PDF.js is lazy-loaded with
 local fonts/CMaps/decoders, fetches ranges on demand, renders one page to a bounded canvas and does
