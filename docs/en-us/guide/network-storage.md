@@ -82,7 +82,7 @@ addition, setup reports the change instead of overwriting those new settings;
 the key already added to the original server may remain there.
 
 The managed private key is published without replacing an existing key, including
-concurrent first-time setup. Its storage filesystem must support hard links;
+concurrent first-time setup. It uses the platform's atomic non-replacing rename;
 publication failures preserve any existing key instead of overwriting it.
 Remote setup creates a missing `.ssh` directory with mode `0700` and a missing
 `authorized_keys` file with mode `0600`, while leaving existing permissions alone.
