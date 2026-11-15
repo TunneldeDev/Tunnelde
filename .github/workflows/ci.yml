@@ -431,6 +431,8 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib update::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
@@ -502,6 +504,7 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
           TUNNELDE_TEST_APP_KEYRING=1 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::tests::system::application_credentials_are_isolated_and_survive_process_reconstruction -- --ignored --exact
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::network::
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::keys::
