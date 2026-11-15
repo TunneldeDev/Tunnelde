@@ -60,6 +60,7 @@ export function createPluginActivationBridge(transport: Transport) {
     return work;
   };
   const subscription: Subscription = {
+    recoverOnStart: true,
     register: (signal) =>
       transport.subscribe((request) => {
         void activate(request, signal).catch((error) => {
@@ -70,11 +71,19 @@ export function createPluginActivationBridge(transport: Transport) {
       await transport.load();
       if (disposed || signal.aborted) return;
       // Recover missed activation requests, never start stopped plugins.
+      const failures: unknown[] = [];
       for (const plugin of transport.read().items) {
         if (disposed || signal.aborted) return;
-        if (plugin.status === "running" && plugin.frontend && plugin.runtimeId)
-          await activate({ id: plugin.id, runtimeId: plugin.runtimeId }, signal);
+        if (plugin.status === "running" && plugin.frontend && plugin.runtimeId) {
+          try {
+            await activate({ id: plugin.id, runtimeId: plugin.runtimeId }, signal);
+          } catch (error) {
+            failures.push(error);
+          }
+        }
       }
+      if (!disposed && !signal.aborted && failures.length)
+        throw new AggregateError(failures, "plugin.frontend.activationFailed");
     },
   };
   return {

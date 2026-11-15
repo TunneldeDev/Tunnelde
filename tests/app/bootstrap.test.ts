@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   updateRefresh: vi.fn(),
   securityLoad: vi.fn(),
   pluginLoad: vi.fn(),
+  pluginActivationLoad: vi.fn(),
   pluginStart: vi.fn(),
   transferHydrate: vi.fn(async () => {}),
   editorCleanupList: vi.fn(async () => []),
@@ -81,7 +82,7 @@ vi.mock("@/store/plugins", () => ({
       stoppingIds: [],
       apply: vi.fn(),
       load: mocks.pluginLoad,
-      refreshActivation: mocks.pluginLoad,
+      refreshActivation: mocks.pluginActivationLoad,
       start: mocks.pluginStart,
     }),
   },
@@ -142,6 +143,7 @@ beforeEach(() => {
   mocks.updateRefresh.mockReset().mockResolvedValue(undefined);
   mocks.securityLoad.mockReset().mockResolvedValue(undefined);
   mocks.pluginLoad.mockReset().mockResolvedValue(undefined);
+  mocks.pluginActivationLoad.mockReset().mockResolvedValue(undefined);
   mocks.pluginStart.mockReset();
   mocks.toast.mockReset();
   mocks.hosts = [];
@@ -156,6 +158,14 @@ afterEach(async () => {
 });
 
 describe("workspace startup and persistence", () => {
+  it("reconciles native frontend activation on the first successful subscription without starting engines", async () => {
+    const { bootstrap } = await fresh();
+    await bootstrap();
+    expect(mocks.events.onPluginActivation).toHaveBeenCalledOnce();
+    expect(mocks.pluginActivationLoad).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(mocks.pluginStart).not.toHaveBeenCalled();
+  });
+
   it("owns profile change subscriptions and recovers missed changes without eagerly reading profiles", async () => {
     mocks.events.onSettingsProfilesChanged.mockRejectedValueOnce(new Error("listener failed"));
     const { bootstrap, disposeBootstrap } = await fresh();

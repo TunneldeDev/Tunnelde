@@ -4,6 +4,8 @@ export interface Subscription {
   register: (signal: AbortSignal) => Promise<Dispose>;
   /** Read authoritative state after a failed registration is recovered. */
   recover?: (signal: AbortSignal) => void | Promise<unknown>;
+  /** Also reconcile existing native resources after the first successful registration. */
+  recoverOnStart?: boolean;
 }
 
 /** Independent retries: one unavailable event must not take down healthy subscriptions. */
@@ -35,7 +37,7 @@ export function createEventLifecycle(
         return;
       }
       stops.add(stop);
-      if (attempt > 0 && subscription.recover) {
+      if ((attempt > 0 || subscription.recoverOnStart) && subscription.recover) {
         // A failed snapshot retries its own read, keeping the healthy listener installed.
         const recover = async (retry: number): Promise<void> => {
           if (controller.signal.aborted) return;

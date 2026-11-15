@@ -41,6 +41,34 @@ function fixture() {
 }
 
 describe("bootstrap frontend activation bridge", () => {
+  it("restores an already running frontend on the first successful listener after WebView reload", async () => {
+    const f = fixture();
+    f.transport.load.mockImplementation(async () => {
+      f.state.items = [plugin(), { ...plugin("boot:2", "stopped"), status: "stopped" }];
+    });
+    const lifecycle = createEventLifecycle([f.bridge.subscription], f.transport.report);
+    try {
+      await lifecycle.start();
+      await vi.waitFor(() => expect(f.transport.ensure).toHaveBeenCalledExactlyOnceWith(plugin()));
+      expect(f.transport.subscribe).toHaveBeenCalledOnce();
+      expect(f.transport.report).not.toHaveBeenCalled();
+    } finally {
+      lifecycle.dispose();
+      f.bridge.dispose();
+    }
+  });
+
+  it("recovers other frontends when one module fails to activate", async () => {
+    const f = fixture();
+    const failed = plugin("boot:1", "failed-module");
+    const healthy = plugin("boot:2", "healthy-module");
+    f.state.items = [failed, healthy];
+    f.transport.ensure.mockRejectedValueOnce(new Error("module failed"));
+    await expect(f.bridge.subscription.recover!(f.controller.signal)).rejects.toThrow();
+    expect(f.transport.ensure).toHaveBeenCalledWith(healthy);
+    f.bridge.dispose();
+  });
+
   it("loads an admitted frontend before the native start response, without starting engines", async () => {
     const f = fixture();
     await f.register();
