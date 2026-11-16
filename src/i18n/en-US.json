@@ -1859,6 +1859,11 @@
     }
   },
   "profiles": {
+    "operation": {
+      "busy": "Profile operations are busy. Wait for current operations to finish, then try again.",
+      "cancelled": "The Profile operation was cancelled before commit admission.",
+      "unavailable": "The Profile worker stopped unexpectedly. Read the current Profiles and check application logs before retrying."
+    },
     "title": "Settings profiles",
     "profile": "Profile",
     "choose": "Choose settings profile",
