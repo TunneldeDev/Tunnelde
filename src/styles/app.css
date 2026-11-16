@@ -956,13 +956,15 @@
 }
 
 .settings__nav-item {
-  height: 28px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 5px 10px;
   border: 0;
   border-radius: var(--td-radius-sm);
   background: transparent;
   color: var(--td-muted);
   font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
   text-align: left;
   transition:
     background var(--td-ease),
