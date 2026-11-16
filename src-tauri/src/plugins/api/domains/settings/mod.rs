@@ -42,7 +42,7 @@ pub(in crate::plugins::api) async fn dispatch(
             crate::services::settings::write(app, move |writer| {
                 let state = worker.app.state::<AppState>();
                 authorize(&worker, &["settings.write"])?;
-                let mut prepared = writer.prepare_update(patch)?;
+                let prepared = writer.prepare_update(patch)?;
                 let lease = crate::plugins::security::Lease {
                     id: worker.id.clone(),
                     fingerprint: worker.fingerprint.clone(),
@@ -50,11 +50,20 @@ pub(in crate::plugins::api) async fn dispatch(
                     generation: worker.generation,
                 };
                 // Waiting for a concurrent commit is an authorization boundary too.
-                state
-                    .plugins
-                    .security
-                    .with_authorized(&lease, &["settings.write"], || prepared.persist())?;
-                encode(prepared.finish())
+                let cancellation = prepared.cancellation();
+                let prepared = std::cell::RefCell::new(prepared);
+                state.plugins.security.with_authorized_database_then(
+                    &state.db,
+                    &lease,
+                    &["settings.write"],
+                    || cancellation.check(),
+                    |conn| prepared.borrow().persist_on(conn),
+                    |revision| {
+                        prepared.borrow_mut().committed_revision(revision);
+                        Ok(())
+                    },
+                )?;
+                encode(prepared.into_inner().finish())
             })
             .await
         }

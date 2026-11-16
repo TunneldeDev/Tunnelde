@@ -203,7 +203,7 @@ pub struct PluginsManager {
     starts: Arc<runtime::activation::execution::coordination::Coordinator>,
     dir: PathBuf,
     plugins: Mutex<HashMap<String, Arc<Mutex<Instance>>>>,
-    mutations: RwLock<()>,
+    mutations: Arc<RwLock<()>>,
     snapshots: std::sync::RwLock<HashMap<String, PluginInfo>>,
     runtime_sources: std::sync::RwLock<HashMap<String, (String, security::Lease)>>,
     pub(super) security: Arc<security::PluginSecurity>,
@@ -257,16 +257,28 @@ impl PluginsManager {
     ) -> AppResult<()> {
         if permissions.is_none() {
             // Revoke before waiting for an instance's in-flight command mutex.
-            return self.security.set_permissions_with_cleanup(
-                db,
-                id,
-                String::new(),
-                &[],
-                None,
-                |retired| self.cleanup_policy_retirement(retired),
-            );
+            let app = self.runtime_app.get().cloned();
+            return self
+                .security
+                .permissions_async(
+                    db.clone(),
+                    security::PermissionChange {
+                        id: id.to_owned(),
+                        digest: String::new(),
+                        declared: vec![],
+                        permissions: None,
+                    },
+                    move |retired| {
+                        if let Some(app) = app {
+                            app.state::<crate::state::AppState>()
+                                .plugins
+                                .cleanup_retired(&app, retired);
+                        }
+                    },
+                )
+                .await;
         }
-        let _mutation = self.mutations.write().await;
+        let mutation = self.mutations.clone().write_owned().await;
         let info = self
             .snapshots
             .read()
@@ -281,20 +293,32 @@ impl PluginsManager {
         if permissions.is_some() && expected_fingerprint.as_deref() != Some(digest.as_str()) {
             return Err(AppError::validation("pluginSecurity.changed"));
         }
-        self.security.set_permissions_with_cleanup(
-            db,
-            id,
-            digest,
-            &info.permissions,
-            permissions,
-            |retired| self.cleanup_policy_retirement(retired),
-        )
+        let app = self.runtime_app.get().cloned();
+        self.security
+            .permissions_async(
+                db.clone(),
+                security::PermissionChange {
+                    id: id.to_owned(),
+                    digest,
+                    declared: info.permissions,
+                    permissions,
+                },
+                move |retired| {
+                    // Retain package exclusion until the actual permission worker
+                    // exits, even if its async caller is cancelled while waiting.
+                    let _mutation = mutation;
+                    if let Some(app) = app {
+                        app.state::<crate::state::AppState>()
+                            .plugins
+                            .cleanup_retired(&app, retired);
+                    }
+                },
+            )
+            .await
     }
 
-    pub fn force_cli_restricted(&self, app: &AppHandle, db: &crate::db::Database) {
-        if let Err(error) = self.security.set_restricted(db, true, true) {
-            tracing::error!(%error, "could not persist restricted extension mode");
-        }
+    pub fn force_cli_restricted(&self, app: &AppHandle) {
+        self.security.lock_cli();
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             app.state::<crate::state::AppState>()
@@ -372,7 +396,7 @@ impl PluginsManager {
             starts: runtime::activation::execution::coordination::Coordinator::new(),
             dir,
             plugins: Mutex::new(plugins),
-            mutations: RwLock::new(()),
+            mutations: Arc::new(RwLock::new(())),
             snapshots: std::sync::RwLock::new(snapshots),
             runtime_sources: std::sync::RwLock::new(HashMap::new()),
             security: Arc::new(security::PluginSecurity::default()),

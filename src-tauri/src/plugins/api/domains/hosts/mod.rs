@@ -22,7 +22,7 @@ pub(in crate::plugins::api) async fn dispatch(
             crate::plugins::host_columns::call(context, method, params)
         }
         "hosts.getFields" | "hosts.setFields" => {
-            crate::plugins::host_fields::call(context, method, params)
+            crate::plugins::host_fields::call(context, method, params).await
         }
         "hosts.create" => {
             encode(crate::services::hosts::service(app, &state).create(field(&params, "input")?)?)

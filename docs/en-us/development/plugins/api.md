@@ -254,6 +254,27 @@ not rollback and a lost reply does not establish failure. The normal RPC respons
 still rejects a revoked runtime. This does not change the method payloads, plugin-scoped
 key identity or secret-size limit, and does not promote these methods to stable.
 
+## Database admission and cancellation
+
+Permission persistence, restricted-mode changes and runtime recovery markers use a
+bounded worker budget. Host-field requests have a separate budget, so metadata requests
+cannot occupy every security-control slot. Capacity exhaustion reports an explicit busy
+error. A cancelled caller retains its slot until its actual worker settles.
+
+Authorized preference/Profile writes and host-field operations do not retain the global
+policy lock while waiting for the shared database connection. Each admission attempt
+checks the original runtime generation, current approval, required permissions and
+cancellation. Host fields also recheck the installed package/schema. Only an unadmitted
+lock attempt is retried; an executed or uncertain write is never replayed.
+
+Final validation and the admitted database operation retain their authorization boundary.
+Preference publication follows database release under that same boundary and the ordered
+settings writer; revocation cannot split commit from publication. Restriction/revocation
+fail closed when persistence fails; approval or resuming execution requires persistence.
+An admitted operation can finish after cancellation, so a missing reply requires state
+reconciliation. Active SQLite statements, metadata/filesystem work and OS calls are not
+preempted by this mechanism; it is not a claim that every authorization path is nonblocking.
+
 ## Extension points
 
 See [extension architecture](extension-architecture.md) for the experimental `extensions.describe` directory and [host-list decorations](host-list.md). Existing stable API contracts remain unchanged.

@@ -119,6 +119,38 @@ impl Prepared<'_> {
             expected_preferences,
         }
         .save(self.writer.cancellation, before, extra)?;
+        self.committed_revision(revision);
+        Ok(())
+    }
+
+    pub(crate) fn cancellation(&self) -> crate::services::operations::Cancellation {
+        self.writer.cancellation.clone()
+    }
+
+    /// Durable phase only; caller must publish its revision after DB release
+    /// under the same authorization boundary, without yielding.
+    pub(crate) fn persist_on(&self, conn: &rusqlite::Connection) -> AppResult<String> {
+        self.persist_guarded_on(conn, None, |_| Ok(()), |_| Ok(()))
+    }
+
+    pub(crate) fn persist_guarded_on(
+        &self,
+        conn: &rusqlite::Connection,
+        expected_preferences: Option<&str>,
+        before: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
+        extra: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
+    ) -> AppResult<String> {
+        assert!(!self.committed, "settings durable commit admitted once");
+        persistence::Write {
+            db: &self.writer.state.db,
+            previous: &self.previous,
+            next: &self.next,
+            expected_preferences,
+        }
+        .save_on(conn, self.writer.cancellation, before, extra)
+    }
+
+    pub(crate) fn committed_revision(&mut self, revision: String) {
         self.writer.state.set_settings(self.next.clone());
         self.writer
             .state
@@ -126,7 +158,6 @@ impl Prepared<'_> {
             .settings_committed(&self.previous, &self.next);
         self.revision = Some(revision);
         self.committed = true;
-        Ok(())
     }
     pub(crate) fn finish(self) -> Settings {
         self.finish_with(|next, _| next.clone())
