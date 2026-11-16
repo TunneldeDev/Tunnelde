@@ -207,6 +207,16 @@ runners need their own reachable network route.
 
 ## In-app channels, sources and OTA
 
+The manual `macos-public-ota.yml` acceptance workflow runs an explicit pair of
+unmodified public stable packages in a disposable hosted Mac account. If the update
+fails, its artifact records the installed executable hash, bundle version and signature
+result independently of target discovery. It also captures exact-path/UID process
+observations, bounded application log tails and matching recent crash reports.
+These observations neither relax the ownership checks used for GUI actions and
+cleanup nor replace the original failure. Missing diagnostic data is reported separately.
+No harness action manually relaunches the target to satisfy automatic restart.
+The driver refuses local and self-hosted execution; never point it at a user's installation.
+
 Updates live inside **Settings → Updates**. The status-bar notification, tray action and
 command palette all lead to that same section; they do not create a separate update page.
 Checks default to once daily, with every-startup and weekly options. Checking never

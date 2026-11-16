@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <pwd.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 static int emit(NSDictionary *result) {
@@ -136,6 +137,41 @@ int main(int argc, const char *argv[]) {
     NSString *root = [env[@"RUNNER_TEMP"] stringByAppendingPathComponent:
         [NSString stringWithFormat:@"tunnelde-macos-public-ota-%@-%@", env[@"GITHUB_RUN_ID"], env[@"GITHUB_RUN_ATTEMPT"]]];
     NSString *executable = [root stringByAppendingPathComponent:@"install/Tunnelde.app/Contents/MacOS/tunnelde"];
+    if ([action isEqual:@"diagnose-processes"]) {
+      // Diagnostic only: exact path/UID candidates may not yet be registered
+      // with LaunchServices. They are never accepted for GUI control or cleanup.
+      NSMutableArray *raw = [NSMutableArray array];
+      const int capacity = 65536;
+      pid_t *pids = calloc((size_t)capacity, sizeof(pid_t));
+      if (!pids) return 1;
+      int bytes = proc_listpids(PROC_UID_ONLY, getuid(), pids, capacity * (int)sizeof(pid_t));
+      if (bytes < 0) { free(pids); return 1; }
+      int count = MIN(bytes / (int)sizeof(pid_t), capacity);
+      for (int i = 0; i < count; i++) {
+        char path[PROC_PIDPATHINFO_MAXSIZE] = {0};
+        struct proc_bsdinfo info = {0};
+        pid_t candidate = pids[i];
+        if (candidate <= 1 || proc_pidpath(candidate, path, sizeof(path)) <= 0 ||
+            ![[NSString stringWithUTF8String:path] isEqualToString:executable] ||
+            proc_pidinfo(candidate, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) != sizeof(info) ||
+            info.pbi_uid != getuid()) continue;
+        NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:candidate];
+        [raw addObject:@{@"pid": @(candidate), @"startSeconds": @(info.pbi_start_tvsec),
+          @"startMicroseconds": @(info.pbi_start_tvusec), @"executable": executable,
+          @"registeredIdentifier": (id)app.bundleIdentifier ?: [NSNull null],
+          @"terminated": app.terminated ? @YES : @NO}];
+      }
+      free(pids);
+      NSMutableArray *registered = [NSMutableArray array];
+      for (NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"dev.tunnelde.app"]) {
+        [registered addObject:@{@"pid": @(app.processIdentifier),
+          @"bundle": (id)app.bundleURL.path ?: [NSNull null],
+          @"executable": (id)app.executableURL.path ?: [NSNull null],
+          @"terminated": app.terminated ? @YES : @NO}];
+      }
+      return emit(@{@"rawCandidates": raw, @"registeredCandidates": registered,
+        @"enumerationLimited": count == capacity ? @YES : @NO});
+    }
     if ([action isEqual:@"locate"]) {
       NSMutableArray *owned = [NSMutableArray array];
       for (NSRunningApplication *app in [NSRunningApplication runningApplicationsWithBundleIdentifier:@"dev.tunnelde.app"]) {
