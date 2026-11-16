@@ -2,13 +2,12 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, State};
+use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::error::{AppError, AppResult};
 use crate::models::now_ms;
 use crate::settings::Settings;
-use crate::state::AppState;
 
 const KEY: &str = "settings.profiles.v1";
 const FORMAT: &str = "tunnelde-settings";
@@ -18,6 +17,10 @@ const MAX_PROFILES: usize = 32;
 pub(crate) mod activation;
 pub(crate) mod content;
 mod files;
+mod native;
+mod worker;
+#[cfg(test)]
+use native::{load, save, upsert};
 pub(crate) mod mutations;
 pub(crate) mod observation;
 mod repository;
@@ -179,87 +182,43 @@ fn parse_document(text: &str) -> AppResult<SettingsDocument> {
     Ok(document)
 }
 
-fn load(conn: &Connection) -> AppResult<Vec<SettingsProfile>> {
-    Ok(repository::read(conn)?.profiles)
+#[tauri::command]
+pub async fn settings_profiles_list(app: AppHandle) -> AppResult<Vec<SettingsProfile>> {
+    worker::run(&app, native::read).await
 }
 
-fn save(conn: &Connection, profiles: &[SettingsProfile]) -> AppResult<()> {
-    repository::save(conn, profiles)
-}
-
-fn upsert(
-    conn: &Connection,
+#[tauri::command]
+pub async fn settings_profile_save(
+    app: AppHandle,
     id: Option<String>,
     name: String,
     settings: Value,
 ) -> AppResult<Vec<SettingsProfile>> {
-    let name = validate_name(&name)?;
-    let settings = normalize(settings)?;
-    let mut profiles = load(conn)?;
-    if profiles.iter().any(|profile| {
-        Some(&profile.id) != id.as_ref() && profile.name.to_lowercase() == name.to_lowercase()
-    }) {
-        return Err(AppError::validation("profiles.duplicateName"));
-    }
-    if let Some(id) = id {
-        let profile = profiles
-            .iter_mut()
-            .find(|profile| profile.id == id)
-            .ok_or_else(|| AppError::NotFound("profiles.notFound".into()))?;
-        profile.name = name;
-        profile.settings = settings;
-        profile.updated_at = now_ms();
-    } else {
-        if profiles.len() >= MAX_PROFILES {
-            return Err(AppError::validation("profiles.limit"));
-        }
-        profiles.push(SettingsProfile {
-            id: uuid::Uuid::new_v4().to_string(),
-            name,
-            settings,
-            updated_at: now_ms(),
-        });
-    }
-    save(conn, &profiles)?;
-    Ok(profiles)
+    let worker_app = app.clone();
+    worker::run(&app, move |db, cancellation| {
+        let profiles = native::mutate(
+            db,
+            cancellation,
+            native::Change::Save { id, name, settings },
+        )?;
+        activation::publish(&worker_app);
+        Ok(profiles)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn settings_profiles_list(state: State<'_, AppState>) -> AppResult<Vec<SettingsProfile>> {
-    state.db.with(load)
-}
-
-#[tauri::command]
-pub fn settings_profile_save(
+pub async fn settings_profile_delete(
     app: AppHandle,
-    state: State<'_, AppState>,
-    id: Option<String>,
-    name: String,
-    settings: Value,
-) -> AppResult<Vec<SettingsProfile>> {
-    let profiles = state.db.with(|conn| upsert(conn, id, name, settings))?;
-    activation::publish(&app);
-    Ok(profiles)
-}
-
-#[tauri::command]
-pub fn settings_profile_delete(
-    app: AppHandle,
-    state: State<'_, AppState>,
     id: String,
 ) -> AppResult<Vec<SettingsProfile>> {
-    let profiles = state.db.with(|conn| {
-        let mut profiles = load(conn)?;
-        let before = profiles.len();
-        profiles.retain(|profile| profile.id != id);
-        if profiles.len() == before {
-            return Err(AppError::NotFound("profiles.notFound".into()));
-        }
-        save(conn, &profiles)?;
+    let worker_app = app.clone();
+    worker::run(&app, move |db, cancellation| {
+        let profiles = native::mutate(db, cancellation, native::Change::Delete { id })?;
+        activation::publish(&worker_app);
         Ok(profiles)
-    })?;
-    activation::publish(&app);
-    Ok(profiles)
+    })
+    .await
 }
 
 #[tauri::command]

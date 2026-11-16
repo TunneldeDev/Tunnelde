@@ -35,6 +35,17 @@ echoing stored values. No silent rewrite or repair follows. An oversized native
 save returns `profiles.storageTooLarge` and retains existing data. Read authorization
 is checked before database work and again before encoding the result.
 
+Native Profile lists, saves and deletes and plugin metadata observation share four
+retained blocking workers. Database contention does not hold GUI or async runtime
+threads. Workers recheck cancellation after obtaining the database lock; native
+mutations check again before persistence admission. Once admitted, an operation
+finishes publication even if its caller stops waiting. Capacity remains occupied
+until the actual worker exits. Exhaustion, cancellation and worker failure use
+`profiles.operation.busy/cancelled/unavailable`. Plugin authorization is checked
+outside the database lock before and after the read; a revoked result is rejected.
+These operations do not interrupt started SQLite work or roll back admitted writes.
+A lost response requires reading the current state before deciding any next action.
+
 ## SDK lifecycle
 
 ```js
