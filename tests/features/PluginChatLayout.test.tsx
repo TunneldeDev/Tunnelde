@@ -195,6 +195,7 @@ describe("plugin chat presentation and controls", () => {
     );
     expect(view.container.querySelector(".plugin-chat--copilot")).toBeTruthy();
     const card = view.container.querySelector(".plugin-chat__input-card")!;
+    expect(card.querySelector("textarea")?.classList.contains("td-code-editor")).toBe(false);
     expect(card.contains(screen.getByRole("button", { name: "Model" }))).toBe(true);
     expect(card.contains(screen.getByRole("button", { name: "Execution location" }))).toBe(true);
     expect(card.contains(screen.getByRole("button", { name: "Approval mode" }))).toBe(false);

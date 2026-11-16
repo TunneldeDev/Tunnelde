@@ -79,11 +79,22 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
       <div className="editor-review__columns">
         <label>
           {t("editor.diskVersion")}
-          <textarea readOnly value={disk ?? ""} aria-busy={disk === null} wrap="off" />
+          <textarea
+            className="td-code-editor"
+            readOnly
+            value={disk ?? ""}
+            aria-busy={disk === null}
+            wrap="off"
+          />
         </label>
         <label>
           {t("editor.yourDraft")}
-          <textarea readOnly value={document?.content ?? ""} wrap="off" />
+          <textarea
+            className="td-code-editor"
+            readOnly
+            value={document?.content ?? ""}
+            wrap="off"
+          />
         </label>
       </div>
     </Dialog>

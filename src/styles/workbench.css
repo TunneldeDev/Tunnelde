@@ -363,7 +363,7 @@
   background: var(--td-bg);
   border: 1px solid var(--td-border);
   border-radius: 4px;
-  font: 12px/1.6 var(--td-mono);
+  line-height: 1.6;
 }
 
 @media (max-width: 640px) {
@@ -1157,7 +1157,6 @@
   width: 100%;
   min-height: 280px;
   height: 55vh;
-  font-family: var(--td-mono);
   line-height: 20px;
   resize: vertical;
 }

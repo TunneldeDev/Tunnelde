@@ -435,6 +435,7 @@ function HostDialog({
               <Field label={t("host.keyContent")} htmlFor="host-key-content">
                 <Textarea
                   id="host-key-content"
+                  className="td-code-editor"
                   rows={3}
                   spellCheck={false}
                   value={form.keyContent}
