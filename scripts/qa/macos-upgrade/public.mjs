@@ -12,6 +12,7 @@ import { packagedAsset } from "../local-cli/assets.mjs";
 import { applicationEnvironment, offlineCli, verifyLocalCli } from "../local-cli/verify.mjs";
 import { checkedDirectory, hostedContext, requireCapabilities } from "./guard.mjs";
 import { hasText, upgrade, waitUntil } from "./ota.mjs";
+import { collectFailureDiagnostics } from "./diagnostics.mjs";
 
 const run = promisify(execFile);
 const user = userInfo();
@@ -149,6 +150,7 @@ try {
     "public.mjs",
     "ota.mjs",
     "driver.m",
+    "diagnostics.mjs",
     "guard.mjs",
     "archive.py",
     "profile.py",
@@ -189,6 +191,7 @@ try {
     data,
     join(context.home, "Library/Preferences/dev.tunnelde.app.plist"),
     join(context.home, "Library/Caches/dev.tunnelde.app"),
+    join(context.home, "Library/Logs/dev.tunnelde.app"),
     join(context.home, "Applications/Tunnelde.app"),
     "/Applications/Tunnelde.app",
   ])
@@ -392,6 +395,21 @@ try {
 } catch (error) {
   report.passed = false;
   report.failure = String(error?.stack ?? error);
+  if (report.otaAttempted) {
+    try {
+      report.failureDiagnostics = await collectFailureDiagnostics({
+        report,
+        native,
+        command,
+        binary,
+        bundle,
+        evidence,
+        home: context.home,
+      });
+    } catch (diagnosticError) {
+      report.failureDiagnosticError = String(diagnosticError);
+    }
+  }
   if (child) {
     try {
       const pid = ownedTarget?.pid ?? child.pid;
@@ -399,9 +417,13 @@ try {
         join(evidence, "failure-ax.json"),
         JSON.stringify(await native("tree", pid), null, 2),
       );
-      await screenshot("failure");
     } catch (error) {
       report.failureCaptureError = String(error);
+    }
+    try {
+      await screenshot("failure");
+    } catch (error) {
+      report.failureScreenshotError = String(error);
     }
   }
   process.exitCode = 1;
