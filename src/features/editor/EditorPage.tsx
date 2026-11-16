@@ -302,7 +302,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       ) : (
         <textarea
           ref={textarea}
-          className="editor-body"
+          className="editor-body td-code-editor"
           aria-label={entry.name}
           spellCheck={spellCheck}
           wrap={wordWrap ? "soft" : "off"}

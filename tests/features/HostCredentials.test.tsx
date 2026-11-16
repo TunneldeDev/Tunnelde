@@ -174,6 +174,16 @@ describe("host password editing", () => {
     );
   });
 
+  it("renders pasted private key content with the shared code editor style", async () => {
+    useDialogs.setState({
+      dialog: { kind: "host", host: { ...host, authMethod: "key", keyPath: null } },
+    });
+    render(<DialogHost />);
+    fireEvent.click(screen.getByRole("radio", { name: "Paste key" }));
+    const key = await screen.findByLabelText("Paste the key");
+    expect(key.classList.contains("td-code-editor")).toBe(true);
+  });
+
   it("keeps an unsaved draft and reports the original error when field persistence fails", async () => {
     useDialogs.setState({ dialog: { kind: "host", host: null } });
     apiMock.saveHostEditor.mockRejectedValueOnce(new Error("Route no longer exists"));

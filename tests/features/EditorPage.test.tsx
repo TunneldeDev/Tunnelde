@@ -328,6 +328,7 @@ describe("EditorPage preferences", () => {
   it("updates wrapping, tab width, and spellcheck without changing the draft or dirty state", () => {
     render(<EditorPage tabId="editor" active />);
     const textarea = screen.getByRole("textbox", { name: "draft.txt" }) as HTMLTextAreaElement;
+    expect(textarea.classList.contains("td-code-editor")).toBe(true);
     expect(textarea.wrap).toBe("off");
     expect(textarea.style.tabSize).toBe("4");
     expect(textarea.getAttribute("spellcheck")).toBe("false");

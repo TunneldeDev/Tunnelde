@@ -1066,8 +1066,6 @@
 
 .settings-css {
   min-height: 220px;
-  font-family: var(--td-mono);
-  font-size: 12px;
 }
 
 .settings-message {
@@ -1340,6 +1338,11 @@
   padding: 6px 8px;
   line-height: 1.5;
   resize: vertical;
+}
+
+.td-code-editor {
+  font-family: var(--td-mono);
+  font-size: var(--td-mono-size);
 }
 
 .td-select {
@@ -2698,8 +2701,6 @@
   resize: none;
   background: var(--td-bg);
   color: var(--td-text);
-  font-family: var(--td-mono);
-  font-size: var(--td-mono-size);
   line-height: 1.55;
   white-space: pre;
   overflow: auto;

@@ -34,6 +34,7 @@ export function PluginCommandResult({
       </div>
       <Textarea
         id={id}
+        className="td-code-editor"
         readOnly
         value={result.text}
         rows={12}
