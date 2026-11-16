@@ -65,6 +65,14 @@ individual stability. Saved-host results exclude notes, key paths and credential
 They include addresses and usernames; treat output as private.
 Plugin-defined host sources are not part of the saved-host list.
 
+Saved-host reads run on at most four blocking workers, separately from log and
+forwarding readers. Waiting for the database lock does not occupy an async
+runtime thread. Cancellation is checked after acquiring that lock and between
+table reads; a started SQLite query is not interrupted. A timed-out or cancelled
+worker retains its slot until it actually exits. When all slots are occupied,
+new calls fail with `operation_rejected`; no unbounded queue or automatic retry
+is created. The existing host fields and saved ordering remain unchanged.
+
 Successful live calls write one JSON object to stdout, with `version`, `id` and
 `result`. Errors write `version`, `id` and `error: {code, message}` to stderr.
 Exit codes are 0 (success), 1 (operation failure), 2 (input/protocol error),
@@ -98,6 +106,32 @@ addresses and usernames, so keep snapshots private. This API does not request an
 application restart; changes with deferred effects follow ordinary desktop
 settings behavior. Storage relocation remains a separate domain and is not
 available through preferences.update.
+
+Public preference snapshots share four bounded blocking readers with plugin
+preference reads and Profile activation review. These readers acquire the same
+serialization lock as settings writers, then read a consistent values/revision
+pair. Waiting for either lock does not block the async runtime. Cancellation is
+checked after lock acquisition and before returning; started SQLite statements
+are not interrupted, and workers retain capacity until they exit. Exhaustion
+returns `operation_rejected`. Preference updates keep their existing ordered
+commit/publication behavior.
+
+Settings writes use a separate pool of four retained blocking workers, shared
+by native preferences, local CLI updates, plugin writes, Profile activation and
+update-check metadata. One worker owns settings serialization through validation,
+durable commit, in-memory publication and native effects. Waiting for the database
+does not block async runtime threads. A cancelled waiter retains its slot until
+it exits; cancellation is rechecked after locks and inside the transaction before
+commit admission. Once admitted, the worker completes commit and publication even
+if its caller stops waiting. Cancellation does not undo an admitted write; if a
+response is lost, read the current snapshot before deciding what to do next.
+Native/plugin capacity, cancellation and worker failures use
+`settings.operation.busy/cancelled/unavailable`; the stable local adapter keeps
+its existing `operation_rejected` and `internal` mappings. Native Profile snapshots
+share writer admission to preserve their ordering with activation. These changes
+do not interrupt started SQLite statements or make native effects transactional.
+Proxy credential operations remain separate from the settings commit, after
+the ordered writer has been released.
 
 ## Forwarding status (experimental)
 

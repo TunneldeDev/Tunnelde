@@ -73,11 +73,22 @@ pub(crate) fn resolve(app: &AppHandle, id: &str) -> AppResult<Host> {
 
 /// A snapshot is read under one database lock; no transport or UI state leaks.
 pub(crate) fn snapshot(db: &Database) -> AppResult<Snapshot> {
+    snapshot_checked(db, || Ok(()))
+}
+
+/// Cancellation is checked after acquiring the lock and between table reads.
+/// A caller that stopped while waiting must not start a late snapshot.
+pub(crate) fn snapshot_checked(
+    db: &Database,
+    check: impl Fn() -> AppResult<()>,
+) -> AppResult<Snapshot> {
     db.with(|conn| {
-        Ok(Snapshot {
-            groups: db::hosts::list_groups(conn)?,
-            hosts: db::hosts::list_hosts(conn)?,
-        })
+        check()?;
+        let groups = db::hosts::list_groups(conn)?;
+        check()?;
+        let hosts = db::hosts::list_hosts(conn)?;
+        check()?;
+        Ok(Snapshot { groups, hosts })
     })
 }
 

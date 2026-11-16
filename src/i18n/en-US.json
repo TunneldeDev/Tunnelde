@@ -232,6 +232,11 @@
     "deleteBody": "Delete group “{{name}}” and its subgroups? Saved hosts will be kept and moved to Ungrouped."
   },
   "settings": {
+    "operation": {
+      "busy": "Settings operations are busy. Wait for current operations to finish, then try again.",
+      "cancelled": "The settings operation was cancelled before commit admission.",
+      "unavailable": "The settings worker stopped unexpectedly. Read the current settings and check application logs before retrying."
+    },
     "transferOptimization": "Optimize file transfers",
     "transferOptimizationHint": "Use concurrent file segments and pipelined SFTP requests. Changes apply when a transfer starts or resumes.",
     "transferConcurrency": "Concurrent segments",
@@ -1854,6 +1859,11 @@
     }
   },
   "profiles": {
+    "operation": {
+      "busy": "Profile operations are busy. Wait for current operations to finish, then try again.",
+      "cancelled": "The Profile operation was cancelled before commit admission.",
+      "unavailable": "The Profile worker stopped unexpectedly. Read the current Profiles and check application logs before retrying."
+    },
     "title": "Settings profiles",
     "profile": "Profile",
     "choose": "Choose settings profile",
@@ -2417,7 +2427,12 @@
   },
   "preferences": {
     "invalidValue": "Invalid preference value: {{field}}.",
-    "staleRevision": "Preferences changed. Read a new snapshot before saving again."
+    "staleRevision": "Preferences changed. Read a new snapshot before saving again.",
+    "read": {
+      "busy": "Preference readers are busy. Try again after the current reads finish.",
+      "cancelled": "Preference reading was cancelled.",
+      "unavailable": "Cannot read preferences. Check the application logs and try again."
+    }
   },
   "configuration": {
     "title": "Plugin configuration",

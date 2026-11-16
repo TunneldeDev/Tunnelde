@@ -59,5 +59,35 @@ pub(crate) fn observe(
     Ok(response)
 }
 
+/// Authorization is never invoked while the shared database is held. A final
+/// outside-lock check suppresses a result revoked during the bounded snapshot.
+pub(crate) async fn checked(
+    app: &tauri::AppHandle,
+    request: contracts::Observe,
+    authorize: impl Fn() -> AppResult<()> + Send + 'static,
+) -> AppResult<contracts::Observation> {
+    super::worker::run(app, move |db, cancellation| {
+        guarded(db, request, || cancellation.check(), authorize)
+    })
+    .await
+}
+
+fn guarded(
+    db: &crate::db::Database,
+    request: contracts::Observe,
+    cancelled: impl Fn() -> AppResult<()>,
+    authorize: impl Fn() -> AppResult<()>,
+) -> AppResult<contracts::Observation> {
+    cancelled()?;
+    authorize()?;
+    let result = db.with(|conn| {
+        cancelled()?;
+        observe(conn, request)
+    })?;
+    cancelled()?;
+    authorize()?;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests;

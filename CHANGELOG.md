@@ -6,6 +6,36 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.2](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.1...v1.4.2) - 2026-11-16
+
+### 更新概览 | Highlights
+
+- **api:** isolate saved-host reads from async runtime
+- **settings:** bound ordered preference reads outside async runtime
+- **settings:** retain ordered writes outside async runtime
+- **profiles:** retain catalogue operations outside UI runtime
+- **macos:** retain native Quit failure diagnostics
+
+<details open>
+<summary>详细变更 | Details (5)</summary>
+
+### 修复 | Fix
+
+- **api:** isolate saved-host reads from async runtime ([#408](https://github.com/TunneldeDev/Tunnelde/pull/408)) @quyansiyuanwang
+- **settings:** bound ordered preference reads outside async runtime ([#409](https://github.com/TunneldeDev/Tunnelde/pull/409)) @quyansiyuanwang
+- **settings:** retain ordered writes outside async runtime ([#410](https://github.com/TunneldeDev/Tunnelde/pull/410)) @quyansiyuanwang
+- **profiles:** retain catalogue operations outside UI runtime ([#411](https://github.com/TunneldeDev/Tunnelde/pull/411)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **macos:** retain native Quit failure diagnostics ([#406](https://github.com/TunneldeDev/Tunnelde/pull/406)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.4.1](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.0...v1.4.1) - 2026-11-15
 
 ### 更新概览 | Highlights

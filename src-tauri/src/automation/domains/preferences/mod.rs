@@ -1,15 +1,13 @@
 //! Local adapter to the application's public preferences, never internal Settings.
 mod schema;
-use super::{AppHandle, Failure, Manager, Value};
+use super::{AppHandle, Failure, Value};
 use crate::{
     error::AppError,
-    services::settings::{preferences, writer},
-    state::AppState,
+    services::settings::{preferences, read, write},
 };
 pub(super) use schema::{describe, methods};
 
 pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result<Value, Failure> {
-    let state = app.state::<AppState>();
     let result = match method {
         "preferences.schema" | "preferences.snapshot" => {
             if params.as_object().is_none_or(|fields| !fields.is_empty()) {
@@ -21,9 +19,8 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
             if method == "preferences.schema" {
                 Ok(serde_json::to_value(describe()))
             } else {
-                writer(app, &state)
+                read::snapshot(app, || Ok(()))
                     .await
-                    .preferences()
                     .map(serde_json::to_value)
             }
         }
@@ -35,12 +32,13 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
                         "Expected a bounded revision and a changes object",
                     )
                 })?;
-            let writer = writer(app, &state).await;
-            let mut prepared = writer.prepare_preferences(request).map_err(map_error)?;
-            // No suspension from persistence through publication: a dropped
-            // caller cannot leave committed settings without their UI effects.
-            prepared.persist().map_err(map_error)?;
-            prepared.finish_preferences().map(serde_json::to_value)
+            write(app, move |writer| {
+                let mut prepared = writer.prepare_preferences(request)?;
+                prepared.persist()?;
+                prepared.finish_preferences()
+            })
+            .await
+            .map(serde_json::to_value)
         }
         _ => {
             return Err(Failure::new(
@@ -105,5 +103,16 @@ mod tests {
         );
         let failure = map_error(AppError::internal("secret database file"));
         assert!(!failure.message.contains("secret"));
+        for reason in [
+            "preferences.read.busy",
+            "preferences.read.cancelled",
+            "settings.operation.busy",
+            "settings.operation.cancelled",
+        ] {
+            assert_eq!(
+                map_error(AppError::validation(reason)).code,
+                "operation_rejected"
+            );
+        }
     }
 }

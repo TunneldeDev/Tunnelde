@@ -16,7 +16,10 @@ pub(super) fn values(settings: &Settings) -> AppResult<Value> {
     Ok(Value::Object(groups))
 }
 
-pub(super) fn snapshot(settings: &Settings, revision: String) -> AppResult<Snapshot> {
+pub(in crate::services::settings) fn snapshot(
+    settings: &Settings,
+    revision: String,
+) -> AppResult<Snapshot> {
     let mut defaults = Settings::default();
     defaults.sanitize();
     Ok(Snapshot {

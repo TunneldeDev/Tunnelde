@@ -12,15 +12,18 @@ pub(super) async fn dispatch(
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
-    use crate::services::settings::{preferences, writer};
-    let state = context.app.state::<AppState>();
+    use crate::services::settings::{preferences, read, write};
     match method {
         "preferences.observe" => {
             let request: preferences::contracts::Observe = serde_json::from_value(params)
                 .map_err(|_| AppError::validation("plugin.api.invalid:params"))?;
-            let writer = writer(&context.app, &state).await;
-            authorize(context, &["settings.read"])?;
-            encode(writer.observe_preferences(request)?)
+            let worker = context.clone();
+            encode(
+                read::observe(&context.app, request, move || {
+                    authorize(&worker, &["settings.read"])
+                })
+                .await?,
+            )
         }
         "preferences.schema" | "preferences.snapshot" => {
             if params.as_object().is_none_or(|fields| !fields.is_empty()) {
@@ -29,27 +32,33 @@ pub(super) async fn dispatch(
             if method == "preferences.schema" {
                 return encode(preferences::describe());
             }
-            let writer = writer(&context.app, &state).await;
-            authorize(context, &["settings.read"])?;
-            encode(writer.preferences()?)
+            let worker = context.clone();
+            encode(
+                read::snapshot(&context.app, move || authorize(&worker, &["settings.read"]))
+                    .await?,
+            )
         }
         "preferences.update" => {
             let request: preferences::contracts::Update = serde_json::from_value(params)
                 .map_err(|_| AppError::validation("plugin.api.invalid:params"))?;
-            let writer = writer(&context.app, &state).await;
-            authorize(context, &["settings.write"])?;
-            let mut prepared = writer.prepare_preferences(request)?;
-            let lease = crate::plugins::security::Lease {
-                id: context.id.clone(),
-                fingerprint: context.fingerprint.clone(),
-                permissions: context.permissions.clone(),
-                generation: context.generation,
-            };
-            state
-                .plugins
-                .security
-                .with_authorized(&lease, &["settings.write"], || prepared.persist())?;
-            encode(prepared.finish_preferences()?)
+            let worker = context.clone();
+            write(&context.app, move |writer| {
+                let state = worker.app.state::<AppState>();
+                authorize(&worker, &["settings.write"])?;
+                let mut prepared = writer.prepare_preferences(request)?;
+                let lease = crate::plugins::security::Lease {
+                    id: worker.id.clone(),
+                    fingerprint: worker.fingerprint.clone(),
+                    permissions: worker.permissions.clone(),
+                    generation: worker.generation,
+                };
+                state
+                    .plugins
+                    .security
+                    .with_authorized(&lease, &["settings.write"], || prepared.persist())?;
+                encode(prepared.finish_preferences()?)
+            })
+            .await
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }
