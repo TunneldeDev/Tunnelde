@@ -12,8 +12,10 @@ use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+pub(in crate::plugins) mod admission;
 mod dependencies;
 mod package;
+mod persistence;
 mod restart;
 pub(in crate::plugins) use dependencies::RuntimeRetirement;
 
@@ -112,6 +114,13 @@ pub struct Lease {
     pub generation: u64,
 }
 
+pub(in crate::plugins) struct PermissionChange {
+    pub id: String,
+    pub digest: String,
+    pub declared: Vec<String>,
+    pub permissions: Option<Vec<String>>,
+}
+
 pub struct PluginSecurity {
     inner: Mutex<Policy>,
     changed: watch::Sender<u64>,
@@ -162,12 +171,10 @@ fn valid_saved(saved: &Persisted) -> bool {
         })
 }
 
-fn save(db: &Database, saved: &Persisted) -> AppResult<()> {
-    db.with(|conn| {
-        conn.execute("INSERT INTO settings (key,value,updated_at) VALUES ('plugin_security',?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+fn save_on(conn: &rusqlite::Connection, saved: &Persisted) -> AppResult<()> {
+    conn.execute("INSERT INTO settings (key,value,updated_at) VALUES ('plugin_security',?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
             rusqlite::params![serde_json::to_string(saved)?, crate::models::now_ms()])?;
-        Ok(())
-    })
+    Ok(())
 }
 
 impl PluginSecurity {
@@ -202,17 +209,22 @@ impl PluginSecurity {
             .unwrap_or_default();
         let recovery = saved.unclean || corrupt;
         saved.restricted |= locked || recovery;
-        let mut policy = self.policy();
-        policy.cli_locked = locked;
-        policy.recovery_suggested = recovery;
-        for grant in saved.grants.values_mut() {
-            policy.revision += 1;
-            grant.generation = policy.revision;
-        }
-        policy.saved = saved;
-        policy.runtimes = dependencies::RuntimeDependencies::default();
-        self.notify(&mut policy);
-        save(db, &policy.saved)
+        self.database(
+            db,
+            |_| Ok(()),
+            |policy, conn| {
+                policy.cli_locked = locked;
+                policy.recovery_suggested = recovery;
+                for grant in saved.grants.values_mut() {
+                    policy.revision += 1;
+                    grant.generation = policy.revision;
+                }
+                policy.saved = saved;
+                policy.runtimes = dependencies::RuntimeDependencies::default();
+                self.notify(policy);
+                save_on(conn?, &policy.saved)
+            },
+        )
     }
 
     pub fn snapshot(&self, identities: &[(String, String, Vec<String>)]) -> SecurityState {
@@ -376,124 +388,6 @@ impl PluginSecurity {
         }
     }
 
-    pub fn set_restricted(&self, db: &Database, enabled: bool, cli: bool) -> AppResult<()> {
-        let mut policy = self.policy();
-        if !enabled && policy.cli_locked {
-            return Err(AppError::validation("pluginSecurity.cliLocked"));
-        }
-        if policy.saved.restricted == enabled && (!cli || policy.cli_locked) {
-            return Ok(());
-        }
-        let mut next = policy.saved.clone();
-        next.restricted = enabled;
-        // Fail closed when persistence is unavailable; never resume execution
-        // after the user asked to enter restricted mode.
-        let persisted = save(db, &next);
-        if persisted.is_err() && !enabled {
-            return persisted;
-        }
-        policy.saved = next;
-        policy.cli_locked |= cli;
-        if !enabled {
-            policy.recovery_suggested = false;
-        }
-        policy.revision += 1;
-        let generation = policy.revision;
-        for grant in policy.saved.grants.values_mut() {
-            grant.generation = generation;
-        }
-        policy.runtimes = dependencies::RuntimeDependencies::default();
-        self.notify(&mut policy);
-        persisted
-    }
-
-    #[cfg(test)]
-    pub fn set_permissions(
-        &self,
-        db: &Database,
-        id: &str,
-        digest: String,
-        declared: &[String],
-        permissions: Option<Vec<String>>,
-    ) -> AppResult<()> {
-        self.set_permissions_with_cleanup(db, id, digest, declared, permissions, |_| {})
-    }
-
-    pub(in crate::plugins) fn set_permissions_with_cleanup(
-        &self,
-        db: &Database,
-        id: &str,
-        digest: String,
-        declared: &[String],
-        permissions: Option<Vec<String>>,
-        cleanup: impl FnOnce(Vec<RuntimeRetirement>),
-    ) -> AppResult<()> {
-        if !super::manifest::valid_id(id) {
-            return Err(AppError::validation("plugin.notFound"));
-        }
-        let mut policy = self.policy();
-        let mut next = policy.saved.clone();
-        if let Some(permissions) = permissions {
-            if permissions.len() > PERMISSIONS.len()
-                || permissions.iter().any(|permission| {
-                    !PERMISSIONS.contains(&permission.as_str()) || !declared.contains(permission)
-                })
-            {
-                return Err(AppError::validation("pluginSecurity.permissionDenied"));
-            }
-            if next.grants.len() >= 256 && !next.grants.contains_key(id) {
-                return Err(AppError::validation("pluginSecurity.grantLimit"));
-            }
-            next.grants.insert(
-                id.into(),
-                Grant {
-                    fingerprint: digest,
-                    declared: normalized(declared),
-                    permissions: normalized(&permissions),
-                    generation: policy.revision + 1,
-                },
-            );
-        } else {
-            next.grants.remove(id);
-        }
-        let persisted = save(db, &next);
-        if persisted.is_err() && next.grants.contains_key(id) {
-            return persisted;
-        }
-        policy.saved = next;
-        let retired = dependencies::retire(&mut policy, id);
-        self.notify(&mut policy);
-        drop(policy);
-        cleanup(retired);
-        persisted
-    }
-
-    pub fn mark_running(&self, db: &Database) -> AppResult<()> {
-        let mut policy = self.policy();
-        if policy.saved.restricted {
-            return Err(AppError::validation("pluginSecurity.blocked"));
-        }
-        if policy.restarting {
-            return Err(AppError::validation("pluginSecurity.changed"));
-        }
-        if !policy.saved.unclean {
-            let mut next = policy.saved.clone();
-            next.unclean = true;
-            save(db, &next)?;
-            policy.saved = next;
-        }
-        Ok(())
-    }
-
-    pub fn mark_clean(&self, db: &Database) -> AppResult<()> {
-        let mut policy = self.policy();
-        let mut next = policy.saved.clone();
-        next.unclean = false;
-        save(db, &next)?;
-        policy.saved = next;
-        Ok(())
-    }
-
     #[cfg(test)]
     pub fn invalidate(&self, id: &str) {
         self.remove_grant(id);
@@ -549,10 +443,6 @@ impl PluginSecurity {
             .get(id)
             .map_or(policy.revision, |grant| grant.generation)
     }
-
-    pub fn persist(&self, db: &Database) -> AppResult<()> {
-        save(db, &self.policy().saved)
-    }
 }
 
 /// Hash paths and every installed byte, with the same resource bounds as ZIP
@@ -569,7 +459,20 @@ pub async fn fingerprint_async(root: std::path::PathBuf) -> AppResult<String> {
 
 pub async fn emit_state(app: &AppHandle) {
     let state = app.state::<AppState>();
-    if let Err(error) = state.plugins.security.persist(&state.db) {
+    let worker = app.clone();
+    if let Err(error) = admission::blocking(move |cancellation| {
+        let state = worker.state::<AppState>();
+        state.plugins.security.database(
+            &state.db,
+            |_| cancellation.check(),
+            |policy, conn| {
+                cancellation.commit()?;
+                save_on(conn?, &policy.saved)
+            },
+        )
+    })
+    .await
+    {
         tracing::warn!(%error, "could not persist extension security state");
     }
     let _ = app.emit(EVENT, state.plugins.security_state().await);
@@ -586,7 +489,8 @@ pub async fn plugin_set_restricted(app: AppHandle, enabled: bool) -> AppResult<S
     let result = state
         .plugins
         .security
-        .set_restricted(&state.db, enabled, false);
+        .set_restricted_async(state.db.clone(), enabled, false, app.clone())
+        .await;
     if enabled {
         state.plugins.stop_all_immediately(&app).await;
     }
@@ -603,6 +507,9 @@ pub async fn plugin_set_permissions(
     expected_fingerprint: Option<String>,
 ) -> AppResult<()> {
     let state = app.state::<AppState>();
+    // Permission workers also run before any plugin has started. Retain the
+    // application (including storage ownership) through their actual cleanup.
+    let _ = state.plugins.runtime_app.set(app.clone());
     let result = state
         .plugins
         .set_permissions(&state.db, &id, permissions, expected_fingerprint)

@@ -78,7 +78,23 @@ impl PluginsManager {
         ownership.store(activation.owned(), Ordering::Release);
         instance.runtime_lease = Some(lease.clone());
         instance.runtime_id = Some(self.security.lease_stamp(&lease));
-        self.security.mark_running(&state.db)?;
+        let marker_app = app.clone();
+        let marker_lease = lease.clone();
+        security::admission::blocking(move |cancellation| {
+            let state = marker_app.state::<crate::state::AppState>();
+            state
+                .plugins
+                .security
+                .mark_running_checked(&state.db, &marker_lease, cancellation)
+        })
+        .await?;
+        self.security.authorize(
+            &lease.id,
+            &lease.fingerprint,
+            &lease.permissions,
+            None,
+            Some(lease.generation),
+        )?;
 
         // Another caller may have completed this engine after graph preflight.
         // Register the same dependency binding, then reuse its actual process.

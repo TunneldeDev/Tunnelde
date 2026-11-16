@@ -83,13 +83,21 @@ pub(super) async fn activate(
         let state = worker.app.state::<AppState>();
         ticket.check()?;
         authorize(&worker, WRITE)?;
-        let mut prepared =
+        let prepared =
             writer.prepare_profile(&request.preferences_revision, selected.values.clone())?;
-        state
-            .plugins
-            .security
-            .with_authorized(&lease(&worker), WRITE, || {
-                prepared.persist_guarded(
+        let cancellation = prepared.cancellation();
+        let prepared = std::cell::RefCell::new(prepared);
+        state.plugins.security.with_authorized_database_then(
+            &state.db,
+            &lease(&worker),
+            WRITE,
+            || {
+                ticket.check()?;
+                cancellation.check()
+            },
+            |conn| {
+                prepared.borrow().persist_guarded_on(
+                    conn,
                     Some(&request.preferences_revision),
                     |conn| {
                         selected.compare(conn)?;
@@ -97,9 +105,14 @@ pub(super) async fn activate(
                     },
                     |conn| selected.select(conn),
                 )
-            })?;
+            },
+            |revision| {
+                prepared.borrow_mut().committed_revision(revision);
+                Ok(())
+            },
+        )?;
         // There is deliberately no await between durable publication and effects.
-        let preferences_revision = prepared.finish_profile_revision();
+        let preferences_revision = prepared.into_inner().finish_profile_revision();
         publish(&worker.app);
         encode(Activated {
             version: 1,

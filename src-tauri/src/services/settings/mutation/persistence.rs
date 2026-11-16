@@ -16,28 +16,37 @@ impl Write<'_> {
         before: impl FnOnce(&Connection) -> AppResult<()>,
         extra: impl FnOnce(&Connection) -> AppResult<()>,
     ) -> AppResult<String> {
-        self.db.with(|conn| {
-            // A cancelled lock waiter must not start a transaction or query.
-            cancellation.check()?;
-            super::super::repository::save_guarded(
-                conn,
-                self.next,
-                |conn| {
-                    if let Some(expected) = self.expected_preferences {
-                        if super::super::repository::revision(conn, self.previous)? != expected {
-                            return Err(crate::error::AppError::validation(
-                                "preferences.staleRevision",
-                            ));
-                        }
+        self.db
+            .with(|conn| self.save_on(conn, cancellation, before, extra))
+    }
+
+    pub fn save_on(
+        self,
+        conn: &Connection,
+        cancellation: &crate::services::operations::Cancellation,
+        before: impl FnOnce(&Connection) -> AppResult<()>,
+        extra: impl FnOnce(&Connection) -> AppResult<()>,
+    ) -> AppResult<String> {
+        // A cancelled lock waiter must not start a transaction or query.
+        cancellation.check()?;
+        super::super::repository::save_guarded(
+            conn,
+            self.next,
+            |conn| {
+                if let Some(expected) = self.expected_preferences {
+                    if super::super::repository::revision(conn, self.previous)? != expected {
+                        return Err(crate::error::AppError::validation(
+                            "preferences.staleRevision",
+                        ));
                     }
-                    before(conn)?;
-                    // One winner with caller cancellation, under final CAS and
-                    // authorization. After admission, publication must finish.
-                    cancellation.commit()
-                },
-                extra,
-            )
-        })
+                }
+                before(conn)?;
+                // One winner with caller cancellation, under final CAS and
+                // authorization. After admission, publication must finish.
+                cancellation.commit()
+            },
+            extra,
+        )
     }
 }
 
