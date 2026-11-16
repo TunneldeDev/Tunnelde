@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    db::Database,
-    error::{AppError, AppResult},
-};
+#[cfg(test)]
+use crate::db::Database;
+
+use crate::error::{AppError, AppResult};
 
 const INVALID: &str = "hostFields.invalid";
 const MAX_DOCUMENT: usize = 32 * 1024;
@@ -236,13 +236,33 @@ fn read(
     })
 }
 
+#[cfg(test)]
 pub fn get(db: &Database, plugin_id: &str, host_id: &str, schema: &Schema) -> AppResult<Document> {
-    schema.validate()?;
-    db.with(|conn| read(conn, plugin_id, host_id, schema))
+    db.with(|conn| get_on(conn, plugin_id, host_id, schema))
 }
 
+pub(crate) fn get_on(
+    conn: &rusqlite::Connection,
+    plugin_id: &str,
+    host_id: &str,
+    schema: &Schema,
+) -> AppResult<Document> {
+    schema.validate()?;
+    read(conn, plugin_id, host_id, schema)
+}
+
+#[cfg(test)]
 pub fn replace(
     db: &Database,
+    plugin_id: &str,
+    schema: &Schema,
+    update: Update,
+) -> AppResult<Document> {
+    db.with(|conn| replace_on(conn, plugin_id, schema, update))
+}
+
+pub(crate) fn replace_on(
+    conn: &rusqlite::Connection,
     plugin_id: &str,
     schema: &Schema,
     update: Update,
@@ -254,30 +274,30 @@ pub fn replace(
     if update.schema_digest != schema.digest()? {
         return Err(AppError::validation("hostFields.schemaChanged"));
     }
-    db.with(|conn| {
-        let tx = conn.unchecked_transaction()?;
-        let previous = read(&tx,plugin_id,&update.host_id,schema)?;
-        if previous.revision != update.expected_revision { return Err(AppError::validation("hostFields.conflict")); }
-        let raw = serde_json::to_string(&update.values)?;
-        if previous.revision == 0 {
-            let (own_count,total_count): (i64,i64) = tx.query_row("SELECT COALESCE(SUM(CASE WHEN plugin_id=?1 THEN 1 ELSE 0 END),0),COUNT(*) FROM host_plugin_fields", [plugin_id], |row| Ok((row.get(0)?,row.get(1)?)))?;
-            if own_count >= MAX_PLUGIN_DOCUMENTS || total_count >= MAX_DOCUMENTS {
-                return Err(AppError::validation("hostFields.limit"));
-            }
-        }
-        let old_bytes: i64 = tx.query_row("SELECT COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM host_plugin_fields WHERE plugin_id=?1 AND host_id=?2", params![plugin_id,update.host_id], |row| row.get(0))?;
-        let (own,total): (i64,i64) = tx.query_row("SELECT COALESCE(SUM(CASE WHEN plugin_id=?1 THEN length(CAST(values_json AS BLOB)) ELSE 0 END),0), COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM host_plugin_fields", [plugin_id], |row| Ok((row.get(0)?,row.get(1)?)))?;
-        // Retained databases can already exceed a quota after schema changes.
-        // Existing values must still be shrinkable so users can recover space.
-        let growth = raw.len() as i64 - old_bytes;
-        if growth > 0 && (own + growth > MAX_PLUGIN || total + growth > MAX_TOTAL) {
+    let tx = conn.unchecked_transaction()?;
+    let previous = read(&tx, plugin_id, &update.host_id, schema)?;
+    if previous.revision != update.expected_revision {
+        return Err(AppError::validation("hostFields.conflict"));
+    }
+    let raw = serde_json::to_string(&update.values)?;
+    if previous.revision == 0 {
+        let (own_count,total_count): (i64,i64) = tx.query_row("SELECT COALESCE(SUM(CASE WHEN plugin_id=?1 THEN 1 ELSE 0 END),0),COUNT(*) FROM host_plugin_fields", [plugin_id], |row| Ok((row.get(0)?,row.get(1)?)))?;
+        if own_count >= MAX_PLUGIN_DOCUMENTS || total_count >= MAX_DOCUMENTS {
             return Err(AppError::validation("hostFields.limit"));
         }
-        tx.execute("INSERT INTO host_plugin_fields (plugin_id,host_id,revision,schema_version,schema_digest,values_json) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(plugin_id,host_id) DO UPDATE SET revision=excluded.revision,schema_version=excluded.schema_version,schema_digest=excluded.schema_digest,values_json=excluded.values_json", params![plugin_id,update.host_id,(previous.revision+1) as i64,schema.version,update.schema_digest,raw])?;
-        let next = read(&tx,plugin_id,&update.host_id,schema)?;
-        tx.commit()?;
-        Ok(next)
-    })
+    }
+    let old_bytes: i64 = tx.query_row("SELECT COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM host_plugin_fields WHERE plugin_id=?1 AND host_id=?2", params![plugin_id,update.host_id], |row| row.get(0))?;
+    let (own,total): (i64,i64) = tx.query_row("SELECT COALESCE(SUM(CASE WHEN plugin_id=?1 THEN length(CAST(values_json AS BLOB)) ELSE 0 END),0), COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM host_plugin_fields", [plugin_id], |row| Ok((row.get(0)?,row.get(1)?)))?;
+    // Retained databases can already exceed a quota after schema changes.
+    // Existing values must still be shrinkable so users can recover space.
+    let growth = raw.len() as i64 - old_bytes;
+    if growth > 0 && (own + growth > MAX_PLUGIN || total + growth > MAX_TOTAL) {
+        return Err(AppError::validation("hostFields.limit"));
+    }
+    tx.execute("INSERT INTO host_plugin_fields (plugin_id,host_id,revision,schema_version,schema_digest,values_json) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(plugin_id,host_id) DO UPDATE SET revision=excluded.revision,schema_version=excluded.schema_version,schema_digest=excluded.schema_digest,values_json=excluded.values_json", params![plugin_id,update.host_id,(previous.revision+1) as i64,schema.version,update.schema_digest,raw])?;
+    let next = read(&tx, plugin_id, &update.host_id, schema)?;
+    tx.commit()?;
+    Ok(next)
 }
 
 #[cfg(test)]

@@ -88,11 +88,13 @@ pub(super) async fn dispatch(
                 let draft = registry.claim(&owner, &request.draft_id)?;
                 // Keep the reservation alive through actual worker settlement.
                 let change = mutations::save(&state.db, &draft, request, check)?;
-                state.plugins.security.with_authorized(&lease, WRITE, || {
-                    state
-                        .db
-                        .with(|conn| change.persist(conn, || ticket.commit()))
-                })?;
+                state.plugins.security.with_authorized_database(
+                    &state.db,
+                    &lease,
+                    WRITE,
+                    || ticket.check(),
+                    |conn| change.persist(conn, || ticket.commit()),
+                )?;
                 publish(&worker.app);
                 return encode(change.result());
             }
@@ -100,11 +102,13 @@ pub(super) async fn dispatch(
             "profiles.delete" => mutations::delete(&state.db, super::parse(params)?, check)?,
             _ => return Err(AppError::validation("plugin.api.unknownMethod")),
         };
-        state.plugins.security.with_authorized(&lease, WRITE, || {
-            state
-                .db
-                .with(|conn| change.persist(conn, || ticket.commit()))
-        })?;
+        state.plugins.security.with_authorized_database(
+            &state.db,
+            &lease,
+            WRITE,
+            || ticket.check(),
+            |conn| change.persist(conn, || ticket.commit()),
+        )?;
         publish(&worker.app);
         encode(change.result())
     })

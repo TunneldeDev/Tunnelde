@@ -45,18 +45,27 @@ pub(super) async fn dispatch(
             write(&context.app, move |writer| {
                 let state = worker.app.state::<AppState>();
                 authorize(&worker, &["settings.write"])?;
-                let mut prepared = writer.prepare_preferences(request)?;
+                let prepared = writer.prepare_preferences(request)?;
                 let lease = crate::plugins::security::Lease {
                     id: worker.id.clone(),
                     fingerprint: worker.fingerprint.clone(),
                     permissions: worker.permissions.clone(),
                     generation: worker.generation,
                 };
-                state
-                    .plugins
-                    .security
-                    .with_authorized(&lease, &["settings.write"], || prepared.persist())?;
-                encode(prepared.finish_preferences()?)
+                let cancellation = prepared.cancellation();
+                let prepared = std::cell::RefCell::new(prepared);
+                state.plugins.security.with_authorized_database_then(
+                    &state.db,
+                    &lease,
+                    &["settings.write"],
+                    || cancellation.check(),
+                    |conn| prepared.borrow().persist_on(conn),
+                    |revision| {
+                        prepared.borrow_mut().committed_revision(revision);
+                        Ok(())
+                    },
+                )?;
+                encode(prepared.into_inner().finish_preferences()?)
             })
             .await
         }
