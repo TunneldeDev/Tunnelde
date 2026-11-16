@@ -1,4 +1,11 @@
 {
+  "hosts": {
+    "read": {
+      "busy": "Host readers are busy. Try again after the current reads finish.",
+      "cancelled": "The host read was cancelled.",
+      "unavailable": "The host reader stopped unexpectedly. Open the software log before retrying."
+    }
+  },
   "searchUi": {
     "filters": "Filter presets",
     "clear": "Clear search",

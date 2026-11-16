@@ -211,6 +211,17 @@ not roll it back. Existing filesystem behavior and errors remain shared with
 the synchronous domain implementation. Plugin calls retain their immediate
 authorization-to-operation boundary; they do not enter this native queue.
 
+Native `hosts_snapshot` and plugin `hosts.snapshot` use the same bounded host
+reader. At most four actual workers are admitted, including queued workers;
+abandoning a reply does not release a running worker's capacity or storage owner.
+Database contention is polled on that worker without retaining plugin policy.
+Cancellation and the original plugin identity/permissions are checked while
+waiting and after database release. Only lock-free cancellation runs inside the
+single-lock groups/hosts snapshot. Active SQLite statements are not preempted.
+The native/plugin fields and query errors are preserved; the stable local
+`hosts.list` adapter retains its separate public projection and error contract.
+This does not move host mutations or every database consumer to background work.
+
 ## Automated evidence
 
 `scripts/ci/check-core-contract.mjs` checks the historical stable plugin floor.

@@ -1,4 +1,4 @@
-use crate::plugins::api::{encode, field, HostContext};
+use crate::plugins::api::{authorize, encode, field, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -14,7 +14,15 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
-        "hosts.snapshot" => encode(crate::services::hosts::snapshot(&state.db)?),
+        "hosts.snapshot" => {
+            let worker = context.clone();
+            encode(
+                crate::services::hosts::read::snapshot(app, move || {
+                    authorize(&worker, &["hosts.read"])
+                })
+                .await?,
+            )
+        }
         "hosts.setSource" | "hosts.removeSource" | "hosts.sourcesSnapshot" => {
             crate::plugins::host_sources::call(context, method, params)
         }
