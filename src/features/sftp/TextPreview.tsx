@@ -94,7 +94,7 @@ export function TextContent({
         </div>
       ) : (
         <textarea
-          className="td-input td-textarea file-preview__text"
+          className="td-input td-textarea td-code-editor file-preview__text"
           ref={textarea}
           readOnly
           aria-label={t("sftp.preview")}

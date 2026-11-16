@@ -522,7 +522,9 @@ describe("settings discovery and scoped resets", () => {
         }),
     );
     render(<SettingsPage />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Custom CSS" }), {
+    const customCss = screen.getByRole("textbox", { name: "Custom CSS" });
+    expect(customCss.classList.contains("td-code-editor")).toBe(true);
+    fireEvent.change(customCss, {
       target: { value: ":root { --test: blue; }" },
     });
     fireEvent.click(
