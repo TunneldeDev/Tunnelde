@@ -344,6 +344,7 @@ describe("PluginViewPage", () => {
     copyMock.mockClear();
     render(<PluginViewPage pluginId="json-formatter" viewId="main" />);
     const field = await screen.findByLabelText("JSON input");
+    expect(field.classList.contains("td-code-editor")).toBe(true);
     fireEvent.change(field, { target: { value: '{"a":1}' } });
     fireEvent.click(screen.getByRole("button", { name: "Indent" }));
     fireEvent.click(screen.getByRole("option", { name: "4 spaces" }));
@@ -362,6 +363,7 @@ describe("PluginViewPage", () => {
     );
     const output = await screen.findByLabelText("Result");
     expect((output as HTMLTextAreaElement).value).toBe('{\n  "a": 1\n}');
+    expect(output.classList.contains("td-code-editor")).toBe(true);
     expect(copyMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Copy result" }));
     expect(copyMock).toHaveBeenCalledWith('{\n  "a": 1\n}');

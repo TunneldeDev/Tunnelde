@@ -6,6 +6,34 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.4](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.3...v1.4.4) - 2026-11-16
+
+### 更新概览 | Highlights
+
+- **deps:** bump the tooling group with 3 updates
+- **deps:** bump uuid from 1.29.0 to 1.29.2 in /src-tauri
+- **deps:** bump zustand from 5.0.16 to 5.1.0
+- **deps:** bump tauri-plugin-opener from 2.7.2 to 2.7.3 in /src-tauri in the tauri group across 1 directory
+- **deps:** bump lucide-react from 1.70.0 to 1.72.0
+
+<details open>
+<summary>详细变更 | Details (6)</summary>
+
+### 修复 | Fix
+
+- **deps:** bump the tooling group with 3 updates ([#417](https://github.com/TunneldeDev/Tunnelde/pull/417))
+- **deps:** bump uuid from 1.29.0 to 1.29.2 in /src-tauri ([#418](https://github.com/TunneldeDev/Tunnelde/pull/418))
+- **deps:** bump zustand from 5.0.16 to 5.1.0 ([#419](https://github.com/TunneldeDev/Tunnelde/pull/419))
+- **deps:** bump tauri-plugin-opener from 2.7.2 to 2.7.3 in /src-tauri in the tauri group across 1 directory ([#420](https://github.com/TunneldeDev/Tunnelde/pull/420))
+- **deps:** bump lucide-react from 1.70.0 to 1.72.0 ([#421](https://github.com/TunneldeDev/Tunnelde/pull/421))
+- **editor:** use monospace font for code surfaces ([#422](https://github.com/TunneldeDev/Tunnelde/pull/422)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.4.3](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.2...v1.4.3) - 2026-11-16
 
 ### 更新概览 | Highlights

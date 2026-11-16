@@ -372,6 +372,7 @@ function PluginToolForm({
                 ) : field.type === "textarea" ? (
                   <Textarea
                     id={fieldId}
+                    className="td-code-editor"
                     value={value}
                     placeholder={field.placeholder}
                     rows={10}
@@ -433,6 +434,7 @@ function PluginToolForm({
           </div>
           <Textarea
             id={`${id}-result`}
+            className="td-code-editor"
             readOnly
             value={result.text}
             rows={10}

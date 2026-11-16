@@ -72,7 +72,9 @@ describe("file preview", () => {
     expect(api.sftpReadText).toHaveBeenCalledWith("ssh-2", "/srv/readme.md");
     expect(api.searchPreviewLocal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Show source" }));
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("# Preview title");
+    const source = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(source.value).toBe("# Preview title");
+    expect(source.classList.contains("td-code-editor")).toBe(true);
   });
 
   it("ignores a stale request when another file is selected", async () => {

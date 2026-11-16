@@ -50,6 +50,7 @@ export function ConfigurationField({
       ) : schema.type === "array" || schema.type === "object" ? (
         <Textarea
           id={id}
+          className="td-code-editor"
           rows={5}
           value={draft}
           disabled={disabled}
