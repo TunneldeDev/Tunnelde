@@ -1,5 +1,8 @@
 use crate::{error::AppResult, settings::Settings, state::AppState};
 use tauri::AppHandle;
+mod persistence;
+mod worker;
+pub(crate) use worker::run;
 
 #[derive(Clone, Copy)]
 pub(super) enum Kind {
@@ -13,25 +16,17 @@ pub(crate) struct Writer<'a> {
     app: &'a AppHandle,
     state: &'a AppState,
     _serial: tokio::sync::MutexGuard<'a, ()>,
-}
-
-pub(crate) async fn writer<'a>(app: &'a AppHandle, state: &'a AppState) -> Writer<'a> {
-    // Native commands also run asynchronously: a waiting settings writer must
-    // never block the GUI thread needed by another commit's window effects.
-    Writer {
-        app,
-        state,
-        _serial: state.settings_commit.lock().await,
-    }
+    cancellation: &'a crate::services::operations::Cancellation,
 }
 
 impl<'a> Writer<'a> {
+    pub(crate) fn check(&self) -> AppResult<()> {
+        self.cancellation.check()
+    }
     pub(super) fn current(&self) -> AppResult<(Settings, String)> {
         let current = self.state.settings();
-        let revision = self
-            .state
-            .db
-            .with(|conn| super::repository::revision(conn, &current))?;
+        let revision =
+            super::read::revision(&self.state.db, &current, || self.cancellation.check())?;
         Ok((current, revision))
     }
     pub(crate) fn update(self, patch: serde_json::Value) -> AppResult<Settings> {
@@ -58,6 +53,7 @@ impl<'a> Writer<'a> {
         kind: Kind,
         prepare: impl FnOnce(&Settings) -> AppResult<Settings>,
     ) -> AppResult<Prepared<'a>> {
+        self.cancellation.check()?;
         let previous = self.state.settings();
         let next = prepare(&previous)?;
         if matches!(kind, Kind::Preferences) {
@@ -67,6 +63,7 @@ impl<'a> Writer<'a> {
                 &self.state.update.snapshot(),
             )?;
         }
+        self.cancellation.check()?;
         let title_changed = super::effects::stage(self.app, &previous, &next, kind)?;
         Ok(Prepared {
             writer: self,
@@ -90,7 +87,7 @@ pub(crate) struct Prepared<'a> {
     revision: Option<String>,
 }
 impl Prepared<'_> {
-    /// Bounded durable commit only: safe inside the caller's final authorization
+    /// Durable commit only: safe inside the caller's final authorization
     /// lock. Window work, keychain cleanup and events run outside that lock.
     pub(crate) fn persist(&mut self) -> AppResult<()> {
         self.persist_with(|_| Ok(()))
@@ -115,23 +112,13 @@ impl Prepared<'_> {
         if self.committed {
             return Ok(());
         }
-        let revision = self.writer.state.db.with(|conn| {
-            super::repository::save_guarded(
-                conn,
-                &self.next,
-                |conn| {
-                    if let Some(expected) = expected_preferences {
-                        if super::repository::revision(conn, &self.previous)? != expected {
-                            return Err(crate::error::AppError::validation(
-                                "preferences.staleRevision",
-                            ));
-                        }
-                    }
-                    before(conn)
-                },
-                extra,
-            )
-        })?;
+        let revision = persistence::Write {
+            db: &self.writer.state.db,
+            previous: &self.previous,
+            next: &self.next,
+            expected_preferences,
+        }
+        .save(self.writer.cancellation, before, extra)?;
         self.writer.state.set_settings(self.next.clone());
         self.writer
             .state

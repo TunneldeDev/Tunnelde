@@ -62,9 +62,11 @@ pub(super) async fn dispatch(
     }
     let request: observation::contracts::Observe = serde_json::from_value(params)
         .map_err(|_| AppError::validation("plugin.api.invalid:params"))?;
-    authorize(context, &["settings.read"])?;
-    let state = context.app.state::<AppState>();
-    let response = state.db.with(|conn| observation::observe(conn, request))?;
-    authorize(context, &["settings.read"])?;
-    encode(response)
+    let worker = context.clone();
+    encode(
+        observation::checked(&context.app, request, move || {
+            authorize(&worker, &["settings.read"])
+        })
+        .await?,
+    )
 }

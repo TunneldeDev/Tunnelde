@@ -163,48 +163,65 @@ pub(crate) async fn proxy_profile_save(
     credential: CredentialChange,
 ) -> AppResult<ProxySaved> {
     credential.validate()?;
-    let state = app.state::<AppState>();
-    let mut prepared = crate::services::settings::writer(&app, &state)
-        .await
-        .prepare_update({
-            let mut network = state.settings().network;
-            if let Some(existing) = network.profiles.iter_mut().find(|p| p.id == profile.id) {
-                *existing = profile.clone();
+    // Retain the whole compound command after fields are admitted. A caller
+    // disappearing between settings and Keychain must not drop credential work.
+    WORKERS
+        .asynchronous(move |job| async move {
+            let worker_app = app.clone();
+            let field_job = job.clone();
+            let (settings, authority) = crate::services::settings::write(&app, move |writer| {
+                let state = worker_app.state::<AppState>();
+                let mut prepared = writer.prepare_update({
+                    let mut network = state.settings().network;
+                    if let Some(existing) = network.profiles.iter_mut().find(|p| p.id == profile.id)
+                    {
+                        *existing = profile.clone();
+                    } else {
+                        network.profiles.push(profile.clone());
+                    }
+                    serde_json::json!({"network":network})
+                })?;
+                let mut captured = None;
+                prepared.persist_guarded(
+                    None,
+                    |_| field_job.commit(),
+                    |conn| {
+                        captured = Some(authority::ProxyAuthority::capture(conn, &profile)?);
+                        Ok(())
+                    },
+                )?;
+                let settings = prepared.finish(); // Writer is released before OS preparation.
+                let authority = captured.expect("persisted companion captures authority");
+                Ok((settings, authority))
+            })
+            .await?;
+            let worker_app = app.clone();
+            let credential_error = if matches!(credential, CredentialChange::Keep) {
+                None
             } else {
-                network.profiles.push(profile.clone());
-            }
-            serde_json::json!({"network":network})
-        })?;
-    let mut captured = None;
-    prepared.persist_with(|conn| {
-        captured = Some(authority::ProxyAuthority::capture(conn, &profile)?);
-        Ok(())
-    })?;
-    let settings = prepared.finish(); // Writer is released before OS preparation.
-    let authority = captured.expect("persisted companion captures authority");
-    let worker_app = app.clone();
-    let credential_error = if matches!(credential, CredentialChange::Keep) {
-        None
-    } else {
-        checked(move |job| {
-            let state = worker_app.state::<AppState>();
-            // Preferences are committed already. This token separately admits
-            // the still-original credential mutation after any queue wait.
-            apply_proxy(
-                &state.db,
-                &state.vault,
-                state.credentials.run,
-                &authority,
-                &credential,
-                || job.commit(),
-            )
+                tauri::async_runtime::spawn_blocking(move || {
+                    let state = worker_app.state::<AppState>();
+                    // The compound worker was admitted with the settings commit.
+                    // apply_proxy still rechecks the original binding after queue waits.
+                    apply_proxy(
+                        &state.db,
+                        &state.vault,
+                        state.credentials.run,
+                        &authority,
+                        &credential,
+                        || Ok(()),
+                    )
+                })
+                .await
+                .map_err(|_| crate::error::AppError::internal("credentials.workerFailed"))
+                .and_then(|result| result)
+                .err()
+            };
+            schedule_cleanup(&app);
+            Ok(ProxySaved {
+                settings,
+                credential_error,
+            })
         })
         .await
-        .err()
-    };
-    schedule_cleanup(&app);
-    Ok(ProxySaved {
-        settings,
-        credential_error,
-    })
 }

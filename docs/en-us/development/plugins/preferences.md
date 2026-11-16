@@ -25,6 +25,33 @@ describe structure, while host semantics also check proxy references, shortcuts,
 theme identities and update-source configuration. Character limits count Unicode
 scalar values; `x-maxBytes` is an additional UTF-8 byte limit.
 
+Snapshots, observations and Profile activation review share four bounded blocking
+readers with local CLI snapshots. Waiting for settings serialization or the
+database does not block async runtime threads. Workers retain their slot until
+they exit, even after cancellation; exhaustion returns `preferences.read.busy`.
+Cancellation is checked after acquiring each lock. Runtime authorization is
+rechecked outside the database lock after waiting and before returning; revocation
+can reject a completed read, but does not interrupt a started SQLite query.
+Cancelled reads return `preferences.read.cancelled`; worker failures use
+`preferences.read.unavailable`. The ordered write/commit boundary is unchanged.
+
+Settings writes use a separate pool of four retained blocking workers, shared
+by native preferences, local CLI updates, plugin writes, Profile activation and
+update-check metadata. One worker owns settings serialization through validation,
+durable commit, in-memory publication and native effects. Waiting for the database
+does not block async runtime threads. A cancelled waiter retains its slot until
+it exits; cancellation is rechecked after locks and inside the transaction before
+commit admission. Once admitted, the worker completes commit and publication even
+if its caller stops waiting. Cancellation does not undo an admitted write; if a
+response is lost, read the current snapshot before deciding what to do next.
+Native/plugin capacity, cancellation and worker failures use
+`settings.operation.busy/cancelled/unavailable`; the stable local adapter keeps
+its existing `operation_rejected` and `internal` mappings. Native Profile snapshots
+share writer admission to preserve their ordering with activation. These changes
+do not interrupt started SQLite statements or make native effects transactional.
+Proxy credential operations remain separate from the settings commit, after
+the ordered writer has been released.
+
 ## Updating a snapshot
 
 ```ts

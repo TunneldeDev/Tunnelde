@@ -301,3 +301,56 @@ fn binary_storage_values_are_rejected_before_string_decoding() {
     })
     .unwrap();
 }
+
+#[test]
+fn observation_authorization_runs_outside_database_and_revocation_suppresses_result() {
+    let db = Database::in_memory().unwrap();
+    let checks = std::cell::Cell::new(0);
+    let error = guarded(
+        &db,
+        contracts::Observe::default(),
+        || Ok(()),
+        || {
+            assert!(db.try_with(|_| Ok(()))?.is_some());
+            checks.set(checks.get() + 1);
+            if checks.get() == 2 {
+                Err(crate::error::AppError::validation("pluginSecurity.revoked"))
+            } else {
+                Ok(())
+            }
+        },
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.to_string(), "pluginSecurity.revoked");
+    assert_eq!(checks.get(), 2);
+}
+
+#[test]
+fn cancelled_observation_never_queries_corrupt_storage_or_returns_a_result() {
+    let db = Database::in_memory().unwrap();
+    db.with(|conn| {
+        conn.execute_batch("DROP TABLE settings")?;
+        Ok(())
+    })
+    .unwrap();
+    let checks = std::cell::Cell::new(0);
+    let error = guarded(
+        &db,
+        contracts::Observe::default(),
+        || {
+            checks.set(checks.get() + 1);
+            if checks.get() == 2 {
+                Err(crate::error::AppError::validation(
+                    "profiles.operation.cancelled",
+                ))
+            } else {
+                Ok(())
+            }
+        },
+        || Ok(()),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.to_string(), "profiles.operation.cancelled");
+}
