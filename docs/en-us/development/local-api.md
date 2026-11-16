@@ -116,6 +116,23 @@ are not interrupted, and workers retain capacity until they exit. Exhaustion
 returns `operation_rejected`. Preference updates keep their existing ordered
 commit/publication behavior.
 
+Settings writes use a separate pool of four retained blocking workers, shared
+by native preferences, local CLI updates, plugin writes, Profile activation and
+update-check metadata. One worker owns settings serialization through validation,
+durable commit, in-memory publication and native effects. Waiting for the database
+does not block async runtime threads. A cancelled waiter retains its slot until
+it exits; cancellation is rechecked after locks and inside the transaction before
+commit admission. Once admitted, the worker completes commit and publication even
+if its caller stops waiting. Cancellation does not undo an admitted write; if a
+response is lost, read the current snapshot before deciding what to do next.
+Native/plugin capacity, cancellation and worker failures use
+`settings.operation.busy/cancelled/unavailable`; the stable local adapter keeps
+its existing `operation_rejected` and `internal` mappings. Native Profile snapshots
+share writer admission to preserve their ordering with activation. These changes
+do not interrupt started SQLite statements or make native effects transactional.
+Proxy credential operations remain separate from the settings commit, after
+the ordered writer has been released.
+
 ## Forwarding status (experimental)
 
 `forwards.list` reads the same saved rules and runtime registry as the native

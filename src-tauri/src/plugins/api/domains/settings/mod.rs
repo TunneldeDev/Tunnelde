@@ -38,21 +38,25 @@ pub(in crate::plugins::api) async fn dispatch(
             if patch.get("editorDraftRecovery").is_some() {
                 return Err(AppError::validation("editor.recoveryConsentRequired"));
             }
-            let writer = crate::services::settings::writer(app, &state).await;
-            authorize(context, &["settings.write"])?;
-            let mut prepared = writer.prepare_update(patch)?;
-            let lease = crate::plugins::security::Lease {
-                id: context.id.clone(),
-                fingerprint: context.fingerprint.clone(),
-                permissions: context.permissions.clone(),
-                generation: context.generation,
-            };
-            // Waiting for a concurrent commit is an authorization boundary too.
-            state
-                .plugins
-                .security
-                .with_authorized(&lease, &["settings.write"], || prepared.persist())?;
-            encode(prepared.finish())
+            let worker = context.clone();
+            crate::services::settings::write(app, move |writer| {
+                let state = worker.app.state::<AppState>();
+                authorize(&worker, &["settings.write"])?;
+                let mut prepared = writer.prepare_update(patch)?;
+                let lease = crate::plugins::security::Lease {
+                    id: worker.id.clone(),
+                    fingerprint: worker.fingerprint.clone(),
+                    permissions: worker.permissions.clone(),
+                    generation: worker.generation,
+                };
+                // Waiting for a concurrent commit is an authorization boundary too.
+                state
+                    .plugins
+                    .security
+                    .with_authorized(&lease, &["settings.write"], || prepared.persist())?;
+                encode(prepared.finish())
+            })
+            .await
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }

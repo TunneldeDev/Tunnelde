@@ -46,7 +46,6 @@ pub(super) async fn activate(
     })
     .await
     .map_err(|_| AppError::internal("profiles.mutation.unavailable"))??;
-    let state = context.app.state::<AppState>();
     let groups = {
         let worker = context.clone();
         let read_ticket = ticket.clone();
@@ -79,31 +78,35 @@ pub(super) async fn activate(
     if confirmed != Value::Bool(true) {
         return Err(AppError::validation("plugin.api.invalidResponse"));
     }
-    let writer = crate::services::settings::writer(&context.app, &state).await;
-    ticket.check()?;
-    authorize(context, WRITE)?;
-    let mut prepared =
-        writer.prepare_profile(&request.preferences_revision, selected.values.clone())?;
-    state
-        .plugins
-        .security
-        .with_authorized(&lease(context), WRITE, || {
-            prepared.persist_guarded(
-                Some(&request.preferences_revision),
-                |conn| {
-                    selected.compare(conn)?;
-                    ticket.commit()
-                },
-                |conn| selected.select(conn),
-            )
-        })?;
-    // There is deliberately no await between durable publication and effects.
-    let preferences_revision = prepared.finish_profile_revision();
-    publish(&context.app);
-    encode(Activated {
-        version: 1,
-        id: selected.id,
-        revision: selected.revision,
-        preferences_revision,
+    let worker = context.clone();
+    crate::services::settings::write(&context.app, move |writer| {
+        let state = worker.app.state::<AppState>();
+        ticket.check()?;
+        authorize(&worker, WRITE)?;
+        let mut prepared =
+            writer.prepare_profile(&request.preferences_revision, selected.values.clone())?;
+        state
+            .plugins
+            .security
+            .with_authorized(&lease(&worker), WRITE, || {
+                prepared.persist_guarded(
+                    Some(&request.preferences_revision),
+                    |conn| {
+                        selected.compare(conn)?;
+                        ticket.commit()
+                    },
+                    |conn| selected.select(conn),
+                )
+            })?;
+        // There is deliberately no await between durable publication and effects.
+        let preferences_revision = prepared.finish_profile_revision();
+        publish(&worker.app);
+        encode(Activated {
+            version: 1,
+            id: selected.id,
+            revision: selected.revision,
+            preferences_revision,
+        })
     })
+    .await
 }
