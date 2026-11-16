@@ -232,6 +232,11 @@
     "deleteBody": "删除分组“{{name}}”及其子分组？已保存的主机会保留并移至未分组。"
   },
   "settings": {
+    "operation": {
+      "busy": "设置操作正忙。请等待当前操作结束后重试。",
+      "cancelled": "设置操作已在提交准入前取消。",
+      "unavailable": "设置后台任务意外停止。请先读取当前设置并查看软件日志，再决定是否重试。"
+    },
     "transferOptimization": "优化文件传输",
     "transferOptimizationHint": "使用文件分段并发和 SFTP 请求流水线。更改在开始或恢复传输时生效。",
     "transferConcurrency": "并发分段数",

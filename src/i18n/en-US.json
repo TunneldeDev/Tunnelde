@@ -232,6 +232,11 @@
     "deleteBody": "Delete group “{{name}}” and its subgroups? Saved hosts will be kept and moved to Ungrouped."
   },
   "settings": {
+    "operation": {
+      "busy": "Settings operations are busy. Wait for current operations to finish, then try again.",
+      "cancelled": "The settings operation was cancelled before commit admission.",
+      "unavailable": "The settings worker stopped unexpectedly. Read the current settings and check application logs before retrying."
+    },
     "transferOptimization": "Optimize file transfers",
     "transferOptimizationHint": "Use concurrent file segments and pipelined SFTP requests. Changes apply when a transfer starts or resumes.",
     "transferConcurrency": "Concurrent segments",

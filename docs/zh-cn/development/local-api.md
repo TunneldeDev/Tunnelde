@@ -104,6 +104,17 @@ tunnelde-cli preferences update --params '{"revision":"REVISION_FROM_SNAPSHOT","
 获得锁后及返回前复核取消状态，已经开始的 SQLite 查询不会被中断，worker 实际退出
 才释放名额。名额用尽返回 `operation_rejected`。设置更新沿用原有的有序提交和发布行为。
 
+设置写入使用独立的四个有界阻塞 worker，供原生设置、本地 CLI 更新、插件写入、
+Profile 激活和更新检查元数据共用。同一 worker 持有设置串行锁，完成校验、持久提交、
+内存发布和原生效果；等待数据库锁不会阻塞异步运行时。取消后的等待任务在实际退出前
+仍占名额；获得锁后及事务内提交准入前再次检查取消。一旦准入，调用方停止等待也不会
+中断提交和发布。取消不能撤销已准入写入；响应丢失时，先读取当前快照再决定后续动作。
+原生／插件的满额、取消和 worker 失败分别使用
+`settings.operation.busy/cancelled/unavailable`；稳定本地适配器保持既有
+`operation_rejected`、`internal` 映射。原生 Profile 快照共用写入准入，以保持与激活的
+顺序。这些调整不会抢占已开始的 SQLite 语句，也不承诺原生效果参与数据库原子事务。
+代理凭据操作仍在有序写入结束之后单独执行，与设置保存分别处理结果。
+
 ## 端口转发状态（实验）
 
 `forwards.list` 复用原生转发管理器的已保存规则和运行注册表，无需打开终端或另建 SSH
