@@ -83,7 +83,7 @@ pub fn run() {
             use tauri::Manager;
             if plugins::security::cli_restricted(args.iter()) {
                 if let Some(state) = app.try_state::<state::AppState>() {
-                    state.plugins.force_cli_restricted(app, &state.db);
+                    state.plugins.force_cli_restricted(app);
                 }
             }
             window::show_main(app);

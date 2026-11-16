@@ -9,7 +9,7 @@ pub(crate) use atomic::run as atomic;
 pub mod tabs;
 
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rusqlite::Connection;
@@ -18,8 +18,10 @@ use crate::error::{AppError, AppResult};
 
 /// SQLite handle shared by every command. WAL keeps reads fast while a
 /// write is in flight; `foreign_keys` is enabled per connection.
+#[derive(Clone)]
 pub struct Database {
-    conn: Mutex<Connection>,
+    // Clones retain the exact connection and its admission lock.
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Database {
@@ -40,7 +42,7 @@ impl Database {
         conn.pragma_update(None, "foreign_keys", "ON")?;
 
         let database = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         };
         database.migrate()?;
         Ok(database)
@@ -51,7 +53,7 @@ impl Database {
         let conn = Connection::open_in_memory()?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         let database = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         };
         database.migrate()?;
         Ok(database)
@@ -92,6 +94,15 @@ impl Database {
             .lock()
             .map_err(|_| AppError::internal("database lock poisoned"))?;
         run(&guard)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn install_busy_handler_for_test(&self, handler: fn(i32) -> bool) -> AppResult<()> {
+        self.conn
+            .lock()
+            .map_err(|_| AppError::internal("database lock poisoned"))?
+            .busy_handler(Some(handler))?;
+        Ok(())
     }
 }
 

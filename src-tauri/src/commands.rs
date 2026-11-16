@@ -136,8 +136,8 @@ pub fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) ->
 }
 
 #[tauri::command]
-pub fn hosts_snapshot(state: State<'_, AppState>) -> AppResult<crate::services::hosts::Snapshot> {
-    crate::services::hosts::snapshot(&state.db)
+pub async fn hosts_snapshot(app: AppHandle) -> AppResult<crate::services::hosts::Snapshot> {
+    crate::services::hosts::read::snapshot(&app, || Ok(())).await
 }
 
 #[tauri::command]

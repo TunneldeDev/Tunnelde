@@ -6,6 +6,8 @@ use crate::error::{AppError, AppResult};
 use crate::models::{Group, GroupInput, Host, HostInput};
 use crate::state::AppState;
 
+pub(crate) mod read;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -72,6 +74,7 @@ pub(crate) fn resolve(app: &AppHandle, id: &str) -> AppResult<Host> {
 }
 
 /// A snapshot is read under one database lock; no transport or UI state leaks.
+#[cfg(test)]
 pub(crate) fn snapshot(db: &Database) -> AppResult<Snapshot> {
     snapshot_checked(db, || Ok(()))
 }
@@ -82,14 +85,19 @@ pub(crate) fn snapshot_checked(
     db: &Database,
     check: impl Fn() -> AppResult<()>,
 ) -> AppResult<Snapshot> {
-    db.with(|conn| {
-        check()?;
-        let groups = db::hosts::list_groups(conn)?;
-        check()?;
-        let hosts = db::hosts::list_hosts(conn)?;
-        check()?;
-        Ok(Snapshot { groups, hosts })
-    })
+    db.with(|conn| snapshot_connection(conn, check))
+}
+
+fn snapshot_connection(
+    conn: &rusqlite::Connection,
+    check: impl Fn() -> AppResult<()>,
+) -> AppResult<Snapshot> {
+    check()?;
+    let groups = db::hosts::list_groups(conn)?;
+    check()?;
+    let hosts = db::hosts::list_hosts(conn)?;
+    check()?;
+    Ok(Snapshot { groups, hosts })
 }
 
 impl<E: Effects> Hosts<'_, E> {

@@ -1,4 +1,4 @@
-use super::{save, AppError, AppResult, Database, PluginSecurity};
+use super::{save_on, AppError, AppResult, Database, PluginSecurity};
 
 impl PluginSecurity {
     /// Windows installers exit the process without sending Tauri's Exit event.
@@ -22,22 +22,27 @@ struct RestartGuard<'a> {
 
 impl<'a> RestartGuard<'a> {
     fn new(security: &'a PluginSecurity, db: &'a Database) -> AppResult<Self> {
-        let mut policy = security.policy();
-        if policy.restarting {
-            return Err(AppError::validation("pluginSecurity.changed"));
-        }
-        let was_unclean = policy.saved.unclean;
-        let mut next = policy.saved.clone();
-        next.unclean = false;
-        save(db, &next)?;
-        policy.saved = next;
-        policy.restarting = true;
-        security.notify(&mut policy);
-        Ok(Self {
-            security,
+        security.database(
             db,
-            was_unclean,
-        })
+            |_| Ok(()),
+            |policy, conn| {
+                if policy.restarting {
+                    return Err(AppError::validation("pluginSecurity.changed"));
+                }
+                let was_unclean = policy.saved.unclean;
+                let mut next = policy.saved.clone();
+                next.unclean = false;
+                save_on(conn?, &next)?;
+                policy.saved = next;
+                policy.restarting = true;
+                security.notify(policy);
+                Ok(Self {
+                    security,
+                    db,
+                    was_unclean,
+                })
+            },
+        )
     }
 }
 
@@ -46,15 +51,24 @@ impl Drop for RestartGuard<'_> {
         // A successful handoff exits/restarts without returning. Reaching this
         // point means installation failed or was interrupted; retain crash
         // detection for the still-running application and allow plugin calls.
-        let mut policy = self.security.policy();
-        let mut next = policy.saved.clone();
-        next.unclean |= self.was_unclean;
-        if let Err(error) = save(self.db, &next) {
-            tracing::error!(%error, "could not restore extension recovery marker after failed restart");
+        let result = self.security.database(
+            self.db,
+            |_| Ok(()),
+            |policy, conn| {
+                let mut next = policy.saved.clone();
+                next.unclean |= self.was_unclean;
+                if let Err(error) = conn.and_then(|conn| save_on(conn, &next)) {
+                    tracing::error!(%error, "could not restore extension recovery marker after failed restart");
+                }
+                policy.saved = next;
+                policy.restarting = false;
+                self.security.notify(policy);
+                Ok(())
+            },
+        );
+        if let Err(error) = result {
+            tracing::error!(%error, "could not restore extension restart state");
         }
-        policy.saved = next;
-        policy.restarting = false;
-        self.security.notify(&mut policy);
     }
 }
 

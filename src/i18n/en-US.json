@@ -1,4 +1,11 @@
 {
+  "hosts": {
+    "read": {
+      "busy": "Host readers are busy. Try again after the current reads finish.",
+      "cancelled": "The host read was cancelled.",
+      "unavailable": "The host reader stopped unexpectedly. Open the software log before retrying."
+    }
+  },
   "searchUi": {
     "filters": "Filter presets",
     "clear": "Clear search",
@@ -1524,6 +1531,11 @@
     "hint": "Choose a complete palette, or expand custom colors for individual areas. Theme packs can add one or more palettes without Node."
   },
   "pluginSecurity": {
+    "operation": {
+      "busy": "Plugin security operations are busy. Wait for the current operation and try again.",
+      "cancelled": "The plugin security operation was cancelled before publication.",
+      "unavailable": "The plugin security operation could not finish. Open the application logs for details."
+    },
     "title": "Plugin security",
     "restricted": "Restricted mode",
     "review": "Review plugin safety",
@@ -2384,6 +2396,11 @@
     "filePreview": "File preview"
   },
   "hostFields": {
+    "operation": {
+      "busy": "Host metadata operations are busy. Wait for the current operation and try again.",
+      "cancelled": "The host metadata operation was cancelled before publication.",
+      "unavailable": "The host metadata operation could not finish. Open the application logs for details."
+    },
     "title": "Plugin host fields",
     "hint": "Optional metadata grouped by plugin. Saved locally; never enter passwords or secrets. Editing fields does not start a plugin.",
     "reloadTitle": "Reload saved fields?",

@@ -6,6 +6,36 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.3](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.2...v1.4.3) - 2026-11-16
+
+### 更新概览 | Highlights
+
+- **qa:** preserve macOS updater relaunch failure evidence
+- **settings:** size navigation rows to wrapped labels
+- **plugins:** release policy while awaiting database admission
+- **hosts:** move native and plugin snapshots onto bounded readers
+- **plugins:** exercise policy admission on native platforms
+
+<details open>
+<summary>详细变更 | Details (5)</summary>
+
+### 修复 | Fix
+
+- **qa:** preserve macOS updater relaunch failure evidence ([#412](https://github.com/TunneldeDev/Tunnelde/pull/412)) @quyansiyuanwang
+- **settings:** size navigation rows to wrapped labels ([#415](https://github.com/TunneldeDev/Tunnelde/pull/415)) @quyansiyuanwang
+- **plugins:** release policy while awaiting database admission ([#414](https://github.com/TunneldeDev/Tunnelde/pull/414), [9809d95](https://github.com/TunneldeDev/Tunnelde/commit/9809d95fa56785dfe44ace4066c7991fda9a18b1)) @quyansiyuanwang
+- **hosts:** move native and plugin snapshots onto bounded readers ([#416](https://github.com/TunneldeDev/Tunnelde/pull/416)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **plugins:** exercise policy admission on native platforms ([#414](https://github.com/TunneldeDev/Tunnelde/pull/414)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.4.2](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.1...v1.4.2) - 2026-11-16
 
 ### 更新概览 | Highlights
