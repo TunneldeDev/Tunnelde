@@ -74,8 +74,8 @@ their metadata can be displayed before an approved runtime is started.
 [Host menu commands](host-menu.md) use the same consent, stale-target
 checks and output handling as file menu commands.
 
-[Host decorations](host-list.md), [status items](status-bar.md)
-and [tab controls](tab-bar.md) use the shared runtime-owned registry.
+[Host decorations](host-list.md), [file-list highlights](file-highlights.md),
+[status items](status-bar.md) and [tab controls](tab-bar.md) use the shared runtime-owned registry.
 Frontends subscribe before requesting a snapshot, reconcile revisions, release
 listeners on unmount and fence queued reads/events after authorization changes.
 This mechanism is independent of a particular view or Zustand store.

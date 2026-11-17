@@ -27,6 +27,9 @@ pub(in crate::plugins::api) async fn dispatch(
             content::dispatch(context, name, params).await
         }
         name if name.starts_with("fileBrowser.") => frontend_request(context, name, params).await,
+        "fileList.setHighlights" | "fileList.removeHighlights" => {
+            crate::plugins::file_highlights::call(context, method, params)
+        }
         "files.local.copy"
         | "files.sftp.copy"
         | "files.upload"
