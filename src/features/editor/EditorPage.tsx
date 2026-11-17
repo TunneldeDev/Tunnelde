@@ -35,6 +35,7 @@ import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import { useEditorLocation } from "@/store/editorLocation";
 import { useBackgroundGuard } from "@/lib/session/viewState";
+import { useCodeEditorSyntax } from "./syntax/useCodeEditorSyntax";
 import { EditorConflictDialog } from "./EditorConflictDialog";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
@@ -105,7 +106,21 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const [fallbackDocumentId] = useState(() => entry?.documentId ?? crypto.randomUUID());
   const documentId = entry?.documentId ?? fallbackDocumentId;
   const documentVersion = entry?.version ?? 0;
+  const syntaxDocument =
+    entry && !entry.loading && !entry.error && !entry.disconnected
+      ? {
+          tabId,
+          documentId,
+          version: documentVersion,
+          path: entry.path,
+          name: entry.name,
+          content: entry.content,
+          dirty: editorHasPendingChanges(entry),
+        }
+      : null;
   const composing = useRef(false);
+  const [syntaxComposing, setSyntaxComposing] = useState(false);
+  const syntax = useCodeEditorSyntax(syntaxDocument, active && !!syntaxDocument, syntaxComposing);
   const lastEditorContent = useRef(entry?.content ?? "");
   const [selectionRevision, setSelectionRevision] = useState(0);
   const [largeRestore, setLargeRestore] = useState<{
@@ -425,6 +440,10 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             wordWrap={wordWrap}
             tabSize={tabSize}
             spellCheck={spellCheck}
+            tokens={syntax.tokens}
+            tokensDocumentId={syntax.tokensDocumentId ?? undefined}
+            tokensVersion={syntax.tokensVersion ?? undefined}
+            onVisibleRangeSettled={syntax.onVisibleRangeSettled}
             viewRef={largeView}
             onViewReady={() => {
               const pending = peekEditorSelectionRestore(
@@ -459,10 +478,12 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             onSelectionChanged={(selection) => suspendLargeEditorSelection(tabId, selection)}
             onCompositionStart={(selection) => {
               composing.current = true;
+              setSyntaxComposing(true);
               beginEditorComposition(tabId, selection);
             }}
             onCompositionEnd={(selection) => {
               composing.current = false;
+              setSyntaxComposing(false);
               endEditorComposition(tabId, selection);
               setSelectionRevision((revision) => revision + 1);
             }}

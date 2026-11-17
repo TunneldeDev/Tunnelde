@@ -83,6 +83,50 @@ describe("CodeEditorSurface syntax adapter", () => {
     expect(result.current.tokensVersion).toBe(document.version);
   });
 
+  it("does not request or render syntax while inactive", async () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useCodeEditorSyntax(document, enabled),
+      { initialProps: { enabled: false } },
+    );
+    act(() =>
+      result.current.onVisibleRangeSettled({
+        from: 0,
+        to: 32_000,
+        documentId: document.documentId,
+        version: document.version,
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.pluginRun).not.toHaveBeenCalled();
+    expect(result.current.tokens).toEqual([]);
+    rerender({ enabled: true });
+    await vi.waitFor(() => expect(api.pluginRun).toHaveBeenCalledOnce());
+  });
+
+  it("clears tokens during composition and after provider revocation", async () => {
+    const { result, rerender } = renderHook(
+      ({ composing }) => useCodeEditorSyntax(document, true, composing),
+      { initialProps: { composing: false } },
+    );
+    act(() =>
+      result.current.onVisibleRangeSettled({
+        from: 0,
+        to: 32_000,
+        documentId: document.documentId,
+        version: document.version,
+      }),
+    );
+    await vi.waitFor(() => expect(result.current.tokens).toHaveLength(1));
+    rerender({ composing: true });
+    expect(result.current.tokens).toEqual([]);
+    rerender({ composing: false });
+    act(() => usePlugins.setState({ items: [] }));
+    expect(result.current.tokens).toEqual([]);
+  });
+
   it("does not accept a viewport from a stale document identity", () => {
     const { result } = renderHook(() => useCodeEditorSyntax(document, true));
     act(() =>
