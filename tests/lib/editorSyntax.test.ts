@@ -184,6 +184,7 @@ describe("plugin syntax highlighting contracts", () => {
   });
 
   it("discards stale, revoked, stopped and cancelled results", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
     const pending = deferred<unknown>();
     vi.mocked(api.pluginRun).mockReturnValue(pending.promise);
     const controller = new AbortController();
