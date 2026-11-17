@@ -137,6 +137,12 @@ function currentPath(index = 0): string | null {
   return pane.querySelector('[aria-current="location"]')?.getAttribute("title") ?? null;
 }
 
+function editPath(index: number, value: string): HTMLInputElement {
+  const input = openPath(index);
+  fireEvent.change(input, { target: { value } });
+  return input;
+}
+
 function resizePointer(type: string, clientX: number, pointerId = 1, button = 0) {
   const event = new MouseEvent(type, {
     bubbles: true,
@@ -178,6 +184,158 @@ function dragColumn(pane: HTMLElement, from: string, to: string, after = false) 
 }
 
 describe("SftpPage", () => {
+  it("shows Explorer-friendly remote Windows drives only while editing", async () => {
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
+      if (source.kind === "remote") return { ...remoteListing, path: path ?? "/C:/qq-bridge/src" };
+      return localListing;
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const remote = document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!;
+    expect(remote.querySelector('[aria-current="location"]')?.getAttribute("title")).toBe(
+      "/C:/qq-bridge/src",
+    );
+    const input = openPath(1);
+    expect(input.value).toBe("C:/qq-bridge/src");
+    fireEvent.change(input, { target: { value: "C:/draft" } });
+    expect(input.value).toBe("C:/draft");
+    fireEvent.change(input, { target: { value: "/C:/kept" } });
+    expect(input.value).toBe("/C:/kept");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(currentPath(1)).toBe("/C:/qq-bridge/src");
+    expect(openPath(1).value).toBe("C:/qq-bridge/src");
+  });
+
+  it("normalizes typed remote drive paths before submitting navigation", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = editPath(1, "D:\\next\\deep");
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith(
+        { kind: "remote", sessionId: "session-1" },
+        "/D:/next/deep",
+      ),
+    );
+    const canonical = editPath(1, "C:/qq-bridge/src");
+    fireEvent.keyDown(canonical, { key: "Enter" });
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith(
+        { kind: "remote", sessionId: "session-1" },
+        "/C:/qq-bridge/src",
+      ),
+    );
+  });
+
+  it("keeps editing and history open through Safari's pointer, blur, and click order", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const trigger = within(document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!).getByRole(
+      "button",
+      { name: "Recent folders" },
+    );
+    fireEvent.pointerDown(trigger);
+    fireEvent.mouseDown(trigger);
+    fireEvent.blur(input, { relatedTarget: null });
+    fireEvent.mouseUp(trigger);
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu", { name: "Recent folders" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "/srv/app" }));
+    await waitFor(() => expect(currentPath(1)).toBe("/srv/app"));
+    expect(screen.queryByRole("textbox", { name: "Path" })).toBeNull();
+  });
+
+  it("cancels a stuck edit after an aborted history click", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const trigger = within(document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!).getByRole(
+      "button",
+      { name: "Recent folders" },
+    );
+    fireEvent.pointerDown(trigger);
+    fireEvent.mouseDown(trigger);
+    fireEvent.blur(input, { relatedTarget: null });
+    fireEvent.mouseUp(document.body);
+    await act(async () => undefined);
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Path" })).toBeNull());
+    expect(currentPath(1)).toBe("/srv/app");
+
+    const next = openPath(1);
+    fireEvent.pointerDown(document.body);
+    expect(next.isConnected).toBe(false);
+    expect(screen.queryByRole("textbox", { name: "Path" })).toBeNull();
+    expect(currentPath(1)).toBe("/srv/app");
+  });
+
+  it("keeps the history menu inside only its own pane's edit boundary", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const remote = document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!;
+    const trigger = within(remote).getByRole("button", { name: "Recent folders" });
+    fireEvent.click(trigger);
+    const menu = document.getElementById(trigger.getAttribute("aria-controls")!)!;
+    fireEvent.blur(input, { relatedTarget: menu });
+    expect(within(remote).getByRole("textbox", { name: "Path" })).toBeTruthy();
+    const unrelated = document.createElement("div");
+    unrelated.id = "unrelated-menu";
+    unrelated.className = "sftp-path__history-menu";
+    unrelated.setAttribute("role", "menu");
+    document.body.append(unrelated);
+    fireEvent.blur(input, { relatedTarget: unrelated });
+    expect(within(remote).queryByRole("textbox", { name: "Path" })).toBeNull();
+    unrelated.remove();
+
+    openPath(1);
+    const unrelatedTrigger = document.createElement("button");
+    unrelatedTrigger.className = "td-menu__trigger";
+    document.body.append(unrelatedTrigger);
+    fireEvent.pointerDown(unrelatedTrigger);
+    expect(within(remote).queryByRole("textbox", { name: "Path" })).toBeNull();
+    unrelatedTrigger.remove();
+  });
+
+  it("keeps each pane's history menu independent when both are editing", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const remote = openPath(1);
+    const panes = document.querySelectorAll<HTMLElement>(".sftp-pane");
+    const remoteTrigger = within(panes[1]!).getByRole("button", { name: "Recent folders" });
+    fireEvent.click(remoteTrigger);
+    const remoteMenu = document.getElementById(remoteTrigger.getAttribute("aria-controls")!)!;
+    const unrelated = document.createElement("div");
+    unrelated.className = "sftp-path__history-menu";
+    unrelated.setAttribute("role", "menu");
+    document.body.append(unrelated);
+    fireEvent.blur(remote, { relatedTarget: unrelated });
+    expect(within(panes[1]!).queryByRole("textbox", { name: "Path" })).toBeNull();
+    unrelated.remove();
+    expect(remoteMenu.isConnected).toBe(false);
+  });
+
+  it("supports keyboard navigation, selection and escape in the history menu", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const trigger = within(document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!).getByRole(
+      "button",
+      { name: "Recent folders" },
+    );
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "/srv/app" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "/srv/app" }));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByRole("menu", { name: "Recent folders" })).toBeNull();
+    expect(input.isConnected).toBe(true);
+    fireEvent.keyDown(input, { key: "Escape", isComposing: true, keyCode: 229 });
+    expect(input.isConnected).toBe(true);
+  });
+
   it("renders plugin highlights by source and keeps them separate from selection", async () => {
     useFileHighlights.setState({
       revision: 1,

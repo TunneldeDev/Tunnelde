@@ -1,5 +1,5 @@
 import { ChevronRight, Folder, History } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Menu } from "@/components/ui/overlay/Menu";
@@ -99,22 +99,92 @@ export function FilePathBar({
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
   const breadcrumbs = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const historyPointer = useRef(false);
   const crumbs = useMemo(() => pathCrumbs(path, source), [path, source]);
   useLayoutEffect(() => {
     if (editing) {
+      historyPointer.current = false;
       input.current?.focus();
       input.current?.select();
     } else if (breadcrumbs.current) {
       breadcrumbs.current.scrollLeft = breadcrumbs.current.scrollWidth;
     }
   }, [editing, path]);
-  const cancel = () => {
+  const cancel = useCallback(() => {
+    historyPointer.current = false;
     onDraft(null);
     onEditing(false);
-  };
+  }, [onDraft, onEditing]);
+  const ownHistoryMenu = useCallback(() => {
+    const menuId = root.current
+      ?.querySelector<HTMLButtonElement>(".sftp-path__history-trigger[aria-controls]")
+      ?.getAttribute("aria-controls");
+    return menuId ? document.getElementById(menuId) : null;
+  }, []);
+  const inHistoryMenu = useCallback(
+    (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return false;
+      const menu = ownHistoryMenu();
+      return !!menu && menu.contains(target);
+    },
+    [ownHistoryMenu],
+  );
+  useEffect(() => {
+    if (!editing) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || root.current?.contains(target) || inHistoryMenu(target))
+        return;
+      cancel();
+    };
+    const finishHistoryPointer = () => {
+      if (!historyPointer.current) return;
+      historyPointer.current = false;
+      requestAnimationFrame(() => {
+        if (ownHistoryMenu()) return;
+        cancel();
+      });
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerup", finishHistoryPointer, true);
+    document.addEventListener("pointercancel", finishHistoryPointer, true);
+    document.addEventListener("mouseup", finishHistoryPointer, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointerup", finishHistoryPointer, true);
+      document.removeEventListener("pointercancel", finishHistoryPointer, true);
+      document.removeEventListener("mouseup", finishHistoryPointer, true);
+    };
+  }, [cancel, editing, inHistoryMenu, ownHistoryMenu]);
   return (
     <div className="sftp-pane__path">
-      <div className="sftp-path">
+      <div
+        ref={root}
+        className="sftp-path"
+        onBlur={(event) => {
+          if (historyPointer.current) {
+            return;
+          }
+          const next = event.relatedTarget;
+          if (next instanceof Node && (event.currentTarget.contains(next) || inHistoryMenu(next)))
+            return;
+          cancel();
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key !== "Escape" ||
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229 ||
+            inHistoryMenu(event.target)
+          )
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          cancel();
+          onFinishEditing();
+        }}
+      >
         {editing ? (
           <input
             ref={input}
@@ -123,13 +193,6 @@ export function FilePathBar({
             value={draft}
             spellCheck={false}
             onChange={(event) => onDraft(event.target.value)}
-            onBlur={(event) => {
-              if (
-                !event.currentTarget.parentElement?.contains(event.relatedTarget) &&
-                !(event.relatedTarget instanceof Element && event.relatedTarget.closest(".td-menu"))
-              )
-                cancel();
-            }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
               if (event.key === "Enter") {
@@ -140,11 +203,6 @@ export function FilePathBar({
                   onEditing(false);
                   onFinishEditing();
                 }
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                cancel();
-                onFinishEditing();
               }
             }}
           />
@@ -183,20 +241,36 @@ export function FilePathBar({
           </>
         )}
         {editing && history.length > 0 ? (
-          <Menu
-            label={t("sftp.recentPaths")}
-            trigger={<History size={13} />}
-            items={[...new Set(history)]
-              .reverse()
-              .slice(0, 20)
-              .map((value) => ({
-                label: value,
-                onSelect: () => {
-                  onNavigate(value);
-                  onEditing(false);
-                },
-              }))}
-          />
+          <span
+            className="sftp-path__history"
+            onMouseDownCapture={(event) => {
+              if (
+                event.target instanceof Element &&
+                event.target.closest(".sftp-path__history-trigger")
+              ) {
+                historyPointer.current = true;
+                event.preventDefault();
+              }
+            }}
+          >
+            <Menu
+              label={t("sftp.recentPaths")}
+              trigger={<History size={13} />}
+              className="sftp-path__history-trigger"
+              menuClassName="sftp-path__history-menu"
+              items={[...new Set(history)]
+                .reverse()
+                .slice(0, 20)
+                .map((value) => ({
+                  label: value,
+                  onSelect: () => {
+                    onNavigate(value);
+                    onEditing(false);
+                    onFinishEditing();
+                  },
+                }))}
+            />
+          </span>
         ) : null}
       </div>
     </div>
