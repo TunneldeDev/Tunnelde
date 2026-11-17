@@ -180,7 +180,7 @@
 .activitybar .td-icon-btn {
   width: 38px;
   height: 38px;
-  border-radius: 5px;
+  border-radius: var(--td-radius-sm);
 }
 .activitybar__spacer {
   flex: 1;
@@ -1066,9 +1066,12 @@
 .sftp-path__crumb[aria-current] {
   font-weight: 500;
 }
-.sftp-path__crumb:hover,
-.sftp-path__expand:hover {
+.sftp-path__crumb:hover {
   background: var(--td-hover);
+}
+.sftp-path__expand:hover {
+  --td-surface-fill: var(--td-hover);
+  background: var(--td-surface-background, var(--td-surface-fill));
 }
 .sftp-path__crumb:focus-visible,
 .sftp-path__edit:focus-visible {
@@ -1080,7 +1083,8 @@
   min-width: 18px;
   height: 24px;
   padding: 0;
-  border-radius: 2px;
+  border-radius: var(--td-radius-xs);
+  --td-corner-size: 6;
 }
 .sftp-path__edit {
   min-width: 32px;
@@ -1108,7 +1112,8 @@
   min-width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: 2px;
+  border-radius: var(--td-radius-xs);
+  --td-corner-size: 6;
 }
 .sftp-path__history-trigger.td-menu__trigger:focus-visible {
   outline: 1px solid var(--td-accent);
