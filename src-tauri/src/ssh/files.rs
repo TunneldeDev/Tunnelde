@@ -6319,16 +6319,22 @@ mod tests {
     }
 
     #[test]
-    fn text_decode_preserves_utf8_bytes_bom_and_line_endings() {
-        for original in ["", "hello\n", "\u{feff}中文 🌍\r\nnext\r\n", "literal �"] {
+    fn text_decode_preserves_utf8_content_bom_metadata_and_line_endings() {
+        for (original, content, bom) in [
+            ("", "", false),
+            ("hello\n", "hello\n", false),
+            ("\u{feff}中文 🌍\r\nnext\r\n", "中文 🌍\r\nnext\r\n", true),
+            ("literal �", "literal �", false),
+        ] {
             let decoded = decode_text(
                 original.as_bytes().to_vec(),
                 TextSaveMode::editor(None, false),
             )
             .expect("UTF-8 text");
-            assert_eq!(decoded.content, original);
+            assert_eq!(decoded.content, content);
             assert_eq!(decoded.size, original.len() as u64);
             assert_eq!(decoded.encoding, TextEncoding::Utf8);
+            assert_eq!(decoded.bom, bom);
         }
     }
 
