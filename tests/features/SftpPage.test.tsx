@@ -1967,7 +1967,7 @@ describe("SftpPage preloading", () => {
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret");
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10");
       fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Descending" }));
+      fireEvent.click(await screen.findByRole("menuitemradio", { name: "Descending" }));
       await waitFor(() =>
         expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10"),
       );
@@ -2120,11 +2120,11 @@ describe("SftpPage visible file interactions", () => {
     await screen.findByText("notes.txt");
     const reads = fsMock.list.mock.calls.length;
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Show hidden files" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Show hidden files" }));
     const body = screen.getAllByRole("listbox")[0]!;
     expect(await within(body).findByText(".env")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Folders first" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Folders first" }));
     await waitFor(() =>
       expect(within(body).getAllByRole("option")[0]!.dataset.path).toBe(hidden.path),
     );
@@ -2253,7 +2253,7 @@ describe("SftpPage visible file interactions", () => {
     await screen.findByText("notes.txt");
     const local = screen.getAllByRole("listbox")[0]!;
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Group by type" }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "Group by type" }));
     fireEvent.click(within(local).getByText("src"));
     const group = within(local).getByRole("button", { name: /Folders 1/ });
     const before = fsMock.list.mock.calls.length;
