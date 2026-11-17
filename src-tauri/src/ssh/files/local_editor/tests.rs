@@ -976,8 +976,10 @@ fn rejects_format_only_change_during_staging() {
     }
     #[cfg(windows)]
     {
-        assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
-        assert_eq!(f.disk_bytes(), b"original");
+        // The competing write was denied by the source's deny-write sharing
+        // mode. Since the disk remained unchanged, publication must succeed.
+        result.unwrap();
+        assert_eq!(f.disk_bytes(), b"draft");
     }
     f.clean();
 }
