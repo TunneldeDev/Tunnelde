@@ -15,7 +15,7 @@ import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language
 import { search, searchKeymap } from "@codemirror/search";
 import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from "react";
 import "./CodeEditorSurface.css";
-import { observeEditorFont } from "./editorFont";
+import { editorCjkScaling, observeEditorFont } from "./editorFont";
 
 import type { EditorSelectionSnapshot } from "@/store/editors";
 import {
@@ -331,6 +331,7 @@ export function CodeEditorSurface({
         doc: editorText(content),
         extensions: [
           lineNumbers(),
+          editorCjkScaling,
           highlightSpecialChars(),
           tab.current.of([EditorState.tabSize.of(tabSize), indentUnit.of(" ".repeat(tabSize))]),
           indentOnInput(),
