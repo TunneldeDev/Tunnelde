@@ -19,6 +19,8 @@ sends document text to the plugin. Changes stay in the unsaved buffer and can be
 undone in one step. Save explicitly when ready. Results from an older document
 version, a closed/reopened editor, or a revoked runtime are discarded.
 
+Syntax highlighting uses the same editor extension metadata but a read-only token contract; see [editor syntax highlighting](editor-syntax.md).
+
 ## Local document saves
 
 Local documents use the same draft retention and conflict review as remote
