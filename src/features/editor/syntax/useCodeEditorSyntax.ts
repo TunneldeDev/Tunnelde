@@ -1,4 +1,7 @@
 import { useCallback, useState } from "react";
+import { useEditorSyntax, type SyntaxDocumentSnapshot } from "./useEditorSyntax";
+import { absoluteSyntaxDecorations } from "./syntaxDecorations";
+
 export interface EditorToken {
   start: number;
   end: number;
@@ -11,8 +14,6 @@ export interface EditorVisibleRange {
   documentId: string;
   version: number;
 }
-import { useEditorSyntax, type SyntaxDocumentSnapshot } from "./useEditorSyntax";
-import { absoluteSyntaxDecorations } from "./syntaxDecorations";
 
 export interface CodeEditorSyntax {
   tokens: readonly EditorToken[];
