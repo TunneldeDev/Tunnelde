@@ -17,6 +17,7 @@ import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 import { api } from "@/lib/api/ipc";
 import { usePlugins } from "@/store/plugins";
+import { usePluginSecurity } from "@/store/pluginSecurity";
 import type { PluginInfo } from "@/lib/api/types";
 import { useFormatting } from "@/lib/plugins/formatting";
 import { EditorView } from "@codemirror/view";
@@ -158,6 +159,70 @@ describe("native file-save setup", () => {
     setup.mockResolvedValue(false);
     fireEvent.click(screen.getByRole("button", { name: /Enable recoverable saves|启用安全保存/ }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+describe("EditorPage syntax integration", () => {
+  const syntaxPlugin = {
+    id: "syntax-page",
+    runtimeId: "boot:1",
+    name: "Syntax",
+    runtime: "node",
+    status: "running",
+    permissions: ["editor.read"],
+    fingerprint: "first",
+    views: [],
+    commands: [
+      { id: "highlight", title: "Highlight", editor: { extensions: ["txt"], syntax: true } },
+    ],
+  } as unknown as PluginInfo;
+
+  const prepareSyntax = () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          name: "bridge.txt",
+          path: "/bridge.txt",
+          content: "const value = 42;",
+          baseline: "const value = 42;",
+          documentId: "syntax-document",
+          version: 0,
+        },
+      },
+    });
+    usePlugins.setState({ items: [{ ...syntaxPlugin }], stoppingIds: [] });
+    usePluginSecurity.setState({
+      state: {
+        restricted: false,
+        cliLocked: false,
+        recoverySuggested: false,
+        reason: null,
+        grants: { "syntax-page": ["editor.read"] },
+      },
+    });
+    vi.spyOn(api, "pluginRun").mockResolvedValue({
+      tokens: [{ start: 0, end: 5, type: "keyword" }],
+    });
+  };
+
+  it("renders provider tokens in the actual CM surface and skips inactive editors", async () => {
+    prepareSyntax();
+    const { rerender } = render(<EditorPage tabId="editor" active={false} />);
+    const textarea = await editorBox("bridge.txt");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(api.pluginRun).not.toHaveBeenCalled();
+    rerender(<EditorPage tabId="editor" active />);
+    await waitFor(() => expect(api.pluginRun).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(textarea.querySelector(".cm-editor-token-keyword")?.textContent).toBe("const"),
+    );
+    fireEvent.compositionStart(textarea);
+    await waitFor(() => expect(textarea.querySelector(".cm-editor-token-keyword")).toBeNull());
+    fireEvent.compositionEnd(textarea);
+    await waitFor(() =>
+      expect(textarea.querySelector(".cm-editor-token-keyword")?.textContent).toBe("const"),
+    );
   });
 });
 
