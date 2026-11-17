@@ -63,5 +63,8 @@ Allowed token types are `keyword`, `string`, `number`, `comment`, `type`,
 other styling. At most 16,384 tokens and 128 KiB of serialized token data are
 accepted per result.
 
-`index.mjs` imports `./sdk.mjs` for a real installation. The SDK file is
-distributed with plugin packages; it is intentionally not duplicated here.
+`sdk.mjs` is included and is the frozen core SDK fixture, pinned by SHA-256 in
+the packaging script. From this directory run `npm run package` (or
+`node scripts/package.mjs <directory>`) to produce an installable folder whose
+files can be copied/installed through Tunnelde's local plugin installer. The
+command does not install into the application or start a plugin.

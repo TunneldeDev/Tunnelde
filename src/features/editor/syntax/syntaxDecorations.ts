@@ -41,5 +41,5 @@ export function absoluteSyntaxDecorations(window: SyntaxDecorationWindow): Synta
 
 /** Host-owned class names only. CM adapters must not accept plugin classes. */
 export function syntaxDecorationClass(type: SyntaxToken["type"]): string {
-  return `td-syntax--${type}`;
+  return `cm-editor-token-${type}`;
 }

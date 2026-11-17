@@ -158,31 +158,58 @@ function extensionFromPath(path, extensions) {
 
 function validateInput(input) {
   if (!input || typeof input !== "object") throw new Error("invalid input");
-  if (typeof input.source !== "string") throw new Error("source must be a string");
-  if (Buffer.byteLength(input.source, "utf8") > 128 * 1024) throw new Error("source too large");
+  if (input.mode === "window") {
+    if (
+      input.source !== null ||
+      !input.range ||
+      !Number.isSafeInteger(input.range.offset) ||
+      !Number.isSafeInteger(input.range.length) ||
+      input.range.offset < 0 ||
+      input.range.length < 1 ||
+      input.range.length > 32 * 1024
+    )
+      throw new Error("invalid window");
+  } else {
+    if (typeof input.source !== "string") throw new Error("source must be a string");
+    if (Buffer.byteLength(input.source, "utf8") > 128 * 1024) throw new Error("source too large");
+  }
   if (!Array.isArray(input.extensions)) throw new Error("extensions must be an array");
   if (!input.extensions.every((value) => typeof value === "string" && LANGUAGES.has(value)))
     throw new Error("unsupported extension");
-  if (input.mode === "window") {
-    if (input.source !== null || !input.range || typeof input.range.offset !== "number")
-      throw new Error("invalid window");
-  }
   return input;
+}
+
+async function readWindow(input, host) {
+  const { document, range } = input;
+  let offset = range.offset;
+  let text = "";
+  while (offset < range.offset + range.length) {
+    const page = await host.call("editor.readRange", {
+      tabId: document.tabId,
+      documentId: document.documentId,
+      version: document.version,
+      offset,
+      limit: Math.min(16 * 1024, range.offset + range.length - offset),
+    });
+    text += page.text;
+    if (page.nextOffset === null || page.nextOffset <= offset) break;
+    offset = page.nextOffset;
+  }
+  return text;
 }
 
 async function main() {
   const { createPlugin } = await import("./sdk.mjs");
   createPlugin({
-    async run(command, input) {
+    async run(command, input, host) {
       if (command !== "highlight") throw new Error("unsupported command");
-      const { source, extensions, mode = "inline", range } = validateInput(input);
+      const { source, extensions, mode = "inline" } = validateInput(input);
       const language = extensionFromPath(input.document?.path, extensions);
-      const text = mode === "window" ? (source ?? "") : source;
+      const text = mode === "window" ? await readWindow(input, host) : source;
       return { tokens: tokenize(text, [language], mode) };
     },
   });
 }
-
 main().catch((error) => {
   process.stderr.write(`${error?.stack ?? error}\n`);
   process.exitCode = 1;

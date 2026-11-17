@@ -4,10 +4,9 @@
 
 Plugin syntax highlighting is experimental. It colors code inside an open small
 editor document; it does not decorate file-list rows and it never modifies the
-document. The built-in textarea remains the only editing and accessibility
-surface. The host renders validated semantic tokens in an `aria-hidden`,
-pointer-events-none overlay. Without a usable result, the normal plain text is
-shown.
+document. The CodeMirror editor remains the only editing and accessibility surface. The
+host converts validated semantic tokens into CodeMirror `Decoration.mark`
+ranges. Without a usable result, ordinary unstyled editor text remains visible.
 
 ## Manifest contribution
 
@@ -77,8 +76,9 @@ They must be in bounds, cannot split a surrogate pair, and must be ascending and
 non-overlapping. Results allow at most 16,384 tokens and 128 KiB serialized.
 Token types are limited to `keyword`, `string`, `number`, `comment`, `type`,
 `function`, `property`, `operator`, `punctuation`, `variable`, `constant` and
-`invalid`. The host maps these types to its own theme colors. Plugin-provided
-HTML, CSS, class names or arbitrary properties are rejected.
+`invalid`. The host maps these types to its own `cm-editor-token-*` decoration
+classes and theme colors. Plugin-provided HTML, CSS, class names or arbitrary
+properties are rejected.
 
 Small documents up to 128 KiB UTF-8 receive their source inline. Larger
 documents use a bounded visible-window request: the host supplies the exact
@@ -97,11 +97,10 @@ changes. A provider error or timeout also falls back to plain text.
 
 ## Rendering and editing guarantees
 
-The native textarea retains selection, caret, undo/redo, IME composition, word
-wrap and browser scrolling. The overlay matches the textarea font, font size,
-line height, tab width, padding, wrap mode and viewport, and synchronizes both
-scroll axes. It is hidden during IME composition so composition text cannot be
-transparent or duplicated. Forced-colors mode also shows the native text.
+The CodeMirror host owns selection, caret, undo/redo, IME composition, line
+numbers, word wrap and native browser scrolling. Plugin tokens never replace
+the document text or supply markup. Decoration classes use the host-owned
+`cm-editor-token-*` vocabulary; forced-colors mode keeps readable system text.
 
 The included [`syntax-basic` example](../../../../examples/plugins/syntax-basic/README.md)
 is a deliberately lightweight tokenizer for common source files, not a complete

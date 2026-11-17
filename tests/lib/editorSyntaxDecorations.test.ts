@@ -41,6 +41,6 @@ describe("CodeMirror syntax decoration projection", () => {
       { start: 50, end: 54, type: "string" },
       { start: 58, end: 59, type: "function" },
     ]);
-    expect(syntaxDecorationClass("keyword")).toBe("td-syntax--keyword");
+    expect(syntaxDecorationClass("keyword")).toBe("cm-editor-token-keyword");
   });
 });
