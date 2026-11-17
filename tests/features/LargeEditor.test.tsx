@@ -210,22 +210,38 @@ describe("LargeEditor", () => {
     await waitFor(() => expect(editor.view.current!.state.selection.main.from).toBe(5));
   });
 
-  it("inserts the dominant CRLF ending on Enter and indents by configured tab size", async () => {
-    const editor = mount("a\r\nb");
+  it("keeps each edited line EOL and indents by configured tab size", async () => {
+    const editor = mount("a\r\nb\nc\r\nd");
     await waitFor(() => expect(editor.view.current).not.toBeNull());
     const view = editor.view.current!;
-    view.dispatch({ selection: { anchor: 1 } });
-    view.contentDOM.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
-    );
-    await waitFor(() => expect(editor.changes.at(-1)?.[0]).toBe("a\r\n\r\nb"));
-    act(() => editor.rerender({ content: "a\r\n\r\nb", version: 1, tabSize: 8 }));
+    view.dispatch({ selection: { anchor: 4 } });
+    view.dispatch({ changes: { from: 4, to: 4, insert: "\n" } });
+    await waitFor(() => expect(editor.changes.at(-1)?.[0]).toBe("a\r\nb\n\r\nc\r\nd"));
+    act(() => editor.rerender({ content: "a\r\nb\n\r\nc\r\nd", version: 1, tabSize: 8 }));
     const current = editor.view.current!;
     current.dispatch({ selection: { anchor: 0 } });
     current.contentDOM.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
     );
     await waitFor(() => expect(editor.changes.at(-1)?.[0]?.startsWith("        a")).toBe(true));
+  });
+
+  it("routes CM delete user events separately from typing", async () => {
+    const editor = mount("abcdef");
+    await waitFor(() => expect(editor.view.current).not.toBeNull());
+    const view = editor.view.current!;
+    view.dispatch({ selection: { anchor: 3 } });
+    view.dispatch({
+      changes: { from: 3, to: 3, insert: "x" },
+      selection: { anchor: 4 },
+      userEvent: "input.type",
+    });
+    view.dispatch({
+      changes: { from: 3, to: 4, insert: "" },
+      selection: { anchor: 3 },
+      userEvent: "delete.backward",
+    });
+    expect(editor.changes.at(-1)?.[0]).toBe("abcdef");
   });
 
   it("uses the editor line separator for initialization", () => {

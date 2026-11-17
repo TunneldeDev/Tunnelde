@@ -1,5 +1,5 @@
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
-import { Compartment, EditorSelection, EditorState, Text } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Text, Transaction } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -17,7 +17,13 @@ import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from "react
 import "./CodeEditorSurface.css";
 
 import type { EditorSelectionSnapshot } from "@/store/editors";
-import { editorTextMap, editorToSource, sourceToEditor, type EditorTextMap } from "./editorText";
+import {
+  editorTextMap,
+  editorToSource,
+  lineEndingAtSource,
+  sourceToEditor,
+  type EditorTextMap,
+} from "./editorText";
 
 export interface EditorToken {
   /** Half-open UTF-16 offsets, absolute or relative to the requested window. */
@@ -45,6 +51,7 @@ interface CodeEditorSurfaceProps {
   tokens?: readonly EditorToken[];
   tokensDocumentId?: string;
   tokensVersion?: number;
+  tokensRange?: { from: number; to: number };
   onVisibleRangeSettled?: (range: EditorVisibleRange) => void;
   onChange: (content: string, selection: EditorSelectionSnapshot) => void;
   onBeforeInput?: (inputType: string, selection: EditorSelectionSnapshot) => void;
@@ -58,6 +65,7 @@ interface CodeEditorSurfaceProps {
   restoreSelection?: EditorSelectionSnapshot | null;
   restoreToken?: number;
   onSelectionSnapshot?: (selection: EditorSelectionSnapshot) => void;
+  onSelectionChanged?: (selection: EditorSelectionSnapshot) => void;
 }
 
 function direction(anchor: number, head: number): "forward" | "backward" | "none" {
@@ -121,6 +129,22 @@ function toSourceSelection(
   };
 }
 
+function transactionInputType(transaction: Transaction): string {
+  const userEvent = transaction.annotation(Transaction.userEvent) ?? "";
+  if (userEvent.startsWith("delete")) return "deleteContentBackward";
+  if (userEvent === "input.type" || userEvent.startsWith("input.type.")) return "insertText";
+  if (userEvent === "input.indent") return "insertText";
+  if (userEvent === "input.paste") return "insertFromPaste";
+  if (userEvent === "input.drop") return "insertFromDrop";
+  if (userEvent === "delete.cut") return "deleteByCut";
+  let insertedNewline = false;
+  transaction.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
+    if (inserted.toString().includes("\n")) insertedNewline = true;
+  });
+  if (insertedNewline) return "insertParagraph";
+  return "insertReplacementText";
+}
+
 const tokenDecorations = new Map<string, Decoration>();
 
 function decorationFor(type: string) {
@@ -133,10 +157,26 @@ function decorationFor(type: string) {
   return decoration;
 }
 
-function tokenSet(tokens: readonly EditorToken[], length: number): DecorationSet {
+function tokenSet(
+  tokens: readonly EditorToken[],
+  map: EditorTextMap,
+  range?: { from: number; to: number },
+): DecorationSet {
+  const sourceLength = map.source.length;
   const ranges = tokens
-    .filter((token) => token.start >= 0 && token.end <= length && token.start < token.end)
-    .map((token) => decorationFor(token.type).range(token.start, token.end));
+    .filter(
+      (token) =>
+        token.start >= 0 &&
+        token.end <= sourceLength &&
+        token.start < token.end &&
+        (!range || (token.start >= range.from && token.end <= range.to)),
+    )
+    .map((token) =>
+      decorationFor(token.type).range(
+        sourceToEditor(map, token.start),
+        sourceToEditor(map, token.end),
+      ),
+    );
   return Decoration.set(ranges, true);
 }
 
@@ -152,6 +192,7 @@ export function CodeEditorSurface({
   tokens = [],
   tokensDocumentId,
   tokensVersion,
+  tokensRange,
   onVisibleRangeSettled,
   onChange,
   onBeforeInput,
@@ -165,6 +206,7 @@ export function CodeEditorSurface({
   restoreSelection = null,
   restoreToken = 0,
   onSelectionSnapshot,
+  onSelectionChanged,
 }: CodeEditorSurfaceProps) {
   const host = useRef<HTMLDivElement>(null);
   const callbacks = useRef({
@@ -177,6 +219,7 @@ export function CodeEditorSurface({
     onCompositionEnd,
     onViewReady,
     onSelectionSnapshot,
+    onSelectionChanged,
     onVisibleRangeSettled,
   });
   const syncing = useRef(false);
@@ -201,6 +244,7 @@ export function CodeEditorSurface({
       onCompositionEnd,
       onViewReady,
       onSelectionSnapshot,
+      onSelectionChanged,
       onVisibleRangeSettled,
     };
   });
@@ -215,20 +259,34 @@ export function CodeEditorSurface({
         latestMap.current,
       );
       if (update.docChanged) {
+        const first = update.transactions[0];
+        if (first) {
+          callbacks.current.onBeforeInput?.(
+            transactionInputType(first),
+            toSourceSelection(
+              editorSelectionSnapshot(first.startState, update.view),
+              latestMap.current,
+            ),
+          );
+        }
         // CM normalizes line separators internally. Reconstruct source from the
         // pre-edit source map so unchanged CRLF/CR bytes survive transactions.
         let source = latestContent.current;
         let map = latestMap.current;
         for (const transaction of update.transactions) {
           const before = source;
+          const beforeMap = map;
           const pieces: string[] = [];
           let cursor = 0;
           const changes: Array<{ from: number; to: number; text: string }> = [];
           transaction.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+            const from = editorToSource(beforeMap, fromA);
+            const to = editorToSource(beforeMap, toA);
+            const ending = lineEndingAtSource(beforeMap, from);
             changes.push({
-              from: editorToSource(map, fromA),
-              to: editorToSource(map, toA),
-              text: inserted.toString().replace(/\n/g, map.identity ? "\n" : map.dominant),
+              from,
+              to,
+              text: inserted.toString().replace(/\n/g, ending),
             });
           });
           for (const change of changes) {
@@ -246,15 +304,18 @@ export function CodeEditorSurface({
           map,
         );
         callbacks.current.onChange(source, sourceSelection);
-      } else if (update.selectionSet) callbacks.current.onSelection(selected);
+      } else if (update.selectionSet) {
+        callbacks.current.onSelection(selected);
+        callbacks.current.onSelectionChanged?.(selected);
+      }
       if (update.viewportChanged) {
         if (visibleTimer.current) clearTimeout(visibleTimer.current);
         visibleTimer.current = setTimeout(() => {
           const range = update.view.visibleRanges[0];
           if (range)
             callbacks.current.onVisibleRangeSettled?.({
-              from: range.from,
-              to: range.to,
+              from: editorToSource(latestMap.current, range.from),
+              to: editorToSource(latestMap.current, range.to),
               documentId,
               version: latestVersion.current,
             });
@@ -282,7 +343,10 @@ export function CodeEditorSurface({
               key: "Tab",
               run: (view) => {
                 if (view.state.selection.main.empty) {
-                  view.dispatch(view.state.replaceSelection(" ".repeat(view.state.tabSize)));
+                  view.dispatch({
+                    ...view.state.replaceSelection(" ".repeat(view.state.tabSize)),
+                    userEvent: "input.indent",
+                  });
                   return true;
                 }
                 return false;
@@ -291,13 +355,6 @@ export function CodeEditorSurface({
             {
               key: "Escape",
               run: () => false,
-            },
-            {
-              key: "Enter",
-              run: (view) => {
-                view.dispatch(view.state.replaceSelection("\n"));
-                return true;
-              },
             },
             ...closeBracketsKeymap,
             ...searchKeymap,
@@ -312,7 +369,9 @@ export function CodeEditorSurface({
           ]),
           editable.current.of(EditorView.editable.of(!readOnly)),
           wrapping.current.of(wordWrap ? EditorView.lineWrapping : []),
-          decorations.current.of(EditorView.decorations.of(tokenSet(tokens, content.length))),
+          decorations.current.of(
+            EditorView.decorations.of(tokenSet(tokens, latestMap.current, tokensRange)),
+          ),
           EditorView.theme({
             "&": {
               height: "100%",
@@ -400,7 +459,20 @@ export function CodeEditorSurface({
     instance.contentDOM.setAttribute("role", "textbox");
     instance.contentDOM.setAttribute("aria-multiline", "true");
     callbacks.current.onViewReady?.();
+    let scrollFrame = 0;
+    const onScroll = () => {
+      if (scrollFrame) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0;
+        callbacks.current.onSelectionChanged?.(
+          toSourceSelection(editorSelectionSnapshot(instance.state, instance), latestMap.current),
+        );
+      });
+    };
+    instance.scrollDOM.addEventListener("scroll", onScroll, { passive: true });
     return () => {
+      instance.scrollDOM.removeEventListener("scroll", onScroll);
+      if (scrollFrame) cancelAnimationFrame(scrollFrame);
       if (visibleTimer.current) clearTimeout(visibleTimer.current);
       instance.destroy();
       if (viewRef.current === instance) viewRef.current = null;
@@ -459,6 +531,21 @@ export function CodeEditorSurface({
     instance.contentDOM.setAttribute("aria-label", label);
   }, [label, readOnly, spellCheck, tabSize, wordWrap, viewRef]);
 
+  useEffect(() => {
+    const instance = viewRef.current;
+    if (!instance) return;
+    const range = instance.visibleRanges[0] ?? {
+      from: 0,
+      to: Math.min(instance.state.doc.length, 2000),
+    };
+    callbacks.current.onVisibleRangeSettled?.({
+      from: editorToSource(latestMap.current, range.from),
+      to: editorToSource(latestMap.current, range.to),
+      documentId,
+      version,
+    });
+  }, [documentId, version, viewRef]);
+
   useLayoutEffect(() => {
     const instance = viewRef.current;
     if (!restoreSelection) {
@@ -486,12 +573,12 @@ export function CodeEditorSurface({
     if (!instance) return;
     const snapshot =
       tokensDocumentId === documentId && tokensVersion === version
-        ? tokenSet(tokens, instance.state.doc.length)
+        ? tokenSet(tokens, latestMap.current, tokensRange)
         : Decoration.none;
     instance.dispatch({
       effects: decorations.current.reconfigure(EditorView.decorations.of(snapshot)),
     });
-  }, [documentId, tokens, tokensDocumentId, tokensVersion, version, viewRef]);
+  }, [documentId, tokens, tokensDocumentId, tokensRange, tokensVersion, version, viewRef]);
 
   return <div ref={host} className="editor-large" />;
 }

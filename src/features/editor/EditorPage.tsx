@@ -452,6 +452,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
               rememberEditorSelection(tabId, selection);
               suspendLargeEditorSelection(tabId, selection);
             }}
+            onSelectionChanged={(selection) => suspendLargeEditorSelection(tabId, selection)}
             onCompositionStart={(selection) => {
               composing.current = true;
               beginEditorComposition(tabId, selection);

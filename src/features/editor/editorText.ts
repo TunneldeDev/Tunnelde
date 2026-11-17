@@ -99,6 +99,21 @@ export function sourceToEditor(map: EditorTextMap, sourceOffset: number): number
   return line.editor + (offset - line.sourceEnd) + 1;
 }
 
+export function lineEndingAtSource(map: EditorTextMap, sourceOffset: number): "\n" | "\r" | "\r\n" {
+  if (map.identity) return "\n";
+  const offset = Math.max(0, Math.min(map.source.length, sourceOffset));
+  let low = 0;
+  let high = map.breaks.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (map.breaks[middle]!.source < offset) low = middle + 1;
+    else high = middle;
+  }
+  const next = map.breaks[low];
+  if (next) return next.text;
+  return map.breaks.at(-1)?.text ?? map.dominant;
+}
+
 export function sourceLineStarts(source: string): number[] {
   const starts = [0];
   for (let index = 0; index < source.length; index += 1) {
