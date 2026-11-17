@@ -476,8 +476,9 @@ export interface PluginCommand {
   title: string;
   keybindings?: string[];
   macKeybindings?: string[];
-  /** Explicit user invocation receives a document snapshot and returns {text}. */
-  editor?: { extensions: string[]; format?: boolean };
+  /** Explicit invocation receives a document snapshot. `syntax` is read-only highlighting;
+   * `format` returns replacement text and keeps the existing write permission contract. */
+  editor?: { extensions: string[]; format?: boolean; syntax?: boolean };
   fileMenu?: {
     sources: ("local" | "remote")[];
     kinds: ("file" | "directory")[];

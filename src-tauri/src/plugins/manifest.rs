@@ -36,6 +36,8 @@ pub struct EditorCommand {
     pub extensions: Vec<String>,
     #[serde(default)]
     pub format: bool,
+    #[serde(default)]
+    pub syntax: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -388,7 +390,8 @@ impl PluginManifest {
                                 })
                         })
                         || !self.permissions.iter().any(|p| p == "editor.read")
-                        || !self.permissions.iter().any(|p| p == "editor.write")
+                        || (!editor.syntax || editor.format)
+                            && !self.permissions.iter().any(|p| p == "editor.write")
                 })
             {
                 return Err(AppError::validation("plugin.command.invalid"));
