@@ -13,7 +13,6 @@ import { runSyntaxHighlighting } from "@/lib/plugins/syntaxRunner";
 import { SYNTAX_WINDOW_MAX_UTF16 } from "@/lib/plugins/syntaxProtocol";
 
 const DEBOUNCE_MS = 220;
-const REQUEST_TIMEOUT_MS = 5_000;
 
 export interface SyntaxDocumentSnapshot {
   tabId: string;
@@ -181,7 +180,6 @@ export function useEditorSyntax({
       dirty,
     };
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), DEBOUNCE_MS + REQUEST_TIMEOUT_MS);
     const debounce = window.setTimeout(() => {
       void runSyntaxHighlighting(
         { provider, document: snapshot, window: requestRange },
@@ -201,7 +199,6 @@ export function useEditorSyntax({
     }, DEBOUNCE_MS);
     return () => {
       window.clearTimeout(debounce);
-      window.clearTimeout(timeout);
       controller.abort();
     };
   }, [

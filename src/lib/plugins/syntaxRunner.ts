@@ -7,6 +7,7 @@ import type { SyntaxDocumentSnapshot } from "@/features/editor/syntax/useEditorS
 import i18n from "@/i18n/i18n";
 import { samePluginAction } from "./commands/identity";
 import { samePluginRuntime } from "./commands/runtime";
+import { scheduleLatestSyntaxCall } from "./syntaxScheduler";
 import {
   editorSyntaxMatches,
   syntaxScalarBoundary,
@@ -120,11 +121,17 @@ export async function runSyntaxHighlighting(
   const request = requestFor(target);
   if (!request) return null;
   try {
-    const result = await api.pluginRun(
-      provider.id,
-      provider.command,
-      request as unknown as Record<string, unknown>,
-      original.runtimeId ?? "",
+    const runtimeKey = `${provider.id}:${original.runtimeId ?? original.fingerprint ?? ""}`;
+    const result = await scheduleLatestSyntaxCall(
+      runtimeKey,
+      () =>
+        api.pluginRun(
+          provider.id,
+          provider.command,
+          request as unknown as Record<string, unknown>,
+          original.runtimeId ?? "",
+        ),
+      signal,
     );
     if (signal.aborted) return null;
     const latest = usePlugins.getState().items.find((item) => item.id === provider.id);
