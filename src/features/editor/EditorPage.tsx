@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
+import { TextScrollbar } from "@/components/ui/display/TextScrollbar";
 import { cn } from "@/lib/text/format";
 import { useEditors, undoEditorEdit, editorDocument } from "@/store/editors";
 import { usePlugins } from "@/store/plugins";
@@ -300,20 +301,23 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           <EmptyState title={t("editor.loading")} />
         </div>
       ) : (
-        <textarea
-          ref={textarea}
-          className="editor-body td-code-editor"
-          aria-label={entry.name}
-          spellCheck={spellCheck}
-          wrap={wordWrap ? "soft" : "off"}
-          style={{
-            whiteSpace: wordWrap ? "pre-wrap" : "pre",
-            overflowWrap: wordWrap ? "anywhere" : "normal",
-            tabSize,
-          }}
-          value={entry.content}
-          onChange={(event) => change(tabId, event.target.value)}
-        />
+        <div className="editor-text">
+          <textarea
+            ref={textarea}
+            className="editor-body td-code-editor"
+            aria-label={entry.name}
+            spellCheck={spellCheck}
+            wrap={wordWrap ? "soft" : "off"}
+            style={{
+              whiteSpace: wordWrap ? "pre-wrap" : "pre",
+              overflowWrap: wordWrap ? "anywhere" : "normal",
+              tabSize,
+            }}
+            value={entry.content}
+            onChange={(event) => change(tabId, event.target.value)}
+          />
+          <TextScrollbar target={textarea} />
+        </div>
       )}
     </div>
   );
