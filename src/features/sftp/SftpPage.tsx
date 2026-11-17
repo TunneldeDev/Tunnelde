@@ -94,6 +94,12 @@ import { useWorkspace, type FilePaneOptions } from "@/store/workspace";
 import { useSearchRoots } from "@/store/searchRoots";
 import { SearchField } from "@/components/ui/form/SearchField";
 import { useFilePreview } from "@/store/filePreview";
+import { useFileHighlights } from "@/store/fileHighlights";
+import {
+  fileHighlightSource,
+  matchingFileHighlightLabels,
+  resolveFileHighlight,
+} from "@/lib/plugins/fileHighlights";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
 import { usePointerDrag } from "@/lib/session/usePointerDrag";
@@ -239,6 +245,7 @@ export function SftpPage({
   const setClip = useFileClipboard((state) => state.set);
   const openMenu = useContextMenu((state) => state.open);
   const settings = useSettings((state) => state.settings);
+  const highlights = useFileHighlights((state) => state.bySource);
   const resolveFileIcon = useFileIconResolver();
   const [preferenceCache] = useState(() => new Map<string, FileViewPreferences>());
   const preferenceKey = useCallback(
@@ -1894,6 +1901,7 @@ export function SftpPage({
     const renaming = state.renaming;
     const creating = state.creating;
     const selectedSet = new Set(state.selectedPaths);
+    const highlightSource = fileHighlightSource(source);
     const selectedCount = entries.filter((entry) => selectedSet.has(entry.path)).length;
     const previewTarget =
       selectedCount === 1
@@ -1910,6 +1918,27 @@ export function SftpPage({
       ) ?? null;
 
     const renderRow = (entry: FileEntry, index: number, ancestorIndex?: number) => {
+      const highlight = resolveFileHighlight(
+        highlights,
+        highlightSource,
+        entry.path,
+        entry.name,
+        entry.isDir,
+        ancestorIndex === undefined
+          ? (state.listing?.path ?? null)
+          : (state.ancestors[ancestorIndex]?.path ?? null),
+      );
+      const highlightLabel = matchingFileHighlightLabels(
+        highlights,
+        highlightSource,
+        entry.path,
+        entry.name,
+        entry.isDir,
+        ancestorIndex === undefined
+          ? (state.listing?.path ?? null)
+          : (state.ancestors[ancestorIndex]?.path ?? null),
+      ).join("\n");
+      const title = highlightLabel || entry.name;
       const branchPath =
         ancestorIndex === undefined
           ? null
@@ -1923,6 +1952,7 @@ export function SftpPage({
               : `${instanceId}-${id}-ancestor-${ancestorIndex}-${index}`
           }
           data-path={entry.path}
+          data-highlight-tone={highlight?.tone}
           role="option"
           aria-selected={
             ancestorIndex === undefined ? selectedSet.has(entry.path) : branchPath === entry.path
@@ -1933,6 +1963,7 @@ export function SftpPage({
             branchPath === entry.path && "is-branch",
             dropTarget?.pane === id && dropTarget.path === entry.path && "is-drop",
             cutSet.has(entry.path) && "is-cut",
+            highlight && `is-highlighted is-highlight-${highlight.tone}`,
           )}
           draggable={!state.busy && renaming?.path !== entry.path}
           onDragStart={(event) => {
@@ -2009,7 +2040,7 @@ export function SftpPage({
             openEntryMenu(event, id, entry);
           }}
         >
-          <span className={cn("sftp-row__icon", entry.isDir && "is-dir")}>
+          <span className={cn("sftp-row__icon", entry.isDir && "is-dir")} title={highlightLabel}>
             <FileTypeIcon
               isDir={entry.isDir}
               icon={entry.isDir ? undefined : resolveFileIcon(entry.name)}
@@ -2049,7 +2080,7 @@ export function SftpPage({
               }}
             />
           ) : (
-            <span className="sftp-row__name" title={entry.name}>
+            <span className="sftp-row__name" title={title}>
               {entry.name}
             </span>
           )}

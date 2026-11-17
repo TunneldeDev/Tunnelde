@@ -39,6 +39,7 @@ import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/Ba
 import { useBackgroundWindow } from "@/app/backgroundWindow";
 import { wireTabBarContributions } from "@/store/tabBar";
 import { wireHostDecorations } from "@/store/hostDecorations";
+import { wireFileHighlights } from "@/store/fileHighlights";
 import { wireHostColumns } from "@/store/hostColumns";
 import { wireHostSources } from "@/store/hostSources";
 
@@ -65,6 +66,9 @@ export function AppShell() {
     );
     void wireHostDecorations(controller.signal).catch((error: unknown) =>
       console.error("Host decorations subscription failed", error),
+    );
+    void wireFileHighlights(controller.signal).catch((error: unknown) =>
+      console.error("File highlights subscription failed", error),
     );
     return () => controller.abort();
   }, []);

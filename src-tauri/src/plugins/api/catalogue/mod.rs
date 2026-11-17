@@ -64,6 +64,8 @@ mod execution;
 mod file_browser;
 #[path = "files/content/methods.rs"]
 mod file_content;
+#[path = "files/highlights/methods.rs"]
+mod file_highlights;
 #[path = "files/preview/methods.rs"]
 mod file_preview;
 #[path = "files/methods.rs"]
@@ -119,6 +121,7 @@ const DOMAINS: &[&[ApiMethod]] = &[
     terminal::METHODS,
     files::METHODS,
     file_browser::METHODS,
+    file_highlights::METHODS,
     file_content::METHODS,
     file_preview::METHODS,
     monitor::METHODS,

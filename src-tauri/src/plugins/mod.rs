@@ -6,6 +6,7 @@ mod declarative;
 mod engines;
 mod events;
 mod extensions;
+pub mod file_highlights;
 pub mod file_icons;
 mod files;
 pub mod forwarding;
@@ -210,6 +211,7 @@ pub struct PluginsManager {
     status_bar: contributions::Registry<status_bar::StatusBarItem>,
     tab_bar: contributions::Registry<tab_bar::TabBarItem>,
     host_list: contributions::Registry<host_list::DecorationSet>,
+    file_highlights: contributions::Registry<file_highlights::HighlightSet>,
     host_columns: contributions::Registry<host_columns::Column>,
     host_sources: contributions::Registry<host_sources::Source>,
     sessions: Arc<runtime::ownership::Registry<String>>,
@@ -403,6 +405,7 @@ impl PluginsManager {
             status_bar: contributions::Registry::default(),
             tab_bar: contributions::Registry::default(),
             host_list: contributions::Registry::with_limit_error("plugin.hostList.limit"),
+            file_highlights: contributions::Registry::with_limit_error("plugin.fileList.limit"),
             host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
             sessions: runtime::ownership::Registry::new(8, 64),

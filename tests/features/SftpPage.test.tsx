@@ -37,6 +37,7 @@ import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
 import { useFilePreview } from "@/store/filePreview";
+import { useFileHighlights } from "@/store/fileHighlights";
 import { DRAG_MIME } from "@/lib/files/dnd";
 import { api } from "@/lib/api/ipc";
 import { useContextMenu } from "@/store/contextMenu";
@@ -121,6 +122,7 @@ beforeEach(() => {
   useTransfers.setState({ items: [] });
   useFileClipboard.setState({ clip: null });
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: false } });
+  useFileHighlights.setState({ revision: -1, bySource: new Map() });
 });
 
 function openPath(index = 0): HTMLInputElement {
@@ -176,6 +178,40 @@ function dragColumn(pane: HTMLElement, from: string, to: string, after = false) 
 }
 
 describe("SftpPage", () => {
+  it("renders plugin highlights by source and keeps them separate from selection", async () => {
+    useFileHighlights.setState({
+      revision: 1,
+      bySource: new Map([
+        [
+          "local",
+          [
+            {
+              match: { extension: "txt" },
+              tooltip: "Generated notes",
+              tone: "warning",
+              key: "plugin:generated",
+              pluginId: "plugin",
+              pluginName: "Generator",
+              source: "local",
+              directory: null,
+            },
+          ],
+        ],
+      ]),
+    });
+    render(<SftpPage sessionId="session-1" />);
+    const notes = (await screen.findByText("notes.txt")).closest(".sftp-row") as HTMLElement;
+    const readme = (await screen.findByText("readme.md")).closest(".sftp-row") as HTMLElement;
+    expect(notes.classList).toContain("is-highlighted");
+    expect(notes.classList).toContain("is-highlight-warning");
+    expect(notes.dataset.highlightTone).toBe("warning");
+    expect(notes.querySelector(".sftp-row__name")?.getAttribute("title")).toContain(
+      "Generator · Generated notes",
+    );
+    expect(notes.getAttribute("aria-selected")).toBe("false");
+    expect(readme.classList).not.toContain("is-highlighted");
+  });
+
   it("records the current local path of a standalone panel for workspace restoration", async () => {
     const filePane = {
       source: { kind: "local" as const },
@@ -1967,7 +2003,7 @@ describe("SftpPage preloading", () => {
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret");
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10");
       fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Descending" }));
+      fireEvent.click(await screen.findByRole("menuitemradio", { name: "Descending" }));
       await waitFor(() =>
         expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10"),
       );
@@ -2120,11 +2156,11 @@ describe("SftpPage visible file interactions", () => {
     await screen.findByText("notes.txt");
     const reads = fsMock.list.mock.calls.length;
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Show hidden files" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Show hidden files" }));
     const body = screen.getAllByRole("listbox")[0]!;
     expect(await within(body).findByText(".env")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Folders first" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Folders first" }));
     await waitFor(() =>
       expect(within(body).getAllByRole("option")[0]!.dataset.path).toBe(hidden.path),
     );
@@ -2253,7 +2289,7 @@ describe("SftpPage visible file interactions", () => {
     await screen.findByText("notes.txt");
     const local = screen.getAllByRole("listbox")[0]!;
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Group by type" }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "Group by type" }));
     fireEvent.click(within(local).getByText("src"));
     const group = within(local).getByRole("button", { name: /Folders 1/ });
     const before = fsMock.list.mock.calls.length;

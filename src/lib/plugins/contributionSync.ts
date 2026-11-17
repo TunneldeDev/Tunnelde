@@ -105,6 +105,7 @@ export function nativeContributionSource<
     | "plugin://status-bar-changed"
     | "plugin://tab-bar-changed"
     | "plugin://host-list-changed"
+    | "plugin://file-highlights-changed"
     | "plugin://host-columns-changed"
     | "plugin://host-sources-changed",
 >(

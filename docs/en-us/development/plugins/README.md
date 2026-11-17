@@ -150,7 +150,9 @@ hello/
 
 Runtime and engine requirements belong in manifest metadata and are shown by the
 marketplace. Use Rust semver version-range syntax for engine requirements. A
-`theme` runtime may contain themes, file icons or preview providers. Node commands
+`theme` runtime may contain themes, file icons or preview providers. Runtime
+plugins can register transient [file-list highlights](file-highlights.md) through
+`fileList.setHighlights`; no manifest field is required. Node commands
 may declare `keybindings`, `macKeybindings`, `editor` and `fileMenu` contributions;
 see [editor commands](editor-plugins.md) and the generated SDK for their
 validation rules. The host lists contributed bindings only while the plugin is

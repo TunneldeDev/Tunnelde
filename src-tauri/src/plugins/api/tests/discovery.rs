@@ -61,6 +61,8 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "fileBrowser.action",
             "fileBrowser.observe",
             "fileBrowser.read",
+            "fileList.removeHighlights",
+            "fileList.setHighlights",
             "filePreview.action",
             "filePreview.observe",
             "filePreview.open",
