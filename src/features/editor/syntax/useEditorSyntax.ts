@@ -109,15 +109,18 @@ export function useEditorSyntax({
   const requestedLength = requestedRange?.length ?? null;
   const sourceBytes = useMemo(() => new TextEncoder().encode(content).length, [content]);
   const windowed = sourceBytes > 128 * 1024;
-  const requestRange =
-    windowed &&
-    requestedOffset !== null &&
-    requestedLength !== null &&
-    requestedOffset >= 0 &&
-    requestedLength > 0 &&
-    requestedOffset + requestedLength <= sourceLength
-      ? { offset: requestedOffset, length: requestedLength }
-      : null;
+  const requestRange = useMemo(
+    () =>
+      windowed &&
+      requestedOffset !== null &&
+      requestedLength !== null &&
+      requestedOffset >= 0 &&
+      requestedLength > 0 &&
+      requestedOffset + requestedLength <= sourceLength
+        ? { offset: requestedOffset, length: requestedLength }
+        : null,
+    [requestedLength, requestedOffset, sourceLength, windowed],
+  );
   const rangeKey = requestRange ? `${requestRange.offset}:${requestRange.length}` : "";
   const requestable = !windowed || requestRange !== null;
   const [rendered, setRendered] = useState<RenderedTokens | null>(null);
@@ -189,6 +192,7 @@ export function useEditorSyntax({
     providerKey,
     rangeKey,
     requestable,
+    requestRange,
     runtime,
     stopping,
     tabId,
