@@ -160,7 +160,7 @@ impl Reader {
                 return Ok(Vec::new());
             }
         };
-        for (index, line) in logical_lines(&text).iter().enumerate() {
+        for (index, line) in logical_lines(text).iter().enumerate() {
             let tokens = match tokenize(line) {
                 Ok(tokens) => tokens,
                 Err(()) => {
@@ -295,7 +295,7 @@ fn tokenize(line: &str) -> Result<Vec<String>, ()> {
                 quote = None;
             } else if ch == '\\' && q == '"' {
                 match chars.peek().copied() {
-                    Some(next) if matches!(next, '"' | '\\' | '#') => {
+                    Some('"' | '\\' | '#') => {
                         current.push(chars.next().expect("peeked character"));
                     }
                     _ => current.push('\\'),
@@ -876,7 +876,6 @@ pub(super) fn discover(home: &Path) -> AppResult<Discovered> {
                 entries: Vec::new(),
                 issues: Vec::new(),
             },
-            ..Discovered::default()
         });
     }
     let mut reader = Reader::new();

@@ -51,8 +51,10 @@ fn production_discovery_imports_jump_dependencies_and_repeats_without_overwrite(
     assert_eq!(app.username, "deploy");
     db.with(|conn| {
         assert_eq!(
-            crate::network::route_at(conn, &app.id)?.jump_hosts,
-            [jump.id.clone()]
+            crate::network::route_at(conn, &app.id)?
+                .jump_hosts
+                .as_slice(),
+            std::slice::from_ref(&jump.id)
         );
         assert!(
             crate::services::credentials::lifecycle::host_incarnation(conn, &app.id)?.is_some()
