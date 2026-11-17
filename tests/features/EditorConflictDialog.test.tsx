@@ -7,10 +7,20 @@ import { useEditors } from "@/store/editors";
 
 beforeEach(async () => {
   for (const key of Object.keys(useEditors.getState().entries)) useEditors.getState().discard(key);
-  vi.spyOn(api, "sftpReadText").mockResolvedValue({ content: "original", size: 8 });
+  vi.spyOn(api, "sftpReadText").mockResolvedValue({
+    content: "original",
+    size: 8,
+    encoding: "utf-8",
+    bom: false,
+  });
   await useEditors.getState().open("review", "session", "/note.txt");
   useEditors.getState().change("review", "unsaved draft");
-  vi.mocked(api.sftpReadText).mockResolvedValue({ content: "external update", size: 15 });
+  vi.mocked(api.sftpReadText).mockResolvedValue({
+    content: "external update",
+    size: 15,
+    encoding: "utf-8",
+    bom: false,
+  });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
 });
 
@@ -40,6 +50,8 @@ it("only replaces the disk version the user actually reviewed", async () => {
     "/note.txt",
     "unsaved draft",
     "external update",
+    "utf-8",
+    false,
   );
 });
 

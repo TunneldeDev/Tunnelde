@@ -21,6 +21,8 @@ const entry: EditorEntry = {
   name: "draft.txt",
   content: "\tunsaved draft\r\n\tsecond line\r\n",
   baseline: "original\r\n",
+  encoding: "utf-8",
+  bom: false,
   loading: false,
   saving: false,
   error: null,
@@ -33,6 +35,49 @@ beforeEach(() => {
   useSsh.setState({ sessions: [] });
   usePlugins.setState({ items: [] });
   useFormatting.setState({ busy: [], picker: null });
+});
+
+describe("text encoding controls", () => {
+  it("reopens a clean document with the selected encoding and disables switching for a dirty draft", async () => {
+    useEditors.setState({
+      entries: {
+        editor: { ...entry, content: "clean", baseline: "clean" },
+      },
+    });
+    vi.spyOn(api, "sftpReadText").mockResolvedValue({
+      content: "旧版中文",
+      size: 8,
+      encoding: "gb18030",
+      bom: false,
+    });
+    render(<EditorPage tabId="editor" active />);
+    const encoding = screen.getByRole("button", { name: "Encoding" });
+    expect(encoding.textContent).toContain("UTF-8");
+    await act(async () => {
+      fireEvent.click(encoding);
+    });
+    const option = await screen.findByRole("option", { name: "GB18030" });
+    await act(async () => {
+      fireEvent.pointerDown(option);
+      fireEvent.mouseDown(option);
+      fireEvent.click(option);
+    });
+    await waitFor(() =>
+      expect(api.sftpReadText).toHaveBeenCalledWith("s1", "/draft.txt", "gb18030"),
+    );
+    expect(screen.getByRole("textbox", { name: "draft.txt" })).toHaveProperty("value", "旧版中文");
+    act(() =>
+      useEditors.setState({
+        entries: {
+          editor: {
+            ...useEditors.getState().entries.editor!,
+            content: "unsaved",
+          },
+        },
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Encoding" })).toHaveProperty("disabled", true);
+  });
 });
 
 describe("native file-save setup", () => {

@@ -22,6 +22,32 @@ async fn staged_save(
     baseline: &str,
     record: &mut Record,
 ) -> AppResult<()> {
+    staged_save_encoded(
+        sftp,
+        replacement,
+        requested,
+        target,
+        content,
+        content.as_bytes(),
+        TextEncoding::Utf8,
+        baseline,
+        record,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn staged_save_encoded(
+    sftp: &SftpSession,
+    replacement: &remote_commit::Replacement,
+    requested: &str,
+    target: &str,
+    content: &str,
+    encoded: &[u8],
+    encoding: TextEncoding,
+    baseline: &str,
+    record: &mut Record,
+) -> AppResult<()> {
     let (job, _caller) =
         crate::services::files::operations::Cancellation::for_test("editor.saveCancelled");
     transaction::staged_save(
@@ -31,6 +57,8 @@ async fn staged_save(
             requested,
             target,
             content,
+            encoded,
+            encoding,
             baseline,
         },
         record,
@@ -471,6 +499,36 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         std::fs::remove_dir_all(&self.root).unwrap();
     }
+}
+
+#[tokio::test]
+async fn atomically_preserves_legacy_encoding_bytes_during_save() {
+    let f = Fixture::new();
+    let sftp = f.client().await;
+    let original = encoding_rs::GB18030.encode("旧版中文\r\n").0;
+    std::fs::write(f.root.join("note.txt"), original.as_ref()).unwrap();
+    let content = "新版中文\r\n";
+    let encoded = encoding_rs::GB18030.encode(content).0;
+    let mut record = f.record();
+    staged_save_encoded(
+        &sftp,
+        &f.replacement().await.unwrap(),
+        "/note.txt",
+        "/note.txt",
+        content,
+        encoded.as_ref(),
+        TextEncoding::Gb18030,
+        "旧版中文\r\n",
+        &mut record,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(f.root.join("note.txt")).unwrap(),
+        encoded.as_ref()
+    );
+    cleanup(&sftp, &mut record, |_| Ok(())).await.unwrap();
+    sftp.close().await.unwrap();
 }
 
 #[tokio::test]

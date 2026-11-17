@@ -16,7 +16,9 @@ pub(crate) use saving::save_checked;
 #[cfg(test)]
 pub(super) use saving::save_without_app;
 #[cfg(test)]
-use saving::{save_async, save_sync, save_transaction, save_with_budget};
+use saving::{
+    save_async, save_sync, save_transaction, save_transaction_with_encoding, save_with_budget,
+};
 
 #[cfg(test)]
 mod tests;

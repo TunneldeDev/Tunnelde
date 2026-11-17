@@ -137,12 +137,11 @@ async fn builtin_preview_retains_its_size_encoding_and_binary_errors() {
     let root = Root::new();
     let path = root.path("preview.txt");
     std::fs::write(&path, "你好🌍\n").unwrap();
-    assert_eq!(
-        crate::commands::search_preview_local(path.clone())
-            .await
-            .unwrap(),
-        "你好🌍\n"
-    );
+    let preview = crate::commands::search_preview_local(path.clone())
+        .await
+        .unwrap();
+    assert_eq!(preview.content, "你好🌍\n");
+    assert_eq!(preview.encoding.as_str(), "utf-8");
     for (bytes, reason) in [
         (vec![b'x'; 512 * 1024 + 1], "sftp.fileTooLarge"),
         (vec![0], "sftp.binaryFile"),
@@ -162,7 +161,7 @@ async fn builtin_preview_retains_its_size_encoding_and_binary_errors() {
         crate::commands::search_preview_local(path)
             .await
             .unwrap()
-            .len(),
+            .size,
         512 * 1024
     );
 }

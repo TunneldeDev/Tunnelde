@@ -53,9 +53,13 @@ the error. Find platform-specific and customizable bindings in
 [Keyboard shortcuts](shortcuts.md).
 
 Files open inside Tunnelde. Space and the preview action open Quick Look;
-compatible plugins can add preview formats. Local entries offer explicit native
-application/file-manager actions in their context menu. Transfer behavior,
-recovery limits and preview size limits are documented in
+compatible plugins can add preview formats. Text previews and the built-in editor
+detect UTF-8/UTF-16 BOMs and common legacy encodings (including GB18030, Big5,
+Shift-JIS, EUC-JP, EUC-KR and Windows-1252). The editor header shows the active
+encoding; choose another encoding while the document is clean to reopen it, and
+saving writes back in that encoding while preserving a detected BOM. Local
+entries offer explicit native application/file-manager actions in their context
+menu. Transfer behavior, recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.md).
 
 Changing the interface language keeps an open preview and its existing file

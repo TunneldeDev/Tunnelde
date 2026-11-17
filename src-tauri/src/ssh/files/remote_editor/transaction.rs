@@ -7,6 +7,8 @@ pub(super) struct Draft<'a> {
     pub requested: &'a str,
     pub target: &'a str,
     pub content: &'a str,
+    pub encoded: &'a [u8],
+    pub encoding: TextEncoding,
     pub baseline: &'a str,
 }
 
@@ -37,6 +39,8 @@ pub(super) async fn staged_save(
         requested,
         target,
         content,
+        encoded,
+        encoding,
         baseline,
     } = draft;
     job.check()?;
@@ -89,14 +93,7 @@ pub(super) async fn staged_save(
     // Cleanup may only remove paths carrying the acknowledged owner token.
     job.check()?;
     let staging = format!("{}/content", record.directory);
-    staging::exclusive_write(
-        replacement,
-        record,
-        checkpoint,
-        &staging,
-        content.as_bytes(),
-    )
-    .await?;
+    staging::exclusive_write(replacement, record, checkpoint, &staging, encoded).await?;
     job.check()?;
     // Ownership must precede mode: chown may clear setuid/setgid bits.
     if let (Some(uid), Some(gid)) = (metadata.uid, metadata.gid) {
@@ -134,11 +131,14 @@ pub(super) async fn staged_save(
         || staged.uid != metadata.uid
         || staged.gid != metadata.gid
         || staged.permissions.map(|mode| mode & 0o7777) != Some(permissions & 0o7777)
-        || read_remote_text(sftp, &staging).await?.content != content
+        || read_remote_text(sftp, &staging, Some(encoding))
+            .await?
+            .content
+            != content
     {
         return Err(AppError::validation("editor.metadataNotPreserved"));
     }
-    let current = read_remote_text(sftp, target).await?;
+    let current = read_remote_text(sftp, target, Some(encoding)).await?;
     let latest = sftp.symlink_metadata(target).await.map_err(map_sftp)?;
     if current.content != baseline
         || !same_metadata(&metadata, &latest)

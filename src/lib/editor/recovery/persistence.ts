@@ -36,6 +36,8 @@ function drafts(entries: Record<string, EditorEntry>): EditorDraft[] {
           : { kind: "local" as const },
         baseline: entry.baseline,
         content: entry.content,
+        encoding: entry.encoding,
+        bom: entry.bom,
       },
     ];
   });

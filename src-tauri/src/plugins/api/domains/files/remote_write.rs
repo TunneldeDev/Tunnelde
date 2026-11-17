@@ -94,6 +94,8 @@ pub(in crate::plugins) async fn write_remote(
         &field::<String>(params, "path")?,
         &field::<String>(params, "content")?,
         optional::<String>(params, "baseline")?.as_deref(),
+        None,
+        false,
         policy,
     )
     .await?;

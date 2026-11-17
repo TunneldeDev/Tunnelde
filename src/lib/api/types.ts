@@ -447,9 +447,24 @@ export interface RemoteStats {
   processes: RemoteProcess[];
   sampledAt: number;
 }
+export type TextEncoding =
+  | "utf-8"
+  | "utf-16le"
+  | "utf-16be"
+  | "gb18030"
+  | "gbk"
+  | "big5"
+  | "shift-jis"
+  | "euc-jp"
+  | "euc-kr"
+  | "windows-1252";
+
 export interface TextFile {
   content: string;
   size: number;
+  /** Older native builds omit these fields; current reads always provide them. */
+  encoding?: TextEncoding;
+  bom?: boolean;
 }
 export type PluginStatus = "stopped" | "running" | "failed";
 

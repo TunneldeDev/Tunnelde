@@ -33,6 +33,7 @@ pub(in crate::plugins::api) async fn dispatch(
                 app.clone(),
                 field(&params, "sessionId")?,
                 field(&params, "path")?,
+                None,
             )
             .await?,
         ),

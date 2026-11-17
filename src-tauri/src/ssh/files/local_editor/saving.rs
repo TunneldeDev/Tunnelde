@@ -7,8 +7,20 @@ pub async fn save(
     path: String,
     content: String,
     baseline: String,
+    encoding: TextEncoding,
+    bom: bool,
 ) -> AppResult<()> {
-    save_checked(app, path, content, Some(baseline), policy::Native, || {}).await
+    save_checked(
+        app,
+        path,
+        content,
+        Some(baseline),
+        Some(encoding),
+        bom,
+        policy::Native,
+        || {},
+    )
+    .await
 }
 
 pub(crate) async fn save_checked(
@@ -16,6 +28,8 @@ pub(crate) async fn save_checked(
     path: String,
     content: String,
     baseline: Option<String>,
+    encoding: Option<TextEncoding>,
+    bom: bool,
     policy: impl policy::Policy + Send + 'static,
     on_saved: impl FnOnce() + Send + 'static,
 ) -> AppResult<()> {
@@ -25,6 +39,8 @@ pub(crate) async fn save_checked(
         path,
         content,
         baseline,
+        encoding,
+        bom,
         policy,
         on_saved,
     )
@@ -37,6 +53,8 @@ pub(super) async fn execute(
     path: String,
     content: String,
     baseline: Option<String>,
+    encoding: Option<TextEncoding>,
+    bom: bool,
     policy: impl policy::Policy + Send + 'static,
     on_saved: impl FnOnce() + Send + 'static,
 ) -> AppResult<()> {
@@ -49,6 +67,8 @@ pub(super) async fn execute(
                 &path,
                 &content,
                 baseline.as_deref(),
+                encoding,
+                bom,
                 &policy,
                 cancellation,
                 |phase, _| {
@@ -78,9 +98,20 @@ pub(in crate::ssh::files) async fn save_without_app(
     path: &str,
     content: &str,
     baseline: &str,
+    encoding: TextEncoding,
+    bom: bool,
 ) -> AppResult<()> {
     validate_editor_text(path, content, baseline)?;
-    save_sync(None, path, content, baseline, |_, _| Ok(()))
+    save_transaction_with_encoding(
+        None,
+        path,
+        content,
+        Some(baseline),
+        Some(encoding),
+        bom,
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
 }
 
 // The stage hook permits tests to inject actual partial writes/failures and
@@ -105,6 +136,20 @@ pub(super) fn save_transaction(
     check: impl Fn(&Path, &str) -> AppResult<()>,
     hook: impl FnMut(&str, &Record) -> AppResult<()>,
 ) -> AppResult<()> {
+    save_transaction_with_encoding(app, requested, content, baseline, None, false, check, hook)
+}
+
+#[cfg(test)]
+pub(super) fn save_transaction_with_encoding(
+    app: Option<&AppHandle>,
+    requested: &str,
+    content: &str,
+    baseline: Option<&str>,
+    encoding: Option<TextEncoding>,
+    bom: bool,
+    check: impl Fn(&Path, &str) -> AppResult<()>,
+    hook: impl FnMut(&str, &Record) -> AppResult<()>,
+) -> AppResult<()> {
     let (job, _caller) =
         crate::services::files::operations::Cancellation::for_test("editor.saveCancelled");
     transaction::save(
@@ -112,6 +157,8 @@ pub(super) fn save_transaction(
         requested,
         content,
         baseline,
+        encoding,
+        bom,
         &policy::Checked(check),
         &job,
         hook,
@@ -133,6 +180,8 @@ pub(super) async fn save_async(
         path,
         content,
         baseline,
+        None,
+        false,
         policy::Checked(check),
         on_saved,
     )
@@ -155,6 +204,8 @@ pub(super) async fn save_with_budget(
         path,
         content,
         baseline,
+        None,
+        false,
         policy::Checked(check),
         on_saved,
     )

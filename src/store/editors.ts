@@ -4,7 +4,7 @@ import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
-import { isIpcError } from "@/lib/api/types";
+import { isIpcError, type TextEncoding } from "@/lib/api/types";
 import type { EditorDraft } from "@/lib/editor/recovery/contracts";
 
 import {
@@ -24,6 +24,9 @@ export interface EditorEntry {
   name: string;
   content: string;
   baseline: string;
+  /** Older in-memory checkpoints may omit these fields. */
+  encoding?: TextEncoding;
+  bom?: boolean;
   /** False until a successful initial read; older checkpoints infer it from load state. */
   baselineLoaded?: boolean;
   loading: boolean;
@@ -45,6 +48,7 @@ interface EditorsStore {
     target?: EditorEntry["recoveryTarget"],
   ) => Promise<void>;
   change: (tabId: string, content: string) => void;
+  reopen: (tabId: string, encoding: TextEncoding) => Promise<boolean>;
   save: (tabId: string) => Promise<boolean>;
   resolveConflict: (
     document: EditorDocument,
@@ -239,6 +243,8 @@ export function restoreEditorDraft(tabId: string, draft: EditorDraft): void {
         name: fileName(draft.path),
         content: draft.content,
         baseline: draft.baseline,
+        encoding: draft.encoding ?? "utf-8",
+        bom: draft.bom ?? false,
         baselineLoaded: true,
         loading: false,
         saving: false,
@@ -274,6 +280,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           name: fileName(path),
           content: "",
           baseline: "",
+          encoding: "utf-8",
+          bom: false,
           baselineLoaded: false,
           loading: true,
           saving: false,
@@ -287,7 +295,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     }));
 
     try {
-      const content = await readFileText(resource, "editor");
+      const file = await readFileText(resource, "editor");
       if (versions.get(tabId) !== version) return;
       set((state) => {
         const current = state.entries[tabId];
@@ -299,8 +307,10 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             ...state.entries,
             [tabId]: {
               ...current,
-              content,
-              baseline: content,
+              content: file.content,
+              baseline: file.content,
+              encoding: file.encoding,
+              bom: file.bom,
               baselineLoaded: true,
               loading: false,
             },
@@ -348,6 +358,54 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     });
   },
 
+  reopen: async (tabId, encoding) => {
+    const current = get().entries[tabId];
+    if (
+      !current ||
+      current.loading ||
+      current.saving ||
+      current.disconnected ||
+      current.error ||
+      current.content !== current.baseline
+    )
+      return false;
+    const version = Symbol();
+    versions.set(tabId, version);
+    const resource = beginRead(tabId, current.sessionId, current.path);
+    try {
+      const file = await readFileText(resource, "editor", encoding);
+      if (versions.get(tabId) !== version || reads.get(tabId) !== resource) return false;
+      set((state) => {
+        const entry = state.entries[tabId];
+        if (!entry) return state;
+        return {
+          entries: {
+            ...state.entries,
+            [tabId]: {
+              ...entry,
+              content: file.content,
+              baseline: file.content,
+              encoding: file.encoding,
+              bom: file.bom,
+              loading: false,
+              baselineLoaded: true,
+              documentId: crypto.randomUUID(),
+              version: 0,
+            },
+          },
+        };
+      });
+      histories.delete(tabId);
+      return true;
+    } catch (error) {
+      if (versions.get(tabId) === version && !resource.scope.signal.aborted)
+        toast(translateError(error), "error");
+      return false;
+    } finally {
+      finishRead(tabId, resource);
+    }
+  },
+
   save: (tabId) => {
     const current = get().entries[tabId];
     if (!current || current.loading || current.error || current.disconnected) {
@@ -369,9 +427,22 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     const operation = (async () => {
       try {
         if (current.sessionId === null) {
-          await api.localWriteText(current.path, submitted, current.baseline);
+          await api.localWriteText(
+            current.path,
+            submitted,
+            current.baseline,
+            current.encoding ?? "utf-8",
+            current.bom ?? false,
+          );
         } else {
-          await api.sftpWriteText(current.sessionId, current.path, submitted, current.baseline);
+          await api.sftpWriteText(
+            current.sessionId,
+            current.path,
+            submitted,
+            current.baseline,
+            current.encoding ?? "utf-8",
+            current.bom ?? false,
+          );
         }
         if (versions.get(tabId) !== version || !get().entries[tabId]) return false;
         set((state) => {
@@ -508,7 +579,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     const version = versions.get(tabId);
     const resource = beginRead(tabId, sessionId, current.path);
     try {
-      const content = await readFileText(resource, "editor");
+      const file = await readFileText(resource, "editor");
       const entry = get().entries[tabId];
       if (
         !entry ||
@@ -518,7 +589,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       )
         return "failed";
       const baselineLoaded = entry.baselineLoaded ?? (!entry.loading && !entry.error);
-      if (baselineLoaded && content !== entry.baseline && !acceptChanges) return "conflict";
+      if (baselineLoaded && file.content !== entry.baseline && !acceptChanges) return "conflict";
       versions.set(tabId, Symbol());
       set((state) => ({
         entries: {
@@ -528,8 +599,11 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             sessionId,
             documentId: crypto.randomUUID(),
             version: 0,
-            content: baselineLoaded || entry.content !== entry.baseline ? entry.content : content,
-            baseline: content,
+            content:
+              baselineLoaded || entry.content !== entry.baseline ? entry.content : file.content,
+            baseline: file.content,
+            encoding: file.encoding,
+            bom: file.bom,
             baselineLoaded: true,
             loading: false,
             saveFailure: undefined,

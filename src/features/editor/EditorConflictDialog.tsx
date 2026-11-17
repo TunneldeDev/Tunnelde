@@ -9,11 +9,12 @@ import { editorDocument, useEditors } from "@/store/editors";
 export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClose: () => void }) {
   const { t } = useTranslation();
   const [document] = useState(() => editorDocument(tabId));
+  const entry = useEditors((state) => state.entries[tabId]);
   const [disk, setDisk] = useState<string | null>(null);
+  const [diskEncoding, setDiskEncoding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    const entry = useEditors.getState().entries[tabId];
     if (!entry) return;
     let cancelled = false;
     const read =
@@ -22,7 +23,10 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
         : api.sftpReadText(entry.sessionId, entry.path);
     void read
       .then((file) => {
-        if (!cancelled) setDisk(file.content);
+        if (!cancelled) {
+          setDisk(file.content);
+          setDiskEncoding(file.encoding ?? "utf-8");
+        }
       })
       .catch((error) => {
         if (!cancelled) setError(translateError(error));
@@ -30,7 +34,9 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
     return () => {
       cancelled = true;
     };
-  }, [tabId]);
+    // Re-read only when the reviewed document identity changes, not on every draft edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.path, entry?.sessionId, tabId]);
 
   const resolve = async (action: "reload" | "replace") => {
     if (!document || disk === null || busy) return;
@@ -79,6 +85,7 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
       <div className="editor-review__columns">
         <label>
           {t("editor.diskVersion")}
+          {diskEncoding ? <span className="editor-review__encoding">{diskEncoding}</span> : null}
           <textarea
             className="td-code-editor"
             readOnly
@@ -89,6 +96,7 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
         </label>
         <label>
           {t("editor.yourDraft")}
+          <span className="editor-review__encoding">{entry?.encoding ?? "utf-8"}</span>
           <textarea
             className="td-code-editor"
             readOnly

@@ -1,4 +1,6 @@
 /** Private native IPC. These drafts convey text, never a reusable SSH session. */
+import type { TextEncoding } from "@/lib/api/types";
+
 export type DraftSource = { kind: "local" } | { kind: "remote"; hostId: string; address: string };
 export interface EditorDraft {
   id: string;
@@ -6,6 +8,8 @@ export interface EditorDraft {
   source: DraftSource;
   baseline: string;
   content: string;
+  encoding?: TextEncoding;
+  bom?: boolean;
 }
 export interface DraftSnapshot {
   revision: string;

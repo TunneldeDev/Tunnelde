@@ -7,6 +7,8 @@ pub(super) fn save(
     requested: &str,
     content: &str,
     baseline: Option<&str>,
+    requested_encoding: Option<TextEncoding>,
+    bom: bool,
     policy: &impl policy::Policy,
     job: &Cancellation,
     mut hook: impl FnMut(&str, &Record) -> AppResult<()>,
@@ -27,8 +29,14 @@ pub(super) fn save(
     if metadata.permissions().readonly() {
         return Err(AppError::validation("editor.readOnlyFile"));
     }
-    let original = decode_text(native::read_bounded(&mut source, MAX_TEXT)?)?;
+    let original = decode_text(
+        native::read_bounded(&mut source, MAX_TEXT)?,
+        requested_encoding,
+    )?;
     let baseline = baseline.unwrap_or(&original.content);
+    let encoding = requested_encoding.unwrap_or(original.encoding);
+    let bom = requested_encoding.map_or(original.bom, |_| bom);
+    let encoded = text_encoding::encode(content, encoding, bom)?;
     policy.check(&target, &original.content)?;
     job.check()?;
     if original.content == content {
@@ -79,7 +87,7 @@ pub(super) fn save(
         if Some(native::identity(&stage)?) != record.staging_identity {
             return Err(AppError::validation("editor.cleanupUnrecognized"));
         }
-        native::write_staging(&mut stage, content.as_bytes(), MAX_TEXT)?;
+        native::write_staging(&mut stage, &encoded, MAX_TEXT)?;
         native::preserve_metadata(&source, &stage)?;
         drop(stage);
         native::preserve_security(&target, &staging)?;
@@ -88,8 +96,14 @@ pub(super) fn save(
         let mut current = native::open_regular(&target, false)?;
         if native::identity(&current)? != source_identity
             || !native::same_metadata(&metadata, &source.metadata()?)
-            || decode_text(native::read_bounded(&mut source, MAX_TEXT)?)?.content != baseline
-            || decode_text(native::read_bounded(&mut current, MAX_TEXT)?)?.content != baseline
+            || decode_text(native::read_bounded(&mut source, MAX_TEXT)?, Some(encoding))?.content
+                != baseline
+            || decode_text(
+                native::read_bounded(&mut current, MAX_TEXT)?,
+                Some(encoding),
+            )?
+            .content
+                != baseline
             || std::fs::canonicalize(requested)? != target
         {
             return Err(AppError::validation("editor.localFileChanged"));

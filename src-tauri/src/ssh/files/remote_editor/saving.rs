@@ -9,6 +9,8 @@ pub(super) struct Request {
     pub address: String,
     pub path: String,
     pub content: String,
+    pub encoding: Option<TextEncoding>,
+    pub bom: bool,
     pub baseline: Option<String>,
 }
 
@@ -111,7 +113,7 @@ async fn save_opened(
     journal.writable(&request.address, &target)?;
     job.check()?;
     policy.authorize()?;
-    let original = read_remote_text(sftp, &target).await?;
+    let original = read_remote_text(sftp, &target, request.encoding).await?;
     job.check()?;
     policy.check(sftp, &target, &original.content).await?;
     job.check()?;
@@ -127,6 +129,9 @@ async fn save_opened(
     {
         return Err(AppError::validation("editor.remoteFileChanged"));
     }
+    let encoding = request.encoding.unwrap_or(original.encoding);
+    let bom = request.encoding.map_or(original.bom, |_| request.bom);
+    let encoded = text_encoding::encode(&request.content, encoding, bom)?;
     // Negotiate only for a real save, after validating the original. A no-op
     // must still succeed on a server without atomic replacement support.
     let replacement = replacement.await?;
@@ -173,6 +178,8 @@ async fn save_opened(
             requested: &request.path,
             target: &target,
             content: &request.content,
+            encoded: &encoded,
+            encoding,
             baseline: &original.content,
         },
         &mut record,

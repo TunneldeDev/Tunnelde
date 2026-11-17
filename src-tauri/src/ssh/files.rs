@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::error::{AppError, AppResult};
+use crate::services::files::text_encoding::{self, TextEncoding};
 use crate::state::AppState;
 
 mod admission;
@@ -3180,23 +3181,27 @@ const MAX_TEXT: u64 = 2 * 1024 * 1024;
 pub struct TextFile {
     pub content: String,
     pub size: u64,
+    pub encoding: TextEncoding,
+    pub bom: bool,
 }
 
-fn decode_text(bytes: Vec<u8>) -> AppResult<TextFile> {
+fn decode_text(bytes: Vec<u8>, requested: Option<TextEncoding>) -> AppResult<TextFile> {
     let size = bytes.len() as u64;
     if size > MAX_TEXT {
         return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
-    let content =
-        String::from_utf8(bytes).map_err(|_| AppError::Ssh("sftp.unsupportedEncoding".into()))?;
-    if content.contains('\0') {
-        return Err(AppError::Ssh("sftp.binaryFile".into()));
-    }
-    Ok(TextFile { content, size })
+    let decoded = text_encoding::decode(&bytes, requested)?;
+    Ok(TextFile {
+        content: decoded.content,
+        size,
+        encoding: decoded.encoding,
+        bom: decoded.bom,
+    })
 }
 
 /// Read a local editor document with the same bounds and encoding checks as SFTP.
-pub async fn local_read_text(path: &str) -> AppResult<TextFile> {
+pub async fn local_read_text(path: &str, encoding: Option<&str>) -> AppResult<TextFile> {
+    let encoding = encoding.map(TextEncoding::parse).transpose()?;
     let path = Path::new(path);
     if !path.is_absolute() {
         return Err(AppError::validation("sftp.absolutePathRequired"));
@@ -3218,14 +3223,14 @@ pub async fn local_read_text(path: &str) -> AppResult<TextFile> {
         .take(MAX_TEXT + 1)
         .read_to_end(&mut bytes)
         .await?;
-    decode_text(bytes)
+    decode_text(bytes, encoding)
 }
 
 /// Check the last loaded content before overwriting an existing local file.
 #[cfg(test)]
 pub async fn local_write_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
     // Internal tests run the same engine without an application journal.
-    local_editor::save_without_app(path, content, baseline).await
+    local_editor::save_without_app(path, content, baseline, TextEncoding::Utf8, false).await
 }
 
 fn validate_editor_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
@@ -3242,14 +3247,24 @@ fn validate_editor_text(path: &str, content: &str, baseline: &str) -> AppResult<
     Ok(())
 }
 
-pub async fn read_text(app: &AppHandle, session_id: &str, path: &str) -> AppResult<TextFile> {
+pub async fn read_text(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    encoding: Option<&str>,
+) -> AppResult<TextFile> {
+    let encoding = encoding.map(TextEncoding::parse).transpose()?;
     let sftp = session(app, session_id).await?;
-    let result = read_remote_text(&sftp, path).await;
+    let result = read_remote_text(&sftp, path, encoding).await;
     let _ = sftp.close().await;
     result
 }
 
-async fn read_remote_text(sftp: &SftpSession, path: &str) -> AppResult<TextFile> {
+async fn read_remote_text(
+    sftp: &SftpSession,
+    path: &str,
+    encoding: Option<TextEncoding>,
+) -> AppResult<TextFile> {
     let metadata = sftp.metadata(path).await.map_err(map_sftp)?;
     if !metadata.is_regular() {
         return Err(AppError::validation("sftp.notRegularFile"));
@@ -3267,7 +3282,7 @@ async fn read_remote_text(sftp: &SftpSession, path: &str) -> AppResult<TextFile>
     let closed = reader.close().await;
     read?;
     closed?;
-    decode_text(bytes)
+    decode_text(bytes, encoding)
 }
 
 pub async fn write_text(
@@ -3276,7 +3291,10 @@ pub async fn write_text(
     path: &str,
     content: &str,
     baseline: Option<&str>,
+    encoding: Option<&str>,
+    bom: bool,
 ) -> AppResult<()> {
+    let encoding = encoding.map(TextEncoding::parse).transpose()?;
     if content.len() as u64 > MAX_TEXT
         || baseline.is_some_and(|value| value.len() as u64 > MAX_TEXT)
     {
@@ -3285,17 +3303,20 @@ pub async fn write_text(
     if content.contains('\0') {
         return Err(AppError::Ssh("sftp.binaryFile".into()));
     }
-    if app
-        .state::<AppState>()
-        .native_saves
-        .save_if_ready(
-            app.clone(),
-            session_id.into(),
-            path.into(),
-            content.into(),
-            baseline.map(str::to_owned),
-        )
-        .await?
+    // The optional native helper accepts only UTF-8 request text and has no
+    // encoding field. Legacy encodings must use the byte-safe SFTP path.
+    if encoding.is_none_or(|encoding| encoding == TextEncoding::Utf8)
+        && app
+            .state::<AppState>()
+            .native_saves
+            .save_if_ready(
+                app.clone(),
+                session_id.into(),
+                path.into(),
+                content.into(),
+                baseline.map(str::to_owned),
+            )
+            .await?
     {
         return Ok(());
     }
@@ -3305,6 +3326,8 @@ pub async fn write_text(
         path,
         content,
         baseline,
+        encoding,
+        bom,
         remote_editor::policy::Native,
     )
     .await
@@ -3316,6 +3339,8 @@ pub(crate) async fn write_text_checked(
     path: &str,
     content: &str,
     baseline: Option<&str>,
+    encoding: Option<TextEncoding>,
+    bom: bool,
     policy: impl remote_editor::policy::Policy,
 ) -> AppResult<()> {
     if content.len() as u64 > MAX_TEXT || baseline.is_some_and(|s| s.len() as u64 > MAX_TEXT) {
@@ -3329,6 +3354,8 @@ pub(crate) async fn write_text_checked(
         session_id.into(),
         path.into(),
         content.into(),
+        encoding,
+        bom,
         baseline.map(str::to_owned),
         policy,
     )
@@ -4588,7 +4615,10 @@ mod tests {
         let path = root.join("note.txt");
         std::fs::write(&path, "original").unwrap();
         let name = display_path(&path);
-        assert_eq!(local_read_text(&name).await.unwrap().content, "original");
+        assert_eq!(
+            local_read_text(&name, None).await.unwrap().content,
+            "original"
+        );
         local_write_text(&name, "short", "original").await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "short");
         std::fs::write(&path, "external").unwrap();
@@ -4605,15 +4635,15 @@ mod tests {
         assert!(!path.exists());
         std::fs::write(&path, b"binary\0text").unwrap();
         assert_eq!(
-            local_read_text(&name).await.unwrap_err().to_string(),
+            local_read_text(&name, None).await.unwrap_err().to_string(),
             "sftp.binaryFile"
         );
         std::fs::write(&path, vec![b'x'; MAX_TEXT as usize + 1]).unwrap();
         assert_eq!(
-            local_read_text(&name).await.unwrap_err().to_string(),
+            local_read_text(&name, None).await.unwrap_err().to_string(),
             "sftp.fileTooLarge"
         );
-        assert!(local_read_text("relative.txt").await.is_err());
+        assert!(local_read_text("relative.txt", None).await.is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -6188,7 +6218,7 @@ mod tests {
             let sftp = client(&root, state.clone()).await;
             let task_client = sftp.clone();
             let operation =
-                tokio::spawn(async move { read_remote_text(&task_client, "note.txt").await });
+                tokio::spawn(async move { read_remote_text(&task_client, "note.txt", None).await });
             tokio::time::timeout(
                 std::time::Duration::from_secs(5),
                 state.close_started.notified(),
@@ -6234,22 +6264,25 @@ mod tests {
     #[test]
     fn text_decode_preserves_utf8_bytes_bom_and_line_endings() {
         for original in ["", "hello\n", "\u{feff}中文 🌍\r\nnext\r\n", "literal �"] {
-            let decoded = decode_text(original.as_bytes().to_vec()).expect("UTF-8 text");
-            assert_eq!(decoded.content.as_bytes(), original.as_bytes());
+            let decoded = decode_text(original.as_bytes().to_vec(), None).expect("UTF-8 text");
+            assert_eq!(decoded.content, original);
             assert_eq!(decoded.size, original.len() as u64);
+            assert_eq!(decoded.encoding, TextEncoding::Utf8);
         }
     }
 
     #[test]
-    fn text_decode_rejects_non_utf8_instead_of_replacing_bytes() {
-        for bytes in [
-            vec![0xc4, 0xe3, 0xba, 0xc3],
-            vec![0xff, 0xfe, b'a', 0],
-            vec![0xe4, 0xb8],
-        ] {
-            let error = decode_text(bytes).expect_err("unsupported encoding");
-            assert_eq!(error.to_string(), "sftp.unsupportedEncoding");
-        }
+    fn text_decode_detects_common_legacy_encodings_and_rejects_invalid_explicit_input() {
+        let gb18030 = encoding_rs::GB18030.encode("中文").0;
+        let decoded = decode_text(gb18030.to_vec(), None).unwrap();
+        assert_eq!(decoded.content, "中文");
+        assert_eq!(decoded.encoding, TextEncoding::Gb18030);
+        assert_eq!(
+            decode_text(vec![0xe4, 0xb8], Some(TextEncoding::Utf8))
+                .unwrap_err()
+                .to_string(),
+            "sftp.unsupportedEncoding"
+        );
     }
 
     #[test]
@@ -6257,17 +6290,17 @@ mod tests {
         let mut bytes = vec![b'a'; 8192];
         bytes.push(0);
         assert_eq!(
-            decode_text(bytes).unwrap_err().to_string(),
+            decode_text(bytes, None).unwrap_err().to_string(),
             "sftp.binaryFile"
         );
     }
 
     #[test]
     fn text_decode_checks_the_actual_file_size() {
-        let decoded = decode_text(vec![b'a'; MAX_TEXT as usize]).expect("at size limit");
+        let decoded = decode_text(vec![b'a'; MAX_TEXT as usize], None).expect("at size limit");
         assert_eq!(decoded.size, MAX_TEXT);
         assert_eq!(
-            decode_text(vec![b'a'; MAX_TEXT as usize + 1])
+            decode_text(vec![b'a'; MAX_TEXT as usize + 1], None)
                 .unwrap_err()
                 .to_string(),
             "sftp.fileTooLarge"

@@ -18,7 +18,12 @@ const state = () => useEditors.getState();
 
 beforeEach(() => {
   for (const key of Object.keys(state().entries)) state().discard(key);
-  vi.spyOn(api, "sftpReadText").mockResolvedValue({ content: "original", size: 8 });
+  vi.spyOn(api, "sftpReadText").mockResolvedValue({
+    content: "original",
+    size: 8,
+    encoding: "utf-8",
+    bom: false,
+  });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
 });
 
@@ -61,7 +66,14 @@ describe("editor requests", () => {
     });
     const review = editorDocument(id)!;
     expect(await state().resolveConflict(review, "external edit", "replace")).toBe(true);
-    expect(api.sftpWriteText).toHaveBeenLastCalledWith("s1", "/a.txt", "my draft", "external edit");
+    expect(api.sftpWriteText).toHaveBeenLastCalledWith(
+      "s1",
+      "/a.txt",
+      "my draft",
+      "external edit",
+      "utf-8",
+      false,
+    );
     expect(state().entries[id]).toMatchObject({
       content: "my draft",
       baseline: "my draft",
@@ -102,19 +114,61 @@ describe("editor requests", () => {
   it("opens and saves local documents without an SSH session, preserving drafts on conflict", async () => {
     const localId = "editor-local:C:\\work\\notes.txt";
     const path = "C:\\work\\notes.txt";
-    vi.spyOn(api, "localReadText").mockResolvedValue({ content: "original", size: 8 });
+    vi.spyOn(api, "localReadText").mockResolvedValue({
+      content: "original",
+      size: 8,
+      encoding: "utf-8",
+      bom: false,
+    });
     const write = vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
     await state().open(localId, null, path);
     state().change(localId, "draft");
     state().markDisconnected("s1");
     expect(await state().save(localId)).toBe(true);
-    expect(write).toHaveBeenCalledWith(path, "draft", "original");
+    expect(write).toHaveBeenCalledWith(path, "draft", "original", "utf-8", false);
     state().change(localId, "new draft");
     write.mockRejectedValueOnce({ code: "validation", message: "editor.localFileChanged" });
     expect(await state().save(localId)).toBe(false);
     expect(state().entries[localId]).toMatchObject({ content: "new draft", baseline: "draft" });
     expect(state().isDirty(localId)).toBe(true);
     expect(api.sftpWriteText).not.toHaveBeenCalled();
+  });
+
+  it("reopens a clean document with an explicit encoding and saves using that metadata", async () => {
+    await state().open(id, "s1", "/a.txt");
+    vi.mocked(api.sftpReadText).mockResolvedValueOnce({
+      content: "旧版中文",
+      size: 8,
+      encoding: "gb18030",
+      bom: false,
+    });
+    expect(await state().reopen(id, "gb18030")).toBe(true);
+    expect(api.sftpReadText).toHaveBeenLastCalledWith("s1", "/a.txt", "gb18030");
+    expect(state().entries[id]).toMatchObject({
+      content: "旧版中文",
+      baseline: "旧版中文",
+      encoding: "gb18030",
+      bom: false,
+    });
+    state().change(id, "新版中文");
+    expect(await state().save(id)).toBe(true);
+    expect(state().entries[id]?.encoding).toBe("gb18030");
+    expect(state().entries[id]?.bom).toBe(false);
+    expect(api.sftpWriteText).toHaveBeenLastCalledWith(
+      "s1",
+      "/a.txt",
+      "新版中文",
+      "旧版中文",
+      "gb18030",
+      false,
+    );
+  });
+
+  it("does not change encoding while the document has unsaved edits", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "draft");
+    expect(await state().reopen(id, "big5")).toBe(false);
+    expect(api.sftpReadText).toHaveBeenCalledTimes(1);
   });
 
   it("cannot save a file when opening rejected its text encoding", async () => {
@@ -124,7 +178,9 @@ describe("editor requests", () => {
     });
     await state().open(id, "s1", "/a.txt");
     expect(state().entries[id]?.loading).toBe(false);
-    expect(state().entries[id]?.error).toBe("Only UTF-8 text files can be edited");
+    expect(state().entries[id]?.error).toBe(
+      "The file could not be decoded with the selected text encoding",
+    );
     state().change(id, "replacement text");
     expect(await state().save(id)).toBe(false);
     expect(api.sftpWriteText).not.toHaveBeenCalled();
@@ -142,7 +198,14 @@ describe("editor requests", () => {
     write.resolve();
     expect(await first).toBe(true);
     expect(api.sftpWriteText).toHaveBeenCalledTimes(1);
-    expect(api.sftpWriteText).toHaveBeenCalledWith("s1", "/a.txt", "first", "original");
+    expect(api.sftpWriteText).toHaveBeenCalledWith(
+      "s1",
+      "/a.txt",
+      "first",
+      "original",
+      "utf-8",
+      false,
+    );
     expect(state().entries[id]?.baseline).toBe("first");
     expect(state().entries[id]?.content).toBe("second");
     expect(state().isDirty(id)).toBe(true);
@@ -212,6 +275,8 @@ describe("editor requests", () => {
       "/different.txt",
       "new draft",
       "original",
+      "utf-8",
+      false,
     );
     oldWrite.resolve();
     expect(await oldSave).toBe(false);
@@ -283,6 +348,8 @@ describe("editor requests", () => {
       "/a.txt",
       "disconnected draft",
       "original",
+      "utf-8",
+      false,
     );
   });
 

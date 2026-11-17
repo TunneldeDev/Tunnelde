@@ -63,8 +63,9 @@ export function createProviderPreviewResource(
       scope.signal.throwIfAborted();
       const info = validateInfo(result, id, renderer);
       let content: string | null = null;
+      let encoding: string | undefined;
       if (renderer === "text" || renderer === "markdown") {
-        content = await scope.run(async (signal) => {
+        const decoded = await scope.run(async (signal) => {
           const bytes = new Uint8Array(info.size);
           for (let start = 0; start < info.size; start += 1024 * 1024) {
             signal.throwIfAborted();
@@ -75,11 +76,13 @@ export function createProviderPreviewResource(
           }
           const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
           if (text.includes("\0")) throw { code: "validation", message: "sftp.binaryFile" };
-          return text;
+          return { content: text, encoding: "utf-8" };
         });
+        content = decoded.content;
+        encoding = decoded.encoding;
       }
       scope.signal.throwIfAborted();
-      return { info, content };
+      return { info, content, encoding };
     } catch (error) {
       scope.dispose();
       throw error;

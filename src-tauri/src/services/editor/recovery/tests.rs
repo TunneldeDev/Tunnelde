@@ -4,6 +4,7 @@ use super::{
 };
 use crate::{
     db::{self, Database},
+    services::files::text_encoding::TextEncoding,
     settings::Settings,
 };
 
@@ -14,6 +15,8 @@ fn draft(path: String) -> Draft {
         source: Source::Local,
         baseline: "original\n中文".into(),
         content: "unsaved\n中文“草稿”".into(),
+        encoding: Some(TextEncoding::Utf8),
+        bom: Some(false),
     }
 }
 

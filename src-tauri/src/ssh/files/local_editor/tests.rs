@@ -30,6 +30,9 @@ impl Fixture {
     fn clean(&self) {
         assert_eq!(std::fs::read_dir(&self.root).unwrap().count(), 1);
     }
+    fn disk_bytes(&self) -> Vec<u8> {
+        std::fs::read(&self.file).unwrap()
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -48,6 +51,51 @@ impl Drop for Fixture {
 
 mod authorization;
 mod workers;
+
+#[test]
+fn saves_legacy_encodings_with_their_original_bytes_and_bom() {
+    let f = Fixture::new();
+    let original = encoding_rs::GB18030.encode("旧版中文\r\n").0;
+    std::fs::write(&f.file, original.as_ref()).unwrap();
+    save_transaction_with_encoding(
+        None,
+        &display_path(&f.file),
+        "新版中文\r\n",
+        Some("旧版中文\r\n"),
+        Some(TextEncoding::Gb18030),
+        false,
+        |_, original| {
+            assert_eq!(original, "旧版中文\r\n");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        f.disk_bytes(),
+        encoding_rs::GB18030.encode("新版中文\r\n").0.as_ref()
+    );
+    f.clean();
+
+    let original = b"\xEF\xBB\xBFhello".as_slice();
+    std::fs::write(&f.file, original).unwrap();
+    save_transaction_with_encoding(
+        None,
+        &display_path(&f.file),
+        "changed",
+        Some("hello"),
+        Some(TextEncoding::Utf8),
+        true,
+        |_, original| {
+            assert_eq!(original, "hello");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBFchanged");
+    f.clean();
+}
 
 #[test]
 fn legacy_plugin_save_uses_an_atomic_snapshot_and_explicit_baseline_detects_conflicts() {

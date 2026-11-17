@@ -203,6 +203,8 @@ pub(super) async fn save(
     session_id: String,
     path: String,
     content: String,
+    encoding: Option<TextEncoding>,
+    bom: bool,
     baseline: Option<String>,
     policy: impl policy::Policy,
 ) -> AppResult<()> {
@@ -220,6 +222,8 @@ pub(super) async fn save(
         address: host.address,
         path,
         content,
+        encoding,
+        bom,
         baseline,
     };
     let connection = app.clone();
@@ -284,7 +288,7 @@ async fn cleanup(
             return Err(unrecognized());
         }
         let marker = format!("{}/owner", record.directory);
-        if read_remote_text(sftp, &marker).await?.content != record.token {
+        if read_remote_text(sftp, &marker, None).await?.content != record.token {
             return Err(unrecognized());
         }
         if entries.iter().any(|entry| entry.file_name() == "content") {
@@ -299,7 +303,7 @@ async fn cleanup(
     match sftp.symlink_metadata(&marker).await {
         Ok(metadata) => {
             if !metadata.is_regular()
-                || read_remote_text(sftp, &marker).await?.content != record.token
+                || read_remote_text(sftp, &marker, None).await?.content != record.token
             {
                 return Err(unrecognized());
             }

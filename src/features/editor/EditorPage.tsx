@@ -3,6 +3,7 @@ import { shortcutCommands } from "@/lib/keyboard/registry";
 import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "@/components/ui/form/Select";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
@@ -26,6 +27,7 @@ import { EditorConflictDialog } from "./EditorConflictDialog";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
+import type { TextEncoding } from "@/lib/api/types";
 
 interface EditorPageProps {
   tabId: string;
@@ -38,6 +40,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const change = useEditors((state) => state.change);
   const save = useEditors((state) => state.save);
   const reconnect = useEditors((state) => state.reconnect);
+  const reopen = useEditors((state) => state.reopen);
   const wordWrap = useSettings((state) => state.settings.editorWordWrap);
   const tabSize = useSettings((state) => state.settings.editorTabSize);
   const spellCheck = useSettings((state) => state.settings.editorSpellCheck);
@@ -55,6 +58,20 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const [reviewing, setReviewing] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
   const [setupFailure, setSetupFailure] = useState<{ scope: string; message: string } | null>(null);
+  const [reopening, setReopening] = useState(false);
+  const dirty = !!entry && !entry.loading && entry.content !== entry.baseline;
+  const encodingOptions: Array<{ value: TextEncoding; label: string }> = [
+    { value: "utf-8", label: "UTF-8" },
+    { value: "utf-16le", label: "UTF-16 LE" },
+    { value: "utf-16be", label: "UTF-16 BE" },
+    { value: "gb18030", label: "GB18030" },
+    { value: "gbk", label: "GBK" },
+    { value: "big5", label: "Big5" },
+    { value: "shift-jis", label: "Shift-JIS" },
+    { value: "euc-jp", label: "EUC-JP" },
+    { value: "euc-kr", label: "EUC-KR" },
+    { value: "windows-1252", label: "Windows-1252" },
+  ];
   const [enabledScope, setEnabledScope] = useState<string | null>(null);
   const formatting = useFormatting((state) => state.busy.includes(tabId));
   const hasFormatter = usePlugins(
@@ -62,7 +79,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   );
   const textarea = useRef<HTMLTextAreaElement>(null);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
-  useBackgroundGuard(reconnecting || formatting || reviewing || settingUp);
+  useBackgroundGuard(reconnecting || formatting || reviewing || settingUp || reopening);
   const setup = async () => {
     if (!entry?.sessionId || settingUp) return;
     const session = entry.sessionId;
@@ -107,6 +124,16 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     element.scrollTop = Math.max(0, line * lineHeight - element.clientHeight / 3);
     useEditorLocation.getState().clear();
   }, [active, location, tabId, entry]);
+
+  const changeEncoding = async (encoding: TextEncoding) => {
+    if (!entry || reopening || dirty) return;
+    setReopening(true);
+    try {
+      await reopen(tabId, encoding);
+    } finally {
+      setReopening(false);
+    }
+  };
 
   const recover = async () => {
     if (!candidate || reconnecting) return;
@@ -195,8 +222,6 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     );
   }
 
-  const dirty = !entry.loading && entry.content !== entry.baseline;
-
   return (
     <div className="editor-page">
       <header className="editor-head">
@@ -205,6 +230,21 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         <span className="editor-head__path" title={entry.path}>
           {entry.path}
         </span>
+        <Select
+          className="editor-head__encoding"
+          value={entry.encoding ?? "utf-8"}
+          label={t("editor.encoding")}
+          disabled={
+            reopening ||
+            entry.loading ||
+            !!entry.error ||
+            entry.disconnected ||
+            entry.saving ||
+            dirty
+          }
+          options={encodingOptions}
+          onChange={(value) => void changeEncoding(value as TextEncoding)}
+        />
         {entry.sessionId ? (
           <Button
             variant="ghost"

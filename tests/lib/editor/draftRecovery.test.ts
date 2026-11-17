@@ -16,6 +16,8 @@ const remote: EditorDraft = {
   source: { kind: "remote", hostId: "original-host", address: "alice@example.test:22" },
   baseline: "original",
   content: "未保存的“修改”\n",
+  encoding: "utf-8",
+  bom: false,
 };
 let stop: (() => void) | undefined;
 const start = async (resumed = false) => {
@@ -40,7 +42,12 @@ beforeEach(() => {
   });
   vi.spyOn(api, "editorDraftsRead").mockResolvedValue({ revision: "checkpoint", drafts: [] });
   vi.spyOn(api, "editorDraftsSave").mockResolvedValue("next");
-  vi.spyOn(api, "sftpReadText").mockResolvedValue({ content: "original", size: 8 });
+  vi.spyOn(api, "sftpReadText").mockResolvedValue({
+    content: "original",
+    size: 8,
+    encoding: "utf-8",
+    bom: false,
+  });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
   vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
 });
@@ -86,7 +93,12 @@ it("restores remote text offline without a connection, file read, file write or 
 
 it("retains the draft and original baseline when the matching destination file has changed", async () => {
   vi.mocked(api.editorDraftsRead).mockResolvedValue({ revision: "checkpoint", drafts: [remote] });
-  vi.mocked(api.sftpReadText).mockResolvedValue({ content: "external edit", size: 13 });
+  vi.mocked(api.sftpReadText).mockResolvedValue({
+    content: "external edit",
+    size: 13,
+    encoding: "utf-8",
+    bom: false,
+  });
   await start();
   const id = useWorkspace.getState().tabs[0]!.id;
   expect(

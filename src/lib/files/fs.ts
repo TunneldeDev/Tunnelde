@@ -67,16 +67,23 @@ export const fs = {
     return api.fsTransfer(fromSession, fromPath, toSession, toPath, removeSource, overwrite);
   },
 
-  readText(source: FsSource, path: string): Promise<TextFile | null> {
+  readText(source: FsSource, path: string, encoding?: string): Promise<TextFile | null> {
     return source.kind === "local"
-      ? api.localReadText(path)
-      : api.sftpReadText(source.sessionId, path);
+      ? api.localReadText(path, encoding)
+      : api.sftpReadText(source.sessionId, path, encoding);
   },
 
-  writeText(source: FsSource, path: string, content: string, baseline: string): Promise<void> {
+  writeText(
+    source: FsSource,
+    path: string,
+    content: string,
+    baseline: string,
+    encoding: string,
+    bom: boolean,
+  ): Promise<void> {
     return source.kind === "local"
-      ? api.localWriteText(path, content, baseline)
-      : api.sftpWriteText(source.sessionId, path, content, baseline);
+      ? api.localWriteText(path, content, baseline, encoding, bom)
+      : api.sftpWriteText(source.sessionId, path, content, baseline, encoding, bom);
   },
 
   /** Hands a local file or folder to the system default application. */

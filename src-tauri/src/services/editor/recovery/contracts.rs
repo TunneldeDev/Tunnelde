@@ -1,3 +1,4 @@
+use crate::services::files::text_encoding::TextEncoding;
 use serde::{Deserialize, Serialize};
 
 pub(super) const MAX_DOCUMENT_BYTES: usize = 128 * 1024;
@@ -22,6 +23,10 @@ pub(crate) struct Draft {
     pub source: Source,
     pub baseline: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<TextEncoding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bom: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -43,6 +48,7 @@ pub(super) fn validate(drafts: &[Draft]) -> crate::error::AppResult<()> {
                 && draft.baseline.len() <= MAX_DOCUMENT_BYTES
                 && draft.content.len() <= MAX_DOCUMENT_BYTES
                 && draft.baseline != draft.content
+                && draft.encoding.is_some() == draft.bom.is_some()
                 && match &draft.source {
                     Source::Local => std::path::Path::new(&draft.path).is_absolute(),
                     Source::Remote { host_id, address } => {

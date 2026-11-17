@@ -44,6 +44,8 @@ pub(in crate::plugins) async fn write_local(
         path,
         content,
         baseline,
+        None,
+        false,
         super::local_write::LocalPolicy::new(context, check_scope),
         move || {
             // Direct calls and scoped AI/MCP tools share this publication event.
