@@ -62,7 +62,36 @@ beforeEach(() => {
 });
 
 describe("text encoding controls", () => {
-  it("reopens a clean document with the selected encoding and disables switching for a dirty draft", async () => {
+  const choose = async (label: string, option: string) => {
+    const control = screen.getByRole("button", { name: label });
+    await act(async () => {
+      fireEvent.click(control);
+    });
+    const item = await screen.findByRole("option", { name: option });
+    await act(async () => {
+      fireEvent.pointerDown(item);
+      fireEvent.mouseDown(item);
+      fireEvent.click(item);
+    });
+  };
+
+  it("changes the save encoding for a dirty draft without replacing its buffer", async () => {
+    vi.spyOn(api, "sftpReadText");
+    render(<EditorPage tabId="editor" active />);
+    const encoding = screen.getByRole("button", { name: "Save encoding" });
+    expect(encoding.textContent).toContain("UTF-8");
+    await choose("Save encoding", "UTF-16 LE");
+    expect(api.sftpReadText).not.toHaveBeenCalled();
+    expect(useEditors.getState().entries.editor).toMatchObject({
+      content: entry.content,
+      baseline: entry.baseline,
+      encoding: "utf-16le",
+      bom: true,
+    });
+    expect(editorText(await editorBox())).toBe(entry.content.replaceAll("\r\n", "\n"));
+  });
+
+  it("reopens clean bytes through the separate encoding action", async () => {
     useEditors.setState({
       entries: {
         editor: { ...entry, content: "clean", baseline: "clean" },
@@ -75,32 +104,57 @@ describe("text encoding controls", () => {
       bom: false,
     });
     render(<EditorPage tabId="editor" active />);
-    const encoding = screen.getByRole("button", { name: "Encoding" });
-    expect(encoding.textContent).toContain("UTF-8");
-    await act(async () => {
-      fireEvent.click(encoding);
-    });
-    const option = await screen.findByRole("option", { name: "GB18030" });
-    await act(async () => {
-      fireEvent.pointerDown(option);
-      fireEvent.mouseDown(option);
-      fireEvent.click(option);
-    });
+    const encoding = screen.getByRole("button", { name: "Save encoding" });
+    fireEvent.click(encoding);
+    fireEvent.click(await screen.findByRole("button", { name: "Reopen with encoding…" }));
+    await screen.findByRole("dialog", { name: "Reopen with encoding" });
+    fireEvent.click(await screen.findByRole("button", { name: "GB18030" }));
     await waitFor(() =>
       expect(api.sftpReadText).toHaveBeenCalledWith("s1", "/draft.txt", "gb18030"),
     );
     expect(editorText(await editorBox())).toBe("旧版中文");
-    act(() =>
-      useEditors.setState({
-        entries: {
-          editor: {
-            ...useEditors.getState().entries.editor!,
-            content: "unsaved",
-          },
+    expect(useEditors.getState().entries.editor).toMatchObject({
+      content: "旧版中文",
+      baseline: "旧版中文",
+      encoding: "gb18030",
+      bom: false,
+    });
+  });
+
+  it("keeps byte reinterpretation unavailable while a draft is dirty", async () => {
+    vi.spyOn(api, "sftpReadText");
+    render(<EditorPage tabId="editor" active />);
+    fireEvent.click(screen.getByRole("button", { name: "Save encoding" }));
+    expect(screen.queryByRole("button", { name: "Reopen with encoding…" })).toBeNull();
+    expect(api.sftpReadText).not.toHaveBeenCalled();
+    expect(useEditors.getState().entries.editor?.content).toBe(entry.content);
+  });
+
+  it("retries a failed initial decode with the selected save encoding", async () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          content: "",
+          baseline: "",
+          error: "The file could not be decoded with the selected text encoding",
+          decodeError: true,
+          baselineLoaded: false,
         },
-      }),
+      },
+    });
+    vi.spyOn(api, "sftpReadText").mockResolvedValue({
+      content: "decoded",
+      size: 7,
+      encoding: "utf-16le",
+      bom: true,
+    });
+    render(<EditorPage tabId="editor" active />);
+    await choose("Reopen with encoding", "UTF-16 LE");
+    await waitFor(() =>
+      expect(api.sftpReadText).toHaveBeenCalledWith("s1", "/draft.txt", "utf-16le"),
     );
-    expect(screen.getByRole("button", { name: "Encoding" })).toHaveProperty("disabled", true);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("decoded"));
   });
 });
 

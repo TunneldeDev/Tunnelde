@@ -53,6 +53,7 @@ interface EditorsStore {
     target?: EditorEntry["recoveryTarget"],
   ) => Promise<void>;
   change: (tabId: string, content: string, selection?: EditorSelectionSnapshot | null) => void;
+  changeSaveEncoding: (tabId: string, encoding: TextEncoding) => boolean;
   reopen: (tabId: string, encoding: TextEncoding) => Promise<boolean>;
   save: (tabId: string) => Promise<boolean>;
   resolveConflict: (
@@ -87,6 +88,7 @@ function hasPendingFormat(entry: EditorEntry) {
 export function editorHasPendingChanges(entry: EditorEntry) {
   return entry.content !== entry.baseline || hasPendingFormat(entry);
 }
+
 const saves = new Map<string, { version: symbol; operation: Promise<boolean> }>();
 const reads = new Map<string, FileReadResource>();
 function cancelRead(tabId: string) {
@@ -764,6 +766,38 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     if (updated && selection !== undefined) rememberEditorSelection(tabId, selection);
   },
 
+  changeSaveEncoding: (tabId, encoding) => {
+    const current = get().entries[tabId];
+    if (
+      !current ||
+      current.loading ||
+      current.saving ||
+      current.disconnected ||
+      current.error ||
+      current.baselineLoaded === false
+    )
+      return false;
+    const currentEncoding = current.encoding ?? "utf-8";
+    if (currentEncoding === encoding) return true;
+    const baselineEncoding = current.baselineEncoding ?? currentEncoding;
+    const baselineBom = current.baselineBom ?? current.bom ?? false;
+    const bom =
+      encoding === baselineEncoding
+        ? baselineBom
+        : encoding === "utf-16le" || encoding === "utf-16be";
+    set((state) => {
+      const entry = state.entries[tabId];
+      if (!entry) return state;
+      return {
+        entries: {
+          ...state.entries,
+          [tabId]: { ...entry, encoding, bom, baselineEncoding, baselineBom },
+        },
+      };
+    });
+    return true;
+  },
+
   reopen: async (tabId, encoding) => {
     const current = get().entries[tabId];
     if (
@@ -773,7 +807,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       current.disconnected ||
       (!!current.error && !current.decodeError) ||
       (current.baselineLoaded === false && !current.decodeError) ||
-      current.content !== current.baseline
+      editorHasPendingChanges(current)
     )
       return false;
     const version = Symbol();
