@@ -2605,6 +2605,8 @@
     "existing": "Already imported",
     "via": "Via {{names}}",
     "dependencies": "Required jump hosts are imported along with the selected hosts.",
+    "busy": "Another SSH config operation is in progress. Try again shortly.",
+    "cancelled": "The SSH config operation was cancelled.",
     "readFailed": "Could not read the SSH config.",
     "tooLarge": "The SSH config exceeds the import limit.",
     "noHome": "Could not locate your home directory.",

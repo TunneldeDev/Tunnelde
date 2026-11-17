@@ -2605,6 +2605,8 @@
     "existing": "已导入",
     "via": "经由 {{names}}",
     "dependencies": "所选连接需要的跳板主机会一同导入。",
+    "busy": "另一个 SSH 配置操作正在进行，请稍后重试。",
+    "cancelled": "SSH 配置操作已取消。",
     "readFailed": "无法读取 SSH 配置文件。",
     "tooLarge": "SSH 配置超出导入限制。",
     "noHome": "无法定位用户主目录。",
