@@ -69,6 +69,26 @@ beforeEach(() => {
   });
 });
 describe("windowed editor syntax", () => {
+  it("caps and scalar-aligns an oversized visible range", async () => {
+    const prefix = "😀".repeat(20_000);
+    const content = `${prefix}${"x".repeat(80_000)}`;
+    const { result } = renderHook(() =>
+      useEditorSyntax({
+        document: document(content),
+        composing: false,
+        enabled: true,
+        requestedRange: { offset: 19_999, length: 80_000 },
+      }),
+    );
+    await vi.waitFor(() => expect(api.pluginRun).toHaveBeenCalledOnce());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+    expect(vi.mocked(api.pluginRun).mock.calls[0]?.[2]).toMatchObject({
+      mode: "window",
+      range: { offset: 19_998, length: 32_768 },
+    });
+    expect(result.current.highlighted).toBe(true);
+  });
+
   it("does not send a large source and waits for a settled visible window", async () => {
     const content = large();
     const { rerender } = renderHook(

@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useEditorSyntax, type SyntaxDocumentSnapshot } from "./useEditorSyntax";
 import { absoluteSyntaxDecorations } from "./syntaxDecorations";
+import "./editorSyntax.css";
 
 export interface EditorToken {
   start: number;
@@ -21,6 +22,9 @@ export interface CodeEditorSyntax {
   tokensVersion: number | null;
   onVisibleRangeSettled: (range: EditorVisibleRange) => void;
 }
+
+/** CM and host CSS must use one semantic class vocabulary. */
+export const syntaxDecorationClass = (type: string) => `td-syntax--${type}`;
 
 /**
  * Contract consumed by CodeEditorSurface. The hook owns authorization and
@@ -51,8 +55,9 @@ export function useCodeEditorSyntax(
       ? { offset: visible.from, length: Math.max(0, visible.to - visible.from) }
       : null;
   const syntax = useEditorSyntax({ document, composing, enabled, requestedRange: requestRange });
-  const tokens =
-    syntax.highlighted && syntax.range
+  const tokens = !syntax.highlighted
+    ? []
+    : syntax.range
       ? absoluteSyntaxDecorations({
           documentId: syntax.documentId ?? "",
           version: syntax.version ?? -1,
@@ -60,7 +65,7 @@ export function useCodeEditorSyntax(
           length: syntax.range.length,
           tokens: syntax.tokens,
         })
-      : [];
+      : syntax.tokens;
   return {
     tokens,
     tokensDocumentId: tokens.length ? syntax.documentId : null,

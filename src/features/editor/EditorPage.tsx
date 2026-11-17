@@ -35,9 +35,6 @@ import { useWorkspace } from "@/store/workspace";
 import { useEditorLocation } from "@/store/editorLocation";
 import { useViewElementState, useBackgroundGuard } from "@/lib/session/viewState";
 import { EditorConflictDialog } from "./EditorConflictDialog";
-import { EditorSyntaxOverlay } from "./syntax/EditorSyntaxOverlay";
-import { useEditorSyntax } from "./syntax/useEditorSyntax";
-import { useEditorSyntaxMetrics } from "./syntax/useEditorSyntaxMetrics";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
@@ -103,22 +100,9 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   );
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
-  const [syntaxComposing, setSyntaxComposing] = useState(false);
   const [selectionRevision, setSelectionRevision] = useState(0);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
   useBackgroundGuard(reconnecting || formatting || reviewing || settingUp || reopening);
-  const syntax = useEditorSyntax({
-    document: null,
-    composing: syntaxComposing,
-    enabled: false,
-  });
-  const syntaxMetrics = useEditorSyntaxMetrics(textarea, syntax.highlighted, [
-    entry?.content,
-    entry?.path,
-    wordWrap,
-    tabSize,
-    syntax.highlighted,
-  ]);
   const setup = async () => {
     if (!entry?.sessionId || settingUp) return;
     const session = entry.sessionId;
@@ -280,7 +264,6 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       }
       if (event.inputType === "insertCompositionText") {
         composing.current = true;
-        setSyntaxComposing(true);
         beginEditorComposition(tabId, selection);
         return;
       }
@@ -416,50 +399,35 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           <EmptyState title={t("editor.loading")} />
         </div>
       ) : (
-        <div
-          className="td-syntax-editor"
-          data-highlighted={syntax.highlighted ? "true" : "false"}
-          data-composing={syntaxComposing ? "true" : "false"}
-        >
-          <EditorSyntaxOverlay
-            content={entry.content}
-            tokens={syntax.tokens}
-            metrics={syntaxMetrics.metrics}
-            visible={syntax.highlighted}
-          />
-          <textarea
-            ref={textarea}
-            className="editor-body td-code-editor"
-            aria-label={entry.name}
-            spellCheck={spellCheck}
-            wrap={wordWrap ? "soft" : "off"}
-            style={{
-              whiteSpace: wordWrap ? "pre-wrap" : "pre",
-              overflowWrap: wordWrap ? "anywhere" : "normal",
-              tabSize,
-            }}
-            value={entry.content}
-            onChange={(event) => change(tabId, event.target.value, selectionSnapshot(event.target))}
-            onSelect={(event) =>
-              rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
-            }
-            onScroll={(event) => {
-              rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget));
-              syntaxMetrics.sync();
-            }}
-            onCompositionStart={(event) => {
-              composing.current = true;
-              setSyntaxComposing(true);
-              beginEditorComposition(tabId, selectionSnapshot(event.currentTarget));
-            }}
-            onCompositionEnd={(event) => {
-              composing.current = false;
-              endEditorComposition(tabId, selectionSnapshot(event.currentTarget));
-              setSelectionRevision((revision) => revision + 1);
-              setSyntaxComposing(false);
-            }}
-          />
-        </div>
+        <textarea
+          ref={textarea}
+          className="editor-body td-code-editor"
+          aria-label={entry.name}
+          spellCheck={spellCheck}
+          wrap={wordWrap ? "soft" : "off"}
+          style={{
+            whiteSpace: wordWrap ? "pre-wrap" : "pre",
+            overflowWrap: wordWrap ? "anywhere" : "normal",
+            tabSize,
+          }}
+          value={entry.content}
+          onChange={(event) => change(tabId, event.target.value, selectionSnapshot(event.target))}
+          onSelect={(event) =>
+            rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
+          }
+          onScroll={(event) =>
+            rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
+          }
+          onCompositionStart={(event) => {
+            composing.current = true;
+            beginEditorComposition(tabId, selectionSnapshot(event.currentTarget));
+          }}
+          onCompositionEnd={(event) => {
+            composing.current = false;
+            endEditorComposition(tabId, selectionSnapshot(event.currentTarget));
+            setSelectionRevision((revision) => revision + 1);
+          }}
+        />
       )}
     </div>
   );

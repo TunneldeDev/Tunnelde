@@ -19,7 +19,7 @@ const plugin = {
   views: [],
   commands: [{ id: "highlight", title: "Highlight", editor: { extensions: ["js"], syntax: true } }],
 } as unknown as PluginInfo;
-const content = `${"const value = 42; // note\n".repeat(1400)}${"😀".repeat(40_000)}`;
+const content = `${"const value = 42; // note\n".repeat(1400)}${"😀".repeat(100_000)}`;
 const document: SyntaxDocumentSnapshot = {
   tabId: "editor:cm",
   documentId: "document-cm",
@@ -58,7 +58,9 @@ beforeEach(() => {
       grants: { syntax: ["editor.read"] },
     },
   });
-  vi.spyOn(api, "pluginRun").mockResolvedValue({ tokens: [{ start: 0, end: 5, type: "keyword" }] });
+  vi.spyOn(api, "pluginRun").mockResolvedValue({
+    tokens: [{ start: 0, end: 5, type: "keyword" }],
+  });
 });
 describe("CodeEditorSurface syntax adapter", () => {
   it("returns identity-bound absolute tokens for a settled viewport window", async () => {
@@ -71,8 +73,11 @@ describe("CodeEditorSurface syntax adapter", () => {
         version: document.version,
       }),
     );
-    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
-    expect(api.pluginRun).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(api.pluginRun).toHaveBeenCalledOnce());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(result.current.tokens).toEqual([{ start: 20_000, end: 20_005, type: "keyword" }]);
     expect(result.current.tokensDocumentId).toBe(document.documentId);
     expect(result.current.tokensVersion).toBe(document.version);

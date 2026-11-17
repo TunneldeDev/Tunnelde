@@ -5,10 +5,12 @@ import { usePlugins } from "@/store/plugins";
 import {
   editorSyntaxMatches,
   syntaxProviders,
+  syntaxScalarBoundary,
   type SyntaxProvider,
   type SyntaxToken,
 } from "@/lib/plugins/syntax";
 import { runSyntaxHighlighting } from "@/lib/plugins/syntaxRunner";
+import { SYNTAX_WINDOW_MAX_UTF16 } from "@/lib/plugins/syntaxProtocol";
 
 const DEBOUNCE_MS = 220;
 const REQUEST_TIMEOUT_MS = 5_000;
@@ -108,18 +110,33 @@ export function useEditorSyntax({
   const requestedLength = requestedRange?.length ?? null;
   const sourceBytes = useMemo(() => new TextEncoder().encode(content).length, [content]);
   const windowed = sourceBytes > 128 * 1024;
-  const requestRange = useMemo(
-    () =>
-      windowed &&
-      requestedOffset !== null &&
-      requestedLength !== null &&
-      requestedOffset >= 0 &&
-      requestedLength > 0 &&
-      requestedOffset + requestedLength <= sourceLength
-        ? { offset: requestedOffset, length: requestedLength }
-        : null,
-    [requestedLength, requestedOffset, sourceLength, windowed],
-  );
+  const requestRange = useMemo(() => {
+    if (
+      !windowed ||
+      requestedOffset === null ||
+      requestedLength === null ||
+      requestedOffset < 0 ||
+      requestedLength <= 0 ||
+      requestedOffset >= sourceLength
+    )
+      return null;
+    const end = Math.min(sourceLength, requestedOffset + requestedLength);
+    const offset = syntaxScalarBoundary(content, requestedOffset)
+      ? requestedOffset
+      : requestedOffset - 1;
+    const boundedEnd = syntaxScalarBoundary(content, end) ? end : end - 1;
+    if (
+      offset < 0 ||
+      boundedEnd <= offset ||
+      !syntaxScalarBoundary(content, offset) ||
+      !syntaxScalarBoundary(content, boundedEnd)
+    )
+      return null;
+    const cappedEnd = Math.min(boundedEnd, offset + SYNTAX_WINDOW_MAX_UTF16);
+    const finalEnd = syntaxScalarBoundary(content, cappedEnd) ? cappedEnd : cappedEnd - 1;
+    if (finalEnd <= offset || !syntaxScalarBoundary(content, finalEnd)) return null;
+    return { offset, length: finalEnd - offset };
+  }, [content, requestedLength, requestedOffset, sourceLength, windowed]);
   const rangeKey = requestRange ? `${requestRange.offset}:${requestRange.length}` : "";
   const requestable = !windowed || requestRange !== null;
   const [rendered, setRendered] = useState<RenderedTokens | null>(null);
@@ -223,8 +240,8 @@ export function useEditorSyntax({
     !requestable ||
     (windowed &&
       (!rendered.range ||
-        rendered.range.offset !== requestedOffset ||
-        rendered.range.length !== requestedLength))
+        rendered.range.offset !== requestRange?.offset ||
+        rendered.range.length !== requestRange?.length))
   )
     return EMPTY;
   return {
