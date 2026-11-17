@@ -77,7 +77,7 @@ export function syntaxProviders(
 
 const bytes = (value: string) => new TextEncoder().encode(value).length;
 
-function scalarBoundary(text: string, offset: number): boolean {
+export function syntaxScalarBoundary(text: string, offset: number): boolean {
   if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length) return false;
   const before = text.charCodeAt(offset - 1);
   const after = text.charCodeAt(offset);
@@ -109,8 +109,8 @@ export function parseSyntaxResult(value: unknown, content: string): SyntaxToken[
       !Number.isSafeInteger(end) ||
       start < previousEnd ||
       end <= start ||
-      !scalarBoundary(content, start) ||
-      !scalarBoundary(content, end)
+      !syntaxScalarBoundary(content, start) ||
+      !syntaxScalarBoundary(content, end)
     )
       throw new Error("invalid");
     previousEnd = end;

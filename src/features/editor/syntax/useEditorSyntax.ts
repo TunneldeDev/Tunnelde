@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@/lib/api/ipc";
 import { hasPluginGrant, usePluginSecurity } from "@/store/pluginSecurity";
 import { usePlugins } from "@/store/plugins";
-import { editorSyntaxMatches, syntaxProviders, type SyntaxToken } from "@/lib/plugins/syntax";
+import {
+  editorSyntaxMatches,
+  syntaxProviders,
+  type SyntaxProvider,
+  type SyntaxToken,
+} from "@/lib/plugins/syntax";
 import { runSyntaxHighlighting } from "@/lib/plugins/syntaxRunner";
 
 const DEBOUNCE_MS = 220;
@@ -18,10 +23,17 @@ export interface SyntaxDocumentSnapshot {
   dirty: boolean;
 }
 
+export interface SyntaxRequestedRange {
+  offset: number;
+  length: number;
+}
+
 export interface SyntaxHighlightState {
   tokens: readonly SyntaxToken[];
   documentId: string | null;
   version: number | null;
+  provider: string | null;
+  range: SyntaxRequestedRange | null;
   highlighted: boolean;
 }
 
@@ -29,20 +41,37 @@ const EMPTY: SyntaxHighlightState = {
   tokens: [],
   documentId: null,
   version: null,
+  provider: null,
+  range: null,
   highlighted: false,
 };
 
-/** Framework-neutral semantic-token state. A textarea overlay and a future
- * CodeMirror decoration consumer can share this without owning editor geometry. */
+export interface UseEditorSyntaxOptions {
+  document: SyntaxDocumentSnapshot | null;
+  composing: boolean;
+  enabled: boolean;
+  /** For larger documents, the CM host supplies the settled visible window. */
+  requestedRange?: SyntaxRequestedRange | null;
+}
+
+interface RenderedTokens {
+  tokens: SyntaxToken[];
+  documentId: string;
+  version: number;
+  content: string;
+  provider: string;
+  runtime: string;
+  range: SyntaxRequestedRange | null;
+}
+
+/** Framework-neutral semantic-token state. The CM adapter applies the returned
+ * tokens as decorations; this hook owns provider discovery, auth and fencing. */
 export function useEditorSyntax({
   document,
   composing,
   enabled,
-}: {
-  document: SyntaxDocumentSnapshot | null;
-  composing: boolean;
-  enabled: boolean;
-}): SyntaxHighlightState {
+  requestedRange = null,
+}: UseEditorSyntaxOptions): SyntaxHighlightState {
   const plugins = usePlugins((state) => state.items);
   const security = usePluginSecurity((state) => state.state);
   const tabId = document?.tabId ?? "";
@@ -75,9 +104,23 @@ export function useEditorSyntax({
     !provider ||
     !isTauri() ||
     (!security.restricted && !!plugin && hasPluginGrant(security, plugin));
-  const [rendered, setRendered] = useState<
-    (SyntaxHighlightState & { content: string; provider: string; runtime: string }) | null
-  >(null);
+  const sourceLength = content.length;
+  const requestedOffset = requestedRange?.offset ?? null;
+  const requestedLength = requestedRange?.length ?? null;
+  const sourceBytes = useMemo(() => new TextEncoder().encode(content).length, [content]);
+  const windowed = sourceBytes > 128 * 1024;
+  const requestRange =
+    windowed &&
+    requestedOffset !== null &&
+    requestedLength !== null &&
+    requestedOffset >= 0 &&
+    requestedLength > 0 &&
+    requestedOffset + requestedLength <= sourceLength
+      ? { offset: requestedOffset, length: requestedLength }
+      : null;
+  const rangeKey = requestRange ? `${requestRange.offset}:${requestRange.length}` : "";
+  const requestable = !windowed || requestRange !== null;
+  const [rendered, setRendered] = useState<RenderedTokens | null>(null);
   const sequence = useRef(0);
 
   useEffect(() => {
@@ -90,7 +133,8 @@ export function useEditorSyntax({
       plugin?.status === "running" &&
       !stopping &&
       compatible &&
-      authorized;
+      authorized &&
+      requestable;
     if (!valid) {
       sequence.current += 1;
       return;
@@ -108,20 +152,21 @@ export function useEditorSyntax({
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), DEBOUNCE_MS + REQUEST_TIMEOUT_MS);
     const debounce = window.setTimeout(() => {
-      void runSyntaxHighlighting({ provider, document: snapshot }, controller.signal).then(
-        (tokens) => {
-          if (controller.signal.aborted || currentSequence !== sequence.current || !tokens) return;
-          setRendered({
-            tokens,
-            documentId,
-            version,
-            highlighted: tokens.length > 0,
-            content,
-            provider: providerKey,
-            runtime,
-          });
-        },
-      );
+      void runSyntaxHighlighting(
+        { provider, document: snapshot, window: requestRange },
+        controller.signal,
+      ).then((tokens) => {
+        if (controller.signal.aborted || currentSequence !== sequence.current || !tokens) return;
+        setRendered({
+          tokens,
+          documentId,
+          version,
+          content,
+          provider: providerKey,
+          runtime,
+          range: requestRange,
+        });
+      });
     }, DEBOUNCE_MS);
     return () => {
       window.clearTimeout(debounce);
@@ -139,8 +184,11 @@ export function useEditorSyntax({
     name,
     path,
     plugin?.status,
+    sourceBytes,
     provider,
     providerKey,
+    rangeKey,
+    requestable,
     runtime,
     stopping,
     tabId,
@@ -169,8 +217,26 @@ export function useEditorSyntax({
     plugin?.status !== "running" ||
     stopping ||
     !compatible ||
-    content.length > 128 * 1024
+    !requestable ||
+    (windowed &&
+      (!rendered.range ||
+        rendered.range.offset !== requestedOffset ||
+        rendered.range.length !== requestedLength))
   )
     return EMPTY;
-  return rendered;
+  return {
+    tokens: rendered.tokens,
+    documentId: rendered.documentId,
+    version: rendered.version,
+    provider: rendered.provider,
+    range: rendered.range,
+    highlighted: rendered.tokens.length > 0,
+  };
+}
+
+export function syntaxProviderForDocument(
+  document: SyntaxDocumentSnapshot,
+  plugins: readonly ReturnType<typeof usePlugins.getState>["items"][number][],
+): SyntaxProvider | null {
+  return syntaxProviders(document.path, plugins)[0] ?? null;
 }

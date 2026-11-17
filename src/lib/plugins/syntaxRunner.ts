@@ -9,6 +9,7 @@ import { samePluginAction } from "./commands/identity";
 import { samePluginRuntime } from "./commands/runtime";
 import {
   editorSyntaxMatches,
+  syntaxScalarBoundary,
   parseSyntaxResult,
   SYNTAX_REQUEST_MAX_BYTES,
   SYNTAX_RESULT_MAX_BYTES,
@@ -24,6 +25,15 @@ import type {
 import { syntaxWindow } from "./syntaxProtocol";
 
 const textBytes = (value: string) => new TextEncoder().encode(value).length;
+
+function documentExtension(path: string, supported: readonly string[]): string {
+  const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  return (
+    supported.find((extension) => name.endsWith(`.${extension.toLowerCase()}`)) ??
+    supported[0] ??
+    ""
+  );
+}
 
 export interface SyntaxHighlightTarget {
   provider: SyntaxProvider;
@@ -52,12 +62,18 @@ function requestFor(target: SyntaxHighlightTarget): SyntaxProviderRequest | null
     } catch {
       return null;
     }
-    if (window.offset + window.length > document.content.length) return null;
+    const end = window.offset + window.length;
+    if (
+      end > document.content.length ||
+      !syntaxScalarBoundary(document.content, window.offset) ||
+      !syntaxScalarBoundary(document.content, end)
+    )
+      return null;
     const request: SyntaxWindowRequest = {
       mode: "window",
       source: null,
       document: metadata(document),
-      extensions: target.provider.extensions,
+      extensions: [documentExtension(document.path, target.provider.extensions)],
       range: window,
       _locale: i18n.resolvedLanguage ?? i18n.language,
     };
