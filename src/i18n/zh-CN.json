@@ -2590,5 +2590,37 @@
         "unsupportedSchema": "辅助程序使用了尚不支持的能力查询协议。"
       }
     }
+  },
+  "sshImport": {
+    "welcome": "已有 SSH 配置？将本机保存的连接导入 Tunnelde。",
+    "action": "导入 SSH config",
+    "title": "导入 SSH config",
+    "description": "选择本机 SSH 配置中的主机。已有主机将予以保留。",
+    "refresh": "刷新",
+    "loading": "正在读取 SSH 配置…",
+    "importing": "正在导入…",
+    "importSelected": "导入所选（{{count}}）",
+    "notFound": "本机尚未找到 SSH 配置文件。",
+    "empty": "此配置中没有可导入的命名主机。",
+    "existing": "已导入",
+    "via": "经由 {{names}}",
+    "dependencies": "所选连接需要的跳板主机会一同导入。",
+    "readFailed": "无法读取 SSH 配置文件。",
+    "tooLarge": "SSH 配置超出导入限制。",
+    "noHome": "无法定位用户主目录。",
+    "changed": "SSH 配置已变化，请刷新预览后重试。",
+    "invalidSelection": "部分所选主机无法导入，请刷新预览并查看详情。",
+    "issue": {
+      "readFailed": "无法读取 {{detail}}。",
+      "tooLarge": "超出导入限制：{{detail}}。",
+      "invalidLine": "无法解析 {{detail}}。",
+      "unsupportedOption": "需要手动配置：{{detail}}。",
+      "invalidValue": "不支持或无效的配置值：{{detail}}。",
+      "missingJump": "跳板主机不可用：{{detail}}。",
+      "existingConflict": "已有同名主机的配置不同：{{detail}}。",
+      "includeCycle": "Include 存在循环引用：{{detail}}。"
+    },
+    "imported_one": "已导入 {{count}} 台主机",
+    "imported_other": "已导入 {{count}} 台主机"
   }
 }

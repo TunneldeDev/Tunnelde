@@ -7,6 +7,7 @@ import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageRestartPlan, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
+import type { SshConfigPreview, SshConfigImportResult } from "./sshConfig";
 import type {
   ApplySettingsProfile,
   PortableSettings,
@@ -82,6 +83,9 @@ export interface OutputSnapshot {
 }
 
 export const api = {
+  sshConfigPreview: () => invoke<SshConfigPreview>("ssh_config_preview"),
+  sshConfigImport: (aliases: string[], revision: string) =>
+    invoke<SshConfigImportResult>("ssh_config_import", { aliases, revision }),
   editorDraftsRead: () => invoke<DraftSnapshot>("editor_drafts_read"),
   editorDraftsSave: (revision: string, drafts: EditorDraft[]) =>
     invoke<string>("editor_drafts_save", { revision, drafts }),

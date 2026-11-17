@@ -2590,5 +2590,37 @@
         "unsupportedSchema": "The helper uses an unsupported capability schema."
       }
     }
+  },
+  "sshImport": {
+    "welcome": "Already use SSH? Bring your saved connections with you.",
+    "action": "Import SSH config",
+    "title": "Import SSH config",
+    "description": "Choose hosts from this computer’s SSH config. Existing hosts are kept.",
+    "refresh": "Refresh",
+    "loading": "Reading SSH config…",
+    "importing": "Importing…",
+    "importSelected": "Import selected ({{count}})",
+    "notFound": "No SSH config was found on this computer.",
+    "empty": "No named hosts were found in this config.",
+    "existing": "Already imported",
+    "via": "Via {{names}}",
+    "dependencies": "Required jump hosts are imported along with the selected hosts.",
+    "readFailed": "Could not read the SSH config.",
+    "tooLarge": "The SSH config exceeds the import limit.",
+    "noHome": "Could not locate your home directory.",
+    "changed": "The SSH config has changed. Refresh the preview and try again.",
+    "invalidSelection": "Some selected hosts cannot be imported. Refresh the preview and check their details.",
+    "issue": {
+      "readFailed": "Could not read {{detail}}.",
+      "tooLarge": "Import limit exceeded: {{detail}}.",
+      "invalidLine": "Could not parse {{detail}}.",
+      "unsupportedOption": "Needs manual configuration: {{detail}}.",
+      "invalidValue": "Unsupported or invalid value: {{detail}}.",
+      "missingJump": "Jump host is unavailable: {{detail}}.",
+      "existingConflict": "An existing host uses this name with different settings: {{detail}}.",
+      "includeCycle": "Circular Include: {{detail}}."
+    },
+    "imported_one": "Imported {{count}} host",
+    "imported_other": "Imported {{count}} hosts"
   }
 }
