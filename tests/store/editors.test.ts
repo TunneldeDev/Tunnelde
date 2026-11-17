@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/lib/api/ipc";
-import { editorDocument, undoEditorEdit, useEditors } from "@/store/editors";
+import {
+  beginEditorComposition,
+  beginEditorInput,
+  consumeEditorSelectionRestore,
+  editorDocument,
+  editorHistorySnapshot,
+  endEditorComposition,
+  rememberEditorSelection,
+  replaceEditorDocument,
+  restoreEditorHistory,
+  undoEditorEdit,
+  useEditors,
+} from "@/store/editors";
 import { useToasts } from "@/store/toasts";
 
 const id = "editor:s1:/a.txt";
@@ -577,5 +589,276 @@ describe("editor requests", () => {
       content: "local draft",
       baseline: "original",
     });
+  });
+});
+
+describe("editor undo selection history", () => {
+  const selection = (
+    start: number,
+    end = start,
+    direction: "forward" | "backward" | "none" = "none",
+  ) => ({
+    start,
+    end,
+    direction,
+  });
+
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("restores selection through undo and redo for a mid-document insertion", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcdef",
+      size: 6,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    beginEditorInput(id, "insertText", selection(3));
+    state().change(id, "abcXdef", selection(4));
+
+    expect(undoEditorEdit(id)).toBe(true);
+    const undone = state().entries[id]!;
+    expect(undone.content).toBe("abcdef");
+    expect(
+      consumeEditorSelectionRestore(id, undone.documentId!, undone.version!, undone.content),
+    ).toEqual(selection(3));
+
+    expect(undoEditorEdit(id, true)).toBe(true);
+    const redone = state().entries[id]!;
+    expect(redone.content).toBe("abcXdef");
+    expect(
+      consumeEditorSelectionRestore(id, redone.documentId!, redone.version!, redone.content),
+    ).toEqual(selection(4));
+  });
+
+  it("does not coalesce inputs after the caret or selection changes", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcdef",
+      size: 6,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    beginEditorInput(id, "insertText", selection(3));
+    state().change(id, "abcXdef", selection(4));
+    rememberEditorSelection(id, selection(0));
+    beginEditorInput(id, "insertText", selection(0));
+    state().change(id, "ZabcXdef", selection(1));
+
+    expect(undoEditorEdit(id)).toBe(true);
+    expect(state().entries[id]?.content).toBe("abcXdef");
+    expect(undoEditorEdit(id)).toBe(true);
+    expect(state().entries[id]?.content).toBe("abcdef");
+  });
+
+  it("does not coalesce different input types or ranged replacements", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcdef",
+      size: 6,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    beginEditorInput(id, "insertText", selection(3));
+    state().change(id, "abcXdef", selection(4));
+    beginEditorInput(id, "deleteContentBackward", selection(4));
+    state().change(id, "abcdef", selection(3));
+    beginEditorInput(id, "insertReplacementText", {
+      start: 1,
+      end: 4,
+      direction: "backward",
+    });
+    state().change(id, "aQef", { start: 2, end: 2, direction: "none" });
+
+    expect(undoEditorEdit(id)).toBe(true);
+    const restored = state().entries[id]!;
+    expect(restored.content).toBe("abcdef");
+    expect(
+      consumeEditorSelectionRestore(id, restored.documentId!, restored.version!, restored.content),
+    ).toEqual({ start: 1, end: 4, direction: "backward" });
+  });
+
+  it("coalesces continuous typing and deletions while retaining the group boundaries", async () => {
+    vi.useFakeTimers({ now: 1_000 });
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcdef",
+      size: 6,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    beginEditorInput(id, "insertText", selection(3));
+    state().change(id, "abcXdef", selection(4));
+    vi.advanceTimersByTime(100);
+    beginEditorInput(id, "insertText", selection(4));
+    state().change(id, "abcXYdef", selection(5));
+    vi.advanceTimersByTime(100);
+    beginEditorInput(id, "deleteContentBackward", selection(5));
+    state().change(id, "abcXdef", selection(4));
+
+    expect(undoEditorEdit(id)).toBe(true);
+    expect(state().entries[id]?.content).toBe("abcXYdef");
+    expect(undoEditorEdit(id)).toBe(true);
+    expect(state().entries[id]?.content).toBe("abcdef");
+  });
+
+  it("records one undo transaction for a long IME composition", async () => {
+    vi.useFakeTimers({ now: 2_000 });
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcdef",
+      size: 6,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    beginEditorComposition(id, selection(3));
+    state().change(id, "abc拼", selection(4));
+    vi.advanceTimersByTime(2_000);
+    state().change(id, "abc拼音", selection(5));
+    endEditorComposition(id, selection(5));
+
+    expect(undoEditorEdit(id)).toBe(true);
+    expect(state().entries[id]?.content).toBe("abcdef");
+    expect(undoEditorEdit(id)).toBe(false);
+  });
+
+  it("uses a diff-derived caret for legacy string checkpoints instead of falling to EOF", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcXdef",
+      size: 7,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    const documentId = state().entries[id]!.documentId!;
+    restoreEditorHistory({ [id]: { documentId, undo: ["abcdef"], redo: [] } });
+    rememberEditorSelection(id, selection(7));
+
+    expect(undoEditorEdit(id)).toBe(true);
+    const restored = state().entries[id]!;
+    expect(restored.content).toBe("abcdef");
+    expect(
+      consumeEditorSelectionRestore(id, restored.documentId!, restored.version!, restored.content),
+    ).toEqual(selection(3));
+  });
+
+  it("round-trips exact selection snapshots through the in-memory checkpoint", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcdef",
+      size: 6,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    beginEditorInput(id, "insertText", { start: 2, end: 4, direction: "backward" });
+    state().change(id, "abQef", selection(3));
+    const snapshot = editorHistorySnapshot();
+    const savedEntry = { ...state().entries[id]! };
+
+    useEditors.setState({ entries: {} });
+    restoreEditorHistory();
+    useEditors.setState({ entries: { [id]: savedEntry } });
+    restoreEditorHistory(snapshot);
+
+    expect(undoEditorEdit(id)).toBe(true);
+    const restored = state().entries[id]!;
+    expect(restored.content).toBe("abcdef");
+    expect(
+      consumeEditorSelectionRestore(id, restored.documentId!, restored.version!, restored.content),
+    ).toEqual({ start: 2, end: 4, direction: "backward" });
+  });
+
+  it("restores the pre-reload selection after an undoable conflict reload", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "original",
+      size: 8,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "newer draft", { start: 3, end: 8, direction: "backward" });
+    rememberEditorSelection(id, { start: 3, end: 8, direction: "backward" });
+    expect(
+      await state().resolveConflict(
+        editorDocument(id)!,
+        { content: "external", encoding: "utf-8", bom: false },
+        "reload",
+      ),
+    ).toBe(true);
+    expect(state().entries[id]?.content).toBe("external");
+
+    expect(undoEditorEdit(id)).toBe(true);
+    const restored = state().entries[id]!;
+    expect(restored.content).toBe("newer draft");
+    expect(
+      consumeEditorSelectionRestore(id, restored.documentId!, restored.version!, restored.content),
+    ).toEqual({ start: 3, end: 8, direction: "backward" });
+  });
+
+  it("records a plugin document replacement as one operation with a non-EOF caret", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcdef",
+      size: 6,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    rememberEditorSelection(id, { start: 2, end: 4, direction: "forward" });
+    replaceEditorDocument(editorDocument(id)!, "abFORMATef");
+    const replaced = state().entries[id]!;
+    expect(
+      consumeEditorSelectionRestore(id, replaced.documentId!, replaced.version!, replaced.content),
+    ).toEqual({ start: 2, end: 8, direction: "forward" });
+
+    expect(undoEditorEdit(id)).toBe(true);
+    const restored = state().entries[id]!;
+    expect(restored.content).toBe("abcdef");
+    expect(
+      consumeEditorSelectionRestore(id, restored.documentId!, restored.version!, restored.content),
+    ).toEqual({ start: 2, end: 4, direction: "forward" });
+  });
+
+  it("discards malformed checkpoint entries without losing valid history", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "abcXdef",
+      size: 7,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    const documentId = state().entries[id]!.documentId!;
+    restoreEditorHistory({
+      [id]: {
+        documentId,
+        undo: [
+          "abcdef",
+          { content: 42 } as never,
+          { content: "bad", selection: { start: -1 } } as never,
+        ],
+        redo: [],
+      },
+    });
+
+    expect(undoEditorEdit(id)).toBe(true);
+    expect(state().entries[id]?.content).toBe("abcdef");
+  });
+
+  it("invalidates redo after a new edit and preserves the 50-item bound", async () => {
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "",
+      size: 0,
+      encoding: "utf-8",
+      bom: false,
+    });
+    await state().open(id, "s1", "/a.txt");
+    for (let index = 1; index <= 55; index += 1) {
+      replaceEditorDocument(editorDocument(id)!, "x".repeat(index));
+    }
+    expect(editorHistorySnapshot()[id]?.undo).toHaveLength(50);
+    expect(undoEditorEdit(id)).toBe(true);
+    state().change(id, "new", selection(3));
+    expect(undoEditorEdit(id, true)).toBe(false);
   });
 });
