@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { EditorPage } from "@/features/editor/EditorPage";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
-import { useEditors, type EditorEntry } from "@/store/editors";
+import { beginEditorInput, undoEditorEdit, useEditors, type EditorEntry } from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
@@ -29,6 +29,7 @@ const entry: EditorEntry = {
 };
 
 beforeEach(() => {
+  useEditors.getState().discard("editor");
   useEditors.setState({ entries: { editor: { ...entry } } });
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS } });
   useWorkspace.setState({ tabs: [] });
@@ -366,6 +367,151 @@ describe("editor formatting shortcuts", () => {
     fireEvent(screen.getByRole("textbox", { name: "other.txt" }), event);
     expect(event.defaultPrevented).toBe(false);
     expect(api.pluginRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditorPage undo selection", () => {
+  const selection = (
+    start: number,
+    end = start,
+    direction: "forward" | "backward" | "none" = "none",
+  ) => ({ start, end, direction });
+
+  const prepareHistory = () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          content: "abcdef",
+          baseline: "abcdef",
+          documentId: "document",
+          version: 1,
+        },
+      },
+    });
+    render(<EditorPage tabId="editor" active />);
+    return screen.getByRole("textbox", { name: "draft.txt" }) as HTMLTextAreaElement;
+  };
+
+  it("captures the pre-edit caret and restores it through shortcut undo and redo", () => {
+    const textarea = prepareHistory();
+    textarea.focus();
+    textarea.setSelectionRange(3, 3);
+    fireEvent.select(textarea);
+    fireEvent(
+      textarea,
+      new InputEvent("beforeinput", { inputType: "insertText", bubbles: true, cancelable: true }),
+    );
+    fireEvent.change(textarea, { target: { value: "abcXdef" } });
+    textarea.setSelectionRange(4, 4);
+    fireEvent.select(textarea);
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
+    expect(textarea.selectionStart).toBe(3);
+    expect(textarea.selectionEnd).toBe(3);
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true, shiftKey: true });
+    expect(useEditors.getState().entries.editor?.content).toBe("abcXdef");
+    expect(textarea.selectionStart).toBe(4);
+  });
+
+  it("restores selection through the native beforeinput history path", () => {
+    const textarea = prepareHistory();
+    textarea.focus();
+    textarea.setSelectionRange(3, 3);
+    fireEvent.select(textarea);
+    beginEditorInput("editor", "insertText", selection(3));
+    fireEvent.change(textarea, { target: { value: "abcXdef" } });
+    textarea.setSelectionRange(4, 4);
+    fireEvent.select(textarea);
+
+    const nativeUndo = new InputEvent("beforeinput", {
+      inputType: "historyUndo",
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(textarea, nativeUndo);
+    expect(nativeUndo.defaultPrevented).toBe(true);
+    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
+    expect(textarea.selectionStart).toBe(3);
+  });
+
+  it("restores a ranged selection direction and viewport after replacement undo", () => {
+    const textarea = prepareHistory();
+    textarea.focus();
+    textarea.setSelectionRange(1, 4, "backward");
+    textarea.scrollTop = 120;
+    textarea.scrollLeft = 7;
+    fireEvent.select(textarea);
+    fireEvent(
+      textarea,
+      new InputEvent("beforeinput", {
+        inputType: "insertReplacementText",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    fireEvent.change(textarea, { target: { value: "aQef" } });
+    textarea.setSelectionRange(2, 2);
+    fireEvent.select(textarea);
+    textarea.scrollTop = 0;
+    textarea.scrollLeft = 0;
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
+    expect(textarea.selectionStart).toBe(1);
+    expect(textarea.selectionEnd).toBe(4);
+    expect(textarea.selectionDirection).toBe("backward");
+    expect(textarea.scrollTop).toBe(120);
+    expect(textarea.scrollLeft).toBe(7);
+  });
+
+  it("treats a long IME composition as one undo transaction without resetting its caret", () => {
+    vi.useFakeTimers({ now: 1_000 });
+    try {
+      const textarea = prepareHistory();
+      textarea.focus();
+      textarea.setSelectionRange(3, 3);
+      fireEvent.select(textarea);
+      fireEvent.compositionStart(textarea);
+      fireEvent.change(textarea, { target: { value: "abc拼" } });
+      textarea.setSelectionRange(4, 4);
+      fireEvent.select(textarea);
+      act(() => vi.advanceTimersByTime(2_000));
+      fireEvent.change(textarea, { target: { value: "abc拼音" } });
+      textarea.setSelectionRange(5, 5);
+      fireEvent.select(textarea);
+      fireEvent.compositionEnd(textarea, { data: "拼音" });
+
+      fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+      expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
+      expect(textarea.selectionStart).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds a restore queued during composition and applies it after composition ends", () => {
+    const textarea = prepareHistory();
+    textarea.focus();
+    textarea.setSelectionRange(3, 3);
+    fireEvent.select(textarea);
+    beginEditorInput("editor", "insertText", selection(3));
+    fireEvent.change(textarea, { target: { value: "abcXdef" } });
+    textarea.setSelectionRange(4, 4);
+    fireEvent.select(textarea);
+
+    act(() => fireEvent.compositionStart(textarea));
+    act(() => {
+      expect(undoEditorEdit("editor")).toBe(true);
+    });
+    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
+    expect(textarea.selectionStart).not.toBe(3);
+
+    fireEvent.compositionEnd(textarea);
+    expect(textarea.selectionStart).toBe(3);
+    expect(textarea.selectionEnd).toBe(3);
   });
 });
 

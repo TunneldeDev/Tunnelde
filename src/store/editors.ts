@@ -52,7 +52,7 @@ interface EditorsStore {
     path: string,
     target?: EditorEntry["recoveryTarget"],
   ) => Promise<void>;
-  change: (tabId: string, content: string) => void;
+  change: (tabId: string, content: string, selection?: EditorSelectionSnapshot | null) => void;
   reopen: (tabId: string, encoding: TextEncoding) => Promise<boolean>;
   save: (tabId: string) => Promise<boolean>;
   resolveConflict: (
@@ -107,15 +107,163 @@ function finishRead(tabId: string, resource: FileReadResource) {
   if (reads.get(tabId) === resource) reads.delete(tabId);
   resource.scope.dispose();
 }
-type EditHistory = { undo: string[]; redo: string[]; typedAt: number };
+export type EditorSelectionDirection = "forward" | "backward" | "none";
+export interface EditorSelectionSnapshot {
+  start: number;
+  end: number;
+  direction: EditorSelectionDirection;
+  scrollTop?: number;
+  scrollLeft?: number;
+}
+
+export interface EditorHistoryItem {
+  content: string;
+  selection: EditorSelectionSnapshot | null;
+}
+
+interface EditHistory {
+  undo: EditorHistoryItem[];
+  redo: EditorHistoryItem[];
+  typedAt: number;
+  lastInputType: string | null;
+  lastAfter: EditorHistoryItem | null;
+}
+
+interface PendingInput {
+  documentId?: string;
+  content: string;
+  inputType: string;
+  selection: EditorSelectionSnapshot | null;
+}
+
+interface CompositionInput {
+  documentId?: string;
+  before: EditorHistoryItem;
+  final: EditorHistoryItem;
+}
+
+interface PendingSelectionRestore {
+  documentId: string;
+  version: number;
+  content: string;
+  selection: EditorSelectionSnapshot;
+}
+
 const histories = new Map<string, EditHistory>();
+const selections = new Map<string, EditorSelectionSnapshot>();
+const pendingInputs = new Map<string, PendingInput>();
+const compositions = new Map<string, CompositionInput>();
+const selectionRestores = new Map<string, PendingSelectionRestore>();
 
 /** Only native in-memory tray checkpoints retain undo text; never persist it on disk. */
 export interface EditorHistoryCheckpoint {
   documentId: string;
-  undo: string[];
-  redo: string[];
+  undo: Array<EditorHistoryItem | string>;
+  redo: Array<EditorHistoryItem | string>;
 }
+
+function cloneSelection(selection: EditorSelectionSnapshot | null): EditorSelectionSnapshot | null {
+  return selection ? { ...selection } : null;
+}
+
+function cloneHistoryItem(item: EditorHistoryItem): EditorHistoryItem {
+  return { content: item.content, selection: cloneSelection(item.selection) };
+}
+
+function sameSelection(
+  left: EditorSelectionSnapshot | null,
+  right: EditorSelectionSnapshot | null,
+): boolean {
+  return (
+    left === right ||
+    (!!left &&
+      !!right &&
+      left.start === right.start &&
+      left.end === right.end &&
+      left.direction === right.direction)
+  );
+}
+
+function finite(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeSelection(value: unknown, contentLength: number): EditorSelectionSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const selection = value as Record<string, unknown>;
+  if (!Number.isInteger(selection.start) || !Number.isInteger(selection.end)) return null;
+  const direction = selection.direction;
+  if (direction !== "forward" && direction !== "backward" && direction !== "none") return null;
+  const end = Math.max(0, Math.min(contentLength, selection.end as number));
+  const start = Math.max(0, Math.min(end, selection.start as number));
+  const scrollTop = finite(selection.scrollTop);
+  const scrollLeft = finite(selection.scrollLeft);
+  return {
+    start,
+    end,
+    direction,
+    ...(scrollTop === undefined ? {} : { scrollTop }),
+    ...(scrollLeft === undefined ? {} : { scrollLeft }),
+  };
+}
+
+function commonAffixes(from: string, to: string) {
+  let prefix = 0;
+  const limit = Math.min(from.length, to.length);
+  while (prefix < limit && from.charCodeAt(prefix) === to.charCodeAt(prefix)) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < limit - prefix &&
+    from.charCodeAt(from.length - suffix - 1) === to.charCodeAt(to.length - suffix - 1)
+  )
+    suffix += 1;
+  return { prefix, suffix };
+}
+
+function diffSelection(from: string, to: string): EditorSelectionSnapshot {
+  const { prefix, suffix } = commonAffixes(from, to);
+  const end = Math.max(prefix, to.length - suffix);
+  return { start: prefix, end, direction: end === prefix ? "none" : "forward" };
+}
+
+function breakCoalescing(history: EditHistory | undefined) {
+  if (!history) return;
+  history.typedAt = 0;
+  history.lastInputType = null;
+  history.lastAfter = null;
+}
+
+function clearEditorTransients(tabId: string, clearSelection = false) {
+  pendingInputs.delete(tabId);
+  compositions.delete(tabId);
+  selectionRestores.delete(tabId);
+  if (clearSelection) selections.delete(tabId);
+}
+
+function clearEditorHistory(tabId: string) {
+  histories.delete(tabId);
+  clearEditorTransients(tabId, true);
+}
+
+function normalizeCheckpointItem(value: unknown): EditorHistoryItem | null {
+  if (typeof value === "string") return { content: value, selection: null };
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  if (typeof item.content !== "string") return null;
+  if (item.selection === undefined || item.selection === null)
+    return { content: item.content, selection: null };
+  const selection = normalizeSelection(item.selection, item.content.length);
+  return selection ? { content: item.content, selection } : null;
+}
+
+function normalizeCheckpointItems(value: unknown): EditorHistoryItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const normalized = normalizeCheckpointItem(item);
+    return normalized ? [normalized] : [];
+  });
+}
+
 export function editorHistorySnapshot(): Record<string, EditorHistoryCheckpoint> {
   return Object.fromEntries(
     [...histories].flatMap(([tabId, history]) => {
@@ -124,7 +272,11 @@ export function editorHistorySnapshot(): Record<string, EditorHistoryCheckpoint>
         ? [
             [
               tabId,
-              { documentId: entry.documentId, undo: [...history.undo], redo: [...history.redo] },
+              {
+                documentId: entry.documentId,
+                undo: history.undo.map(cloneHistoryItem),
+                redo: history.redo.map(cloneHistoryItem),
+              },
             ],
           ]
         : [];
@@ -132,31 +284,186 @@ export function editorHistorySnapshot(): Record<string, EditorHistoryCheckpoint>
   );
 }
 
-export function restoreEditorHistory(snapshot: ReturnType<typeof editorHistorySnapshot> = {}) {
+export function restoreEditorHistory(snapshot: Record<string, EditorHistoryCheckpoint> = {}) {
   histories.clear();
+  pendingInputs.clear();
+  compositions.clear();
+  selectionRestores.clear();
+  selections.clear();
   for (const [tabId, history] of Object.entries(snapshot)) {
-    if (useEditors.getState().entries[tabId]?.documentId !== history.documentId) continue;
-    const undo = [...history.undo],
-      redo = [...history.redo];
+    if (
+      !history ||
+      typeof history !== "object" ||
+      typeof history.documentId !== "string" ||
+      useEditors.getState().entries[tabId]?.documentId !== history.documentId
+    )
+      continue;
+    const undo = normalizeCheckpointItems(history.undo);
+    const redo = normalizeCheckpointItems(history.redo);
     trimHistory(undo);
     trimHistory(redo);
-    histories.set(tabId, { undo, redo, typedAt: 0 });
+    histories.set(tabId, {
+      undo,
+      redo,
+      typedAt: 0,
+      lastInputType: null,
+      lastAfter: null,
+    });
   }
 }
 
-function trimHistory(items: string[]) {
-  let size = items.reduce((sum, item) => sum + item.length * 2, 0);
-  while (items.length > 50 || size > 4 * 1024 * 1024) size -= items.shift()!.length * 2;
+function trimHistory(items: EditorHistoryItem[]) {
+  let size = items.reduce((sum, item) => sum + item.content.length * 2, 0);
+  while (items.length > 50 || size > 4 * 1024 * 1024) size -= items.shift()!.content.length * 2;
 }
 
-function recordEdit(entry: EditorEntry, typing: boolean) {
-  const history = histories.get(entry.tabId) ?? { undo: [], redo: [], typedAt: 0 };
+function coalescibleInputType(inputType: string): boolean {
+  return (
+    inputType === "insertText" ||
+    inputType === "deleteContentBackward" ||
+    inputType === "deleteContentForward"
+  );
+}
+
+function recordEdit(
+  entry: EditorEntry,
+  before: EditorHistoryItem,
+  after: EditorHistoryItem,
+  inputType: string,
+  coalesce: boolean,
+) {
+  const history = histories.get(entry.tabId) ?? {
+    undo: [],
+    redo: [],
+    typedAt: 0,
+    lastInputType: null,
+    lastAfter: null,
+  };
   const now = Date.now();
-  if (!typing || !history.typedAt || now - history.typedAt > 750) history.undo.push(entry.content);
-  trimHistory(history.undo);
+  const merge =
+    coalesce &&
+    history.typedAt > 0 &&
+    now - history.typedAt <= 750 &&
+    history.lastInputType === inputType &&
+    history.lastAfter?.content === before.content &&
+    sameSelection(history.lastAfter.selection, before.selection);
+  if (!merge) {
+    history.undo.push(cloneHistoryItem(before));
+    trimHistory(history.undo);
+  }
   history.redo = [];
-  history.typedAt = typing ? now : 0;
+  history.typedAt = coalesce ? now : 0;
+  history.lastInputType = coalesce ? inputType : null;
+  history.lastAfter = cloneHistoryItem(after);
   histories.set(entry.tabId, history);
+}
+
+export function rememberEditorSelection(tabId: string, selection: EditorSelectionSnapshot | null) {
+  const entry = useEditors.getState().entries[tabId];
+  if (!entry) return;
+  if (!selection) {
+    selections.delete(tabId);
+    breakCoalescing(histories.get(tabId));
+    return;
+  }
+  const normalized = normalizeSelection(selection, entry.content.length);
+  if (!normalized) return;
+  selections.set(tabId, normalized);
+  const history = histories.get(tabId);
+  if (!history) return;
+  if (history.lastAfter && sameSelection(history.lastAfter.selection, normalized)) {
+    history.lastAfter = { content: history.lastAfter.content, selection: normalized };
+  } else if (history.typedAt) breakCoalescing(history);
+}
+
+export function beginEditorInput(
+  tabId: string,
+  inputType: string,
+  selection: EditorSelectionSnapshot | null,
+) {
+  const entry = useEditors.getState().entries[tabId];
+  if (!entry || entry.loading || compositions.has(tabId)) return;
+  rememberEditorSelection(tabId, selection);
+  pendingInputs.set(tabId, {
+    documentId: entry.documentId,
+    content: entry.content,
+    inputType,
+    selection: cloneSelection(selections.get(tabId) ?? null),
+  });
+}
+
+export function beginEditorComposition(tabId: string, selection: EditorSelectionSnapshot | null) {
+  const entry = useEditors.getState().entries[tabId];
+  if (!entry || entry.loading) return;
+  pendingInputs.delete(tabId);
+  rememberEditorSelection(tabId, selection);
+  breakCoalescing(histories.get(tabId));
+  const before = {
+    content: entry.content,
+    selection: cloneSelection(selections.get(tabId) ?? null),
+  };
+  compositions.set(tabId, {
+    documentId: entry.documentId,
+    before,
+    final: cloneHistoryItem(before),
+  });
+}
+
+export function endEditorComposition(
+  tabId: string,
+  selection: EditorSelectionSnapshot | null = null,
+) {
+  const composition = compositions.get(tabId);
+  if (!composition) return;
+  compositions.delete(tabId);
+  const entry = useEditors.getState().entries[tabId];
+  if (
+    !entry ||
+    (composition.documentId && entry.documentId && composition.documentId !== entry.documentId)
+  )
+    return;
+  const finalSelection =
+    normalizeSelection(selection, entry.content.length) ??
+    cloneSelection(selections.get(tabId) ?? null) ??
+    diffSelection(composition.before.content, entry.content);
+  const final = { content: entry.content, selection: finalSelection };
+  rememberEditorSelection(tabId, finalSelection);
+  if (entry.content !== composition.before.content) {
+    recordEdit(entry, composition.before, final, "insertCompositionText", false);
+  }
+}
+
+export function consumeEditorSelectionRestore(
+  tabId: string,
+  documentId: string,
+  version: number,
+  content: string,
+): EditorSelectionSnapshot | null {
+  const request = selectionRestores.get(tabId);
+  if (!request) return null;
+  selectionRestores.delete(tabId);
+  if (
+    request.documentId !== documentId ||
+    request.version !== version ||
+    request.content !== content
+  )
+    return null;
+  return cloneSelection(request.selection);
+}
+
+function queueSelectionRestore(
+  tabId: string,
+  entry: Pick<EditorEntry, "documentId" | "version">,
+  content: string,
+  selection: EditorSelectionSnapshot | null,
+) {
+  if (!entry.documentId || entry.version === undefined || !selection) return;
+  selectionRestores.set(tabId, {
+    documentId: entry.documentId,
+    version: entry.version,
+    content,
+    selection: cloneSelection(selection)!,
+  });
 }
 
 export interface EditorDocument {
@@ -210,16 +517,24 @@ export function replaceEditorDocument(
   )
     throw new Error("editor.documentChanged");
   if (entry.content !== text) {
-    recordEdit(entry, false);
+    const before = {
+      content: entry.content,
+      selection: cloneSelection(selections.get(entry.tabId) ?? null),
+    };
+    const afterSelection = diffSelection(entry.content, text);
+    const after = { content: text, selection: afterSelection };
+    clearEditorTransients(entry.tabId);
+    recordEdit(entry, before, after, "insertReplacementText", false);
+    const replaced = {
+      ...entry,
+      content: text,
+      documentId: entry.documentId ?? crypto.randomUUID(),
+      version: document.version + 1,
+    };
+    rememberEditorSelection(entry.tabId, afterSelection);
+    queueSelectionRestore(entry.tabId, replaced, text, afterSelection);
     useEditors.setState((state) => ({
-      entries: {
-        ...state.entries,
-        [entry.tabId]: {
-          ...entry,
-          content: text,
-          version: document.version + 1,
-        },
-      },
+      entries: { ...state.entries, [entry.tabId]: replaced },
     }));
   }
   return editorDocument(entry.tabId)!;
@@ -230,22 +545,27 @@ export function undoEditorEdit(tabId: string, redo = false): boolean {
   const history = histories.get(tabId);
   if (!entry || entry.loading || entry.error || !history) return false;
   const source = redo ? history.redo : history.undo;
-  const text = source.pop();
-  if (text === undefined) return false;
+  const item = source.pop();
+  if (!item) return false;
+  const currentSelection = cloneSelection(selections.get(tabId) ?? null);
   const target = redo ? history.undo : history.redo;
-  target.push(entry.content);
+  target.push({ content: entry.content, selection: currentSelection });
   trimHistory(target);
-  history.typedAt = 0;
+  clearEditorTransients(tabId);
+  breakCoalescing(history);
+  const restoredSelection = item.selection
+    ? cloneSelection(item.selection)!
+    : diffSelection(entry.content, item.content);
+  const restored = {
+    ...entry,
+    content: item.content,
+    documentId: entry.documentId ?? crypto.randomUUID(),
+    version: (entry.version ?? 0) + 1,
+  };
+  rememberEditorSelection(tabId, restoredSelection);
+  queueSelectionRestore(tabId, restored, item.content, restoredSelection);
   useEditors.setState((state) => ({
-    entries: {
-      ...state.entries,
-      [tabId]: {
-        ...entry,
-        content: text,
-        documentId: entry.documentId ?? crypto.randomUUID(),
-        version: (entry.version ?? 0) + 1,
-      },
-    },
+    entries: { ...state.entries, [tabId]: restored },
   }));
   return true;
 }
@@ -294,7 +614,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
   entries: {},
 
   open: async (tabId, sessionId, path, target) => {
-    histories.delete(tabId);
+    clearEditorHistory(tabId);
     saves.delete(tabId);
     const resource = beginRead(tabId, sessionId, path);
     const version = Symbol();
@@ -376,14 +696,41 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     }
   },
 
-  change: (tabId, content) => {
+  change: (tabId, content, selection) => {
     set((state) => {
       const current = state.entries[tabId];
       if (!current || current.loading || (!current.baselineLoaded && !!current.error)) {
         return state;
       }
-      if (current.content === content) return state;
-      recordEdit(current, true);
+      if (current.content === content) {
+        if (selection !== undefined) rememberEditorSelection(tabId, selection);
+        return state;
+      }
+      const pending = pendingInputs.get(tabId);
+      pendingInputs.delete(tabId);
+      const validPending =
+        pending &&
+        pending.content === current.content &&
+        (!pending.documentId || !current.documentId || pending.documentId === current.documentId);
+      const before = {
+        content: current.content,
+        selection: validPending
+          ? cloneSelection(pending.selection)
+          : cloneSelection(selections.get(tabId) ?? null),
+      };
+      const inputType = validPending ? pending.inputType : "insertText";
+      const afterSelection =
+        selection === undefined
+          ? diffSelection(current.content, content)
+          : (normalizeSelection(selection, content.length) ??
+            diffSelection(current.content, content));
+      const after = { content, selection: afterSelection };
+      if (!compositions.has(tabId)) {
+        recordEdit(current, before, after, inputType, coalescibleInputType(inputType));
+      } else {
+        const composition = compositions.get(tabId)!;
+        composition.final = cloneHistoryItem(after);
+      }
       return {
         entries: {
           ...state.entries,
@@ -396,6 +743,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
         },
       };
     });
+    const updated = get().entries[tabId];
+    if (updated && selection !== undefined) rememberEditorSelection(tabId, selection);
   },
 
   reopen: async (tabId, encoding) => {
@@ -449,7 +798,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           },
         };
       });
-      histories.delete(tabId);
+      clearEditorHistory(tabId);
       return true;
     } catch (error) {
       if (versions.get(tabId) === version && !resource.scope.signal.aborted) {
@@ -614,31 +963,59 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       toast(i18n.t("editor.reviewStale"), "error");
       return false;
     }
-    if (action === "reload") recordEdit(entry, false);
-    set((state) => ({
-      entries: {
-        ...state.entries,
-        [document.tabId]: {
-          ...entry,
-          baseline: disk.content,
-          content: action === "reload" ? disk.content : entry.content,
-          encoding: action === "reload" ? disk.encoding : entry.encoding,
-          bom: action === "reload" ? disk.bom : entry.bom,
-          // The reviewed disk format is the strict source for the next save.
-          baselineEncoding: disk.encoding,
-          baselineBom: disk.bom,
-          version: (entry.version ?? 0) + (action === "reload" ? 1 : 0),
-          saveFailure: undefined,
-          saveConflict: false,
+    if (action === "reload") {
+      const before = {
+        content: entry.content,
+        selection: cloneSelection(selections.get(document.tabId) ?? null),
+      };
+      const afterSelection = diffSelection(entry.content, disk.content);
+      clearEditorTransients(document.tabId);
+      recordEdit(
+        entry,
+        before,
+        { content: disk.content, selection: afterSelection },
+        "reload",
+        false,
+      );
+      const reloaded = {
+        ...entry,
+        baseline: disk.content,
+        content: disk.content,
+        encoding: disk.encoding,
+        bom: disk.bom,
+        baselineEncoding: disk.encoding,
+        baselineBom: disk.bom,
+        version: (entry.version ?? 0) + 1,
+        saveFailure: undefined,
+        saveConflict: false,
+      };
+      rememberEditorSelection(document.tabId, afterSelection);
+      queueSelectionRestore(document.tabId, reloaded, disk.content, afterSelection);
+      set((state) => ({ entries: { ...state.entries, [document.tabId]: reloaded } }));
+    } else {
+      set((state) => ({
+        entries: {
+          ...state.entries,
+          [document.tabId]: {
+            ...entry,
+            baseline: disk.content,
+            encoding: entry.encoding,
+            bom: entry.bom,
+            // The reviewed disk format is the strict source for the next save.
+            baselineEncoding: disk.encoding,
+            baselineBom: disk.bom,
+            saveFailure: undefined,
+            saveConflict: false,
+          },
         },
-      },
-    }));
+      }));
+    }
     return action === "replace" ? get().save(document.tabId) : true;
   },
 
   discard: (tabId) => {
     cancelRead(tabId);
-    histories.delete(tabId);
+    clearEditorHistory(tabId);
     versions.delete(tabId);
     saves.delete(tabId);
     set((state) => {
