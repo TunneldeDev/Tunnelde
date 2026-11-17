@@ -13,6 +13,7 @@ export default tseslint.config(
       "assets",
       // Immutable SDK snapshot; SHA-256 is checked by the Rust compatibility test.
       "tests/fixtures/plugin-compat/core-sdk-v1/sdk.mjs",
+      "examples/plugins/syntax-basic/sdk.mjs",
     ],
   },
   js.configs.recommended,
@@ -34,6 +35,19 @@ export default tseslint.config(
   {
     files: ["tests/**/*.test.{ts,tsx}", "tests/**"],
     rules: { "no-console": "off" },
+  },
+  {
+    files: ["examples/**/*.{js,mjs}"],
+    languageOptions: {
+      sourceType: "module",
+      globals: {
+        Buffer: "readonly",
+        process: "readonly",
+        console: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+      },
+    },
   },
   {
     files: ["examples/**/*.js", "tests/fixtures/plugin-compat/**/*.js"],

@@ -36,6 +36,8 @@ pub struct EditorCommand {
     pub extensions: Vec<String>,
     #[serde(default)]
     pub format: bool,
+    #[serde(default)]
+    pub syntax: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -388,7 +390,8 @@ impl PluginManifest {
                                 })
                         })
                         || !self.permissions.iter().any(|p| p == "editor.read")
-                        || !self.permissions.iter().any(|p| p == "editor.write")
+                        || (!editor.syntax || editor.format)
+                            && !self.permissions.iter().any(|p| p == "editor.write")
                 })
             {
                 return Err(AppError::validation("plugin.command.invalid"));
@@ -861,6 +864,31 @@ mod tests {
         let loaded = load(&dir).unwrap();
         assert!(loaded.commands[0].editor.as_ref().unwrap().format);
         assert_eq!(loaded.commands[0].keybindings, ["Mod+Alt+J"]);
+        let mut syntax = base.clone();
+        syntax["permissions"] = serde_json::json!(["editor.read"]);
+        syntax["commands"][0]["editor"] = serde_json::json!({"extensions":["js"],"syntax":true});
+        std::fs::write(
+            dir.join(MANIFEST_FILE),
+            serde_json::to_vec(&syntax).unwrap(),
+        )
+        .unwrap();
+        let loaded = load(&dir).unwrap();
+        assert!(loaded.commands[0].editor.as_ref().unwrap().syntax);
+        assert!(!loaded.commands[0].editor.as_ref().unwrap().format);
+        for editor in [
+            serde_json::json!({"extensions":["js"],"format":true}),
+            serde_json::json!({"extensions":["js"]}),
+            serde_json::json!({"extensions":["js"],"syntax":true,"format":true}),
+        ] {
+            let mut invalid = syntax.clone();
+            invalid["commands"][0]["editor"] = editor;
+            std::fs::write(
+                dir.join(MANIFEST_FILE),
+                serde_json::to_vec(&invalid).unwrap(),
+            )
+            .unwrap();
+            assert!(load(&dir).is_err(), "accepted read-only editor declaration");
+        }
         let mut cases = Vec::new();
         for permissions in [
             serde_json::json!([]),

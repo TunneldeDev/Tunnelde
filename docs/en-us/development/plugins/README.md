@@ -11,6 +11,8 @@ Required dependencies, approval and runtime readiness: [activation](activation.m
 Editor command and formatter contributions:
 [English](editor-plugins.md) · [简体中文](../../../zh-cn/development/plugins/editor-plugins.md).
 
+Editor syntax highlighting (experimental, read-only): [English](editor-syntax.md).
+
 Loaded buffer observation, paging and atomic edits: [editor buffer data](editor-buffers.md).
 
 Existing file-browser discovery, paging and host actions: [live browser data](file-browser-data.md).

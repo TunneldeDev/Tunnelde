@@ -1,0 +1,39 @@
+{
+  "id": "syntax-basic",
+  "name": "Basic syntax highlighting",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "runtime": "node",
+  "main": "index.mjs",
+  "description": "Lightweight semantic highlighting for common source files.",
+  "permissions": ["editor.read"],
+  "engines": { "tunnelde": ">=0.26.1" },
+  "commands": [
+    {
+      "id": "highlight",
+      "title": "Highlight source",
+      "editor": {
+        "extensions": [
+          "js",
+          "jsx",
+          "mjs",
+          "cjs",
+          "ts",
+          "tsx",
+          "json",
+          "css",
+          "html",
+          "py",
+          "rs",
+          "go",
+          "java",
+          "c",
+          "h",
+          "cpp",
+          "hpp"
+        ],
+        "syntax": true
+      }
+    }
+  ]
+}
