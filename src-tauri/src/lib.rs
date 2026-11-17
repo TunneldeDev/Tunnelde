@@ -252,6 +252,8 @@ pub fn run() {
             settings_profiles::settings_file_export,
             commands::set_locale,
             commands::hosts_snapshot,
+            commands::ssh_config_preview,
+            commands::ssh_config_import,
             commands::host_create,
             commands::host_update,
             commands::host_delete,

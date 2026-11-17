@@ -141,6 +141,22 @@ pub async fn hosts_snapshot(app: AppHandle) -> AppResult<crate::services::hosts:
 }
 
 #[tauri::command]
+pub async fn ssh_config_preview(
+    app: AppHandle,
+) -> AppResult<crate::services::hosts::ssh_config::Preview> {
+    crate::services::hosts::ssh_config::preview(&app).await
+}
+
+#[tauri::command]
+pub async fn ssh_config_import(
+    app: AppHandle,
+    aliases: Vec<String>,
+    revision: String,
+) -> AppResult<crate::services::hosts::ssh_config::ImportResult> {
+    crate::services::hosts::ssh_config::import(&app, aliases, revision).await
+}
+
+#[tauri::command]
 pub fn host_create(
     app: AppHandle,
     state: State<'_, AppState>,

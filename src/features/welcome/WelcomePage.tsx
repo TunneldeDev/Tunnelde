@@ -1,5 +1,6 @@
 import { brandMark } from "@/lib/brand";
-import { Plus, Settings as SettingsIcon } from "lucide-react";
+import { Download, Plus, Settings as SettingsIcon } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -8,9 +9,11 @@ import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
+import { SshConfigImportDialog } from "./SshConfigImportDialog";
 
 export function WelcomePage() {
   const { t } = useTranslation();
+  const [importing, setImporting] = useState(false);
   const openHostDialog = useDialogs((state) => state.openHost);
   const openPage = useWorkspace((state) => state.openPage);
   const openHost = useWorkspace((state) => state.openHost);
@@ -58,6 +61,13 @@ export function WelcomePage() {
           </Button>
         </div>
 
+        <div className="welcome__import">
+          <p>{t("sshImport.welcome")}</p>
+          <Button leading={<Download size={14} />} onClick={() => setImporting(true)}>
+            {t("sshImport.action")}
+          </Button>
+        </div>
+
         {recent.length > 0 ? (
           <div className="welcome__recent">
             <h2 className="welcome__section">{t("welcome.recent")}</h2>
@@ -78,6 +88,7 @@ export function WelcomePage() {
 
         {hints.length > 0 ? <p className="welcome__hint">{hints.join(" · ")}</p> : null}
       </div>
+      {importing ? <SshConfigImportDialog onClose={() => setImporting(false)} /> : null}
     </div>
   );
 }
