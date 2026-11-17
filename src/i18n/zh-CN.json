@@ -1000,7 +1000,11 @@
     "diskVersion": "当前磁盘版本",
     "yourDraft": "未保存的草稿",
     "reviewChanges": "对比更改",
-    "encoding": "编码"
+    "encoding": "编码",
+    "saveEncoding": "保存编码",
+    "reopenEncoding": "按编码重新打开…",
+    "reopenEncodingTitle": "按编码重新打开",
+    "reopenEncodingDescription": "使用其他编码重新解码已保存的文件。在读取完成前不会更改当前文字。"
   },
   "plugins": {
     "requiredDependencies": "必需插件",

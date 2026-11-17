@@ -55,9 +55,10 @@ the error. Find platform-specific and customizable bindings in
 Files open inside Tunnelde. Space and the preview action open Quick Look;
 compatible plugins can add preview formats. Text previews and the built-in editor
 detect UTF-8/UTF-16 BOMs and common legacy encodings (including GB18030, Big5,
-Shift-JIS, EUC-JP, EUC-KR and Windows-1252). The editor header shows the active
-encoding; choose another encoding while the document is clean to reopen it, and
-saving writes back in that encoding while preserving a detected BOM. Local
+Shift-JIS, EUC-JP, EUC-KR and Windows-1252). The header's save encoding can be
+changed after editing without replacing the buffer; saving converts the draft to
+that encoding and defaults UTF-16 to a BOM. To reinterpret the saved bytes instead,
+choose **Reopen with encoding…** while the document has no unsaved changes. Local
 entries offer explicit native application/file-manager actions in their context
 menu. Transfer behavior, recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.md).
