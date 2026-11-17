@@ -474,7 +474,7 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 ## 插件市场
 
 官方索引为 `https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json`，
-仅在独立的 `TunneldeDev/tunnelde-hub` 仓库维护；应用仓库不再提供索引副本或支持旧客户端快照。
+由 `TunneldeDev/tunnelde-hub` 维护。以前的软件市场已停止支持。
 **设置 → 插件**含官方来源最多可配 20 个来源。自定义来源需公开 HTTPS JSON，并明确确认信任。
 禁用/移除来源不删除已安装插件；当前不支持需要认证的来源。
 
@@ -511,7 +511,7 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 向独立市场提交源码、清单、README 和重新生成的 `registry.json`。确定性归档包含根 LICENSE。
 `npm run verify` 校验目录、验证器、算法及真实 JSON-RPC 进程，`npm run package` 在
 `artifacts/plugins/` 生成 ZIP、SHA256SUMS 和索引。Push/PR 检查与每周已发布包审计独立于桌面发布。
-先发布并验证版本化归档，再合并索引。旧官方来源和包归属会迁移到独立市场，保留自定义来源与 Node 同意状态。
+先发布并验证版本化归档，再合并索引。
 
 ## 安装
 

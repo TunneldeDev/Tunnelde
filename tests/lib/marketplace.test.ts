@@ -3,11 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchMarketplace, MARKETPLACE_INDEX_URL } from "@/lib/plugins/marketplace";
 
 const example = {
-  id: "hello",
-  name: "Hello",
+  id: "sample",
+  name: "Sample",
   version: "0.1.0",
-  description: "SDK example",
-  url: "https://github.com/TunneldeDev/Tunnelde/releases/download/v0.14.1/hello-plugin.zip",
+  description: "Sample plugin",
+  url: "https://plugins.example.org/sample.zip",
   sha256: "a".repeat(64),
 };
 
@@ -35,22 +35,6 @@ describe("production marketplace", () => {
       }),
     );
     expect(await fetchMarketplace()).toEqual([theme]);
-  });
-
-  it("removes the historical official SDK artifact while retaining unrelated Hello plugins", async () => {
-    const unrelated = {
-      ...example,
-      url: "https://github.com/another/publisher/releases/download/v1/hello-plugin.zip",
-    };
-    const custom = { ...example, id: "my-plugin", url: "https://plugins.example.org/hello.zip" };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ plugins: [example, unrelated, custom] }),
-      }),
-    );
-    expect(await fetchMarketplace()).toEqual([unrelated, custom]);
   });
 
   it("ignores malformed catalogue entries without breaking the whole marketplace", async () => {

@@ -15,11 +15,9 @@ consumers; they are not separate sources of artwork.
 
 Renderer components import `src/lib/brand.ts`; Vite emits only their referenced,
 hashed assets. Rust embeds the tray image and Tauri references bundle assets
-directly. No `public/brand`, root `resources`, `build` image copies or separate
-`src-tauri/icons` tree are required.
+directly.
 
 `scripts/brand/matte_icon.py --source <raw-white-background-artwork>` generates
 these files. It requires Pillow and NumPy; previews go to ignored `.tmp/brand`.
 Run `node scripts/brand/verify-brand.mjs` to verify committed image formats and
-dimensions without extra dependencies. Asset relocation does not regenerate or
-change the artwork.
+dimensions without extra dependencies.
