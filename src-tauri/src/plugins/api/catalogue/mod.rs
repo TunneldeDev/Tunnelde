@@ -64,7 +64,7 @@ mod execution;
 mod file_browser;
 #[path = "files/content/methods.rs"]
 mod file_content;
-#[path = "files/highlights.rs"]
+#[path = "files/highlights/methods.rs"]
 mod file_highlights;
 #[path = "files/preview/methods.rs"]
 mod file_preview;
