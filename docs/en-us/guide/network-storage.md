@@ -43,6 +43,14 @@ passwords. Exported metadata includes proxy usernames and addresses. Importing o
 another computer requires entering its proxy passwords again. Deleting a proxy or
 resetting Network preferences forgets the removed profiles' stored passwords.
 
+## Import SSH config
+
+Choose **Import SSH config** on the welcome page to preview this computer's
+`~/.ssh/config`, then import the selected named hosts and required jump hosts.
+Existing entries are preserved. Keys remain references to their original paths;
+unsupported options appear beside the affected host for manual configuration.
+Refresh the preview if the source changes before importing.
+
 ## SSH jump hosts
 
 Edit a saved host and expand **Proxy & jump hosts**. Choose a proxy and add saved
