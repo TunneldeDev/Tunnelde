@@ -8,7 +8,7 @@ import type { Host } from "@/lib/api/types";
 import { hostMenuCommands, runHostMenuCommand } from "./hostMenu";
 import { pluginSidebarId } from "./sidebars";
 import { editorDocument } from "@/store/editors";
-import { runEditorPlugin } from "./formatting";
+import { runEditorPlugin, writableEditorCommand } from "./formatting";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
 import { samePluginAction, type PluginActionTarget } from "./commands/identity";
@@ -74,7 +74,7 @@ async function invokePluginAction(
   const editorCommand = action.command
     ? plugin.commands.find((item) => item.id === action.command && item.editor)
     : null;
-  if (editorCommand) {
+  if (editorCommand && writableEditorCommand(editorCommand)) {
     const document = target ? editorDocument(target.tabId) : null;
     if (!document || document.documentId !== target?.documentId) {
       toast(i18n.t("editor.documentChanged"), "error");
@@ -87,6 +87,7 @@ async function invokePluginAction(
     );
     return;
   }
+  if (editorCommand) return;
   if (plugin.status !== "running") await store.start(plugin.id);
   if (signal?.aborted) return;
   plugin = usePlugins.getState().items.find((item) => item.id === action.id);
