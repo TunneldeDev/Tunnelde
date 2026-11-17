@@ -418,7 +418,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           <EmptyState title={t("editor.loading")} />
         </div>
       ) : (
-        <div
+<div
           className="td-syntax-editor"
           data-highlighted={syntax.highlighted ? "true" : "false"}
           data-composing={syntaxComposing ? "true" : "false"}
