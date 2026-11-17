@@ -1,11 +1,11 @@
 import * as keyboardActions from "@/lib/keyboard/actions";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n/i18n";
 import { EditorPage } from "@/features/editor/EditorPage";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
-import { beginEditorInput, undoEditorEdit, useEditors, type EditorEntry } from "@/store/editors";
+import { beginEditorInput, useEditors, type EditorEntry } from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
@@ -13,6 +13,17 @@ import { api } from "@/lib/api/ipc";
 import { usePlugins } from "@/store/plugins";
 import type { PluginInfo } from "@/lib/api/types";
 import { useFormatting } from "@/lib/plugins/formatting";
+import { EditorView } from "@codemirror/view";
+
+function editorView(element: HTMLElement): EditorView {
+  const view = EditorView.findFromDOM(element);
+  if (!view) throw new Error("CM view not mounted");
+  return view;
+}
+function editorText(element: HTMLElement): string {
+  return editorView(element).state.doc.toString();
+}
+const editorBox = async (name = "draft.txt") => screen.findByRole("textbox", { name });
 
 const entry: EditorEntry = {
   tabId: "editor",
@@ -27,6 +38,11 @@ const entry: EditorEntry = {
   saving: false,
   error: null,
 };
+
+afterEach(() => {
+  cleanup();
+  useEditors.getState().discard("editor");
+});
 
 beforeEach(() => {
   useEditors.getState().discard("editor");
@@ -66,7 +82,7 @@ describe("text encoding controls", () => {
     await waitFor(() =>
       expect(api.sftpReadText).toHaveBeenCalledWith("s1", "/draft.txt", "gb18030"),
     );
-    expect(screen.getByRole("textbox", { name: "draft.txt" })).toHaveProperty("value", "旧版中文");
+    expect(editorText(await editorBox())).toBe("旧版中文");
     act(() =>
       useEditors.setState({
         entries: {
@@ -99,7 +115,7 @@ describe("native file-save setup", () => {
       "disabled",
       true,
     );
-    const textarea = screen.getByRole("textbox", { name: "draft.txt" });
+    const textarea = await editorBox();
     textarea.focus();
     fireEvent.keyDown(textarea, { key: "s", ctrlKey: true });
     expect(save).not.toHaveBeenCalled();
@@ -140,7 +156,7 @@ describe("native file-save setup", () => {
 });
 
 describe("editor formatting shortcuts", () => {
-  const prepare = () => {
+  const prepare = async () => {
     const json = {
       ...entry,
       name: "test.json",
@@ -173,21 +189,21 @@ describe("editor formatting shortcuts", () => {
     vi.spyOn(api, "pluginRun").mockResolvedValue({ text: '{\n    "a": 1\n}' });
     vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
     render(<EditorPage tabId="editor" active />);
-    return screen.getByRole("textbox", { name: "test.json" });
+    return await editorBox("test.json");
   };
 
   it.each(["ctrlKey", "metaKey"] as const)(
     "formats with %s and supports one-step undo and redo",
     async (modifier) => {
-      const textarea = prepare();
+      const textarea = await prepare();
       textarea.focus();
       fireEvent.keyDown(textarea, { key: "F", shiftKey: true, [modifier]: true });
-      await waitFor(() => expect(textarea).toHaveProperty("value", '{\n    "a": 1\n}'));
+      await waitFor(() => expect(editorText(textarea)).toBe('{\n    "a": 1\n}'));
       expect(api.sftpWriteText).not.toHaveBeenCalled();
       fireEvent.keyDown(textarea, { key: "z", [modifier]: true });
-      expect(textarea).toHaveProperty("value", '{"a":1}');
+      await waitFor(() => expect(editorText(textarea)).toBe('{"a":1}'));
       fireEvent.keyDown(textarea, { key: "Z", shiftKey: true, [modifier]: true });
-      expect(textarea).toHaveProperty("value", '{\n    "a": 1\n}');
+      await waitFor(() => expect(editorText(textarea)).toBe('{\n    "a": 1\n}'));
       fireEvent(
         textarea,
         new InputEvent("beforeinput", {
@@ -196,12 +212,12 @@ describe("editor formatting shortcuts", () => {
           cancelable: true,
         }),
       );
-      expect(textarea).toHaveProperty("value", '{"a":1}');
+      await waitFor(() => expect(editorText(textarea)).toBe('{"a":1}'));
     },
   );
 
   it("honors a customized binding without stealing the original content-search chord", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() =>
       useSettings.setState({
         settings: {
@@ -225,7 +241,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("runs both applicable plugin commands when their shortcuts conflict", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() =>
       usePlugins.setState((state) => ({
         items: [...state.items, { ...state.items[0]!, id: "second", name: "Second" }],
@@ -240,7 +256,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("blocks lower-priority editor plugins after accepting the preferred formatter", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() => {
       usePlugins.setState((state) => ({
         items: [...state.items, { ...state.items[0]!, id: "second", name: "Second" }],
@@ -260,7 +276,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("keeps a queued formatter bound to the editor when a shared workbench command changes tabs", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockImplementation(() => {
       useWorkspace.setState({ activeId: "other" });
       return true;
@@ -275,7 +291,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("runs both matching editor commands contributed by one plugin in sequence", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() =>
       usePlugins.setState((state) => ({
         items: state.items.map((item) => ({
@@ -292,8 +308,8 @@ describe("editor formatting shortcuts", () => {
     ]);
   });
 
-  it("does not capture an editor plugin shortcut for an unsupported extension", () => {
-    const textarea = prepare();
+  it("does not capture an editor plugin shortcut for an unsupported extension", async () => {
+    const textarea = await prepare();
     act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
     const event = new KeyboardEvent("keydown", {
       key: "F",
@@ -307,8 +323,8 @@ describe("editor formatting shortcuts", () => {
     expect(api.pluginRun).not.toHaveBeenCalled();
   });
 
-  it("updates the format action as matching providers are installed, removed, or the file changes", () => {
-    prepare();
+  it("updates the format action as matching providers are installed, removed, or the file changes", async () => {
+    await prepare();
     const label = /格式化文档|Format document/i;
     expect(screen.getByRole("button", { name: label })).toHaveProperty("disabled", false);
     act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
@@ -377,7 +393,7 @@ describe("EditorPage undo selection", () => {
     direction: "forward" | "backward" | "none" = "none",
   ) => ({ start, end, direction });
 
-  const prepareHistory = () => {
+  const prepareHistory = async () => {
     useEditors.setState({
       entries: {
         editor: {
@@ -390,60 +406,55 @@ describe("EditorPage undo selection", () => {
       },
     });
     render(<EditorPage tabId="editor" active />);
-    return screen.getByRole("textbox", { name: "draft.txt" }) as HTMLTextAreaElement;
+    return (await editorBox()) as HTMLTextAreaElement;
   };
 
-  it("captures the pre-edit caret and restores it through shortcut undo and redo", () => {
-    const textarea = prepareHistory();
-    textarea.focus();
-    textarea.setSelectionRange(3, 3);
-    fireEvent.select(textarea);
+  it("captures the pre-edit caret and restores it through shortcut undo and redo", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 3 } });
     fireEvent(
       textarea,
       new InputEvent("beforeinput", { inputType: "insertText", bubbles: true, cancelable: true }),
     );
-    fireEvent.change(textarea, { target: { value: "abcXdef" } });
-    textarea.setSelectionRange(4, 4);
-    fireEvent.select(textarea);
+    view.dispatch({ changes: { from: 3, to: 3, insert: "X" }, selection: { anchor: 4 } });
+    await waitFor(() => expect(editorText(textarea)).toBe("abcXdef"));
 
     fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
-    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
-    expect(textarea.selectionStart).toBe(3);
-    expect(textarea.selectionEnd).toBe(3);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
+    expect(editorView(textarea).state.selection.main.from).toBe(3);
+    expect(editorView(textarea).state.selection.main.to).toBe(3);
 
     fireEvent.keyDown(textarea, { key: "z", ctrlKey: true, shiftKey: true });
-    expect(useEditors.getState().entries.editor?.content).toBe("abcXdef");
-    expect(textarea.selectionStart).toBe(4);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcXdef"));
   });
 
-  it("restores selection through the native beforeinput history path", () => {
-    const textarea = prepareHistory();
-    textarea.focus();
-    textarea.setSelectionRange(3, 3);
-    fireEvent.select(textarea);
+  it("restores selection through the native beforeinput history path", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 3 } });
     beginEditorInput("editor", "insertText", selection(3));
-    fireEvent.change(textarea, { target: { value: "abcXdef" } });
-    textarea.setSelectionRange(4, 4);
-    fireEvent.select(textarea);
+    view.dispatch({ changes: { from: 3, to: 3, insert: "X" }, selection: { anchor: 4 } });
+    await waitFor(() => expect(editorText(textarea)).toBe("abcXdef"));
 
     const nativeUndo = new InputEvent("beforeinput", {
       inputType: "historyUndo",
       bubbles: true,
       cancelable: true,
     });
-    fireEvent(textarea, nativeUndo);
+    textarea.dispatchEvent(nativeUndo);
     expect(nativeUndo.defaultPrevented).toBe(true);
-    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
-    expect(textarea.selectionStart).toBe(3);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
+    expect(editorView(textarea).state.selection.main.from).toBe(3);
   });
 
-  it("restores a ranged selection direction and viewport after replacement undo", () => {
-    const textarea = prepareHistory();
-    textarea.focus();
-    textarea.setSelectionRange(1, 4, "backward");
-    textarea.scrollTop = 120;
-    textarea.scrollLeft = 7;
-    fireEvent.select(textarea);
+  it("restores a ranged selection direction after replacement undo", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 4, head: 1 } });
     fireEvent(
       textarea,
       new InputEvent("beforeinput", {
@@ -452,103 +463,50 @@ describe("EditorPage undo selection", () => {
         cancelable: true,
       }),
     );
-    fireEvent.change(textarea, { target: { value: "aQef" } });
-    textarea.setSelectionRange(2, 2);
-    fireEvent.select(textarea);
-    textarea.scrollTop = 0;
-    textarea.scrollLeft = 0;
+    view.dispatch({ changes: { from: 1, to: 4, insert: "Q" }, selection: { anchor: 2 } });
+    await waitFor(() => expect(editorText(textarea)).toBe("aQef"));
 
     fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
-    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
-    expect(textarea.selectionStart).toBe(1);
-    expect(textarea.selectionEnd).toBe(4);
-    expect(textarea.selectionDirection).toBe("backward");
-    expect(textarea.scrollTop).toBe(120);
-    expect(textarea.scrollLeft).toBe(7);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
+    expect(editorView(textarea).state.selection.main.from).toBe(1);
+    expect(editorView(textarea).state.selection.main.to).toBe(4);
+    expect(editorView(textarea).state.selection.main.anchor).toBe(4);
   });
 
-  it("treats a long IME composition as one undo transaction without resetting its caret", () => {
-    vi.useFakeTimers({ now: 1_000 });
-    try {
-      const textarea = prepareHistory();
-      textarea.focus();
-      textarea.setSelectionRange(3, 3);
-      fireEvent.select(textarea);
-      fireEvent.compositionStart(textarea);
-      fireEvent.change(textarea, { target: { value: "abc拼" } });
-      textarea.setSelectionRange(4, 4);
-      fireEvent.select(textarea);
-      act(() => vi.advanceTimersByTime(2_000));
-      fireEvent.change(textarea, { target: { value: "abc拼音" } });
-      textarea.setSelectionRange(5, 5);
-      fireEvent.select(textarea);
-      fireEvent.compositionEnd(textarea, { data: "拼音" });
-
-      fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
-      expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
-      expect(textarea.selectionStart).toBe(3);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("holds a restore queued during composition and applies it after composition ends", () => {
-    const textarea = prepareHistory();
-    textarea.focus();
-    textarea.setSelectionRange(3, 3);
-    fireEvent.select(textarea);
-    beginEditorInput("editor", "insertText", selection(3));
-    fireEvent.change(textarea, { target: { value: "abcXdef" } });
-    textarea.setSelectionRange(4, 4);
-    fireEvent.select(textarea);
-
-    act(() => fireEvent.compositionStart(textarea));
-    act(() => {
-      expect(undoEditorEdit("editor")).toBe(true);
-    });
-    expect(useEditors.getState().entries.editor?.content).toBe("abcdef");
-    expect(textarea.selectionStart).not.toBe(3);
-
+  it("treats a long IME composition as one host undo transaction", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 3 } });
+    fireEvent.compositionStart(textarea);
+    view.dispatch({ changes: { from: 3, to: 3, insert: "拼" }, selection: { anchor: 4 } });
+    view.dispatch({ changes: { from: 4, to: 4, insert: "音" }, selection: { anchor: 5 } });
     fireEvent.compositionEnd(textarea);
-    expect(textarea.selectionStart).toBe(3);
-    expect(textarea.selectionEnd).toBe(3);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abc拼音def"));
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
   });
 });
 
-describe("EditorPage native scrolling", () => {
-  it("renders the editor as one native textarea without a simulated scrollbar or wheel interception", () => {
+describe("EditorPage native scrolling and preferences", () => {
+  it("uses a native CM scroller and preserves selection/viewport", async () => {
     const { container } = render(<EditorPage tabId="editor" active />);
-    const textarea = screen.getByRole("textbox", { name: "draft.txt" });
-    expect(textarea.classList.contains("editor-body")).toBe(true);
+    const textarea = await editorBox();
     expect(container.querySelector(".td-text-scrollbar")).toBeNull();
-
-    const wheel = new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true });
-    fireEvent(textarea, wheel);
-    expect(wheel.defaultPrevented).toBe(false);
+    expect(textarea.closest(".cm-scroller")).not.toBeNull();
+    const view = editorView(textarea);
+    view.dispatch({ selection: { anchor: 5, head: 2 } });
+    expect(view.state.selection.main.from).toBe(2);
+    expect(view.state.selection.main.to).toBe(5);
   });
 
-  it("retains native selection and viewport state on the editor textarea", () => {
+  it("updates CM tab width, wrapping and spellcheck without changing the draft", async () => {
     render(<EditorPage tabId="editor" active />);
-    const textarea = screen.getByRole("textbox", { name: "draft.txt" }) as HTMLTextAreaElement;
-    textarea.focus();
-    textarea.setSelectionRange(2, 5, "backward");
-    expect(textarea.selectionStart).toBe(2);
-    expect(textarea.selectionEnd).toBe(5);
-    expect(textarea.selectionDirection).toBe("backward");
-    textarea.scrollTop = 80;
-    textarea.scrollLeft = 12;
-    expect(textarea.scrollTop).toBe(80);
-    expect(textarea.scrollLeft).toBe(12);
-  });
-});
-
-describe("EditorPage preferences", () => {
-  it("updates wrapping, tab width, and spellcheck without changing the draft or dirty state", () => {
-    render(<EditorPage tabId="editor" active />);
-    const textarea = screen.getByRole("textbox", { name: "draft.txt" }) as HTMLTextAreaElement;
-    expect(textarea.classList.contains("td-code-editor")).toBe(true);
-    expect(textarea.wrap).toBe("off");
-    expect(textarea.style.tabSize).toBe("4");
+    const textarea = await editorBox();
+    const view = editorView(textarea);
+    expect(view.dom.querySelector(".cm-lineNumbers")).not.toBeNull();
+    expect(view.state.tabSize).toBe(4);
     expect(textarea.getAttribute("spellcheck")).toBe("false");
     act(() =>
       useSettings.setState({
@@ -560,14 +518,8 @@ describe("EditorPage preferences", () => {
         },
       }),
     );
-    expect(textarea.wrap).toBe("soft");
-    expect(textarea.style.whiteSpace).toBe("pre-wrap");
-    expect(textarea.style.tabSize).toBe("8");
+    expect(view.state.tabSize).toBe(8);
     expect(textarea.getAttribute("spellcheck")).toBe("true");
-    expect(useEditors.getState().entries.editor).toEqual(entry);
-    expect(useEditors.getState().isDirty("editor")).toBe(true);
-    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS } }));
-    expect(textarea.wrap).toBe("off");
     expect(useEditors.getState().entries.editor?.content).toBe(entry.content);
   });
 });

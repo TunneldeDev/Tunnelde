@@ -57,6 +57,15 @@ export function useViewElementState(
   }, [key, element, ready]);
 }
 
+/** Persist non-text-control widget state without a React update. */
+export function rememberViewElementState(key: string, state: unknown) {
+  values.set(key, state);
+}
+
+export function viewElementState<T>(key: string): T | undefined {
+  return values.get(key) as T | undefined;
+}
+
 /** View drafts survive WebView suspension in native memory, never localStorage. */
 export function useViewState<T>(
   key: string,

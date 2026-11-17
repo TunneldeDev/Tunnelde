@@ -1,7 +1,7 @@
 import { Save, ShieldCheck, WandSparkles } from "lucide-react";
 import { shortcutCommands } from "@/lib/keyboard/registry";
 import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Select } from "@/components/ui/form/Select";
 
@@ -15,6 +15,7 @@ import {
   endEditorComposition,
   editorDocument,
   editorHasPendingChanges,
+  peekEditorSelectionRestore,
   rememberEditorSelection,
   undoEditorEdit,
   useEditors,
@@ -33,26 +34,27 @@ import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import { useEditorLocation } from "@/store/editorLocation";
-import { useViewElementState, useBackgroundGuard } from "@/lib/session/viewState";
+import { useBackgroundGuard } from "@/lib/session/viewState";
 import { EditorConflictDialog } from "./EditorConflictDialog";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import type { TextEncoding } from "@/lib/api/types";
+import type { EditorView } from "@codemirror/view";
+import { editorTextMap, editorToSource, sourceToEditor } from "./editorText";
+import {
+  locationOffset,
+  restoreLargeEditorSelection,
+  suspendLargeEditorSelection,
+} from "./largeEditorState";
+
+const LargeEditor = lazy(() =>
+  import("./LargeEditor").then((module) => ({ default: module.LargeEditor })),
+);
 
 interface EditorPageProps {
   tabId: string;
   active: boolean;
-}
-
-function selectionSnapshot(element: HTMLTextAreaElement): EditorSelectionSnapshot {
-  return {
-    start: element.selectionStart,
-    end: element.selectionEnd,
-    direction: element.selectionDirection,
-    scrollTop: element.scrollTop,
-    scrollLeft: element.scrollLeft,
-  };
 }
 
 export function EditorPage({ tabId, active }: EditorPageProps) {
@@ -98,10 +100,24 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const hasFormatter = usePlugins(
     (state) => !!entry && documentFormatters(entry.path, state.items).length > 0,
   );
-  const textarea = useRef<HTMLTextAreaElement>(null);
+  const largeView = useRef<EditorView | null>(null);
+  const page = useRef<HTMLDivElement>(null);
+  const [fallbackDocumentId] = useState(() => entry?.documentId ?? crypto.randomUUID());
+  const documentId = entry?.documentId ?? fallbackDocumentId;
+  const documentVersion = entry?.version ?? 0;
   const composing = useRef(false);
+  const lastEditorContent = useRef(entry?.content ?? "");
   const [selectionRevision, setSelectionRevision] = useState(0);
-  useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
+  const [largeRestore, setLargeRestore] = useState<{
+    token: number;
+    selection: EditorSelectionSnapshot;
+  } | null>(null);
+  useEffect(() => {
+    if (entry && !entry.loading && !entry.error && entry.documentId === undefined)
+      editorDocument(tabId);
+    // The upgrade runs once per stable document state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.documentId, entry?.error, entry?.loading, tabId]);
   useBackgroundGuard(reconnecting || formatting || reviewing || settingUp || reopening);
   const setup = async () => {
     if (!entry?.sessionId || settingUp) return;
@@ -122,54 +138,69 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       setSettingUp(false);
     }
   };
-  useLayoutEffect(() => {
-    const element = textarea.current;
-    if (
-      composing.current ||
-      !element ||
-      !entry ||
-      entry.loading ||
-      entry.error ||
-      !entry.documentId ||
-      entry.version === undefined
-    )
-      return;
+  useEffect(() => {
+    const instance = largeView.current;
+    if (!instance || composing.current || !entry?.documentId || entry.version === undefined) return;
     const restored = consumeEditorSelectionRestore(
       tabId,
       entry.documentId,
       entry.version,
       entry.content,
     );
-    if (!restored) return;
-    element.setSelectionRange(restored.start, restored.end, restored.direction);
-    if (restored.scrollTop !== undefined) element.scrollTop = restored.scrollTop;
-    if (restored.scrollLeft !== undefined) element.scrollLeft = restored.scrollLeft;
+    if (restored)
+      queueMicrotask(() =>
+        setLargeRestore((current) => ({ token: (current?.token ?? 0) + 1, selection: restored })),
+      );
   }, [entry, selectionRevision, tabId]);
 
+  useEffect(() => {
+    if (!largeRestore) return;
+    const timer = setTimeout(() => setLargeRestore(null), 0);
+    return () => clearTimeout(timer);
+  }, [largeRestore]);
+
+  const currentSourceSelection = (): EditorSelectionSnapshot | null => {
+    const view = largeView.current;
+    if (!view) return null;
+    const range = view.state.selection.main;
+    const map = editorTextMap(lastEditorContent.current);
+    return {
+      start: editorToSource(map, range.from),
+      end: editorToSource(map, range.to),
+      direction: range.anchor <= range.head ? "forward" : "backward",
+      scrollTop: view.scrollDOM.scrollTop,
+      scrollLeft: view.scrollDOM.scrollLeft,
+    };
+  };
   const location = useEditorLocation((state) => state.target);
   useEffect(() => {
-    if (
-      !active ||
-      location?.tabId !== tabId ||
-      !entry ||
-      entry.loading ||
-      entry.error ||
-      !textarea.current
-    )
-      return;
-    const lines = entry.content.split("\n");
-    const line = Math.max(0, Math.min(lines.length - 1, location.line - 1));
-    const offset =
-      lines.slice(0, line).reduce((total, item) => total + item.length + 1, 0) +
-      Array.from(lines[line] ?? "")
-        .slice(0, Math.max(0, location.column - 1))
-        .join("").length;
-    const element = textarea.current;
-    element.focus();
-    element.setSelectionRange(offset, offset);
-    const lineHeight = parseFloat(getComputedStyle(element).lineHeight) || 20;
-    element.scrollTop = Math.max(0, line * lineHeight - element.clientHeight / 3);
-    useEditorLocation.getState().clear();
+    void (async () => {
+      const instance = largeView.current;
+      if (
+        !active ||
+        location?.tabId !== tabId ||
+        !entry ||
+        entry.loading ||
+        entry.error ||
+        !instance
+      )
+        return;
+      const line = Math.max(1, Math.min(instance.state.doc.lines, location.line));
+      const target = instance.state.doc.line(line);
+      const offset = sourceToEditor(
+        editorTextMap(entry.content),
+        locationOffset(entry.content, location.line, location.column),
+      );
+      const clamped = Math.max(target.from, Math.min(target.to, offset));
+      instance.dispatch({
+        selection: { anchor: clamped },
+        effects: [
+          (await import("@codemirror/view")).EditorView.scrollIntoView(clamped, { y: "center" }),
+        ],
+      });
+      instance.focus();
+      useEditorLocation.getState().clear();
+    })();
   }, [active, location, tabId, entry]);
 
   const changeEncoding = async (encoding: TextEncoding) => {
@@ -204,10 +235,8 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   };
 
   useEffect(() => {
-    if (!active) {
-      return;
-    }
-    const element = textarea.current?.closest<HTMLElement>(".editor-page");
+    if (!active) return;
+    const element = page.current;
     if (!element) return;
     return bindShortcutProvider(element, (event) => {
       const plugins = usePlugins.getState().items;
@@ -234,8 +263,8 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
               await save(tabId);
             });
           else if (id === "editor.undo" || id === "editor.redo") {
-            if (textarea.current)
-              rememberEditorSelection(tabId, selectionSnapshot(textarea.current));
+            const selection = currentSourceSelection();
+            if (selection) rememberEditorSelection(tabId, selection);
             return undoEditorEdit(tabId, id === "editor.redo");
           } else {
             const action = commands.find((command) => command.id === id)?.plugin;
@@ -250,29 +279,6 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     });
   }, [active, save, tabId, entry, settingUp]);
 
-  useEffect(() => {
-    const element = textarea.current;
-    if (!element) return;
-    const beforeInput = (event: InputEvent) => {
-      if (composing.current) return;
-      const selection = selectionSnapshot(element);
-      if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
-        event.preventDefault();
-        rememberEditorSelection(tabId, selection);
-        undoEditorEdit(tabId, event.inputType === "historyRedo");
-        return;
-      }
-      if (event.inputType === "insertCompositionText") {
-        composing.current = true;
-        beginEditorComposition(tabId, selection);
-        return;
-      }
-      beginEditorInput(tabId, event.inputType, selection);
-    };
-    element.addEventListener("beforeinput", beforeInput);
-    return () => element.removeEventListener("beforeinput", beforeInput);
-  }, [tabId, entry?.loading, entry?.error]);
-
   if (!entry) {
     return (
       <div className="page">
@@ -282,7 +288,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   }
 
   return (
-    <div className="editor-page">
+    <div className="editor-page" ref={page}>
       <header className="editor-head">
         <span className={cn("editor-dot", dirty && "is-dirty")} aria-hidden="true" />
         <span className="editor-head__name">{entry.name}</span>
@@ -399,35 +405,74 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           <EmptyState title={t("editor.loading")} />
         </div>
       ) : (
-        <textarea
-          ref={textarea}
-          className="editor-body td-code-editor"
-          aria-label={entry.name}
-          spellCheck={spellCheck}
-          wrap={wordWrap ? "soft" : "off"}
-          style={{
-            whiteSpace: wordWrap ? "pre-wrap" : "pre",
-            overflowWrap: wordWrap ? "anywhere" : "normal",
-            tabSize,
-          }}
-          value={entry.content}
-          onChange={(event) => change(tabId, event.target.value, selectionSnapshot(event.target))}
-          onSelect={(event) =>
-            rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
+        <Suspense
+          fallback={
+            <div className="page">
+              <EmptyState title={t("editor.loading")} />
+            </div>
           }
-          onScroll={(event) =>
-            rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
-          }
-          onCompositionStart={(event) => {
-            composing.current = true;
-            beginEditorComposition(tabId, selectionSnapshot(event.currentTarget));
-          }}
-          onCompositionEnd={(event) => {
-            composing.current = false;
-            endEditorComposition(tabId, selectionSnapshot(event.currentTarget));
-            setSelectionRevision((revision) => revision + 1);
-          }}
-        />
+        >
+          <LargeEditor
+            content={entry.content}
+            documentId={documentId}
+            version={documentVersion}
+            label={entry.name}
+            readOnly={entry.disconnected}
+            wordWrap={wordWrap}
+            tabSize={tabSize}
+            spellCheck={spellCheck}
+            viewRef={largeView}
+            onViewReady={() => {
+              const pending = peekEditorSelectionRestore(
+                tabId,
+                documentId,
+                documentVersion,
+                entry.content,
+              );
+              const restored = pending ?? restoreLargeEditorSelection(tabId);
+              if (restored)
+                setLargeRestore((current) => ({
+                  token: (current?.token ?? 0) + 1,
+                  selection: restored,
+                }));
+            }}
+            restoreSelection={largeRestore?.selection}
+            restoreToken={largeRestore?.token}
+            onBeforeInput={(inputType, selection) => beginEditorInput(tabId, inputType, selection)}
+            onChange={(content, selection) => {
+              lastEditorContent.current = content;
+              change(tabId, content, selection);
+              rememberEditorSelection(tabId, selection);
+            }}
+            onSelection={(selection) => {
+              rememberEditorSelection(tabId, selection);
+              suspendLargeEditorSelection(tabId, selection);
+            }}
+            onSelectionSnapshot={(selection) => {
+              rememberEditorSelection(tabId, selection);
+              suspendLargeEditorSelection(tabId, selection);
+            }}
+            onCompositionStart={(selection) => {
+              composing.current = true;
+              beginEditorComposition(tabId, selection);
+            }}
+            onCompositionEnd={(selection) => {
+              composing.current = false;
+              endEditorComposition(tabId, selection);
+              setSelectionRevision((revision) => revision + 1);
+            }}
+            onUndo={() => {
+              const selection = currentSourceSelection();
+              if (selection) rememberEditorSelection(tabId, selection);
+              return undoEditorEdit(tabId);
+            }}
+            onRedo={() => {
+              const selection = currentSourceSelection();
+              if (selection) rememberEditorSelection(tabId, selection);
+              return undoEditorEdit(tabId, true);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );
