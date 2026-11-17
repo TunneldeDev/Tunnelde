@@ -19,6 +19,10 @@ it("compares the actual disk text and retains the draft when dismissed", async (
   render(<EditorConflictDialog tabId="review" onClose={onClose} />);
   await screen.findByDisplayValue("external update");
   expect(screen.getByDisplayValue("unsaved draft")).toBeTruthy();
+  const disk = screen.getByDisplayValue("external update");
+  const draft = screen.getByDisplayValue("unsaved draft");
+  expect(disk.classList.contains("td-code-editor")).toBe(true);
+  expect(draft.classList.contains("td-code-editor")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
   expect(onClose).toHaveBeenCalledOnce();
   expect(useEditors.getState().entries.review?.content).toBe("unsaved draft");

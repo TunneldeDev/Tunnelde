@@ -304,7 +304,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         <div className="editor-text">
           <textarea
             ref={textarea}
-            className="editor-body"
+            className="editor-body td-code-editor"
             aria-label={entry.name}
             spellCheck={spellCheck}
             wrap={wordWrap ? "soft" : "off"}

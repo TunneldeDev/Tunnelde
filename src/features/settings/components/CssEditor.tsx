@@ -62,7 +62,7 @@ export function CssEditor({
     <div className="settings-css-editor">
       <Textarea
         aria-label={t("settings.customCss")}
-        className="settings-css"
+        className="settings-css td-code-editor"
         spellCheck={false}
         rows={10}
         value={text}

@@ -48,6 +48,18 @@ const schema: ConfigurationSnapshot["schema"] = {
       schema: { type: "integer", minimum: 0, maximum: 10 },
       default: 0,
     },
+    {
+      id: "options",
+      group: "general",
+      title: "Options",
+      schema: {
+        type: "object",
+        properties: { value: { type: "string", maxLength: 32 } },
+        required: [],
+        additionalProperties: false,
+      },
+      default: {},
+    },
   ],
 };
 const snapshot = (revision = "initial"): ConfigurationSnapshot => ({
@@ -57,7 +69,7 @@ const snapshot = (revision = "initial"): ConfigurationSnapshot => ({
   storedVersion: null,
   storedDigest: null,
   status: "ready",
-  values: { enabled: false, name: "test", count: 0 },
+  values: { enabled: false, name: "test", count: 0, options: {} },
 });
 const plugin = {
   id: "config-qa",
@@ -99,13 +111,14 @@ it("loads only an expanded plugin and saves stopped-plugin settings with false, 
   fireEvent.click(screen.getByText("Config QA"));
   await screen.findByLabelText("Display name");
   expect(screen.getByLabelText("Count")).toHaveProperty("value", "0");
+  expect(screen.getByLabelText("Options").classList.contains("td-code-editor")).toBe(true);
   fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "changed" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(client.update).toHaveBeenCalledWith("config-qa", "package", {
       expectedRevision: "initial",
       schemaDigest: "digest",
-      values: { enabled: false, name: "changed", count: 0 },
+      values: { enabled: false, name: "changed", count: 0, options: {} },
     }),
   );
   await screen.findByText("No unsaved changes");
