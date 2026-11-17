@@ -1,4 +1,4 @@
-import { api, isTauri } from "@/lib/api/ipc";
+import { api } from "@/lib/api/ipc";
 import type { PluginInfo } from "@/lib/api/types";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { usePlugins } from "@/store/plugins";
@@ -92,9 +92,9 @@ function requestFor(target: SyntaxHighlightTarget): SyntaxProviderRequest | null
 function authorized(plugin: PluginInfo): boolean {
   const security = usePluginSecurity.getState().state;
   if (security.restricted) return false;
-  return isTauri()
-    ? plugin.permissions.every((permission) => security.grants[plugin.id]?.includes(permission))
-    : true;
+  // Direct runner calls still require an explicit grant. The hook separately
+  // treats browser tests without a Tauri bridge as already-authorized.
+  return plugin.permissions.every((permission) => security.grants[plugin.id]?.includes(permission));
 }
 
 /** Auto-highlighting never starts a plugin or requests consent. It invokes one

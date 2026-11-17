@@ -102,8 +102,7 @@ export function useEditorSyntax({
     : "";
   const authorized =
     !provider ||
-    !isTauri() ||
-    (!security.restricted && !!plugin && hasPluginGrant(security, plugin));
+    (!security.restricted && !!plugin && (isTauri() ? hasPluginGrant(security, plugin) : true));
   const sourceLength = content.length;
   const requestedOffset = requestedRange?.offset ?? null;
   const requestedLength = requestedRange?.length ?? null;
