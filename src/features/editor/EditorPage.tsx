@@ -114,7 +114,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     composing: syntaxComposing,
     enabled: !!entry && !entry.loading && !entry.error && !entry.disconnected,
   });
-  const syntaxMetrics = useEditorSyntaxMetrics(textarea, [
+  const syntaxMetrics = useEditorSyntaxMetrics(textarea, syntax.highlighted, [
     entry?.content,
     entry?.path,
     wordWrap,

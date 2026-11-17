@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@/lib/api/ipc";
 import { hasPluginGrant, usePluginSecurity } from "@/store/pluginSecurity";
 import { usePlugins } from "@/store/plugins";
@@ -79,42 +79,6 @@ export function useEditorSyntax({
     (SyntaxHighlightState & { content: string; provider: string; runtime: string }) | null
   >(null);
   const sequence = useRef(0);
-  const queued = useRef<{
-    document: SyntaxDocumentSnapshot;
-    provider: NonNullable<typeof provider>;
-    providerKey: string;
-    runtime: string;
-    sequence: number;
-  } | null>(null);
-  const running = useRef<{ sequence: number; controller: AbortController } | null>(null);
-
-  const startNext = useCallback(() => {
-    if (running.current) return;
-    const job = queued.current;
-    queued.current = null;
-    if (!job) return;
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    running.current = { sequence: job.sequence, controller };
-    void runSyntaxHighlighting(job.provider, job.document, controller.signal)
-      .then((tokens) => {
-        if (controller.signal.aborted || job.sequence !== sequence.current || !tokens) return;
-        setRendered({
-          tokens,
-          documentId: job.document.documentId,
-          version: job.document.version,
-          highlighted: tokens.length > 0,
-          content: job.document.content,
-          provider: job.providerKey,
-          runtime: job.runtime,
-        });
-      })
-      .finally(() => {
-        window.clearTimeout(timeout);
-        if (running.current?.sequence === job.sequence) running.current = null;
-        startNext();
-      });
-  }, []);
 
   useEffect(() => {
     const valid =
@@ -129,10 +93,6 @@ export function useEditorSyntax({
       authorized;
     if (!valid) {
       sequence.current += 1;
-      queued.current = null;
-      running.current?.controller.abort();
-      running.current = null;
-      setRendered((value) => (value === null ? value : null));
       return;
     }
     const currentSequence = ++sequence.current;
@@ -145,17 +105,27 @@ export function useEditorSyntax({
       content,
       dirty,
     };
-    const timer = window.setTimeout(() => {
-      queued.current = {
-        document: snapshot,
-        provider,
-        providerKey,
-        runtime,
-        sequence: currentSequence,
-      };
-      startNext();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), DEBOUNCE_MS + REQUEST_TIMEOUT_MS);
+    const debounce = window.setTimeout(() => {
+      void runSyntaxHighlighting(provider, snapshot, controller.signal).then((tokens) => {
+        if (controller.signal.aborted || currentSequence !== sequence.current || !tokens) return;
+        setRendered({
+          tokens,
+          documentId,
+          version,
+          highlighted: tokens.length > 0,
+          content,
+          provider: providerKey,
+          runtime,
+        });
+      });
     }, DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(debounce);
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [
     authorized,
     compatible,
@@ -170,7 +140,6 @@ export function useEditorSyntax({
     provider,
     providerKey,
     runtime,
-    startNext,
     stopping,
     tabId,
     version,
@@ -179,9 +148,6 @@ export function useEditorSyntax({
   useEffect(
     () => () => {
       sequence.current += 1;
-      queued.current = null;
-      running.current?.controller.abort();
-      running.current = null;
     },
     [],
   );

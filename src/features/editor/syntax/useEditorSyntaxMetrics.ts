@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 import type { EditorSyntaxMetrics } from "./EditorSyntaxOverlay";
 
 const FALLBACK: EditorSyntaxMetrics = {
@@ -19,6 +19,13 @@ const FALLBACK: EditorSyntaxMetrics = {
 
 function measure(element: HTMLTextAreaElement, previous: EditorSyntaxMetrics): EditorSyntaxMetrics {
   const style = getComputedStyle(element);
+  const scrollbarWidth = Math.max(
+    0,
+    element.offsetWidth -
+      element.clientWidth -
+      (parseFloat(style.borderLeftWidth) || 0) -
+      (parseFloat(style.borderRightWidth) || 0),
+  );
   return {
     font: style.fontFamily,
     fontSize: style.fontSize,
@@ -27,19 +34,9 @@ function measure(element: HTMLTextAreaElement, previous: EditorSyntaxMetrics): E
     wordWrap: element.wrap === "soft",
     padding: style.padding,
     paddingInline: (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0),
-    contentWidth:
-      element.offsetWidth -
-      (parseFloat(style.borderLeftWidth) || 0) -
-      (parseFloat(style.borderRightWidth) || 0) -
-      Math.max(0, element.offsetWidth - element.clientWidth),
+    contentWidth: Math.max(0, element.offsetWidth - scrollbarWidth),
     border: style.border,
-    scrollbarWidth: Math.max(
-      0,
-      element.offsetWidth -
-        element.clientWidth -
-        (parseFloat(style.borderLeftWidth) || 0) -
-        (parseFloat(style.borderRightWidth) || 0),
-    ),
+    scrollbarWidth,
     scrollbarHeight: Math.max(
       0,
       element.offsetHeight -
@@ -54,10 +51,11 @@ function measure(element: HTMLTextAreaElement, previous: EditorSyntaxMetrics): E
 
 export function useEditorSyntaxMetrics(
   target: RefObject<HTMLTextAreaElement | null>,
+  enabled: boolean,
   dependencies: readonly unknown[],
 ) {
   const [metrics, setMetrics] = useState<EditorSyntaxMetrics>(FALLBACK);
-  const sync = useCallback(() => {
+  const update = () => {
     const element = target.current;
     if (!element) return;
     setMetrics((previous) => {
@@ -69,27 +67,39 @@ export function useEditorSyntaxMetrics(
         ? previous
         : next;
     });
-  }, [target]);
+  };
 
-  useLayoutEffect(sync, [sync, ...dependencies]);
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+    // Measurement dependencies are supplied by the editor surface.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, target, ...dependencies]);
 
   useEffect(() => {
+    if (!enabled) return;
     const element = target.current;
     if (!element) return;
     const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => sync());
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => update());
     observer?.observe(element);
-    const onScroll = () => sync();
-    const onResize = () => sync();
+    const onScroll = () => update();
+    const onResize = () => update();
+    const onFonts = () => update();
     element.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onResize);
-    void document.fonts?.ready.then(sync).catch(() => {});
+    document.fonts?.addEventListener?.("loadingdone", onFonts);
+    void document.fonts?.ready.then(update).catch(() => {});
     return () => {
       observer?.disconnect();
       element.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
+      document.fonts?.removeEventListener?.("loadingdone", onFonts);
     };
-  }, [sync, target]);
+    // update intentionally follows the current ref and latest closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, target]);
 
-  return { metrics, sync };
+  return { metrics: enabled ? metrics : FALLBACK, sync: update };
 }
