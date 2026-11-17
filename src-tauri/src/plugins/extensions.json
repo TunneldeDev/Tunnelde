@@ -274,7 +274,7 @@
     },
     {
       "id": "files",
-      "namespaces": ["files", "fileBrowser", "filePreview", "editor", "clipboard"]
+      "namespaces": ["files", "fileBrowser", "fileList", "filePreview", "editor", "clipboard"]
     },
     {
       "id": "terminal",
@@ -436,6 +436,24 @@
         "perPlugin": 8,
         "total": 128,
         "entriesPerCollection": 256
+      }
+    },
+    {
+      "id": "fileList.highlights",
+      "domain": "files",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "set": "fileList.setHighlights",
+        "remove": "fileList.removeHighlights"
+      },
+      "ownership": "runtime",
+      "permissions": ["fileBrowser.read", "workspace.write"],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "rulesPerCollection": 256
       }
     },
     {
