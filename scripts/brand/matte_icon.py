@@ -310,11 +310,7 @@ def make_nsis_images(master: Image.Image, build_dir: Path, preview_dir: Path) ->
     log("installer BMPs written")
 
 
-def make_tray(master: Image.Image, resources: Path, preview_dir: Path) -> None:
-    resources.mkdir(parents=True, exist_ok=True)
-    colored = resize(master, 32)
-    colored.save(resources / "tray-32.png", optimize=True)
-    resize(master, 16).save(resources / "tray-16.png", optimize=True)
+def make_tray(brand_dir: Path, preview_dir: Path) -> None:
 
     # macOS template image: a monochrome mark that the system tints for the menu bar.
     scale = 4
@@ -338,8 +334,8 @@ def make_tray(master: Image.Image, resources: Path, preview_dir: Path) -> None:
     draw.line((18 * scale, 21 * scale, 23 * scale, 21 * scale), fill=(0, 0, 0, 255), width=stroke)
     template_32 = template.resize((32, 32), Image.Resampling.LANCZOS)
     template_16 = template.resize((16, 16), Image.Resampling.LANCZOS)
-    template_32.save(resources / "trayTemplate@2x.png", optimize=True)
-    template_16.save(resources / "trayTemplate.png", optimize=True)
+    template_32.save(brand_dir / "trayTemplate@2x.png", optimize=True)
+    template_16.save(brand_dir / "trayTemplate.png", optimize=True)
     template_32.save(preview_dir / "trayTemplate@2x.png", optimize=True)
     log("tray icons written")
 
@@ -356,17 +352,9 @@ def main() -> None:
     master = build_matte(load_source(source_path))
 
     brand_dir = ROOT / "assets" / "brand"
-    build_dir = ROOT / "build"
-    resources = ROOT / "resources"
-    tauri_icons = ROOT / "src-tauri" / "icons"
-    renderer_brand = ROOT / "public" / "brand"
     preview_dir = ROOT / ".tmp" / "brand"
     for directory in (
         brand_dir,
-        build_dir,
-        resources,
-        tauri_icons,
-        renderer_brand,
         preview_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
@@ -375,19 +363,17 @@ def main() -> None:
 
     images = {size: resize(master, size) for size in PNG_SIZES}
     # Only generate renderer assets consumed by the application.
-    images[256].save(renderer_brand / "mark-256.png", optimize=True)
-    images[64].save(renderer_brand / "favicon.png", optimize=True)
+    images[256].save(brand_dir / "mark-256.png", optimize=True)
+    images[64].save(brand_dir / "favicon.png", optimize=True)
 
-    # Tauri expects these exact names.
-    images[32].save(tauri_icons / "32x32.png", optimize=True)
-    images[128].save(tauri_icons / "128x128.png", optimize=True)
-    images[256].save(tauri_icons / "128x128@2x.png", optimize=True)
-    images[512].save(tauri_icons / "icon.png", optimize=True)
-    write_ico({size: images[size] for size in ICO_SIZES}, tauri_icons / "icon.ico")
-    write_icns(images, tauri_icons / "icon.icns")
+    # Shared PNGs serve renderer, native tray and configured Tauri icons.
+    images[32].save(brand_dir / "32x32.png", optimize=True)
+    images[128].save(brand_dir / "128x128.png", optimize=True)
+    write_ico({size: images[size] for size in ICO_SIZES}, brand_dir / "icon.ico")
+    write_icns(images, brand_dir / "icon.icns")
 
-    make_nsis_images(master, build_dir, preview_dir)
-    make_tray(master, resources, preview_dir)
+    make_nsis_images(master, brand_dir, preview_dir)
+    make_tray(brand_dir, preview_dir)
     make_previews(master, preview_dir)
 
     # Verification summary

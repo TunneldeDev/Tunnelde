@@ -4,8 +4,9 @@
  * Checks PNG dimensions, ICO frame list and ICNS container integrity.
  */
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path) => readFileSync(path);
 const fail = (message) => {
   console.error(`[brand:verify] FAIL ${message}`);
@@ -61,12 +62,12 @@ function icnsInfo(path) {
 
 const expected = {
   "assets/brand/tunnelde-mark-1024.png": { width: 1024, height: 1024 },
-  "src-tauri/icons/32x32.png": { width: 32, height: 32 },
-  "src-tauri/icons/128x128.png": { width: 128, height: 128 },
-  "src-tauri/icons/128x128@2x.png": { width: 256, height: 256 },
-  "public/brand/mark-256.png": { width: 256, height: 256 },
-  "resources/tray-32.png": { width: 32, height: 32 },
-  "resources/tray-16.png": { width: 16, height: 16 },
+  "assets/brand/32x32.png": { width: 32, height: 32 },
+  "assets/brand/128x128.png": { width: 128, height: 128 },
+  "assets/brand/mark-256.png": { width: 256, height: 256 },
+  "assets/brand/favicon.png": { width: 64, height: 64 },
+  "assets/brand/trayTemplate.png": { width: 16, height: 16 },
+  "assets/brand/trayTemplate@2x.png": { width: 32, height: 32 },
 };
 
 for (const [relative, size] of Object.entries(expected)) {
@@ -85,7 +86,7 @@ for (const [relative, size] of Object.entries(expected)) {
 }
 
 try {
-  const sizes = icoInfo(`${root}src-tauri/icons/icon.ico`);
+  const sizes = icoInfo(`${root}assets/brand/icon.ico`);
   for (const required of [16, 32, 48, 256]) {
     if (!sizes.includes(required)) fail(`icon.ico missing ${required}px frame`);
   }
@@ -95,7 +96,7 @@ try {
 }
 
 try {
-  const types = icnsInfo(`${root}src-tauri/icons/icon.icns`);
+  const types = icnsInfo(`${root}assets/brand/icon.icns`);
   for (const required of ["ic07", "ic08", "ic10"]) {
     if (!types.includes(required)) fail(`icon.icns missing ${required}`);
   }
@@ -104,7 +105,7 @@ try {
   fail(`icon.icns: ${error.message}`);
 }
 
-for (const relative of ["build/installerSidebar.bmp", "build/installerHeader.bmp"]) {
+for (const relative of ["assets/brand/installerSidebar.bmp", "assets/brand/installerHeader.bmp"]) {
   try {
     const bytes = read(`${root}${relative}`);
     if (bytes.subarray(0, 2).toString("ascii") !== "BM") fail(`${relative}: not BMP`);
