@@ -35,7 +35,7 @@ const LANGUAGES = new Set([
   "hpp",
 ]);
 
-function tokenize(source, extensions) {
+function tokenize(source, extensions, mode = "inline") {
   const tokens = [];
   let i = 0;
   let quote = "";
@@ -72,7 +72,7 @@ function tokenize(source, extensions) {
     }
     if (quote) {
       if (char === "\\") {
-        i += 2;
+        i = Math.min(source.length, i + 2);
         continue;
       }
       if (char === quote) {
@@ -140,7 +140,20 @@ function tokenize(source, extensions) {
   if (comment) tokens.push({ start: commentStart, end: i, type: "comment" });
   if (blockComment) tokens.push({ start: blockCommentStart, end: i, type: "comment" });
   if (quote) tokens.push({ start: quoteStart, end: i, type: "invalid" });
-  return tokens.filter((token) => token.end > token.start);
+  // A window is intentionally approximate: comments/templates that start
+  // before the window may be classified from the visible fragment only.
+  return mode === "window"
+    ? tokens.filter((token) => token.end > token.start && token.end <= source.length)
+    : tokens.filter((token) => token.end > token.start);
+}
+
+function extensionFromPath(path, extensions) {
+  const name =
+    String(path ?? "")
+      .split(/[\\/]/)
+      .pop()
+      ?.toLowerCase() ?? "";
+  return extensions.find((value) => name.endsWith(`.${value}`)) ?? extensions[0] ?? "";
 }
 
 function validateInput(input) {
@@ -150,6 +163,10 @@ function validateInput(input) {
   if (!Array.isArray(input.extensions)) throw new Error("extensions must be an array");
   if (!input.extensions.every((value) => typeof value === "string" && LANGUAGES.has(value)))
     throw new Error("unsupported extension");
+  if (input.mode === "window") {
+    if (input.source !== null || !input.range || typeof input.range.offset !== "number")
+      throw new Error("invalid window");
+  }
   return input;
 }
 
@@ -158,8 +175,10 @@ async function main() {
   createPlugin({
     async run(command, input) {
       if (command !== "highlight") throw new Error("unsupported command");
-      const { source, extensions } = validateInput(input);
-      return { tokens: tokenize(source, extensions) };
+      const { source, extensions, mode = "inline", range } = validateInput(input);
+      const language = extensionFromPath(input.document?.path, extensions);
+      const text = mode === "window" ? (source ?? "") : source;
+      return { tokens: tokenize(text, [language], mode) };
     },
   });
 }

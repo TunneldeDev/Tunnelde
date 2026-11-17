@@ -40,6 +40,12 @@ The command receives:
 }
 ```
 
+Large documents use `mode: "window"` with `source: null` and a bounded
+`range`. The provider reads that exact document/version through
+`editor.readRange` in 16K pages and returns window-relative tokens. Window
+highlighting is approximate: a comment or template that begins before the
+window may not be fully understood.
+
 It returns semantic, half-open UTF-16 ranges only:
 
 ```json

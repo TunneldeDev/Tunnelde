@@ -80,9 +80,18 @@ Token types are limited to `keyword`, `string`, `number`, `comment`, `type`,
 `invalid`. The host maps these types to its own theme colors. Plugin-provided
 HTML, CSS, class names or arbitrary properties are rejected.
 
-Source and request limits are 128 KiB UTF-8 and 256 KiB serialized. Larger
-documents remain plain text and do not send a highlighting request. Highlighting
-is debounced after edits; requests are cancelled or discarded when the document
+Small documents up to 128 KiB UTF-8 receive their source inline. Larger
+documents use a bounded visible-window request: the host supplies the exact
+document identity/version and a window of at most 32K UTF-16 units, without
+sending the full source. The provider may read that window through the existing
+`editor.readRange` API, at most 16K UTF-16 units per call and under the same
+`editor.read` grant. Window responses contain tokens relative to the window; the
+host projects them to absolute offsets. No RPC limit is raised.
+
+Highlighting is debounced after edits and requests only a settled visible window
+for large documents. It is not a whole-document correctness claim: a comment or
+template that starts before the visible window may be classified from visible
+fragments only. Requests are cancelled or discarded when the document
 identity/version, provider package, runtime, permission grant or editor tab
 changes. A provider error or timeout also falls back to plain text.
 
