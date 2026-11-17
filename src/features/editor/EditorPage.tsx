@@ -4,6 +4,7 @@ import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/r
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Select } from "@/components/ui/form/Select";
+import { Dialog } from "@/components/ui/overlay/Dialog";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
@@ -58,10 +59,60 @@ interface EditorPageProps {
   active: boolean;
 }
 
+function EncodingPickerDialog({
+  open,
+  title,
+  description,
+  closeLabel,
+  options,
+  current,
+  onClose,
+  onChoose,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  closeLabel: string;
+  options: Array<{ value: TextEncoding; label: string }>;
+  current: TextEncoding;
+  onClose: () => void;
+  onChoose: (encoding: TextEncoding) => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      title={title}
+      closeLabel={closeLabel}
+      onClose={onClose}
+      width={420}
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          {closeLabel}
+        </Button>
+      }
+    >
+      <p className="td-field__hint">{description}</p>
+      <div className="encoding-picker" role="list">
+        {options.map((option) => (
+          <Button
+            key={option.value}
+            variant={option.value === current ? "secondary" : "ghost"}
+            aria-pressed={option.value === current}
+            onClick={() => onChoose(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </Dialog>
+  );
+}
+
 export function EditorPage({ tabId, active }: EditorPageProps) {
   const { t } = useTranslation();
   const entry = useEditors((state) => state.entries[tabId]);
   const change = useEditors((state) => state.change);
+  const changeSaveEncoding = useEditors((state) => state.changeSaveEncoding);
   const save = useEditors((state) => state.save);
   const reconnect = useEditors((state) => state.reconnect);
   const reopen = useEditors((state) => state.reopen);
@@ -83,6 +134,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const [settingUp, setSettingUp] = useState(false);
   const [setupFailure, setSetupFailure] = useState<{ scope: string; message: string } | null>(null);
   const [reopening, setReopening] = useState(false);
+  const [reopenPicker, setReopenPicker] = useState(false);
   const dirty = !!entry && !entry.loading && editorHasPendingChanges(entry);
   const encodingOptions: Array<{ value: TextEncoding; label: string }> = [
     { value: "utf-8", label: "UTF-8" },
@@ -133,7 +185,9 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     // The upgrade runs once per stable document state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry?.documentId, entry?.error, entry?.loading, tabId]);
-  useBackgroundGuard(reconnecting || formatting || reviewing || settingUp || reopening);
+  useBackgroundGuard(
+    reconnecting || formatting || reviewing || settingUp || reopening || reopenPicker,
+  );
   const setup = async () => {
     if (!entry?.sessionId || settingUp) return;
     const session = entry.sessionId;
@@ -222,14 +276,19 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     })();
   }, [active, location, tabId, entry]);
 
-  const changeEncoding = async (encoding: TextEncoding) => {
-    if (!entry || reopening || dirty) return;
+  const reopenWithEncoding = async (encoding: TextEncoding) => {
+    if (!entry || reopening || dirty || entry.loading || entry.saving || entry.disconnected) return;
     setReopening(true);
     try {
       await reopen(tabId, encoding);
     } finally {
       setReopening(false);
     }
+  };
+  const changeEncoding = (encoding: TextEncoding) => {
+    if (!entry || reopening || entry.saving) return;
+    if (entry.decodeError) void reopenWithEncoding(encoding);
+    else changeSaveEncoding(tabId, encoding);
   };
 
   const recover = async () => {
@@ -317,17 +376,24 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         <Select
           className="editor-head__encoding"
           value={entry.encoding ?? "utf-8"}
-          label={t("editor.encoding")}
+          label={t(entry.decodeError ? "editor.reopenEncodingTitle" : "editor.saveEncoding")}
           disabled={
             reopening ||
             entry.loading ||
             (!!entry.error && !entry.decodeError) ||
             entry.disconnected ||
-            entry.saving ||
-            dirty
+            entry.saving
           }
           options={encodingOptions}
-          onChange={(value) => void changeEncoding(value as TextEncoding)}
+          onChange={(value) => changeEncoding(value as TextEncoding)}
+          footerAction={
+            !dirty
+              ? {
+                  label: t("editor.reopenEncoding"),
+                  onSelect: () => setReopenPicker(true),
+                }
+              : undefined
+          }
         />
         {entry.sessionId ? (
           <Button
@@ -379,6 +445,20 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           {t(entry.saving ? "editor.saving" : "editor.save")}
         </Button>
       </header>
+
+      <EncodingPickerDialog
+        open={reopenPicker}
+        title={t("editor.reopenEncodingTitle")}
+        description={t("editor.reopenEncodingDescription")}
+        closeLabel={t("common.close")}
+        options={encodingOptions}
+        current={entry.encoding ?? "utf-8"}
+        onClose={() => setReopenPicker(false)}
+        onChoose={(encoding) => {
+          setReopenPicker(false);
+          void reopenWithEncoding(encoding);
+        }}
+      />
 
       {setupFailure?.scope === `${entry.sessionId}:${entry.path}` ? (
         <div className="editor-offline" role="alert">
