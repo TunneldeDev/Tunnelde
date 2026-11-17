@@ -744,18 +744,9 @@ pub async fn local_write_text(
     path: String,
     content: String,
     baseline: String,
-    encoding: String,
-    bom: bool,
+    options: crate::services::files::text_encoding::TextWriteOptions,
 ) -> AppResult<()> {
-    sftp::local_editor::save(
-        app,
-        path,
-        content,
-        baseline,
-        crate::services::files::text_encoding::TextEncoding::parse(&encoding)?,
-        bom,
-    )
-    .await
+    sftp::local_editor::save(app, path, content, baseline, options.editor_mode()?).await
 }
 
 #[tauri::command]
@@ -787,8 +778,7 @@ pub async fn sftp_write_text(
     path: String,
     content: String,
     baseline: Option<String>,
-    encoding: Option<String>,
-    bom: Option<bool>,
+    options: crate::services::files::text_encoding::TextWriteOptions,
 ) -> AppResult<()> {
     sftp::write_text(
         &app,
@@ -796,8 +786,7 @@ pub async fn sftp_write_text(
         &path,
         &content,
         baseline.as_deref(),
-        encoding.as_deref(),
-        bom.unwrap_or(false),
+        &options,
     )
     .await
 }

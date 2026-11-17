@@ -330,7 +330,15 @@ export const api = {
     baseline: string,
     encoding: string,
     bom: boolean,
-  ) => invoke<void>("local_write_text", { path, content, baseline, encoding, bom }),
+    baselineEncoding?: string,
+    baselineBom?: boolean,
+  ) =>
+    invoke<void>("local_write_text", {
+      path,
+      content,
+      baseline,
+      options: { encoding, bom, baselineEncoding, baselineBom },
+    }),
   sftpReadText: (sessionId: string, path: string, encoding?: string) =>
     invoke<TextFile>("sftp_read_text", { sessionId, path, encoding }),
   sftpSetupNativeSave: (sessionId: string, path: string) =>
@@ -342,14 +350,15 @@ export const api = {
     baseline?: string,
     encoding?: string,
     bom?: boolean,
+    baselineEncoding?: string,
+    baselineBom?: boolean,
   ) =>
     invoke<void>("sftp_write_text", {
       sessionId,
       path,
       content,
       baseline,
-      encoding,
-      bom,
+      options: { encoding, bom, baselineEncoding, baselineBom },
     }),
 
   editorCleanupList: () => invoke<EditorCleanup[]>("editor_cleanup_list"),

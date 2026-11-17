@@ -4,14 +4,14 @@ import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button } from "@/components/ui/form/Button";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
-import { editorDocument, useEditors } from "@/store/editors";
+import { editorDocument, useEditors, type EditorDiskVersion } from "@/store/editors";
+import type { TextEncoding } from "@/lib/api/types";
 
 export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClose: () => void }) {
   const { t } = useTranslation();
   const [document] = useState(() => editorDocument(tabId));
   const entry = useEditors((state) => state.entries[tabId]);
-  const [disk, setDisk] = useState<string | null>(null);
-  const [diskEncoding, setDiskEncoding] = useState<string | null>(null);
+  const [disk, setDisk] = useState<EditorDiskVersion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -24,8 +24,11 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
     void read
       .then((file) => {
         if (!cancelled) {
-          setDisk(file.content);
-          setDiskEncoding(file.encoding ?? "utf-8");
+          setDisk({
+            content: file.content,
+            encoding: (file.encoding ?? "utf-8") as TextEncoding,
+            bom: file.bom ?? false,
+          });
         }
       })
       .catch((error) => {
@@ -85,11 +88,11 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
       <div className="editor-review__columns">
         <label>
           {t("editor.diskVersion")}
-          {diskEncoding ? <span className="editor-review__encoding">{diskEncoding}</span> : null}
+          {disk ? <span className="editor-review__encoding">{disk.encoding}</span> : null}
           <textarea
             className="td-code-editor"
             readOnly
-            value={disk ?? ""}
+            value={disk?.content ?? ""}
             aria-busy={disk === null}
             wrap="off"
           />

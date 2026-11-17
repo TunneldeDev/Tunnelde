@@ -80,10 +80,21 @@ export const fs = {
     baseline: string,
     encoding: string,
     bom: boolean,
+    baselineEncoding?: string,
+    baselineBom?: boolean,
   ): Promise<void> {
     return source.kind === "local"
-      ? api.localWriteText(path, content, baseline, encoding, bom)
-      : api.sftpWriteText(source.sessionId, path, content, baseline, encoding, bom);
+      ? api.localWriteText(path, content, baseline, encoding, bom, baselineEncoding, baselineBom)
+      : api.sftpWriteText(
+          source.sessionId,
+          path,
+          content,
+          baseline,
+          encoding,
+          bom,
+          baselineEncoding,
+          baselineBom,
+        );
   },
 
   /** Hands a local file or folder to the system default application. */

@@ -109,6 +109,172 @@ pub struct DecodedText {
     pub bom: bool,
 }
 
+/// One side of a text save. `Utf8` is the strict public plugin contract where a
+/// BOM is ordinary content; editor formats keep BOM state as metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TextFormat {
+    Editor {
+        encoding: Option<TextEncoding>,
+        bom: bool,
+    },
+    Utf8,
+}
+
+impl TextFormat {
+    fn decode(self, bytes: &[u8]) -> AppResult<DecodedText> {
+        match self {
+            Self::Editor { encoding, .. } => decode(bytes, encoding),
+            Self::Utf8 => decode_utf8(bytes),
+        }
+    }
+
+    fn encode(self, content: &str, original: &DecodedText) -> AppResult<Vec<u8>> {
+        match self {
+            Self::Editor { encoding, bom } => encode(
+                content,
+                encoding.unwrap_or(original.encoding),
+                encoding.map_or(original.bom, |_| bom),
+            ),
+            Self::Utf8 => Ok(content.as_bytes().to_vec()),
+        }
+    }
+
+    fn native_save_compatible(self) -> bool {
+        matches!(
+            self,
+            Self::Editor {
+                encoding: None,
+                bom: false
+            } | Self::Editor {
+                encoding: Some(TextEncoding::Utf8),
+                bom: false
+            }
+        )
+    }
+}
+
+/// How a save interprets the original bytes and encodes the replacement.
+///
+/// A conflict replacement can have different source and target formats: the
+/// reviewed disk bytes are decoded with the disk format while the draft is
+/// written with the editor's selected format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextSaveMode {
+    source: TextFormat,
+    target: TextFormat,
+}
+
+impl TextSaveMode {
+    pub fn editor(encoding: Option<TextEncoding>, bom: bool) -> Self {
+        let format = TextFormat::Editor { encoding, bom };
+        Self {
+            source: format,
+            target: format,
+        }
+    }
+
+    pub fn editor_with_baseline(
+        encoding: TextEncoding,
+        bom: bool,
+        baseline_encoding: TextEncoding,
+        baseline_bom: bool,
+    ) -> Self {
+        Self {
+            source: TextFormat::Editor {
+                encoding: Some(baseline_encoding),
+                bom: baseline_bom,
+            },
+            target: TextFormat::Editor {
+                encoding: Some(encoding),
+                bom,
+            },
+        }
+    }
+
+    pub fn utf8() -> Self {
+        Self {
+            source: TextFormat::Utf8,
+            target: TextFormat::Utf8,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_source(mut self, encoding: TextEncoding, bom: bool) -> Self {
+        self.source = TextFormat::Editor {
+            encoding: Some(encoding),
+            bom,
+        };
+        self
+    }
+
+    pub fn decode(self, bytes: &[u8]) -> AppResult<DecodedText> {
+        self.source.decode(bytes)
+    }
+
+    pub fn decode_written(self, bytes: &[u8]) -> AppResult<DecodedText> {
+        self.target.decode(bytes)
+    }
+
+    pub fn encode(self, content: &str, original: &DecodedText) -> AppResult<Vec<u8>> {
+        self.target.encode(content, original)
+    }
+
+    pub fn encode_from_metadata(
+        self,
+        content: &str,
+        encoding: TextEncoding,
+        bom: bool,
+    ) -> AppResult<Vec<u8>> {
+        self.encode(
+            content,
+            &DecodedText {
+                content: String::new(),
+                encoding,
+                bom,
+            },
+        )
+    }
+
+    pub fn native_save_compatible(self) -> bool {
+        self.source == self.target && self.target.native_save_compatible()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextWriteOptions {
+    pub encoding: Option<String>,
+    #[serde(default)]
+    pub bom: bool,
+    #[serde(default)]
+    pub baseline_encoding: Option<String>,
+    #[serde(default)]
+    pub baseline_bom: Option<bool>,
+}
+
+impl TextWriteOptions {
+    pub fn editor_mode(&self) -> AppResult<TextSaveMode> {
+        let encoding = self
+            .encoding
+            .as_deref()
+            .map(TextEncoding::parse)
+            .transpose()?;
+        match self.baseline_encoding.as_deref() {
+            Some(baseline_encoding) => {
+                let encoding =
+                    encoding.ok_or_else(|| AppError::validation("sftp.invalidEncoding"))?;
+                Ok(TextSaveMode::editor_with_baseline(
+                    encoding,
+                    self.bom,
+                    TextEncoding::parse(baseline_encoding)?,
+                    self.baseline_bom.unwrap_or(false),
+                ))
+            }
+            None => Ok(TextSaveMode::editor(encoding, self.bom)),
+        }
+    }
+}
+
 fn bom(bytes: &[u8]) -> Option<(TextEncoding, usize)> {
     if bytes.starts_with(UTF8_BOM) {
         Some((TextEncoding::Utf8, UTF8_BOM.len()))
@@ -162,6 +328,21 @@ pub fn decode(bytes: &[u8], requested: Option<TextEncoding>) -> AppResult<Decode
         content: content.into_owned(),
         encoding,
         bom,
+    })
+}
+
+/// Strict UTF-8 decoding for the public plugin file API. A BOM is retained in
+/// `content`; it is not treated as editor encoding metadata.
+pub fn decode_utf8(bytes: &[u8]) -> AppResult<DecodedText> {
+    let content = String::from_utf8(bytes.to_vec())
+        .map_err(|_| AppError::validation("sftp.unsupportedEncoding"))?;
+    if content.contains('\0') {
+        return Err(AppError::validation("sftp.binaryFile"));
+    }
+    Ok(DecodedText {
+        content,
+        encoding: TextEncoding::Utf8,
+        bom: false,
     })
 }
 
@@ -276,5 +457,50 @@ mod tests {
                 .to_string(),
             "sftp.unsupportedEncoding"
         );
+    }
+
+    #[test]
+    fn strict_utf8_mode_keeps_a_bom_as_text() {
+        let bytes = b"\xEF\xBB\xBFhello";
+        let decoded = decode_utf8(bytes).unwrap();
+        assert_eq!(decoded.content, "\u{feff}hello");
+        assert!(!decoded.bom);
+        assert_eq!(
+            TextSaveMode::utf8()
+                .encode(&decoded.content, &decoded)
+                .unwrap(),
+            bytes
+        );
+        assert_eq!(
+            decode_utf8(&[0xff]).unwrap_err().to_string(),
+            "sftp.unsupportedEncoding"
+        );
+    }
+
+    #[test]
+    fn native_save_requires_bomless_utf8() {
+        assert!(TextSaveMode::editor(None, false).native_save_compatible());
+        assert!(TextSaveMode::editor(Some(TextEncoding::Utf8), false).native_save_compatible());
+        assert!(!TextSaveMode::editor(Some(TextEncoding::Utf8), true).native_save_compatible());
+        assert!(!TextSaveMode::editor(Some(TextEncoding::Gb18030), false).native_save_compatible());
+        assert!(!TextSaveMode::utf8().native_save_compatible());
+    }
+
+    #[test]
+    fn conflict_modes_decode_the_source_and_encode_the_target() {
+        let mode = TextSaveMode::editor_with_baseline(
+            TextEncoding::Gb18030,
+            false,
+            TextEncoding::Utf8,
+            true,
+        );
+        let decoded = mode.decode(b"\xEF\xBB\xBFdisk").unwrap();
+        assert_eq!(decoded.content, "disk");
+        assert_eq!(
+            mode.encode_from_metadata("draft", decoded.encoding, decoded.bom)
+                .unwrap(),
+            encoding_rs::GB18030.encode("draft").0.as_ref()
+        );
+        assert!(!mode.native_save_compatible());
     }
 }

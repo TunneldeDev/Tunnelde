@@ -29,11 +29,10 @@ pub(in crate::plugins::api) async fn dispatch(
             .await?,
         ),
         "files.sftp.readText" => encode(
-            commands::sftp_read_text(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "path")?,
-                None,
+            crate::ssh::files::read_plugin_text(
+                app,
+                &field::<String>(&params, "sessionId")?,
+                &field::<String>(&params, "path")?,
             )
             .await?,
         ),

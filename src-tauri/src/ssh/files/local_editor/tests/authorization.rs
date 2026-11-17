@@ -77,11 +77,12 @@ async fn final_publication_admission_orders_cancellation_revocation_and_noop_not
             saving::execute(
                 &budget,
                 None,
-                path,
-                if noop { "original" } else { "approved" }.into(),
-                Some("original".into()),
-                None,
-                false,
+                saving::SaveRequest::new(
+                    path,
+                    if noop { "original" } else { "approved" }.into(),
+                    Some("original".into()),
+                    TextSaveMode::editor(None, false),
+                ),
                 policy,
                 move || {
                     notify.fetch_add(1, Ordering::AcqRel);
@@ -142,11 +143,12 @@ async fn revoked_worker_is_rejected_before_opening_an_unavailable_target() {
     let result = saving::execute(
         &budget,
         None,
-        display_path(&f.root.join("missing.txt")),
-        "draft".into(),
-        None,
-        None,
-        false,
+        saving::SaveRequest::new(
+            display_path(&f.root.join("missing.txt")),
+            "draft".into(),
+            None,
+            TextSaveMode::editor(None, false),
+        ),
         Denied,
         || panic!("revoked worker notified"),
     )

@@ -91,11 +91,12 @@ pub(in crate::plugins) async fn write_remote(
     crate::ssh::files::write_text_checked(
         &context.app,
         &session_id,
-        &field::<String>(params, "path")?,
-        &field::<String>(params, "content")?,
-        optional::<String>(params, "baseline")?.as_deref(),
-        None,
-        false,
+        crate::ssh::files::TextWriteRequest::new(
+            &field::<String>(params, "path")?,
+            &field::<String>(params, "content")?,
+            optional::<String>(params, "baseline")?.as_deref(),
+            crate::services::files::text_encoding::TextSaveMode::utf8(),
+        ),
         policy,
     )
     .await?;

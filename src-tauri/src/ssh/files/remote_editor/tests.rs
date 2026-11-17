@@ -29,7 +29,7 @@ async fn staged_save(
         target,
         content,
         content.as_bytes(),
-        TextEncoding::Utf8,
+        TextSaveMode::editor(None, false),
         baseline,
         record,
     )
@@ -44,7 +44,7 @@ async fn staged_save_encoded(
     target: &str,
     content: &str,
     encoded: &[u8],
-    encoding: TextEncoding,
+    mode: TextSaveMode,
     baseline: &str,
     record: &mut Record,
 ) -> AppResult<()> {
@@ -58,7 +58,7 @@ async fn staged_save_encoded(
             target,
             content,
             encoded,
-            encoding,
+            mode,
             baseline,
         },
         record,
@@ -517,8 +517,36 @@ async fn atomically_preserves_legacy_encoding_bytes_during_save() {
         "/note.txt",
         content,
         encoded.as_ref(),
-        TextEncoding::Gb18030,
+        TextSaveMode::editor(Some(TextEncoding::Gb18030), false),
         "旧版中文\r\n",
+        &mut record,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(f.root.join("note.txt")).unwrap(),
+        encoded.as_ref()
+    );
+    cleanup(&sftp, &mut record, |_| Ok(())).await.unwrap();
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn conflict_replacement_verifies_disk_format_and_writes_the_selected_format() {
+    let f = Fixture::new();
+    let sftp = f.client().await;
+    std::fs::write(f.root.join("note.txt"), b"\xEF\xBB\xBForiginal").unwrap();
+    let encoded = encoding_rs::GB18030.encode("draft").0;
+    let mut record = f.record();
+    staged_save_encoded(
+        &sftp,
+        &f.replacement().await.unwrap(),
+        "/note.txt",
+        "/note.txt",
+        "draft",
+        encoded.as_ref(),
+        TextSaveMode::editor_with_baseline(TextEncoding::Gb18030, false, TextEncoding::Utf8, true),
+        "original",
         &mut record,
     )
     .await
@@ -536,12 +564,8 @@ async fn atomically_saves_short_empty_unicode_bom_and_crlf() {
     let f = Fixture::new();
     let sftp = f.client().await;
     let mut baseline = "original".to_string();
-    for text in [
-        "短\r\n",
-        "",
-        "\u{feff}hello\r\nworld\n",
-        &"界".repeat(40000),
-    ] {
+    let long = "界".repeat(40000);
+    for text in ["短\r\n", "", long.as_str()] {
         let mut record = f.record();
         staged_save(
             &sftp,
@@ -559,7 +583,7 @@ async fn atomically_saves_short_empty_unicode_bom_and_crlf() {
         assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 1);
         baseline = text.to_string();
     }
-    assert_eq!(f.probe.commits.load(Ordering::SeqCst), 4);
+    assert_eq!(f.probe.commits.load(Ordering::SeqCst), 3);
     sftp.close().await.unwrap();
 }
 

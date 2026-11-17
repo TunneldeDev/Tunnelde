@@ -2,21 +2,39 @@
 use super::*;
 use crate::services::files::operations::Budget;
 
+pub(crate) struct SaveRequest {
+    pub path: String,
+    pub content: String,
+    pub baseline: Option<String>,
+    pub mode: TextSaveMode,
+}
+
+impl SaveRequest {
+    pub fn new(
+        path: String,
+        content: String,
+        baseline: Option<String>,
+        mode: TextSaveMode,
+    ) -> Self {
+        Self {
+            path,
+            content,
+            baseline,
+            mode,
+        }
+    }
+}
+
 pub async fn save(
     app: AppHandle,
     path: String,
     content: String,
     baseline: String,
-    encoding: TextEncoding,
-    bom: bool,
+    mode: TextSaveMode,
 ) -> AppResult<()> {
     save_checked(
         app,
-        path,
-        content,
-        Some(baseline),
-        Some(encoding),
-        bom,
+        SaveRequest::new(path, content, Some(baseline), mode),
         policy::Native,
         || {},
     )
@@ -25,53 +43,30 @@ pub async fn save(
 
 pub(crate) async fn save_checked(
     app: AppHandle,
-    path: String,
-    content: String,
-    baseline: Option<String>,
-    encoding: Option<TextEncoding>,
-    bom: bool,
+    request: SaveRequest,
     policy: impl policy::Policy + Send + 'static,
     on_saved: impl FnOnce() + Send + 'static,
 ) -> AppResult<()> {
-    execute(
-        &write::BUDGET,
-        Some(app),
-        path,
-        content,
-        baseline,
-        encoding,
-        bom,
-        policy,
-        on_saved,
-    )
-    .await
+    execute(&write::BUDGET, Some(app), request, policy, on_saved).await
 }
 
 pub(super) async fn execute(
     budget: &Budget,
     app: Option<AppHandle>,
-    path: String,
-    content: String,
-    baseline: Option<String>,
-    encoding: Option<TextEncoding>,
-    bom: bool,
+    request: SaveRequest,
     policy: impl policy::Policy + Send + 'static,
     on_saved: impl FnOnce() + Send + 'static,
 ) -> AppResult<()> {
-    validate_editor_text(&path, &content, baseline.as_deref().unwrap_or_default())?;
+    validate_editor_text(
+        &request.path,
+        &request.content,
+        request.baseline.as_deref().unwrap_or_default(),
+    )?;
     budget
         .blocking(move |cancellation| {
             let mut on_saved = Some(on_saved);
-            let result = transaction::save(
-                app.as_ref(),
-                &path,
-                &content,
-                baseline.as_deref(),
-                encoding,
-                bom,
-                &policy,
-                cancellation,
-                |phase, _| {
+            let result =
+                transaction::save(app.as_ref(), &request, &policy, cancellation, |phase, _| {
                     if phase == "published" {
                         // Publication cannot be undone by dropping the RPC future.
                         // Notify on this worker before fallible staging cleanup.
@@ -80,8 +75,7 @@ pub(super) async fn execute(
                         }
                     }
                     Ok(())
-                },
-            );
+                });
             if result.is_ok() {
                 // A successful no-op still reconciles a caller's potentially stale view.
                 if let Some(on_saved) = on_saved.take() {
@@ -102,13 +96,12 @@ pub(in crate::ssh::files) async fn save_without_app(
     bom: bool,
 ) -> AppResult<()> {
     validate_editor_text(path, content, baseline)?;
-    save_transaction_with_encoding(
+    save_transaction_with_mode(
         None,
         path,
         content,
         Some(baseline),
-        Some(encoding),
-        bom,
+        TextSaveMode::editor(Some(encoding), bom),
         |_, _| Ok(()),
         |_, _| Ok(()),
     )
@@ -136,17 +129,24 @@ pub(super) fn save_transaction(
     check: impl Fn(&Path, &str) -> AppResult<()>,
     hook: impl FnMut(&str, &Record) -> AppResult<()>,
 ) -> AppResult<()> {
-    save_transaction_with_encoding(app, requested, content, baseline, None, false, check, hook)
+    save_transaction_with_mode(
+        app,
+        requested,
+        content,
+        baseline,
+        TextSaveMode::editor(None, false),
+        check,
+        hook,
+    )
 }
 
 #[cfg(test)]
-pub(super) fn save_transaction_with_encoding(
+pub(super) fn save_transaction_with_mode(
     app: Option<&AppHandle>,
     requested: &str,
     content: &str,
     baseline: Option<&str>,
-    encoding: Option<TextEncoding>,
-    bom: bool,
+    mode: TextSaveMode,
     check: impl Fn(&Path, &str) -> AppResult<()>,
     hook: impl FnMut(&str, &Record) -> AppResult<()>,
 ) -> AppResult<()> {
@@ -154,11 +154,12 @@ pub(super) fn save_transaction_with_encoding(
         crate::services::files::operations::Cancellation::for_test("editor.saveCancelled");
     transaction::save(
         app,
-        requested,
-        content,
-        baseline,
-        encoding,
-        bom,
+        &SaveRequest::new(
+            requested.into(),
+            content.into(),
+            baseline.map(str::to_owned),
+            mode,
+        ),
         &policy::Checked(check),
         &job,
         hook,
@@ -177,11 +178,7 @@ pub(super) async fn save_async(
     execute(
         &write::BUDGET,
         app,
-        path,
-        content,
-        baseline,
-        None,
-        false,
+        SaveRequest::new(path, content, baseline, TextSaveMode::editor(None, false)),
         policy::Checked(check),
         on_saved,
     )
@@ -201,11 +198,7 @@ pub(super) async fn save_with_budget(
     execute(
         budget,
         app,
-        path,
-        content,
-        baseline,
-        None,
-        false,
+        SaveRequest::new(path, content, baseline, TextSaveMode::editor(None, false)),
         policy::Checked(check),
         on_saved,
     )

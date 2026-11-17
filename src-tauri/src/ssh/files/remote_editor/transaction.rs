@@ -8,7 +8,7 @@ pub(super) struct Draft<'a> {
     pub target: &'a str,
     pub content: &'a str,
     pub encoded: &'a [u8],
-    pub encoding: TextEncoding,
+    pub mode: TextSaveMode,
     pub baseline: &'a str,
 }
 
@@ -40,7 +40,7 @@ pub(super) async fn staged_save(
         target,
         content,
         encoded,
-        encoding,
+        mode,
         baseline,
     } = draft;
     job.check()?;
@@ -131,14 +131,14 @@ pub(super) async fn staged_save(
         || staged.uid != metadata.uid
         || staged.gid != metadata.gid
         || staged.permissions.map(|mode| mode & 0o7777) != Some(permissions & 0o7777)
-        || read_remote_text(sftp, &staging, Some(encoding))
+        || read_written_remote_text(sftp, &staging, mode)
             .await?
             .content
             != content
     {
         return Err(AppError::validation("editor.metadataNotPreserved"));
     }
-    let current = read_remote_text(sftp, target, Some(encoding)).await?;
+    let current = read_remote_text(sftp, target, mode).await?;
     let latest = sftp.symlink_metadata(target).await.map_err(map_sftp)?;
     if current.content != baseline
         || !same_metadata(&metadata, &latest)

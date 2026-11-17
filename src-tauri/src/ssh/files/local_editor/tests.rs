@@ -57,13 +57,12 @@ fn saves_legacy_encodings_with_their_original_bytes_and_bom() {
     let f = Fixture::new();
     let original = encoding_rs::GB18030.encode("旧版中文\r\n").0;
     std::fs::write(&f.file, original.as_ref()).unwrap();
-    save_transaction_with_encoding(
+    save_transaction_with_mode(
         None,
         &display_path(&f.file),
         "新版中文\r\n",
         Some("旧版中文\r\n"),
-        Some(TextEncoding::Gb18030),
-        false,
+        TextSaveMode::editor(Some(TextEncoding::Gb18030), false),
         |_, original| {
             assert_eq!(original, "旧版中文\r\n");
             Ok(())
@@ -79,13 +78,12 @@ fn saves_legacy_encodings_with_their_original_bytes_and_bom() {
 
     let original = b"\xEF\xBB\xBFhello".as_slice();
     std::fs::write(&f.file, original).unwrap();
-    save_transaction_with_encoding(
+    save_transaction_with_mode(
         None,
         &display_path(&f.file),
         "changed",
         Some("hello"),
-        Some(TextEncoding::Utf8),
-        true,
+        TextSaveMode::editor(Some(TextEncoding::Utf8), true),
         |_, original| {
             assert_eq!(original, "hello");
             Ok(())
@@ -94,6 +92,68 @@ fn saves_legacy_encodings_with_their_original_bytes_and_bom() {
     )
     .unwrap();
     assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBFchanged");
+    f.clean();
+}
+
+#[test]
+fn plugin_utf8_save_keeps_a_bom_as_content() {
+    let f = Fixture::new();
+    std::fs::write(&f.file, b"\xEF\xBB\xBFhello").unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "\u{feff}changed",
+        Some("\u{feff}hello"),
+        TextSaveMode::utf8(),
+        |_, original| {
+            assert_eq!(original, "\u{feff}hello");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBFchanged");
+    f.clean();
+
+    std::fs::write(&f.file, encoding_rs::GB18030.encode("中文").0.as_ref()).unwrap();
+    assert_eq!(
+        save_transaction_with_mode(
+            None,
+            &display_path(&f.file),
+            "changed",
+            Some("中文"),
+            TextSaveMode::utf8(),
+            |_, _| Ok(()),
+            |_, _| Ok(()),
+        )
+        .unwrap_err()
+        .to_string(),
+        "sftp.unsupportedEncoding"
+    );
+}
+
+#[test]
+fn conflict_replacement_decodes_the_reviewed_format_and_writes_the_selected_format() {
+    let f = Fixture::new();
+    std::fs::write(&f.file, b"\xEF\xBB\xBFdisk").unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "draft",
+        Some("disk"),
+        TextSaveMode::editor(Some(TextEncoding::Gb18030), false)
+            .with_source(TextEncoding::Utf8, true),
+        |_, original| {
+            assert_eq!(original, "disk");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        f.disk_bytes(),
+        encoding_rs::GB18030.encode("draft").0.as_ref()
+    );
     f.clean();
 }
 
@@ -341,10 +401,11 @@ fn cleanup_identities_remain_readable_when_a_profile_moves_between_platforms() {
 }
 
 #[test]
-fn saves_short_empty_unicode_and_bom_crlf_without_changing_original_until_commit() {
+fn saves_short_empty_unicode_bom_crlf_and_long_text_without_changing_original_until_commit() {
     let f = Fixture::new();
     let mut baseline = "original".to_string();
-    for content in ["短\r\n", "", "\u{feff}new\r\n", &"界".repeat(30000)] {
+    let long = "界".repeat(30000);
+    for content in ["短\r\n", "", long.as_str()] {
         let before = baseline.clone();
         save_sync(
             None,

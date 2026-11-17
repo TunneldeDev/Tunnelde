@@ -56,8 +56,7 @@ pub(super) fn request(f: &Fixture, content: &str) -> saving::Request {
         address: f.root.to_string_lossy().into_owned(),
         path: "/note.txt".into(),
         content: content.into(),
-        encoding: None,
-        bom: false,
+        mode: TextSaveMode::editor(None, false),
         baseline: Some("original".into()),
     }
 }

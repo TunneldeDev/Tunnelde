@@ -18,8 +18,8 @@ beforeEach(async () => {
   vi.mocked(api.sftpReadText).mockResolvedValue({
     content: "external update",
     size: 15,
-    encoding: "utf-8",
-    bom: false,
+    encoding: "utf-16le",
+    bom: true,
   });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
 });
@@ -45,6 +45,11 @@ it("only replaces the disk version the user actually reviewed", async () => {
   await screen.findByDisplayValue("external update");
   fireEvent.click(screen.getByRole("button", { name: "Replace disk version" }));
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(useEditors.getState().entries.review).toMatchObject({
+    baseline: "unsaved draft",
+    baselineEncoding: "utf-8",
+    baselineBom: false,
+  });
   expect(api.sftpWriteText).toHaveBeenCalledWith(
     "session",
     "/note.txt",
@@ -52,7 +57,24 @@ it("only replaces the disk version the user actually reviewed", async () => {
     "external update",
     "utf-8",
     false,
+    "utf-16le",
+    true,
   );
+});
+
+it("reloads the encoding and BOM of the reviewed disk version", async () => {
+  const onClose = vi.fn();
+  render(<EditorConflictDialog tabId="review" onClose={onClose} />);
+  await screen.findByDisplayValue("external update");
+  expect(screen.getByText("utf-16le")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Reload from disk" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(useEditors.getState().entries.review).toMatchObject({
+    content: "external update",
+    baseline: "external update",
+    encoding: "utf-16le",
+    bom: true,
+  });
 });
 
 it("keeps replacement disabled when the latest disk version could not be read", async () => {

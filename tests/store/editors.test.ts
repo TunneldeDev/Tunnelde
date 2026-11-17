@@ -65,12 +65,20 @@ describe("editor requests", () => {
       saving: false,
     });
     const review = editorDocument(id)!;
-    expect(await state().resolveConflict(review, "external edit", "replace")).toBe(true);
+    expect(
+      await state().resolveConflict(
+        review,
+        { content: "external edit", encoding: "utf-8", bom: false },
+        "replace",
+      ),
+    ).toBe(true);
     expect(api.sftpWriteText).toHaveBeenLastCalledWith(
       "s1",
       "/a.txt",
       "my draft",
       "external edit",
+      "utf-8",
+      false,
       "utf-8",
       false,
     );
@@ -86,11 +94,24 @@ describe("editor requests", () => {
     state().change(id, "my draft");
     const stale = editorDocument(id)!;
     state().change(id, "newer draft");
-    expect(await state().resolveConflict(stale, "external", "replace")).toBe(false);
+    expect(
+      await state().resolveConflict(
+        stale,
+        { content: "external", encoding: "utf-8", bom: false },
+        "replace",
+      ),
+    ).toBe(false);
     expect(api.sftpWriteText).not.toHaveBeenCalled();
     expect(state().entries[id]?.content).toBe("newer draft");
-    expect(await state().resolveConflict(editorDocument(id)!, "external", "reload")).toBe(true);
+    expect(
+      await state().resolveConflict(
+        editorDocument(id)!,
+        { content: "external", encoding: "utf-16le", bom: true },
+        "reload",
+      ),
+    ).toBe(true);
     expect(state().isDirty(id)).toBe(false);
+    expect(state().entries[id]).toMatchObject({ encoding: "utf-16le", bom: true });
     undoEditorEdit(id, false);
     expect(state().entries[id]).toMatchObject({ content: "newer draft", baseline: "external" });
     expect(state().isDirty(id)).toBe(true);
@@ -103,7 +124,13 @@ describe("editor requests", () => {
       code: "ssh",
       message: "sftp.reconnectRequired",
     });
-    expect(await state().resolveConflict(editorDocument(id)!, "external", "replace")).toBe(false);
+    expect(
+      await state().resolveConflict(
+        editorDocument(id)!,
+        { content: "external", encoding: "utf-8", bom: false },
+        "replace",
+      ),
+    ).toBe(false);
     expect(state().entries[id]).toMatchObject({
       content: "my draft",
       baseline: "external",
@@ -125,7 +152,15 @@ describe("editor requests", () => {
     state().change(localId, "draft");
     state().markDisconnected("s1");
     expect(await state().save(localId)).toBe(true);
-    expect(write).toHaveBeenCalledWith(path, "draft", "original", "utf-8", false);
+    expect(write).toHaveBeenCalledWith(
+      path,
+      "draft",
+      "original",
+      "utf-8",
+      false,
+      "utf-8",
+      false,
+    );
     state().change(localId, "new draft");
     write.mockRejectedValueOnce({ code: "validation", message: "editor.localFileChanged" });
     expect(await state().save(localId)).toBe(false);
@@ -161,6 +196,8 @@ describe("editor requests", () => {
       "旧版中文",
       "gb18030",
       false,
+      "gb18030",
+      false,
     );
   });
 
@@ -169,6 +206,22 @@ describe("editor requests", () => {
     state().change(id, "draft");
     expect(await state().reopen(id, "big5")).toBe(false);
     expect(api.sftpReadText).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks editing while reopening and preserves a draft typed after the operation settles", async () => {
+    await state().open(id, "s1", "/a.txt");
+    const read = deferred<{ content: string; size: number; encoding: "utf-8"; bom: boolean }>();
+    vi.mocked(api.sftpReadText).mockReturnValueOnce(read.promise);
+    const reopening = state().reopen(id, "gb18030");
+    expect(state().entries[id]?.loading).toBe(true);
+    state().change(id, "draft during reopen");
+    expect(state().entries[id]?.content).toBe("original");
+    read.resolve({ content: "重新读取", size: 12, encoding: "utf-8", bom: false });
+    expect(await reopening).toBe(true);
+    state().change(id, "draft after reopen");
+    expect(state().entries[id]?.content).toBe("draft after reopen");
+    expect(state().entries[id]?.baseline).toBe("重新读取");
+    expect(state().entries[id]?.loading).toBe(false);
   });
 
   it("cannot save a file when opening rejected its text encoding", async () => {
@@ -203,6 +256,8 @@ describe("editor requests", () => {
       "/a.txt",
       "first",
       "original",
+      "utf-8",
+      false,
       "utf-8",
       false,
     );
@@ -277,6 +332,8 @@ describe("editor requests", () => {
       "original",
       "utf-8",
       false,
+      "utf-8",
+      false,
     );
     oldWrite.resolve();
     expect(await oldSave).toBe(false);
@@ -348,6 +405,8 @@ describe("editor requests", () => {
       "/a.txt",
       "disconnected draft",
       "original",
+      "utf-8",
+      false,
       "utf-8",
       false,
     );
