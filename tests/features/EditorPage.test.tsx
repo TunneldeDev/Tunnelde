@@ -515,6 +515,33 @@ describe("EditorPage undo selection", () => {
   });
 });
 
+describe("EditorPage native scrolling", () => {
+  it("renders the editor as one native textarea without a simulated scrollbar or wheel interception", () => {
+    const { container } = render(<EditorPage tabId="editor" active />);
+    const textarea = screen.getByRole("textbox", { name: "draft.txt" });
+    expect(textarea.classList.contains("editor-body")).toBe(true);
+    expect(container.querySelector(".td-text-scrollbar")).toBeNull();
+
+    const wheel = new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true });
+    fireEvent(textarea, wheel);
+    expect(wheel.defaultPrevented).toBe(false);
+  });
+
+  it("retains native selection and viewport state on the editor textarea", () => {
+    render(<EditorPage tabId="editor" active />);
+    const textarea = screen.getByRole("textbox", { name: "draft.txt" }) as HTMLTextAreaElement;
+    textarea.focus();
+    textarea.setSelectionRange(2, 5, "backward");
+    expect(textarea.selectionStart).toBe(2);
+    expect(textarea.selectionEnd).toBe(5);
+    expect(textarea.selectionDirection).toBe("backward");
+    textarea.scrollTop = 80;
+    textarea.scrollLeft = 12;
+    expect(textarea.scrollTop).toBe(80);
+    expect(textarea.scrollLeft).toBe(12);
+  });
+});
+
 describe("EditorPage preferences", () => {
   it("updates wrapping, tab width, and spellcheck without changing the draft or dirty state", () => {
     render(<EditorPage tabId="editor" active />);

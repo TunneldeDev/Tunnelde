@@ -2748,20 +2748,7 @@
   line-height: 1.55;
   white-space: pre;
   overflow: auto;
-  scrollbar-width: thin;
   tab-size: 4;
-}
-
-.editor-body::-webkit-scrollbar:vertical {
-  display: none;
-  width: 0;
-}
-
-.editor-text {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
 }
 
 /* ---------- plugins ---------- */
