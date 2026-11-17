@@ -1,4 +1,3 @@
-import { Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Menu } from "@/components/ui/overlay/Menu";
@@ -12,9 +11,6 @@ interface FileViewMenuProps {
 
 export function FileViewMenu({ view, onChange, onReset }: FileViewMenuProps) {
   const { t } = useTranslation();
-  const check = (selected: boolean) => (
-    <Check size={13} visibility={selected ? "visible" : "hidden"} />
-  );
 
   return (
     <Menu
@@ -23,17 +19,20 @@ export function FileViewMenu({ view, onChange, onReset }: FileViewMenuProps) {
         ...(["details", "columns"] as const).map((layout) => ({
           label: t(layout === "details" ? "sftp.detailsView" : "sftp.columnsView"),
           checked: (view.filesLayout ?? "details") === layout,
+          checkable: "radio" as const,
           onSelect: () => onChange({ filesLayout: layout }),
         })),
         {
           separatorBefore: true,
           label: t("sftp.showHidden"),
-          icon: check(view.filesShowHidden),
+          checked: view.filesShowHidden,
+          checkable: "checkbox" as const,
           onSelect: () => onChange({ filesShowHidden: !view.filesShowHidden }),
         },
         {
           label: t("sftp.foldersFirst"),
-          icon: check(view.filesFoldersFirst),
+          checked: view.filesFoldersFirst,
+          checkable: "checkbox" as const,
           onSelect: () => onChange({ filesFoldersFirst: !view.filesFoldersFirst }),
         },
         ...FILE_COLUMNS.filter((column) => column !== "name").map((column, index) => ({
@@ -61,13 +60,15 @@ export function FileViewMenu({ view, onChange, onReset }: FileViewMenuProps) {
                   ? "sftp.sortSize"
                   : "sftp.sortModified",
           ),
-          icon: check(view.filesSortBy === sort),
+          checked: view.filesSortBy === sort,
+          checkable: "radio" as const,
           onSelect: () => onChange({ filesSortBy: sort }),
         })),
         ...(["asc", "desc"] as const).map((direction) => ({
           separatorBefore: direction === "asc",
           label: t(direction === "asc" ? "sftp.sortAscending" : "sftp.sortDescending"),
-          icon: check(view.filesSortDirection === direction),
+          checked: view.filesSortDirection === direction,
+          checkable: "radio" as const,
           onSelect: () => onChange({ filesSortDirection: direction }),
         })),
         ...(["none", "type", "modified", "initial"] as const).map((group) => ({
@@ -81,7 +82,8 @@ export function FileViewMenu({ view, onChange, onReset }: FileViewMenuProps) {
                   ? "sftp.groupModified"
                   : "sftp.groupInitial",
           ),
-          icon: check((view.filesGroupBy ?? "none") === group),
+          checked: (view.filesGroupBy ?? "none") === group,
+          checkable: "radio" as const,
           onSelect: () => onChange({ filesGroupBy: group }),
         })),
         {
