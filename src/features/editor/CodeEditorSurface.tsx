@@ -385,6 +385,7 @@ export function CodeEditorSurface({
             ".cm-scroller": {
               fontFamily: "inherit",
               lineHeight: "1.55",
+              cursor: "text",
               overflow: "auto",
               scrollbarWidth: "thin",
               textRendering: "optimizeSpeed",
@@ -406,15 +407,23 @@ export function CodeEditorSurface({
               color: "var(--td-text)",
               borderColor: "var(--td-border)",
             },
-            ".cm-content": { padding: "10px 0", tabSize: String(tabSize) },
+            // The document is a full-bleed surface, not a rounded input field.
+            ".cm-content": {
+              padding: "10px 0",
+              tabSize: String(tabSize),
+              borderRadius: "0",
+              boxShadow: "none",
+            },
             ".cm-gutters": {
               display: "flex",
+              cursor: "default",
               background: "var(--td-bg)",
               color: "var(--td-faint)",
               border: "none",
             },
             ".cm-lineNumbers .cm-gutterElement": { padding: "0 10px 0 12px" },
-            ".cm-line": { padding: "0 12px 0 0" },
+            // Keep the caret clear of the sticky gutter, including empty lines.
+            ".cm-line": { padding: "0 12px 0 6px" },
             "&.cm-focused": { outline: "none" },
             ".cm-selectionBackground, ::selection": { backgroundColor: "var(--td-accent-soft)" },
           }),
