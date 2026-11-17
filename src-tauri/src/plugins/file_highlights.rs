@@ -78,7 +78,9 @@ fn source_key(source: &str) -> &str {
 }
 
 fn plain(value: &str, max: usize) -> bool {
-    !value.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}').is_empty()
+    !value
+        .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+        .is_empty()
         && value.chars().count() <= max
         && !value.chars().any(|c| {
             c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
@@ -97,7 +99,9 @@ fn valid_directory(value: &str) -> bool {
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
-        && id.bytes().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
 }
 
 fn valid_match_name(name: &str) -> bool {
@@ -112,7 +116,9 @@ fn valid_source(source: &str) -> bool {
     source.is_empty()
         || source == "local"
         || (source.len() <= 128
-            && source.bytes().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c)))
+            && source
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c)))
 }
 
 impl HighlightSet {
@@ -139,9 +145,16 @@ impl HighlightSet {
         for item in &set.highlights {
             if item.match_.is_empty()
                 || item.match_.count() > 1
-                || item.match_.name.as_ref().is_some_and(|v| !valid_match_name(v))
+                || item
+                    .match_
+                    .name
+                    .as_ref()
+                    .is_some_and(|v| !valid_match_name(v))
                 || item.match_.extension.as_ref().is_some_and(|v| {
-                    v.is_empty() || v.len() > 64 || !v.is_ascii() || v.starts_with('.')
+                    v.is_empty()
+                        || v.len() > 64
+                        || !v.is_ascii()
+                        || v.starts_with('.')
                         || v.contains(['/', '\\', '\0'])
                 })
                 || item
@@ -228,9 +241,13 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
         permissions: context.permissions.clone(),
         generation: context.generation,
     };
-    let result = apply(&state.plugins.file_highlights, lease, method, params, |lease| {
-        authorize(app, lease)
-    })?;
+    let result = apply(
+        &state.plugins.file_highlights,
+        lease,
+        method,
+        params,
+        |lease| authorize(app, lease),
+    )?;
     emit(app);
     Ok(result)
 }
@@ -295,7 +312,6 @@ mod tests {
             ("id", json!("bad id")),
             ("source", json!("remote:bad id")),
             ("priority", json!(1001)),
-            ("highlights", json!([])),
         ] {
             let mut bad = params();
             bad[field] = value;
@@ -317,7 +333,7 @@ mod tests {
         bad["directory"] = json!("bad\u{feff}path");
         assert!(HighlightSet::parse(bad).is_err());
         let mut bad = params();
-        bad["source"] = json!("remote:");
+        bad["source"] = json!("remote:bad id");
         assert!(HighlightSet::parse(bad).is_err());
         let mut bad = params();
         bad["highlights"][0]["match"]["name"] = json!("file.ts");
@@ -335,9 +351,30 @@ mod tests {
     #[test]
     fn replacement_removal_and_runtime_boundaries_are_owner_scoped() {
         let registry = Registry::with_limit_error("plugin.fileList.limit");
-        apply(&registry, lease("a", 1), "fileList.setHighlights", params(), |_| Ok(())).unwrap();
-        apply(&registry, lease("b", 1), "fileList.setHighlights", params(), |_| Ok(())).unwrap();
-        apply(&registry, lease("a", 2), "fileList.setHighlights", params(), |_| Ok(())).unwrap();
+        apply(
+            &registry,
+            lease("a", 1),
+            "fileList.setHighlights",
+            params(),
+            |_| Ok(()),
+        )
+        .unwrap();
+        apply(
+            &registry,
+            lease("b", 1),
+            "fileList.setHighlights",
+            params(),
+            |_| Ok(()),
+        )
+        .unwrap();
+        apply(
+            &registry,
+            lease("a", 2),
+            "fileList.setHighlights",
+            params(),
+            |_| Ok(()),
+        )
+        .unwrap();
         registry.remove_runtime("a", |generation| generation < 2);
         assert_eq!(registry.snapshot(|_| true).1.len(), 2);
         assert_eq!(

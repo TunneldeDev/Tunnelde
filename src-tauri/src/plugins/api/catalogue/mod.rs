@@ -62,10 +62,10 @@ mod events;
 mod execution;
 #[path = "files/browser/methods.rs"]
 mod file_browser;
-#[path = "files/highlights.rs"]
-mod file_highlights;
 #[path = "files/content/methods.rs"]
 mod file_content;
+#[path = "files/highlights.rs"]
+mod file_highlights;
 #[path = "files/preview/methods.rs"]
 mod file_preview;
 #[path = "files/methods.rs"]
