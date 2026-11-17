@@ -142,8 +142,10 @@ describe("editor requests", () => {
         encoding: "utf-8" as const,
         bom: false,
       };
-      if (sessionId === null) vi.spyOn(api, "localReadText").mockResolvedValue(read);
-      else vi.mocked(api.sftpReadText).mockResolvedValueOnce(read);
+      if (sessionId === null) {
+        vi.spyOn(api, "localReadText").mockResolvedValue(read);
+        vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
+      } else vi.mocked(api.sftpReadText).mockResolvedValueOnce(read);
       const writeCall = vi.spyOn(api, write);
       writeCall.mockRejectedValueOnce({
         code: "validation",
@@ -940,5 +942,239 @@ describe("editor undo selection history", () => {
     expect(undoEditorEdit(id)).toBe(true);
     state().change(id, "new", selection(3));
     expect(undoEditorEdit(id, true)).toBe(false);
+  });
+});
+
+describe("save encoding conversion", () => {
+  const selection = (start: number, end = start) => ({ start, end, direction: "none" as const });
+  const localId = "editor:encoding-local";
+
+  it.each([
+    { label: "local", sessionId: null as string | null, write: "localWriteText" as const },
+    { label: "SFTP", sessionId: "s1" as string | null, write: "sftpWriteText" as const },
+  ])(
+    "changes only the $label save target after edits and preserves content, history, and selection",
+    async ({ sessionId, write }) => {
+      const tabId = sessionId === null ? localId : id;
+      const path = sessionId === null ? "/encoding.txt" : "/a.txt";
+      const read = {
+        content: "original",
+        size: 8,
+        encoding: "utf-8" as const,
+        bom: false,
+      };
+      if (sessionId === null) {
+        vi.spyOn(api, "localReadText").mockResolvedValue(read);
+        vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
+      } else vi.mocked(api.sftpReadText).mockResolvedValueOnce(read);
+      const writeCall = vi.spyOn(api, write);
+      await state().open(tabId, sessionId, path);
+      beginEditorInput(tabId, "insertText", selection(4));
+      state().change(tabId, "origXinal", selection(5));
+      rememberEditorSelection(tabId, selection(4, 5));
+      const history = editorHistorySnapshot();
+
+      expect(state().changeSaveEncoding(tabId, "utf-16le")).toBe(true);
+      expect(editorHistorySnapshot()).toEqual(history);
+      expect(state().entries[tabId]).toMatchObject({
+        content: "origXinal",
+        baseline: "original",
+        encoding: "utf-16le",
+        bom: true,
+        baselineEncoding: "utf-8",
+        baselineBom: false,
+      });
+      expect(state().isDirty(tabId)).toBe(true);
+      expect(api[write]).not.toHaveBeenCalled();
+      expect(state().changeSaveEncoding(tabId, "utf-8")).toBe(true);
+      expect(state().entries[tabId]).toMatchObject({ encoding: "utf-8", bom: false });
+      expect(state().isDirty(tabId)).toBe(true);
+      expect(state().changeSaveEncoding(tabId, "utf-16le")).toBe(true);
+      expect(await state().save(tabId)).toBe(true);
+      expect(writeCall).toHaveBeenLastCalledWith(
+        ...(sessionId === null
+          ? [path, "origXinal", "original"]
+          : [sessionId, path, "origXinal", "original"]),
+        "utf-16le",
+        true,
+        "utf-8",
+        false,
+      );
+      expect(state().entries[tabId]).toMatchObject({
+        content: "origXinal",
+        baseline: "origXinal",
+        encoding: "utf-16le",
+        bom: true,
+        baselineEncoding: "utf-16le",
+        baselineBom: true,
+      });
+
+      expect(undoEditorEdit(tabId)).toBe(true);
+      expect(state().entries[tabId]).toMatchObject({
+        content: "original",
+        baseline: "origXinal",
+        encoding: "utf-16le",
+        bom: true,
+        baselineEncoding: "utf-16le",
+        baselineBom: true,
+      });
+      expect(state().isDirty(tabId)).toBe(true);
+      expect(state().changeSaveEncoding(tabId, "utf-8")).toBe(true);
+      expect(state().entries[tabId]).toMatchObject({ encoding: "utf-8", bom: false });
+      expect(await state().save(tabId)).toBe(true);
+      expect(writeCall).toHaveBeenLastCalledWith(
+        ...(sessionId === null
+          ? [path, "original", "origXinal"]
+          : [sessionId, path, "original", "origXinal"]),
+        "utf-8",
+        false,
+        "utf-16le",
+        true,
+      );
+    },
+  );
+
+  it.each([
+    { label: "local", sessionId: null as string | null, write: "localWriteText" as const },
+    { label: "SFTP", sessionId: "s1" as string | null, write: "sftpWriteText" as const },
+  ])(
+    "converts equal text through $label and keeps the pending target after an unrepresentable-character failure",
+    async ({ sessionId, write }) => {
+      const tabId = sessionId === null ? localId : id;
+      const path = sessionId === null ? "/encoding.txt" : "/a.txt";
+      const read = {
+        content: "plain",
+        size: 5,
+        encoding: "utf-8" as const,
+        bom: false,
+      };
+      if (sessionId === null) {
+        vi.spyOn(api, "localReadText").mockResolvedValue(read);
+        vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
+      } else vi.mocked(api.sftpReadText).mockResolvedValueOnce(read);
+      const writeCall = vi.spyOn(api, write);
+      await state().open(tabId, sessionId, path);
+      expect(state().changeSaveEncoding(tabId, "windows-1252")).toBe(true);
+      expect(state().isDirty(tabId)).toBe(true);
+      expect(writeCall).not.toHaveBeenCalled();
+      expect(state().changeSaveEncoding(tabId, "utf-8")).toBe(true);
+      expect(state().isDirty(tabId)).toBe(false);
+      expect(state().changeSaveEncoding(tabId, "windows-1252")).toBe(true);
+      expect(state().isDirty(tabId)).toBe(true);
+      expect(await state().save(tabId)).toBe(true);
+      expect(writeCall).toHaveBeenLastCalledWith(
+        ...(sessionId === null ? [path, "plain", "plain"] : [sessionId, path, "plain", "plain"]),
+        "windows-1252",
+        false,
+        "utf-8",
+        false,
+      );
+
+      state().change(tabId, "plain 中");
+      writeCall.mockRejectedValueOnce({
+        code: "validation",
+        message: "sftp.encodingEncodeFailed",
+      });
+      expect(await state().save(tabId)).toBe(false);
+      expect(state().entries[tabId]).toMatchObject({
+        content: "plain 中",
+        baseline: "plain",
+        encoding: "windows-1252",
+        bom: false,
+        baselineEncoding: "windows-1252",
+        baselineBom: false,
+        saving: false,
+        saveConflict: false,
+        saveFailure:
+          "The file contains characters that cannot be represented in the selected encoding",
+      });
+      expect(state().isDirty(tabId)).toBe(true);
+    },
+  );
+
+  it("refuses to reinterpret a dirty draft or a pending encoding-only conversion", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().changeSaveEncoding(id, "utf-16le");
+    expect(await state().reopen(id, "gb18030")).toBe(false);
+    state().change(id, "draft");
+    expect(await state().reopen(id, "gb18030")).toBe(false);
+    expect(state().entries[id]).toMatchObject({
+      content: "draft",
+      baseline: "original",
+      encoding: "utf-16le",
+    });
+    expect(api.sftpReadText).toHaveBeenCalledTimes(1);
+  });
+
+  it("tracks encoding-only conversions in legacy checkpoints and restores their source format", async () => {
+    await state().open(id, "s1", "/a.txt");
+    useEditors.setState((current) => ({
+      entries: {
+        ...current.entries,
+        [id]: { ...current.entries[id]!, baselineEncoding: undefined, baselineBom: undefined },
+      },
+    }));
+    expect(state().changeSaveEncoding(id, "utf-16le")).toBe(true);
+    expect(state().isDirty(id)).toBe(true);
+    expect(state().entries[id]).toMatchObject({ baselineEncoding: "utf-8", baselineBom: false });
+    expect(state().changeSaveEncoding(id, "utf-8")).toBe(true);
+    expect(state().entries[id]).toMatchObject({ encoding: "utf-8", bom: false });
+    expect(state().isDirty(id)).toBe(false);
+    expect(api.sftpReadText).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["utf-8", true],
+    ["utf-16le", false],
+  ] as const)(
+    "preserves a source %s BOM=%s when returning to that encoding",
+    async (encoding, bom) => {
+      vi.mocked(api.sftpReadText).mockResolvedValueOnce({
+        content: "original",
+        size: 8,
+        encoding,
+        bom,
+      });
+      await state().open(id, "s1", "/a.txt");
+      state().changeSaveEncoding(id, encoding);
+      expect(state().isDirty(id)).toBe(false);
+      state().changeSaveEncoding(id, "gb18030");
+      expect(state().entries[id]).toMatchObject({ encoding: "gb18030", bom: false });
+      expect(state().isDirty(id)).toBe(true);
+      state().changeSaveEncoding(id, encoding);
+      expect(state().entries[id]).toMatchObject({ encoding, bom });
+      expect(state().isDirty(id)).toBe(false);
+    },
+  );
+
+  it("keeps a converted save's submitted format while preserving edits made during the write", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().changeSaveEncoding(id, "utf-16le");
+    const pending = deferred<void>();
+    vi.mocked(api.sftpWriteText).mockReturnValueOnce(pending.promise);
+    const saving = state().save(id);
+    expect(state().changeSaveEncoding(id, "big5")).toBe(false);
+    state().change(id, "new draft");
+    pending.resolve();
+    expect(await saving).toBe(true);
+    expect(api.sftpWriteText).toHaveBeenLastCalledWith(
+      "s1",
+      "/a.txt",
+      "original",
+      "original",
+      "utf-16le",
+      true,
+      "utf-8",
+      false,
+    );
+    expect(state().entries[id]).toMatchObject({
+      content: "new draft",
+      baseline: "original",
+      encoding: "utf-16le",
+      bom: true,
+      baselineEncoding: "utf-16le",
+      baselineBom: true,
+    });
+    expect(state().isDirty(id)).toBe(true);
   });
 });
