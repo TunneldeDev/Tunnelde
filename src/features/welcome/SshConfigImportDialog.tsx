@@ -23,9 +23,6 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError(null);
-    setPreview(null);
     void api
       .sshConfigPreview()
       .then((result) => {
@@ -49,6 +46,14 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
       active = false;
     };
   }, [attempt]);
+
+  const refresh = () => {
+    setLoading(true);
+    setError(null);
+    setPreview(null);
+    setSelected(new Set());
+    setAttempt((value) => value + 1);
+  };
 
   const importSelected = async () => {
     if (!preview || saving || loading || selected.size === 0) return;
@@ -82,7 +87,7 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={() => setAttempt((value) => value + 1)} disabled={saving || loading}>
+          <Button onClick={refresh} disabled={saving || loading}>
             {t("sshImport.refresh")}
           </Button>
           <Button
