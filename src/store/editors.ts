@@ -76,6 +76,17 @@ const RETRYABLE_DECODE_ERRORS = ["sftp.binaryFile", "sftp.unsupportedEncoding"];
 function isDecodeError(error: unknown) {
   return isIpcError(error) && RETRYABLE_DECODE_ERRORS.includes(error.message);
 }
+/** A draft can differ from disk in text or in its selected output format. */
+function hasPendingFormat(entry: EditorEntry) {
+  return (
+    (entry.baselineEncoding !== undefined &&
+      entry.baselineEncoding !== (entry.encoding ?? "utf-8")) ||
+    (entry.baselineBom !== undefined && entry.baselineBom !== (entry.bom ?? false))
+  );
+}
+export function editorHasPendingChanges(entry: EditorEntry) {
+  return entry.content !== entry.baseline || hasPendingFormat(entry);
+}
 const saves = new Map<string, { version: symbol; operation: Promise<boolean> }>();
 const reads = new Map<string, FileReadResource>();
 function cancelRead(tabId: string) {
@@ -487,7 +498,7 @@ export function editorDocument(tabId: string): EditorDocument | null {
     path: entry.path,
     name: entry.name,
     content: entry.content,
-    dirty: entry.content !== entry.baseline,
+    dirty: editorHasPendingChanges(entry),
   };
 }
 
@@ -845,7 +856,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     versions.set(tabId, version);
     const pending = saves.get(tabId);
     if (pending?.version === version) return pending.operation;
-    if (current.content === current.baseline) {
+    if (!editorHasPendingChanges(current)) {
       return Promise.resolve(true);
     }
 
@@ -1016,7 +1027,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
 
   isDirty: (tabId) => {
     const entry = get().entries[tabId];
-    return !!entry && !entry.loading && entry.content !== entry.baseline;
+    return !!entry && !entry.loading && editorHasPendingChanges(entry);
   },
 
   markDisconnected: (sessionId) =>

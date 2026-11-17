@@ -57,7 +57,7 @@ RPC 类型声明也按领域组织。兼容入口仅重新导出历史名称，�
 清单贡献使用 `registration.manifest` 和 `ownership: "manifest"`，可在启动获准的运行时前显示元数据。
 [主机菜单命令](host-menu.md)与文件菜单共用授权、目标失效检查和输出处理。
 
-[主机装饰](host-list.md)、[底栏](status-bar.md)和
+[主机装饰](host-list.md)、[文件列表高亮](file-highlights.md)、[底栏](status-bar.md)和
 [标签栏](tab-bar.md)使用共享运行时所有权注册表。前端先订阅再读快照，
 按修订同步，卸载时释放监听；授权变化后隔离排队的旧读取和事件。
 该机制不依赖某个具体视图或 Zustand store。

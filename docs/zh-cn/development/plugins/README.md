@@ -107,11 +107,14 @@ hello/
 | `engines`           | 否       | `tunnelde` 及 Node 插件的 `node` 版本范围      |
 | `tags`              | 否       | 搜索标签，如 `["files","preview"]`             |
 | `fileIconThemes`    | 否       | 声明式文件名、后缀与图标映射                   |
+| `fileList`          | 否       | 内置文件列表中的语义化运行时高亮               |
 | `filePreviews`      | 否       | 声明式后缀与预览渲染器映射                     |
 | `mountedFileReveal` | 否       | 允许通过自身挂载在本机文件浏览器定位远端路径   |
 
 运行环境与版本要求属于清单元数据，市场会直接显示。`engines` 使用 Rust semver 范围语法。
-`theme` 运行时可只提供配色、文件图标或预览。Node 命令可声明 `keybindings`、
+`theme` 运行时可只提供配色、文件图标或预览。运行时插件可通过
+`fileList.setHighlights` 注册临时的[文件列表高亮](file-highlights.md)，无需清单字段。
+Node 命令可声明 `keybindings`、
 `macKeybindings`、`editor` 和 `fileMenu`；验证规则见[编辑器贡献](editor-plugins.md)和 SDK。
 只有已安装插件的绑定才会显示。冲突可保留、选择一个，或跳到快捷键设置以
 `@is:conflict` 和 `@plugins:plugin-id,another-id` 筛选解决。

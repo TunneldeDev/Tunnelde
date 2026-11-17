@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/form/Select";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
+import { TextScrollbar } from "@/components/ui/display/TextScrollbar";
 import { cn } from "@/lib/text/format";
 import {
   beginEditorComposition,
@@ -14,6 +15,7 @@ import {
   consumeEditorSelectionRestore,
   endEditorComposition,
   editorDocument,
+  editorHasPendingChanges,
   rememberEditorSelection,
   undoEditorEdit,
   useEditors,
@@ -79,7 +81,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const [settingUp, setSettingUp] = useState(false);
   const [setupFailure, setSetupFailure] = useState<{ scope: string; message: string } | null>(null);
   const [reopening, setReopening] = useState(false);
-  const dirty = !!entry && !entry.loading && entry.content !== entry.baseline;
+  const dirty = !!entry && !entry.loading && editorHasPendingChanges(entry);
   const encodingOptions: Array<{ value: TextEncoding; label: string }> = [
     { value: "utf-8", label: "UTF-8" },
     { value: "utf-16le", label: "UTF-16 LE" },
@@ -398,35 +400,38 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           <EmptyState title={t("editor.loading")} />
         </div>
       ) : (
-        <textarea
-          ref={textarea}
-          className="editor-body td-code-editor"
-          aria-label={entry.name}
-          spellCheck={spellCheck}
-          wrap={wordWrap ? "soft" : "off"}
-          style={{
-            whiteSpace: wordWrap ? "pre-wrap" : "pre",
-            overflowWrap: wordWrap ? "anywhere" : "normal",
-            tabSize,
-          }}
-          value={entry.content}
-          onChange={(event) => change(tabId, event.target.value, selectionSnapshot(event.target))}
-          onSelect={(event) =>
-            rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
-          }
-          onScroll={(event) =>
-            rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
-          }
-          onCompositionStart={(event) => {
-            composing.current = true;
-            beginEditorComposition(tabId, selectionSnapshot(event.currentTarget));
-          }}
-          onCompositionEnd={(event) => {
-            composing.current = false;
-            endEditorComposition(tabId, selectionSnapshot(event.currentTarget));
-            setSelectionRevision((revision) => revision + 1);
-          }}
-        />
+        <div className="editor-text">
+          <textarea
+            ref={textarea}
+            className="editor-body td-code-editor"
+            aria-label={entry.name}
+            spellCheck={spellCheck}
+            wrap={wordWrap ? "soft" : "off"}
+            style={{
+              whiteSpace: wordWrap ? "pre-wrap" : "pre",
+              overflowWrap: wordWrap ? "anywhere" : "normal",
+              tabSize,
+            }}
+            value={entry.content}
+            onChange={(event) => change(tabId, event.target.value, selectionSnapshot(event.target))}
+            onSelect={(event) =>
+              rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
+            }
+            onScroll={(event) =>
+              rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
+            }
+            onCompositionStart={(event) => {
+              composing.current = true;
+              beginEditorComposition(tabId, selectionSnapshot(event.currentTarget));
+            }}
+            onCompositionEnd={(event) => {
+              composing.current = false;
+              endEditorComposition(tabId, selectionSnapshot(event.currentTarget));
+              setSelectionRevision((revision) => revision + 1);
+            }}
+          />
+          <TextScrollbar target={textarea} />
+        </div>
       )}
     </div>
   );

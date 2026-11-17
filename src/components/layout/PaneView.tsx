@@ -35,7 +35,7 @@ import { useContextMenu } from "@/store/contextMenu";
 import { useSettings } from "@/store/settings";
 import { useNavigation } from "@/store/navigation";
 import { isTauri } from "@/lib/api/ipc";
-import { useEditors } from "@/store/editors";
+import { editorHasPendingChanges, useEditors } from "@/store/editors";
 import { isWorkspaceDrag, readWorkspaceDrop } from "@/lib/session/workspaceDrag";
 import {
   sidebarLabel,
@@ -103,7 +103,7 @@ function TabLabel({ tab }: { tab: WorkspaceTab }) {
   const { t } = useTranslation();
   const dirty = useEditors((state) => {
     const entry = state.entries[tab.id];
-    return !!entry && !entry.loading && entry.content !== entry.baseline;
+    return !!entry && !entry.loading && editorHasPendingChanges(entry);
   });
   const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
   if (sidebar) return <>{sidebarLabel(sidebar, t)}</>;

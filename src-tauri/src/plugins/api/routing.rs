@@ -29,7 +29,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
         "hosts" | "groups" | "hostList" => domains::hosts::dispatch(context, method, params).await,
         "sessions" => domains::connections::dispatch(context, method, params).await,
         "terminal" => domains::terminal::dispatch(context, method, params).await,
-        "files" | "fileBrowser" | "filePreview" => {
+        namespace if domains::files::owns_namespace(namespace) => {
             domains::files::dispatch(context, method, params).await
         }
         "monitor" => domains::monitor::dispatch(context, method, params).await,
@@ -92,5 +92,35 @@ fn changed_domain(method: &str) -> Option<&'static str> {
             Some("files")
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_list_methods_route_to_the_files_domain() {
+        let methods: Vec<_> = super::super::METHODS
+            .iter()
+            .filter(|method| method.name.starts_with("fileList."))
+            .collect();
+        assert_eq!(methods.len(), 2);
+        for method in methods {
+            let namespace = method.name.split('.').next().unwrap();
+            assert!(domains::files::owns_namespace(namespace), "{}", method.name);
+            assert!(
+                domains::files::supports_file_list(method.name),
+                "{}",
+                method.name
+            );
+        }
+    }
+
+    #[test]
+    fn file_list_rejects_unknown_namespaces_and_methods() {
+        assert!(!domains::files::owns_namespace("fileListUnknown"));
+        assert!(domains::files::owns_namespace("fileList"));
+        assert!(!domains::files::supports_file_list("fileList.unknown"));
     }
 }
