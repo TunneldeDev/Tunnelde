@@ -6341,13 +6341,13 @@ mod tests {
     #[test]
     fn text_decode_detects_common_legacy_encodings_and_rejects_invalid_explicit_input() {
         let gb18030 = encoding_rs::GB18030.encode("中文").0;
-        let decoded = decode_text(gb18030.to_vec(), TextSaveMode::editor(None, false)).unwrap();
+        let decoded = decode_text(gb18030.to_vec(), TextSaveMode::editor_read(None)).unwrap();
         assert_eq!(decoded.content, "中文");
         assert_eq!(decoded.encoding, TextEncoding::Gb18030);
         assert_eq!(
             decode_text(
                 vec![0xe4, 0xb8],
-                TextSaveMode::editor(Some(TextEncoding::Utf8), false),
+                TextSaveMode::editor_read(Some(TextEncoding::Utf8)),
             )
             .unwrap_err()
             .to_string(),

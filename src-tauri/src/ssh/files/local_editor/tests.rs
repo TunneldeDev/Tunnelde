@@ -952,13 +952,33 @@ fn rejects_format_only_change_during_staging() {
         |_, _| Ok(()),
         |phase, _| {
             if phase == "staged" {
-                std::fs::write(&f.file, b"\xEF\xBB\xBForiginal")?;
+                let external = b"\xEF\xBB\xBForiginal";
+                #[cfg(windows)]
+                {
+                    // Windows keeps the source deny-write sharing mode through
+                    // publication. The security boundary must remain intact, so
+                    // verify that the competing write is rejected and the
+                    // original bytes stay unchanged.
+                    let error = std::fs::write(&f.file, external).unwrap_err();
+                    assert_eq!(error.raw_os_error(), Some(32));
+                    assert_eq!(f.disk_bytes(), b"original");
+                }
+                #[cfg(not(windows))]
+                std::fs::write(&f.file, external)?;
             }
             Ok(())
         },
     );
-    assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
-    assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBForiginal");
+    #[cfg(not(windows))]
+    {
+        assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
+        assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBForiginal");
+    }
+    #[cfg(windows)]
+    {
+        assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
+        assert_eq!(f.disk_bytes(), b"original");
+    }
     f.clean();
 }
 
