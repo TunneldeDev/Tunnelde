@@ -5,11 +5,17 @@ import { useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LargeEditor, editorSelectionSnapshot } from "@/features/editor/LargeEditor";
+import {
+  beginEditorInput,
+  rememberEditorSelection,
+  undoEditorEdit,
+  useEditors,
+} from "@/store/editors";
 import { editorTextMap, editorToSource, sourceToEditor } from "@/features/editor/editorText";
 import { locationOffset } from "@/features/editor/largeEditorState";
 import type { EditorSelectionSnapshot } from "@/store/editors";
 
-function mount(content: string) {
+function mount(content: string, initial: Partial<Parameters<typeof LargeEditor>[0]> = {}) {
   const result: {
     view: { current: EditorView | null };
     changes: Array<[string, EditorSelectionSnapshot]>;
@@ -43,6 +49,7 @@ function mount(content: string) {
         onUndo={result.undo}
         onRedo={result.redo}
         onBeforeInput={(kind) => result.inputs.push(kind)}
+        {...initial}
         {...props}
       />
     );
@@ -269,7 +276,89 @@ describe("LargeEditor", () => {
     });
     expect(editor.inputs).toContain("deleteContentBackward");
     expect(editor.inputs).toContain("insertReplacementText");
-    expect(editor.changes.at(-1)?.[0]).toBe("\tabcdef");
+    view.dispatch({
+      changes: { from: 0, to: 1, insert: "" },
+      userEvent: "delete.dedent",
+    });
+    expect(editor.inputs.at(-1)).toBe("insertReplacementText");
+    expect(editor.changes.at(-1)?.[0]).toBe("abcdef");
+  });
+
+  it("drops collapsed CRLF-half token projections without crashing and keeps adjacent tokens", async () => {
+    const editor = mount("a\r\nb");
+    act(() =>
+      editor.rerender({
+        tokens: [
+          { start: 1, end: 2, type: "comment" },
+          { start: 3, end: 4, type: "keyword" },
+        ],
+        tokensDocumentId: "document",
+        tokensVersion: 0,
+      }),
+    );
+    await waitFor(() => expect(editor.view.current).not.toBeNull());
+    const view = editor.view.current!;
+    expect(view.state.doc.toString()).toBe("a\nb");
+    act(() =>
+      editor.rerender({
+        tokens: [
+          { start: 1, end: 2, type: "comment" },
+          { start: 3, end: 4, type: "string" },
+        ],
+        version: 1,
+      }),
+    );
+    expect(editor.view.current).toBe(view);
+    expect(editor.view.current).toBe(view);
+  });
+
+  it("round-trips host history separately for typing and indentation", async () => {
+    const tabId = "bridge.js";
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          documentId: "document",
+          version: 0,
+          sessionId: null,
+          path: "/bridge.js",
+          name: "bridge.js",
+          content: "abcdef",
+          baseline: "abcdef",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    const editor = mount("abcdef", {
+      documentId: "document",
+      onBeforeInput: (kind: string, selection: EditorSelectionSnapshot) =>
+        beginEditorInput(tabId, kind, selection),
+      onChange: (text: string, selection: EditorSelectionSnapshot) => {
+        useEditors.getState().change(tabId, text, selection);
+        rememberEditorSelection(tabId, selection);
+      },
+    });
+    await waitFor(() => expect(editor.view.current).not.toBeNull());
+    const view = editor.view.current!;
+    view.dispatch({ selection: { anchor: 3 } });
+    view.dispatch({
+      changes: { from: 3, to: 3, insert: "x" },
+      selection: { anchor: 4 },
+      userEvent: "input.type",
+    });
+    view.dispatch({
+      changes: { from: 4, to: 4, insert: "  " },
+      selection: { anchor: 6 },
+      userEvent: "input.indent",
+    });
+    expect(useEditors.getState().entries[tabId]?.content).toBe("abcx  def");
+    expect(undoEditorEdit(tabId)).toBe(true);
+    expect(useEditors.getState().entries[tabId]?.content).toBe("abcxdef");
+    expect(undoEditorEdit(tabId)).toBe(true);
+    expect(useEditors.getState().entries[tabId]?.content).toBe("abcdef");
+    useEditors.getState().discard(tabId);
   });
 
   it("uses the editor line separator for initialization", () => {

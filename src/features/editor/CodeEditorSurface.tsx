@@ -131,15 +131,15 @@ function toSourceSelection(
 
 function transactionInputType(transaction: Transaction): string {
   const userEvent = transaction.annotation(Transaction.userEvent) ?? "";
+  if (userEvent === "input.indent" || userEvent === "indent" || userEvent === "delete.dedent")
+    return "insertReplacementText";
   if (userEvent === "delete.cut") return "deleteByCut";
   if (userEvent === "delete.forward") return "deleteContentForward";
   if (userEvent === "delete.backward") return "deleteContentBackward";
-  if (userEvent.startsWith("delete")) return "deleteContentBackward";
+  if (userEvent.startsWith("delete")) return "insertReplacementText";
   if (userEvent === "input.type" || userEvent.startsWith("input.type.")) return "insertText";
   if (userEvent === "input.paste") return "insertFromPaste";
   if (userEvent === "input.drop") return "insertFromDrop";
-  if (userEvent === "input.indent" || userEvent === "indent" || userEvent === "delete.dedent")
-    return "insertReplacementText";
   let insertedNewline = false;
   transaction.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
     if (inserted.toString().includes("\n")) insertedNewline = true;
@@ -165,21 +165,20 @@ function tokenSet(
   map: EditorTextMap,
   range?: { from: number; to: number },
 ): DecorationSet {
-  const sourceLength = map.source.length;
-  const ranges = tokens
-    .filter(
-      (token) =>
-        token.start >= 0 &&
-        token.end <= sourceLength &&
-        token.start < token.end &&
-        (!range || (token.start >= range.from && token.end <= range.to)),
+  const ranges: ReturnType<Decoration["range"]>[] = [];
+  for (const token of tokens) {
+    if (
+      token.start < 0 ||
+      token.end > map.source.length ||
+      token.start >= token.end ||
+      (range && (token.start < range.from || token.end > range.to))
     )
-    .map((token) =>
-      decorationFor(token.type).range(
-        sourceToEditor(map, token.start),
-        sourceToEditor(map, token.end),
-      ),
-    );
+      continue;
+    const from = sourceToEditor(map, token.start);
+    const to = sourceToEditor(map, token.end);
+    if (from < 0 || to > map.normalized.length || from >= to) continue;
+    ranges.push(decorationFor(token.type).range(from, to));
+  }
   return Decoration.set(ranges, true);
 }
 
