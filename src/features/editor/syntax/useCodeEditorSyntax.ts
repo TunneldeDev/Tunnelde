@@ -24,7 +24,7 @@ export interface CodeEditorSyntax {
 }
 
 /** CM and host CSS must use one semantic class vocabulary. */
-export const syntaxDecorationClass = (type: string) => `td-syntax--${type}`;
+export const syntaxDecorationClass = (type: string) => `cm-editor-token-${type}`;
 
 /**
  * Contract consumed by CodeEditorSurface. The hook owns authorization and
