@@ -58,9 +58,7 @@ export async function runSyntaxHighlighting(
   const authorized = (plugin: PluginInfo) =>
     !security().restricted &&
     (isTauri()
-      ? plugin.permissions.every((permission) =>
-          security().grants[plugin.id]?.includes(permission),
-        )
+      ? plugin.permissions.every((permission) => security().grants[plugin.id]?.includes(permission))
       : plugin.permissions.every((permission) => plugin.permissions.includes(permission)));
   if (!authorized(original)) return null;
   try {

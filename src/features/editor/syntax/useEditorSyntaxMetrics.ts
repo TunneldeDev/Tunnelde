@@ -17,10 +17,7 @@ const FALLBACK: EditorSyntaxMetrics = {
   scrollLeft: 0,
 };
 
-function measure(
-  element: HTMLTextAreaElement,
-  previous: EditorSyntaxMetrics,
-): EditorSyntaxMetrics {
+function measure(element: HTMLTextAreaElement, previous: EditorSyntaxMetrics): EditorSyntaxMetrics {
   const style = getComputedStyle(element);
   return {
     font: style.fontFamily,
@@ -66,7 +63,8 @@ export function useEditorSyntaxMetrics(
     setMetrics((previous) => {
       const next = measure(element, previous);
       return Object.keys(next).every(
-        (key) => next[key as keyof EditorSyntaxMetrics] === previous[key as keyof EditorSyntaxMetrics],
+        (key) =>
+          next[key as keyof EditorSyntaxMetrics] === previous[key as keyof EditorSyntaxMetrics],
       )
         ? previous
         : next;

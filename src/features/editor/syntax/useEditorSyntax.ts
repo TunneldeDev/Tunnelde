@@ -118,8 +118,15 @@ export function useEditorSyntax({
 
   useEffect(() => {
     const valid =
-      !!tabId && !!documentId && enabled && !composing && !!provider && plugin?.status === "running" &&
-      !stopping && compatible && authorized;
+      !!tabId &&
+      !!documentId &&
+      enabled &&
+      !composing &&
+      !!provider &&
+      plugin?.status === "running" &&
+      !stopping &&
+      compatible &&
+      authorized;
     if (!valid) {
       sequence.current += 1;
       queued.current = null;

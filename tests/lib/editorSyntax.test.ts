@@ -23,9 +23,16 @@ const plugin = {
   permissions: ["editor.read"],
   fingerprint: "first",
   views: [],
-  commands: [{ id: "highlight", title: "Highlight", editor: { extensions: ["js", "ts"], syntax: true } }],
+  commands: [
+    { id: "highlight", title: "Highlight", editor: { extensions: ["js", "ts"], syntax: true } },
+  ],
 } as unknown as PluginInfo;
-const provider = { id: "syntax", command: "highlight", title: "Syntax: Highlight", extensions: ["js", "ts"] };
+const provider = {
+  id: "syntax",
+  command: "highlight",
+  title: "Syntax: Highlight",
+  extensions: ["js", "ts"],
+};
 const document = {
   tabId: "editor:syntax",
   documentId: "document-one",
@@ -61,7 +68,13 @@ beforeEach(() => {
   });
   usePlugins.setState({ items: [{ ...plugin }] });
   usePluginSecurity.setState({
-    state: { restricted: false, cliLocked: false, recoverySuggested: false, reason: null, grants: { syntax: ["editor.read"] } },
+    state: {
+      restricted: false,
+      cliLocked: false,
+      recoverySuggested: false,
+      reason: null,
+      grants: { syntax: ["editor.read"] },
+    },
   });
   vi.spyOn(api, "pluginRun").mockResolvedValue({
     tokens: [
@@ -82,7 +95,11 @@ describe("plugin syntax highlighting contracts", () => {
           commands: [
             { id: "format", title: "Format", editor: { extensions: ["js"], format: true } },
             { id: "legacy", title: "Legacy", editor: { extensions: ["js"] } },
-            { id: "both", title: "Both", editor: { extensions: ["js"], format: true, syntax: true } },
+            {
+              id: "both",
+              title: "Both",
+              editor: { extensions: ["js"], format: true, syntax: true },
+            },
           ],
         },
       ]),
@@ -99,13 +116,22 @@ describe("plugin syntax highlighting contracts", () => {
       [{ start: 2, end: 3, type: "keyword" }],
       [{ start: 2, end: 1, type: "keyword" }],
       [{ start: 0, end: 1, type: "script" }],
-      [{ start: 0, end: 1, type: "keyword" }, { start: 1, end: 2, type: "number" }],
+      [
+        { start: 0, end: 1, type: "keyword" },
+        { start: 1, end: 2, type: "number" },
+      ],
       [{ start: 0, end: 1, type: "keyword", html: "<b>" }],
     ])
       expect(() => parseSyntaxResult({ tokens }, text)).toThrow();
     expect(() =>
       parseSyntaxResult(
-        { tokens: Array.from({ length: SYNTAX_TOKEN_LIMIT + 1 }, (_, i) => ({ start: i, end: i + 1, type: "number" })) },
+        {
+          tokens: Array.from({ length: SYNTAX_TOKEN_LIMIT + 1 }, (_, i) => ({
+            start: i,
+            end: i + 1,
+            type: "number",
+          })),
+        },
         "x".repeat(SYNTAX_TOKEN_LIMIT + 1),
       ),
     ).toThrow();
@@ -146,10 +172,14 @@ describe("plugin syntax highlighting contracts", () => {
   it("never starts, prompts or sends text without an existing grant", async () => {
     vi.spyOn(ipc, "isTauri").mockReturnValue(true);
     usePlugins.setState({ items: [{ ...plugin, status: "stopped" }] });
-    expect(await runSyntaxHighlighting(provider, document, new AbortController().signal)).toBeNull();
+    expect(
+      await runSyntaxHighlighting(provider, document, new AbortController().signal),
+    ).toBeNull();
     usePlugins.setState({ items: [{ ...plugin }] });
     usePluginSecurity.setState((state) => ({ state: { ...state.state, grants: {} } }));
-    expect(await runSyntaxHighlighting(provider, document, new AbortController().signal)).toBeNull();
+    expect(
+      await runSyntaxHighlighting(provider, document, new AbortController().signal),
+    ).toBeNull();
     expect(api.pluginRun).not.toHaveBeenCalled();
   });
 
@@ -163,20 +193,32 @@ describe("plugin syntax highlighting contracts", () => {
     pending.resolve({ tokens: [{ start: 0, end: 1, type: "keyword" }] });
     expect(await operation).toBeNull();
 
-    vi.mocked(api.pluginRun).mockResolvedValueOnce({ tokens: [{ start: 0, end: 1, type: "keyword" }] });
+    vi.mocked(api.pluginRun).mockResolvedValueOnce({
+      tokens: [{ start: 0, end: 1, type: "keyword" }],
+    });
     controller.abort();
     expect(await runSyntaxHighlighting(provider, document, controller.signal)).toBeNull();
     usePluginSecurity.setState((state) => ({ state: { ...state.state, grants: {} } }));
-    expect(await runSyntaxHighlighting(provider, document, new AbortController().signal)).toBeNull();
+    expect(
+      await runSyntaxHighlighting(provider, document, new AbortController().signal),
+    ).toBeNull();
   });
 
   it("returns plain fallback for malformed, oversized, timed-out and stopped providers", async () => {
-    vi.mocked(api.pluginRun).mockResolvedValueOnce({ tokens: [{ start: 0, end: 999, type: "keyword" }] });
-    expect(await runSyntaxHighlighting(provider, document, new AbortController().signal)).toBeNull();
+    vi.mocked(api.pluginRun).mockResolvedValueOnce({
+      tokens: [{ start: 0, end: 999, type: "keyword" }],
+    });
+    expect(
+      await runSyntaxHighlighting(provider, document, new AbortController().signal),
+    ).toBeNull();
     vi.mocked(api.pluginRun).mockRejectedValueOnce(new Error("plugin.timeout"));
-    expect(await runSyntaxHighlighting(provider, document, new AbortController().signal)).toBeNull();
+    expect(
+      await runSyntaxHighlighting(provider, document, new AbortController().signal),
+    ).toBeNull();
     usePlugins.setState({ items: [{ ...plugin, status: "stopped" }] });
-    expect(await runSyntaxHighlighting(provider, document, new AbortController().signal)).toBeNull();
+    expect(
+      await runSyntaxHighlighting(provider, document, new AbortController().signal),
+    ).toBeNull();
     expect(
       await runSyntaxHighlighting(
         provider,
