@@ -284,32 +284,35 @@ describe("LargeEditor", () => {
     expect(editor.changes.at(-1)?.[0]).toBe("abcdef");
   });
 
-  it("drops collapsed CRLF-half token projections without crashing and keeps adjacent tokens", async () => {
-    const editor = mount("a\r\nb");
-    act(() =>
-      editor.rerender({
-        tokens: [
-          { start: 1, end: 2, type: "comment" },
-          { start: 3, end: 4, type: "keyword" },
-        ],
-        tokensDocumentId: "document",
-        tokensVersion: 0,
-      }),
-    );
+  it("drops collapsed CRLF-half tokens on initial and update projections", async () => {
+    const editor = mount("a\r\nb", {
+      tokens: [
+        { start: 1, end: 2, type: "comment" },
+        { start: 3, end: 4, type: "keyword" },
+      ],
+      tokensDocumentId: "document",
+      tokensVersion: 0,
+    });
     await waitFor(() => expect(editor.view.current).not.toBeNull());
     const view = editor.view.current!;
     expect(view.state.doc.toString()).toBe("a\nb");
+    await waitFor(() =>
+      expect(view.dom.querySelector(".cm-editor-token-keyword")?.textContent).toBe("b"),
+    );
     act(() =>
       editor.rerender({
         tokens: [
           { start: 1, end: 2, type: "comment" },
           { start: 3, end: 4, type: "string" },
         ],
-        version: 1,
+        tokensDocumentId: "document",
+        tokensVersion: 0,
       }),
     );
     expect(editor.view.current).toBe(view);
-    expect(editor.view.current).toBe(view);
+    await waitFor(() =>
+      expect(view.dom.querySelector(".cm-editor-token-string")?.textContent).toBe("b"),
+    );
   });
 
   it("round-trips host history separately for typing and indentation", async () => {
