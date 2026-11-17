@@ -10,6 +10,8 @@
 API 兼容性与安全：[中文](api.md) · [English](../../../en-us/development/plugins/api.md)。
 编辑器命令与格式化贡献：[中文](editor-plugins.md) · [English](../../../en-us/development/plugins/editor-plugins.md)。
 
+编辑器语法高亮（实验性、只读）：[中文](editor-syntax.md)。
+
 主机元数据扩展采用独立的 Manifest 字段结构和修订检查存储，详见[插件主机字段](host-fields.md)。
 
 插件自有设置、明确 Schema 迁移与恢复，详见[插件配置](configuration.md)。
