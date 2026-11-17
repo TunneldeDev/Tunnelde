@@ -36,7 +36,7 @@ import { FileSplitView } from "./FileSplitView";
 import { FileBrowserSurface } from "./FileBrowserSurface";
 import { fitFileColumn } from "@/lib/files/columnWidth";
 import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
-import { columnAncestors } from "@/lib/files/navigation";
+import { columnAncestors, pathForEditing, pathForNavigation } from "@/lib/files/navigation";
 import { domainEvents, type FilesChanged } from "@/lib/events/domain";
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
@@ -938,6 +938,7 @@ export function SftpPage({
   };
 
   const navigate = (id: PaneId, path: string) => {
+    const destination = pathForNavigation(path, panesRef.current[id].source);
     patch(id, {
       creating: null,
       renaming: null,
@@ -946,7 +947,7 @@ export function SftpPage({
       filterKind: "all",
       collapsedGroups: [],
     });
-    void load(id, path);
+    void load(id, destination);
   };
 
   const activateColumn = (id: PaneId, index: number) => {
@@ -1852,7 +1853,7 @@ export function SftpPage({
           : dateFormatter.format(new Date(`${key}T12:00:00`));
       return key;
     };
-    const draft = state.draft ?? state.listing?.path ?? "";
+    const draft = state.draft ?? pathForEditing(state.listing?.path ?? "", source);
     const columnView = view.filesLayout === "columns";
     const { columns, grid, minimum } = columnLayout(view);
     const columnIndex = (column: FileColumn) => {
