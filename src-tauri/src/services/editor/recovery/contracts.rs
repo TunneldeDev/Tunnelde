@@ -42,6 +42,20 @@ pub(crate) struct Snapshot {
     pub drafts: Vec<Draft>,
 }
 
+fn format_pending(draft: &Draft) -> bool {
+    match (
+        draft.encoding,
+        draft.bom,
+        draft.baseline_encoding,
+        draft.baseline_bom,
+    ) {
+        (Some(target_encoding), Some(target_bom), Some(source_encoding), Some(source_bom)) => {
+            target_encoding != source_encoding || target_bom != source_bom
+        }
+        _ => false,
+    }
+}
+
 pub(super) fn validate(drafts: &[Draft]) -> crate::error::AppResult<()> {
     let mut ids = std::collections::HashSet::new();
     let valid = drafts.len() <= MAX_DRAFTS
@@ -53,7 +67,7 @@ pub(super) fn validate(drafts: &[Draft]) -> crate::error::AppResult<()> {
                 && !draft.path.contains('\0')
                 && draft.baseline.len() <= MAX_DOCUMENT_BYTES
                 && draft.content.len() <= MAX_DOCUMENT_BYTES
-                && draft.baseline != draft.content
+                && (draft.baseline != draft.content || format_pending(draft))
                 && draft.encoding.is_some() == draft.bom.is_some()
                 && draft.baseline_encoding.is_some() == draft.baseline_bom.is_some()
                 && match &draft.source {

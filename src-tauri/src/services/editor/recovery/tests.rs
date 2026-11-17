@@ -74,6 +74,7 @@ fn draft_target_and_strict_baseline_formats_may_differ() {
     let mut replacement = draft(path);
     replacement.encoding = Some(TextEncoding::Gb18030);
     replacement.bom = Some(false);
+    replacement.content = replacement.baseline.clone();
     replacement.baseline_encoding = Some(TextEncoding::Utf8);
     replacement.baseline_bom = Some(true);
     database

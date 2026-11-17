@@ -117,6 +117,86 @@ describe("editor requests", () => {
     expect(state().isDirty(id)).toBe(true);
   });
 
+  it.each([
+    { sessionId: null as string | null, write: "localWriteText" as const },
+    { sessionId: "s1" as string | null, write: "sftpWriteText" as const },
+  ])(
+    "replaces equal text into the selected format through $write and retries after failure",
+    async ({ sessionId, write }) => {
+      const tabId = sessionId === null ? "editor:format-local" : id;
+      const read = {
+        content: "hello",
+        size: 5,
+        encoding: "utf-8" as const,
+        bom: false,
+      };
+      if (sessionId === null) vi.spyOn(api, "localReadText").mockResolvedValue(read);
+      else vi.mocked(api.sftpReadText).mockResolvedValueOnce(read);
+      const writeCall = vi.spyOn(api, write);
+      writeCall.mockRejectedValueOnce({
+        code: "validation",
+        message: "editor.localFileChanged",
+      });
+      await state().open(tabId, sessionId, sessionId === null ? "/format.txt" : "/a.txt");
+      state().change(tabId, "draft");
+      const review = editorDocument(tabId)!;
+      expect(
+        await state().resolveConflict(
+          review,
+          { content: "draft", encoding: "utf-16le", bom: true },
+          "replace",
+        ),
+      ).toBe(false);
+      expect(writeCall).toHaveBeenCalledOnce();
+      expect(state().isDirty(tabId)).toBe(true);
+      expect(state().entries[tabId]).toMatchObject({
+        content: "draft",
+        baseline: "draft",
+        encoding: "utf-8",
+        bom: false,
+        baselineEncoding: "utf-16le",
+        baselineBom: true,
+      });
+      vi.mocked(writeCall).mockResolvedValueOnce(undefined);
+      expect(await state().save(tabId)).toBe(true);
+      expect(writeCall).toHaveBeenCalledTimes(2);
+      expect(state().isDirty(tabId)).toBe(false);
+      expect(state().entries[tabId]).toMatchObject({
+        baselineEncoding: "utf-8",
+        baselineBom: false,
+      });
+    },
+  );
+
+  it("keeps a same-text format-only draft dirty through a save failure", async () => {
+    vi.spyOn(api, "localReadText").mockResolvedValue({
+      content: "original",
+      size: 8,
+      encoding: "utf-8",
+      bom: false,
+    });
+    vi.spyOn(api, "localWriteText").mockRejectedValueOnce({
+      code: "validation",
+      message: "editor.localFileChanged",
+    });
+    await state().open("format-only", null, "/format-only.txt");
+    state().change("format-only", "draft");
+    const review = editorDocument("format-only")!;
+    await state().resolveConflict(
+      review,
+      { content: "draft", encoding: "utf-16le", bom: true },
+      "replace",
+    );
+    expect(state().entries["format-only"]).toMatchObject({
+      content: "draft",
+      baseline: "draft",
+      encoding: "utf-8",
+      baselineEncoding: "utf-16le",
+      saveConflict: true,
+    });
+    expect(state().isDirty("format-only")).toBe(true);
+  });
+
   it("keeps the draft dirty after a failed reviewed replacement", async () => {
     await state().open(id, "s1", "/a.txt");
     state().change(id, "my draft");

@@ -8,7 +8,12 @@ import { Select } from "@/components/ui/form/Select";
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
-import { useEditors, undoEditorEdit, editorDocument } from "@/store/editors";
+import {
+  useEditors,
+  undoEditorEdit,
+  editorDocument,
+  editorHasPendingChanges,
+} from "@/store/editors";
 import { usePlugins } from "@/store/plugins";
 import {
   documentFormatters,
@@ -59,7 +64,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const [settingUp, setSettingUp] = useState(false);
   const [setupFailure, setSetupFailure] = useState<{ scope: string; message: string } | null>(null);
   const [reopening, setReopening] = useState(false);
-  const dirty = !!entry && !entry.loading && entry.content !== entry.baseline;
+  const dirty = !!entry && !entry.loading && editorHasPendingChanges(entry);
   const encodingOptions: Array<{ value: TextEncoding; label: string }> = [
     { value: "utf-8", label: "UTF-8" },
     { value: "utf-16le", label: "UTF-16 LE" },
