@@ -1,7 +1,7 @@
 import { Save, ShieldCheck, WandSparkles } from "lucide-react";
 import { shortcutCommands } from "@/lib/keyboard/registry";
 import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Select } from "@/components/ui/form/Select";
 
@@ -10,10 +10,16 @@ import { EmptyState } from "@/components/ui/display/Misc";
 import { TextScrollbar } from "@/components/ui/display/TextScrollbar";
 import { cn } from "@/lib/text/format";
 import {
-  useEditors,
-  undoEditorEdit,
+  beginEditorComposition,
+  beginEditorInput,
+  consumeEditorSelectionRestore,
+  endEditorComposition,
   editorDocument,
   editorHasPendingChanges,
+  rememberEditorSelection,
+  undoEditorEdit,
+  useEditors,
+  type EditorSelectionSnapshot,
 } from "@/store/editors";
 import { usePlugins } from "@/store/plugins";
 import {
@@ -38,6 +44,16 @@ import type { TextEncoding } from "@/lib/api/types";
 interface EditorPageProps {
   tabId: string;
   active: boolean;
+}
+
+function selectionSnapshot(element: HTMLTextAreaElement): EditorSelectionSnapshot {
+  return {
+    start: element.selectionStart,
+    end: element.selectionEnd,
+    direction: element.selectionDirection,
+    scrollTop: element.scrollTop,
+    scrollLeft: element.scrollLeft,
+  };
 }
 
 export function EditorPage({ tabId, active }: EditorPageProps) {
@@ -84,6 +100,8 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     (state) => !!entry && documentFormatters(entry.path, state.items).length > 0,
   );
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const composing = useRef(false);
+  const [selectionRevision, setSelectionRevision] = useState(0);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
   useBackgroundGuard(reconnecting || formatting || reviewing || settingUp || reopening);
   const setup = async () => {
@@ -105,6 +123,30 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       setSettingUp(false);
     }
   };
+  useLayoutEffect(() => {
+    const element = textarea.current;
+    if (
+      composing.current ||
+      !element ||
+      !entry ||
+      entry.loading ||
+      entry.error ||
+      !entry.documentId ||
+      entry.version === undefined
+    )
+      return;
+    const restored = consumeEditorSelectionRestore(
+      tabId,
+      entry.documentId,
+      entry.version,
+      entry.content,
+    );
+    if (!restored) return;
+    element.setSelectionRange(restored.start, restored.end, restored.direction);
+    if (restored.scrollTop !== undefined) element.scrollTop = restored.scrollTop;
+    if (restored.scrollLeft !== undefined) element.scrollLeft = restored.scrollLeft;
+  }, [entry, selectionRevision, tabId]);
+
   const location = useEditorLocation((state) => state.target);
   useEffect(() => {
     if (
@@ -192,9 +234,11 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             queue = queue.then(async () => {
               await save(tabId);
             });
-          else if (id === "editor.undo" || id === "editor.redo")
+          else if (id === "editor.undo" || id === "editor.redo") {
+            if (textarea.current)
+              rememberEditorSelection(tabId, selectionSnapshot(textarea.current));
             return undoEditorEdit(tabId, id === "editor.redo");
-          else {
+          } else {
             const action = commands.find((command) => command.id === id)?.plugin;
             if (!action) return false;
             queue = queue.then(async () => {
@@ -211,10 +255,20 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     const element = textarea.current;
     if (!element) return;
     const beforeInput = (event: InputEvent) => {
+      if (composing.current) return;
+      const selection = selectionSnapshot(element);
       if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
         event.preventDefault();
+        rememberEditorSelection(tabId, selection);
         undoEditorEdit(tabId, event.inputType === "historyRedo");
+        return;
       }
+      if (event.inputType === "insertCompositionText") {
+        composing.current = true;
+        beginEditorComposition(tabId, selection);
+        return;
+      }
+      beginEditorInput(tabId, event.inputType, selection);
     };
     element.addEventListener("beforeinput", beforeInput);
     return () => element.removeEventListener("beforeinput", beforeInput);
@@ -359,7 +413,22 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
               tabSize,
             }}
             value={entry.content}
-            onChange={(event) => change(tabId, event.target.value)}
+            onChange={(event) => change(tabId, event.target.value, selectionSnapshot(event.target))}
+            onSelect={(event) =>
+              rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
+            }
+            onScroll={(event) =>
+              rememberEditorSelection(tabId, selectionSnapshot(event.currentTarget))
+            }
+            onCompositionStart={(event) => {
+              composing.current = true;
+              beginEditorComposition(tabId, selectionSnapshot(event.currentTarget));
+            }}
+            onCompositionEnd={(event) => {
+              composing.current = false;
+              endEditorComposition(tabId, selectionSnapshot(event.currentTarget));
+              setSelectionRevision((revision) => revision + 1);
+            }}
           />
           <TextScrollbar target={textarea} />
         </div>
