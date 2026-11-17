@@ -26,8 +26,19 @@ const writable = {
   ...readOnly,
   id: "formatter",
   permissions: ["editor.read", "editor.write"],
-  commands: [{ id: "format", title: "Format", editor: { extensions: ["js"], format: true } }],
+  commands: [
+    {
+      id: "format",
+      title: "Format",
+      editor: { extensions: ["js"], syntax: true, format: true },
+    },
+  ],
 } as unknown as PluginInfo;
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+};
 beforeEach(() => {
   vi.spyOn(ipc, "isTauri").mockReturnValue(true);
   usePlugins.setState({ items: [{ ...readOnly }], stoppingIds: [] });
@@ -100,20 +111,63 @@ it("legitimate syntax+format declaration remains writable", async () => {
   expect(editorDocument("review")?.content).toBe("OVERWRITTEN WITHOUT editor.write");
   expect(shortcutCommands([writable]).some((item) => item.plugin?.command === "format")).toBe(true);
 });
-it("revoking write prevents a writable provider from applying its result", async () => {
+it("does not apply an in-flight result after editor.write is revoked", async () => {
   usePlugins.setState({ items: [{ ...writable }] });
+  usePluginSecurity.setState((state) => ({
+    state: { ...state.state, grants: { formatter: writable.permissions } },
+  }));
+  const pending = deferred<unknown>();
+  vi.mocked(api.pluginRun).mockReturnValue(pending.promise);
+  const operation = runEditorPlugin(
+    { id: "formatter", command: "format", title: "Format" },
+    editorDocument("review")!,
+  );
+  await vi.waitFor(() => expect(api.pluginRun).toHaveBeenCalledOnce());
   usePluginSecurity.setState((state) => ({
     state: { ...state.state, grants: { formatter: ["editor.read"] } },
   }));
-  vi.spyOn(usePlugins.getState(), "execute").mockRejectedValue(
-    new Error("plugin.permissionDenied"),
+  pending.resolve({ text: "MUST NOT APPLY" });
+  expect(await operation).toBe(false);
+  expect(editorDocument("review")?.content).toBe("const original = 1;");
+});
+it("does not apply an in-flight result after declaration changes to syntax-only", async () => {
+  usePlugins.setState({ items: [{ ...writable }] });
+  usePluginSecurity.setState((state) => ({
+    state: { ...state.state, grants: { formatter: writable.permissions } },
+  }));
+  const pending = deferred<unknown>();
+  vi.mocked(api.pluginRun).mockReturnValue(pending.promise);
+  const operation = runEditorPlugin(
+    { id: "formatter", command: "format", title: "Format" },
+    editorDocument("review")!,
   );
+  await vi.waitFor(() => expect(api.pluginRun).toHaveBeenCalledOnce());
+  usePlugins.setState({
+    items: [
+      {
+        ...writable,
+        commands: [{ id: "format", title: "Format", editor: { extensions: ["js"], syntax: true } }],
+      },
+    ],
+  });
+  pending.resolve({ text: "MUST NOT APPLY" });
+  expect(await operation).toBe(false);
+  expect(editorDocument("review")?.content).toBe("const original = 1;");
+});
+it("legacy read-write editor command remains writable", async () => {
+  const legacy = {
+    ...writable,
+    commands: [{ id: "legacy", title: "Legacy", editor: { extensions: ["js"] } }],
+  } as PluginInfo;
+  usePlugins.setState({ items: [legacy] });
+  usePluginSecurity.setState((state) => ({
+    state: { ...state.state, grants: { formatter: legacy.permissions } },
+  }));
   expect(
     await runEditorPlugin(
-      { id: "formatter", command: "format", title: "Format" },
+      { id: "formatter", command: "legacy", title: "Legacy" },
       editorDocument("review")!,
     ),
-  ).toBe(false);
-  expect(api.pluginRun).not.toHaveBeenCalled();
-  expect(editorDocument("review")?.content).toBe("const original = 1;");
+  ).toBe(true);
+  expect(editorDocument("review")?.content).toBe("OVERWRITTEN WITHOUT editor.write");
 });
