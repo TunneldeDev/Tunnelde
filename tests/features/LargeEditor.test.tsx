@@ -15,12 +15,14 @@ function mount(content: string) {
     changes: Array<[string, EditorSelectionSnapshot]>;
     undo: ReturnType<typeof vi.fn>;
     redo: ReturnType<typeof vi.fn>;
+    inputs: string[];
     rerender: (props: Partial<Parameters<typeof LargeEditor>[0]>) => void;
   } = {
     view: { current: null },
     changes: [],
     undo: vi.fn(() => true),
     redo: vi.fn(() => true),
+    inputs: [],
     rerender: () => undefined,
   };
   function Harness(props: Partial<Parameters<typeof LargeEditor>[0]>) {
@@ -40,6 +42,7 @@ function mount(content: string) {
         onSelection={() => undefined}
         onUndo={result.undo}
         onRedo={result.redo}
+        onBeforeInput={(kind) => result.inputs.push(kind)}
         {...props}
       />
     );
@@ -226,7 +229,26 @@ describe("LargeEditor", () => {
     await waitFor(() => expect(editor.changes.at(-1)?.[0]?.startsWith("        a")).toBe(true));
   });
 
-  it("routes CM delete user events separately from typing", async () => {
+  it("keeps typing and indentation in separate host history groups", async () => {
+    const editor = mount("abcdef");
+    await waitFor(() => expect(editor.view.current).not.toBeNull());
+    const view = editor.view.current!;
+    view.dispatch({ selection: { anchor: 3 } });
+    view.dispatch({
+      changes: { from: 3, to: 3, insert: "x" },
+      selection: { anchor: 4 },
+      userEvent: "input.type",
+    });
+    view.dispatch({
+      changes: { from: 4, to: 4, insert: "  " },
+      selection: { anchor: 6 },
+      userEvent: "input.indent",
+    });
+    expect(editor.inputs).toEqual(["insertText", "insertReplacementText"]);
+    expect(editor.changes.map(([text]) => text)).toEqual(["abcxdef", "abcx  def"]);
+  });
+
+  it("reports directional delete and non-coalescing indent kinds", async () => {
     const editor = mount("abcdef");
     await waitFor(() => expect(editor.view.current).not.toBeNull());
     const view = editor.view.current!;
@@ -241,7 +263,13 @@ describe("LargeEditor", () => {
       selection: { anchor: 3 },
       userEvent: "delete.backward",
     });
-    expect(editor.changes.at(-1)?.[0]).toBe("abcdef");
+    view.dispatch({
+      changes: { from: 0, to: 0, insert: "\t" },
+      userEvent: "input.indent",
+    });
+    expect(editor.inputs).toContain("deleteContentBackward");
+    expect(editor.inputs).toContain("insertReplacementText");
+    expect(editor.changes.at(-1)?.[0]).toBe("\tabcdef");
   });
 
   it("uses the editor line separator for initialization", () => {

@@ -131,12 +131,15 @@ function toSourceSelection(
 
 function transactionInputType(transaction: Transaction): string {
   const userEvent = transaction.annotation(Transaction.userEvent) ?? "";
+  if (userEvent === "delete.cut") return "deleteByCut";
+  if (userEvent === "delete.forward") return "deleteContentForward";
+  if (userEvent === "delete.backward") return "deleteContentBackward";
   if (userEvent.startsWith("delete")) return "deleteContentBackward";
   if (userEvent === "input.type" || userEvent.startsWith("input.type.")) return "insertText";
-  if (userEvent === "input.indent") return "insertText";
   if (userEvent === "input.paste") return "insertFromPaste";
   if (userEvent === "input.drop") return "insertFromDrop";
-  if (userEvent === "delete.cut") return "deleteByCut";
+  if (userEvent === "input.indent" || userEvent === "indent" || userEvent === "delete.dedent")
+    return "insertReplacementText";
   let insertedNewline = false;
   transaction.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
     if (inserted.toString().includes("\n")) insertedNewline = true;
