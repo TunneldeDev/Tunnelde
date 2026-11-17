@@ -19,8 +19,8 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
     let cancelled = false;
     const read =
       entry.sessionId === null
-        ? api.localReadText(entry.path)
-        : api.sftpReadText(entry.sessionId, entry.path);
+        ? api.localReadText(entry.path, entry.baselineEncoding ?? entry.encoding)
+        : api.sftpReadText(entry.sessionId, entry.path, entry.baselineEncoding ?? entry.encoding);
     void read
       .then((file) => {
         if (!cancelled) {

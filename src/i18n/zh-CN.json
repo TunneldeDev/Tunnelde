@@ -725,6 +725,7 @@
     "transferTooLarge": "传输文件的总大小超出支持范围。",
     "unsupportedEncoding": "无法使用所选编码解码此文本文件",
     "binaryFile": "无法将二进制文件作为文本编辑",
+    "textFormatChanged": "文件编码或 BOM 在打开后已发生变化，请对比更改后再保存。",
     "absolutePathRequired": "需要绝对路径",
     "notRegularFile": "只能编辑普通文件",
     "fileTooLarge": "仅支持编辑不超过 2 MB 的文本文件",

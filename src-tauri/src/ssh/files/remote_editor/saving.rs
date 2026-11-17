@@ -112,11 +112,17 @@ async fn save_opened(
     journal.writable(&request.address, &target)?;
     job.check()?;
     policy.authorize()?;
-    let original = read_remote_text(sftp, &target, request.mode).await?;
+    let original = match read_remote_text(sftp, &target, request.mode).await {
+        Ok(original) => original,
+        Err(error) if error.to_string() == "editor.textFormatChanged" => {
+            return Err(AppError::validation("editor.remoteFileChanged"));
+        }
+        Err(error) => return Err(error),
+    };
     job.check()?;
     policy.check(sftp, &target, &original.content).await?;
     job.check()?;
-    if original.content == request.content {
+    if original.content == request.content && request.mode.same_format() {
         policy.admit(job)?;
         journal.published(&request.session_id);
         return Ok(());

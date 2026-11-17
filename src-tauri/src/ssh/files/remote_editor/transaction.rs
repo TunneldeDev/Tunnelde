@@ -138,7 +138,13 @@ pub(super) async fn staged_save(
     {
         return Err(AppError::validation("editor.metadataNotPreserved"));
     }
-    let current = read_remote_text(sftp, target, mode).await?;
+    let current = match read_remote_text(sftp, target, mode).await {
+        Ok(current) => current,
+        Err(error) if error.to_string() == "editor.textFormatChanged" => {
+            return Err(AppError::validation("editor.remoteFileChanged"));
+        }
+        Err(error) => return Err(error),
+    };
     let latest = sftp.symlink_metadata(target).await.map_err(map_sftp)?;
     if current.content != baseline
         || !same_metadata(&metadata, &latest)

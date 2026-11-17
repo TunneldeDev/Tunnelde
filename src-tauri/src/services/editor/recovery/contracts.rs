@@ -27,6 +27,12 @@ pub(crate) struct Draft {
     pub encoding: Option<TextEncoding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bom: Option<bool>,
+    /// Strict format of the on-disk baseline. It may differ from the save
+    /// target after a conflict replacement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_encoding: Option<TextEncoding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_bom: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -49,6 +55,7 @@ pub(super) fn validate(drafts: &[Draft]) -> crate::error::AppResult<()> {
                 && draft.content.len() <= MAX_DOCUMENT_BYTES
                 && draft.baseline != draft.content
                 && draft.encoding.is_some() == draft.bom.is_some()
+                && draft.baseline_encoding.is_some() == draft.baseline_bom.is_some()
                 && match &draft.source {
                     Source::Local => std::path::Path::new(&draft.path).is_absolute(),
                     Source::Remote { host_id, address } => {

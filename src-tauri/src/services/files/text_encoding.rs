@@ -113,8 +113,17 @@ pub struct DecodedText {
 /// BOM is ordinary content; editor formats keep BOM state as metadata.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TextFormat {
+    /// First-read/manual-selection semantics: a BOM takes precedence over the
+    /// requested encoding. This must never be used to validate a save baseline.
     Editor {
         encoding: Option<TextEncoding>,
+        bom: bool,
+    },
+    /// Save semantics: the disk bytes must still have the reviewed encoding and
+    /// BOM state. A format-only external change is a conflict even when it
+    /// decodes to the same text.
+    EditorBaseline {
+        encoding: TextEncoding,
         bom: bool,
     },
     Utf8,
@@ -124,6 +133,19 @@ impl TextFormat {
     fn decode(self, bytes: &[u8]) -> AppResult<DecodedText> {
         match self {
             Self::Editor { encoding, .. } => decode(bytes, encoding),
+            Self::EditorBaseline { encoding, bom } => decode_baseline(bytes, encoding, bom),
+            Self::Utf8 => decode_utf8(bytes),
+        }
+    }
+
+    fn decode_written(self, bytes: &[u8]) -> AppResult<DecodedText> {
+        match self {
+            Self::Editor {
+                encoding: Some(encoding),
+                bom,
+            } => decode_baseline(bytes, encoding, bom),
+            Self::Editor { encoding: None, .. } => decode(bytes, None),
+            Self::EditorBaseline { encoding, bom } => decode_baseline(bytes, encoding, bom),
             Self::Utf8 => decode_utf8(bytes),
         }
     }
@@ -135,6 +157,7 @@ impl TextFormat {
                 encoding.unwrap_or(original.encoding),
                 encoding.map_or(original.bom, |_| bom),
             ),
+            Self::EditorBaseline { encoding, bom } => encode(content, encoding, bom),
             Self::Utf8 => Ok(content.as_bytes().to_vec()),
         }
     }
@@ -165,12 +188,29 @@ pub struct TextSaveMode {
 }
 
 impl TextSaveMode {
-    pub fn editor(encoding: Option<TextEncoding>, bom: bool) -> Self {
-        let format = TextFormat::Editor { encoding, bom };
+    /// Initial editor reads may auto-detect and let a BOM override a manual
+    /// selection. Save callers use `editor` so a reviewed baseline is strict.
+    pub fn editor_read(encoding: Option<TextEncoding>) -> Self {
+        let format = TextFormat::Editor {
+            encoding,
+            bom: false,
+        };
         Self {
             source: format,
             target: format,
         }
+    }
+
+    pub fn editor(encoding: Option<TextEncoding>, bom: bool) -> Self {
+        let target = TextFormat::Editor { encoding, bom };
+        let source = encoding.map_or(
+            TextFormat::Editor {
+                encoding: None,
+                bom: false,
+            },
+            |encoding| TextFormat::EditorBaseline { encoding, bom },
+        );
+        Self { source, target }
     }
 
     pub fn editor_with_baseline(
@@ -180,8 +220,8 @@ impl TextSaveMode {
         baseline_bom: bool,
     ) -> Self {
         Self {
-            source: TextFormat::Editor {
-                encoding: Some(baseline_encoding),
+            source: TextFormat::EditorBaseline {
+                encoding: baseline_encoding,
                 bom: baseline_bom,
             },
             target: TextFormat::Editor {
@@ -200,10 +240,7 @@ impl TextSaveMode {
 
     #[cfg(test)]
     pub fn with_source(mut self, encoding: TextEncoding, bom: bool) -> Self {
-        self.source = TextFormat::Editor {
-            encoding: Some(encoding),
-            bom,
-        };
+        self.source = TextFormat::EditorBaseline { encoding, bom };
         self
     }
 
@@ -212,7 +249,7 @@ impl TextSaveMode {
     }
 
     pub fn decode_written(self, bytes: &[u8]) -> AppResult<DecodedText> {
-        self.target.decode(bytes)
+        self.target.decode_written(bytes)
     }
 
     pub fn encode(self, content: &str, original: &DecodedText) -> AppResult<Vec<u8>> {
@@ -235,8 +272,47 @@ impl TextSaveMode {
         )
     }
 
+    /// True when the reviewed disk format and save target are identical. Only
+    /// then can equal decoded text skip encoding and publication entirely.
+    pub fn same_format(self) -> bool {
+        match (self.source, self.target) {
+            (
+                TextFormat::EditorBaseline {
+                    encoding: source_encoding,
+                    bom: source_bom,
+                },
+                TextFormat::Editor {
+                    encoding: Some(target_encoding),
+                    bom: target_bom,
+                },
+            ) => source_encoding == target_encoding && source_bom == target_bom,
+            (
+                TextFormat::Editor {
+                    encoding: source_encoding,
+                    bom: source_bom,
+                },
+                TextFormat::Editor {
+                    encoding: target_encoding,
+                    bom: target_bom,
+                },
+            ) => source_encoding == target_encoding && source_bom == target_bom,
+            (TextFormat::Utf8, TextFormat::Utf8) => true,
+            _ => false,
+        }
+    }
+
     pub fn native_save_compatible(self) -> bool {
-        self.source == self.target && self.target.native_save_compatible()
+        self.target.native_save_compatible()
+            && matches!(
+                self.source,
+                TextFormat::Editor {
+                    encoding: None,
+                    bom: false
+                } | TextFormat::EditorBaseline {
+                    encoding: TextEncoding::Utf8,
+                    bom: false
+                }
+            )
     }
 }
 
@@ -328,6 +404,43 @@ pub fn decode(bytes: &[u8], requested: Option<TextEncoding>) -> AppResult<Decode
         content: content.into_owned(),
         encoding,
         bom,
+    })
+}
+
+/// Strict save-baseline decoding. Unlike a first read, the reviewed format is
+/// part of the optimistic concurrency check: BOM presence and BOM encoding must
+/// match, and the bytes are decoded with the expected encoding rather than a
+/// newly detected one.
+fn decode_baseline(
+    bytes: &[u8],
+    encoding: TextEncoding,
+    expected_bom: bool,
+) -> AppResult<DecodedText> {
+    let detected = bom(bytes);
+    let format_matches = match (expected_bom, detected) {
+        (false, None) => true,
+        (true, Some((detected, _))) => detected == encoding,
+        _ => false,
+    };
+    if !format_matches {
+        return Err(AppError::validation("editor.textFormatChanged"));
+    }
+    let offset = if expected_bom {
+        detected.map_or(0, |(_, length)| length)
+    } else {
+        0
+    };
+    let content = encoding
+        .encoding()
+        .decode_without_bom_handling_and_without_replacement(&bytes[offset..])
+        .ok_or_else(|| AppError::validation("editor.textFormatChanged"))?;
+    if content.contains('\0') {
+        return Err(AppError::validation("editor.textFormatChanged"));
+    }
+    Ok(DecodedText {
+        content: content.into_owned(),
+        encoding,
+        bom: expected_bom,
     })
 }
 
@@ -484,6 +597,52 @@ mod tests {
         assert!(!TextSaveMode::editor(Some(TextEncoding::Utf8), true).native_save_compatible());
         assert!(!TextSaveMode::editor(Some(TextEncoding::Gb18030), false).native_save_compatible());
         assert!(!TextSaveMode::utf8().native_save_compatible());
+        assert!(TextSaveMode::editor(None, false).same_format());
+        assert!(TextSaveMode::editor(Some(TextEncoding::Utf8), false).same_format());
+        assert!(!TextSaveMode::editor_with_baseline(
+            TextEncoding::Gb18030,
+            false,
+            TextEncoding::Utf8,
+            true,
+        )
+        .same_format());
+    }
+
+    #[test]
+    fn save_baseline_requires_the_reviewed_format_even_when_text_is_equal() {
+        let bomless = TextSaveMode::editor(Some(TextEncoding::Utf8), false);
+        assert_eq!(bomless.decode(b"hello").unwrap().content, "hello");
+        assert_eq!(
+            bomless
+                .decode(b"\xEF\xBB\xBFhello")
+                .unwrap_err()
+                .to_string(),
+            "editor.textFormatChanged"
+        );
+        let utf16 = TextSaveMode::editor_with_baseline(
+            TextEncoding::Utf8,
+            false,
+            TextEncoding::Utf16Le,
+            true,
+        );
+        assert_eq!(
+            utf16
+                .decode(&[0xff, 0xfe, b'h', 0, b'e', 0, b'l', 0, b'l', 0, b'o', 0])
+                .unwrap()
+                .content,
+            "hello"
+        );
+        assert_eq!(
+            utf16.decode(b"hello").unwrap_err().to_string(),
+            "editor.textFormatChanged"
+        );
+        assert_eq!(
+            TextSaveMode::editor_read(Some(TextEncoding::Gb18030))
+                .decode(b"\xEF\xBB\xBFhello")
+                .unwrap()
+                .encoding,
+            TextEncoding::Utf8
+        );
     }
 
     #[test]

@@ -237,7 +237,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           disabled={
             reopening ||
             entry.loading ||
-            !!entry.error ||
+            (!!entry.error && !entry.decodeError) ||
             entry.disconnected ||
             entry.saving ||
             dirty

@@ -912,3 +912,73 @@ fn windows_saves_handle_unicode_long_paths_and_existing_readers() {
         b"original"
     );
 }
+
+#[test]
+fn rejects_external_bom_and_encoding_only_changes_before_save() {
+    for external in [
+        b"\xEF\xBB\xBFhello".as_slice(),
+        &[0xff, 0xfe, b'h', 0, b'e', 0, b'l', 0, b'l', 0, b'o', 0],
+    ] {
+        let f = Fixture::new();
+        std::fs::write(&f.file, external).unwrap();
+        let result = save_transaction_with_mode(
+            None,
+            &display_path(&f.file),
+            "draft",
+            Some("hello"),
+            TextSaveMode::editor_with_baseline(
+                TextEncoding::Utf8,
+                false,
+                TextEncoding::Utf8,
+                false,
+            ),
+            |_, _| Ok(()),
+            |_, _| Ok(()),
+        );
+        assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
+        assert_eq!(f.disk_bytes(), external);
+    }
+}
+
+#[test]
+fn rejects_format_only_change_during_staging() {
+    let f = Fixture::new();
+    let result = save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "draft",
+        Some("original"),
+        TextSaveMode::editor_with_baseline(TextEncoding::Utf8, false, TextEncoding::Utf8, false),
+        |_, _| Ok(()),
+        |phase, _| {
+            if phase == "staged" {
+                std::fs::write(&f.file, b"\xEF\xBB\xBForiginal")?;
+            }
+            Ok(())
+        },
+    );
+    assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
+    assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBForiginal");
+    f.clean();
+}
+
+#[test]
+fn conflict_replacement_converts_equal_text_to_the_selected_format() {
+    let f = Fixture::new();
+    std::fs::write(&f.file, b"\xEF\xBB\xBFsame").unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "same",
+        Some("same"),
+        TextSaveMode::editor_with_baseline(TextEncoding::Gb18030, false, TextEncoding::Utf8, true),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        f.disk_bytes(),
+        encoding_rs::GB18030.encode("same").0.as_ref()
+    );
+    f.clean();
+}

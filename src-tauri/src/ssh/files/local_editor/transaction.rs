@@ -29,12 +29,18 @@ pub(super) fn save(
     if metadata.permissions().readonly() {
         return Err(AppError::validation("editor.readOnlyFile"));
     }
-    let original = decode_text(native::read_bounded(&mut source, MAX_TEXT)?, mode)?;
+    let original = match decode_text(native::read_bounded(&mut source, MAX_TEXT)?, mode) {
+        Ok(original) => original,
+        Err(error) if error.to_string() == "editor.textFormatChanged" => {
+            return Err(AppError::validation("editor.localFileChanged"));
+        }
+        Err(error) => return Err(error),
+    };
     let baseline = baseline.unwrap_or(&original.content);
     let encoded = mode.encode_from_metadata(content, original.encoding, original.bom)?;
     policy.check(&target, &original.content)?;
     job.check()?;
-    if original.content == content {
+    if original.content == content && mode.same_format() {
         policy.admit(job)?;
         return Ok(());
     }
@@ -97,8 +103,10 @@ pub(super) fn save(
         let mut current = native::open_regular(&target, false)?;
         if native::identity(&current)? != source_identity
             || !native::same_metadata(&metadata, &source.metadata()?)
-            || decode_text(native::read_bounded(&mut source, MAX_TEXT)?, mode)?.content != baseline
-            || decode_text(native::read_bounded(&mut current, MAX_TEXT)?, mode)?.content != baseline
+            || !decode_text(native::read_bounded(&mut source, MAX_TEXT)?, mode)
+                .is_ok_and(|current| current.content == baseline)
+            || !decode_text(native::read_bounded(&mut current, MAX_TEXT)?, mode)
+                .is_ok_and(|current| current.content == baseline)
             || std::fs::canonicalize(requested)? != target
         {
             return Err(AppError::validation("editor.localFileChanged"));

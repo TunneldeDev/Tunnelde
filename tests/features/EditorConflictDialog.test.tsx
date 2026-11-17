@@ -77,6 +77,24 @@ it("reloads the encoding and BOM of the reviewed disk version", async () => {
   });
 });
 
+it("reads the reviewed baseline with its baseline encoding", async () => {
+  useEditors.setState((state) => ({
+    entries: {
+      ...state.entries,
+      review: {
+        ...state.entries.review!,
+        encoding: "gb18030",
+        bom: false,
+        baselineEncoding: "big5",
+        baselineBom: false,
+      },
+    },
+  }));
+  render(<EditorConflictDialog tabId="review" onClose={vi.fn()} />);
+  await screen.findByDisplayValue("external update");
+  expect(api.sftpReadText).toHaveBeenLastCalledWith("session", "/note.txt", "big5");
+});
+
 it("keeps replacement disabled when the latest disk version could not be read", async () => {
   vi.mocked(api.sftpReadText).mockRejectedValue({ code: "ssh", message: "sftp.reconnectRequired" });
   render(<EditorConflictDialog tabId="review" onClose={vi.fn()} />);

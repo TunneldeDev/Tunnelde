@@ -27,11 +27,13 @@ export interface EditorEntry {
   /** Older in-memory checkpoints may omit these fields. */
   encoding?: TextEncoding;
   bom?: boolean;
-  /** Format of the current baseline when it differs from the save target. */
+  /** Strict format of the on-disk baseline used for optimistic save checks. */
   baselineEncoding?: TextEncoding;
   baselineBom?: boolean;
   /** False until a successful initial read; older checkpoints infer it from load state. */
   baselineLoaded?: boolean;
+  /** An initial decode error may be retried with an explicit safe encoding. */
+  decodeError?: boolean;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -70,6 +72,10 @@ interface EditorsStore {
 }
 
 const versions = new Map<string, symbol>();
+const RETRYABLE_DECODE_ERRORS = ["sftp.binaryFile", "sftp.unsupportedEncoding"];
+function isDecodeError(error: unknown) {
+  return isIpcError(error) && RETRYABLE_DECODE_ERRORS.includes(error.message);
+}
 const saves = new Map<string, { version: symbol; operation: Promise<boolean> }>();
 const reads = new Map<string, FileReadResource>();
 function cancelRead(tabId: string) {
@@ -254,10 +260,13 @@ export function restoreEditorDraft(tabId: string, draft: EditorDraft): void {
         baseline: draft.baseline,
         encoding: draft.encoding ?? "utf-8",
         bom: draft.bom ?? false,
+        baselineEncoding: draft.baselineEncoding ?? draft.encoding,
+        baselineBom: draft.baselineBom ?? draft.bom,
         baselineLoaded: true,
         loading: false,
         saving: false,
         error: null,
+        decodeError: false,
         disconnected: remote,
         documentId: draft.id,
         version: 0,
@@ -295,6 +304,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           loading: true,
           saving: false,
           error: null,
+          decodeError: false,
           disconnected: false,
           documentId: crypto.randomUUID(),
           version: 0,
@@ -324,6 +334,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
               baselineBom: file.bom,
               baselineLoaded: true,
               loading: false,
+              error: null,
+              decodeError: false,
             },
           },
         };
@@ -338,7 +350,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
         return {
           entries: {
             ...state.entries,
-            [tabId]: { ...current, loading: false, error: translateError(error) },
+            [tabId]: {
+              ...current,
+              loading: false,
+              baselineLoaded: false,
+              error: translateError(error),
+              decodeError: isDecodeError(error),
+            },
           },
         };
       });
@@ -350,7 +368,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
   change: (tabId, content) => {
     set((state) => {
       const current = state.entries[tabId];
-      if (!current || current.loading) {
+      if (!current || current.loading || (!current.baselineLoaded && !!current.error)) {
         return state;
       }
       if (current.content === content) return state;
@@ -376,7 +394,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       current.loading ||
       current.saving ||
       current.disconnected ||
-      current.error ||
+      (!!current.error && !current.decodeError) ||
+      (current.baselineLoaded === false && !current.decodeError) ||
       current.content !== current.baseline
     )
       return false;
@@ -387,7 +406,10 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       const entry = state.entries[tabId];
       if (!entry) return state;
       return {
-        entries: { ...state.entries, [tabId]: { ...entry, loading: true } },
+        entries: {
+          ...state.entries,
+          [tabId]: { ...entry, loading: true, error: null, decodeError: false },
+        },
       };
     });
     try {
@@ -409,6 +431,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
               baselineBom: file.bom,
               loading: false,
               baselineLoaded: true,
+              decodeError: false,
               documentId: crypto.randomUUID(),
               version: 0,
             },
@@ -418,8 +441,25 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       histories.delete(tabId);
       return true;
     } catch (error) {
-      if (versions.get(tabId) === version && !resource.scope.signal.aborted)
-        toast(translateError(error), "error");
+      if (versions.get(tabId) === version && !resource.scope.signal.aborted) {
+        const message = translateError(error);
+        toast(message, "error");
+        set((state) => {
+          const entry = state.entries[tabId];
+          if (!entry || entry.baselineLoaded !== false) return state;
+          return {
+            entries: {
+              ...state.entries,
+              [tabId]: {
+                ...entry,
+                loading: false,
+                error: message,
+                decodeError: isDecodeError(error),
+              },
+            },
+          };
+        });
+      }
       return false;
     } finally {
       if (versions.get(tabId) === version) {
@@ -443,7 +483,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
 
   save: (tabId) => {
     const current = get().entries[tabId];
-    if (!current || current.loading || current.error || current.disconnected) {
+    if (
+      !current ||
+      current.loading ||
+      current.error ||
+      current.disconnected ||
+      current.baselineLoaded === false
+    ) {
       return Promise.resolve(false);
     }
     const version = versions.get(tabId) ?? Symbol();
@@ -522,7 +568,11 @@ export const useEditors = create<EditorsStore>((set, get) => ({
                 saveFailure: translateError(error),
                 saveConflict:
                   isIpcError(error) &&
-                  ["editor.localFileChanged", "editor.remoteFileChanged"].includes(error.message),
+                  [
+                    "editor.localFileChanged",
+                    "editor.remoteFileChanged",
+                    "editor.textFormatChanged",
+                  ].includes(error.message),
               },
             },
           };
@@ -563,6 +613,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           content: action === "reload" ? disk.content : entry.content,
           encoding: action === "reload" ? disk.encoding : entry.encoding,
           bom: action === "reload" ? disk.bom : entry.bom,
+          // The reviewed disk format is the strict source for the next save.
           baselineEncoding: disk.encoding,
           baselineBom: disk.bom,
           version: (entry.version ?? 0) + (action === "reload" ? 1 : 0),
@@ -624,7 +675,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     const version = versions.get(tabId);
     const resource = beginRead(tabId, sessionId, current.path);
     try {
-      const file = await readFileText(resource, "editor");
+      // Only a successful/restored baseline carries an explicit decoding
+      // choice. A failed initial open still has placeholder UTF-8 metadata and
+      // must auto-detect on its first successful reconnect.
+      const reviewedEncoding = current.baselineLoaded
+        ? (current.baselineEncoding ?? current.encoding)
+        : undefined;
+      const file = await readFileText(resource, "editor", reviewedEncoding);
       const entry = get().entries[tabId];
       if (
         !entry ||
@@ -634,7 +691,15 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       )
         return "failed";
       const baselineLoaded = entry.baselineLoaded ?? (!entry.loading && !entry.error);
-      if (baselineLoaded && file.content !== entry.baseline && !acceptChanges) return "conflict";
+      const baselineEncoding = entry.baselineEncoding ?? entry.encoding ?? "utf-8";
+      const baselineBom = entry.baselineBom ?? entry.bom ?? false;
+      // A first read/retry has no reviewed baseline; preserve its explicit
+      // selection as the save target instead of overwriting it with detection.
+      const changed =
+        file.content !== entry.baseline ||
+        file.encoding !== baselineEncoding ||
+        file.bom !== baselineBom;
+      if (baselineLoaded && changed && !acceptChanges) return "conflict";
       versions.set(tabId, Symbol());
       set((state) => ({
         entries: {
@@ -647,8 +712,10 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             content:
               baselineLoaded || entry.content !== entry.baseline ? entry.content : file.content,
             baseline: file.content,
-            encoding: file.encoding,
-            bom: file.bom,
+            encoding: baselineLoaded ? (entry.encoding ?? file.encoding) : file.encoding,
+            bom: baselineLoaded ? (entry.bom ?? file.bom) : file.bom,
+            // Keep the explicitly selected draft format as the save target;
+            // the re-read format is the baseline that must still match.
             baselineEncoding: file.encoding,
             baselineBom: file.bom,
             baselineLoaded: true,
@@ -657,6 +724,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             saveConflict: false,
             disconnected: false,
             error: null,
+            decodeError: false,
           },
         },
       }));

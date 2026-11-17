@@ -280,7 +280,7 @@ async fn cleanup(
             return Err(unrecognized());
         }
         let marker = format!("{}/owner", record.directory);
-        if read_remote_text(sftp, &marker, TextSaveMode::editor(None, false))
+        if read_remote_text(sftp, &marker, TextSaveMode::editor_read(None))
             .await?
             .content
             != record.token
@@ -299,7 +299,7 @@ async fn cleanup(
     match sftp.symlink_metadata(&marker).await {
         Ok(metadata) => {
             if !metadata.is_regular()
-                || read_remote_text(sftp, &marker, TextSaveMode::editor(None, false))
+                || read_remote_text(sftp, &marker, TextSaveMode::editor_read(None))
                     .await?
                     .content
                     != record.token

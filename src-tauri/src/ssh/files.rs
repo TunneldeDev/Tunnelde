@@ -3237,7 +3237,7 @@ pub async fn local_read_text(path: &str, encoding: Option<&str>) -> AppResult<Te
         .take(MAX_TEXT + 1)
         .read_to_end(&mut bytes)
         .await?;
-    decode_text(bytes, TextSaveMode::editor(encoding, false))
+    decode_text(bytes, TextSaveMode::editor_read(encoding))
 }
 
 /// Check the last loaded content before overwriting an existing local file.
@@ -3269,7 +3269,7 @@ pub async fn read_text(
 ) -> AppResult<TextFile> {
     let encoding = encoding.map(TextEncoding::parse).transpose()?;
     let sftp = session(app, session_id).await?;
-    let result = read_remote_text(&sftp, path, TextSaveMode::editor(encoding, false)).await;
+    let result = read_remote_text(&sftp, path, TextSaveMode::editor_read(encoding)).await;
     let _ = sftp.close().await;
     result
 }

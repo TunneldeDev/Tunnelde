@@ -10,6 +10,8 @@ export interface EditorDraft {
   content: string;
   encoding?: TextEncoding;
   bom?: boolean;
+  baselineEncoding?: TextEncoding;
+  baselineBom?: boolean;
 }
 export interface DraftSnapshot {
   revision: string;

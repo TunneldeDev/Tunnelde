@@ -725,6 +725,7 @@
     "transferTooLarge": "The combined transfer size exceeds the supported limit.",
     "unsupportedEncoding": "The file could not be decoded with the selected text encoding",
     "binaryFile": "Binary files cannot be edited as text",
+    "textFormatChanged": "The file encoding or BOM changed since it was opened. Review the changes before saving.",
     "absolutePathRequired": "An absolute path is required",
     "notRegularFile": "Only regular files can be edited",
     "fileTooLarge": "Text editing is limited to files up to 2 MB",

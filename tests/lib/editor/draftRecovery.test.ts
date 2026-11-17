@@ -18,6 +18,8 @@ const remote: EditorDraft = {
   content: "未保存的“修改”\n",
   encoding: "utf-8",
   bom: false,
+  baselineEncoding: "utf-8",
+  baselineBom: false,
 };
 let stop: (() => void) | undefined;
 const start = async (resumed = false) => {
@@ -89,6 +91,38 @@ it("restores remote text offline without a connection, file read, file write or 
   ).toBe("ready");
   expect(useEditors.getState().entries[tab.id]?.content).toBe(remote.content);
   expect(api.sftpWriteText).not.toHaveBeenCalled();
+});
+
+it("restores and persists the strict baseline format independently from the target format", async () => {
+  const converted: EditorDraft = {
+    ...remote,
+    encoding: "gb18030",
+    bom: false,
+    baselineEncoding: "utf-16le",
+    baselineBom: true,
+  };
+  vi.mocked(api.editorDraftsRead).mockResolvedValue({
+    revision: "checkpoint",
+    drafts: [converted],
+  });
+  await start();
+  const id = useWorkspace.getState().tabs[0]!.id;
+  expect(useEditors.getState().entries[id]).toMatchObject({
+    encoding: "gb18030",
+    bom: false,
+    baselineEncoding: "utf-16le",
+    baselineBom: true,
+  });
+  useEditors.getState().change(id, "next draft");
+  await flushEditorDrafts();
+  expect(api.editorDraftsSave).toHaveBeenLastCalledWith("checkpoint", [
+    expect.objectContaining({
+      encoding: "gb18030",
+      bom: false,
+      baselineEncoding: "utf-16le",
+      baselineBom: true,
+    }),
+  ]);
 });
 
 it("retains the draft and original baseline when the matching destination file has changed", async () => {

@@ -38,6 +38,8 @@ function drafts(entries: Record<string, EditorEntry>): EditorDraft[] {
         content: entry.content,
         encoding: entry.encoding,
         bom: entry.bom,
+        baselineEncoding: entry.baselineEncoding,
+        baselineBom: entry.baselineBom,
       },
     ];
   });
