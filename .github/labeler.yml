@@ -30,7 +30,4 @@ brand:
   - changed-files:
       - any-glob-to-any-file:
           - assets/brand/**
-          - build/**
-          - public/brand/**
-          - resources/**
           - scripts/brand/**
