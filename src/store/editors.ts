@@ -433,6 +433,23 @@ export function endEditorComposition(
   }
 }
 
+export function peekEditorSelectionRestore(
+  tabId: string,
+  documentId: string,
+  version: number,
+  content: string,
+): EditorSelectionSnapshot | null {
+  const request = selectionRestores.get(tabId);
+  if (
+    !request ||
+    request.documentId !== documentId ||
+    request.version !== version ||
+    request.content !== content
+  )
+    return null;
+  return cloneSelection(request.selection);
+}
+
 export function consumeEditorSelectionRestore(
   tabId: string,
   documentId: string,
