@@ -108,18 +108,20 @@ export function useEditorSyntax({
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), DEBOUNCE_MS + REQUEST_TIMEOUT_MS);
     const debounce = window.setTimeout(() => {
-      void runSyntaxHighlighting(provider, snapshot, controller.signal).then((tokens) => {
-        if (controller.signal.aborted || currentSequence !== sequence.current || !tokens) return;
-        setRendered({
-          tokens,
-          documentId,
-          version,
-          highlighted: tokens.length > 0,
-          content,
-          provider: providerKey,
-          runtime,
-        });
-      });
+      void runSyntaxHighlighting({ provider, document: snapshot }, controller.signal).then(
+        (tokens) => {
+          if (controller.signal.aborted || currentSequence !== sequence.current || !tokens) return;
+          setRendered({
+            tokens,
+            documentId,
+            version,
+            highlighted: tokens.length > 0,
+            content,
+            provider: providerKey,
+            runtime,
+          });
+        },
+      );
     }, DEBOUNCE_MS);
     return () => {
       window.clearTimeout(debounce);
