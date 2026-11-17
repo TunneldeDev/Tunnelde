@@ -723,8 +723,9 @@
     "fileTypeUnsupported": "只能传输普通文件和文件夹，不支持设备、管道和套接字。",
     "fileMetadataMissing": "服务器未提供准备传输所需的文件类型或大小。",
     "transferTooLarge": "传输文件的总大小超出支持范围。",
-    "unsupportedEncoding": "仅支持编辑 UTF-8 编码的文本文件",
+    "unsupportedEncoding": "无法使用所选编码解码此文本文件",
     "binaryFile": "无法将二进制文件作为文本编辑",
+    "textFormatChanged": "文件编码或 BOM 在打开后已发生变化，请对比更改后再保存。",
     "absolutePathRequired": "需要绝对路径",
     "notRegularFile": "只能编辑普通文件",
     "fileTooLarge": "仅支持编辑不超过 2 MB 的文本文件",
@@ -852,7 +853,9 @@
     "retainedCreationUnknown": "旧的目录创建请求尚未确认结果。此记录保留准确路径，原传输可使用新的临时目录继续。收到旧请求的确认前无法清理此目录。",
     "retainedCreationSettled": "旧请求已结束。请重试清理空临时目录，或清除被拒绝的请求记录；其他文件会保留。",
     "retainedCreationInvalid": "保留的操作记录或主机身份不匹配。请保留记录并查看软件日志。",
-    "retainedCreationLimit": "保留的未确认临时目录过多。请先完成或检查已有的恢复任务，再尝试新的传输代次。"
+    "retainedCreationLimit": "保留的未确认临时目录过多。请先完成或检查已有的恢复任务，再尝试新的传输代次。",
+    "invalidEncoding": "请选择支持的文本编码",
+    "encodingEncodeFailed": "文件包含无法用所选编码表示的字符"
   },
   "processes": {
     "title": "进程",
@@ -996,7 +999,8 @@
     "replaceDisk": "替换磁盘版本",
     "diskVersion": "当前磁盘版本",
     "yourDraft": "未保存的草稿",
-    "reviewChanges": "对比更改"
+    "reviewChanges": "对比更改",
+    "encoding": "编码"
   },
   "plugins": {
     "requiredDependencies": "必需插件",
@@ -1376,7 +1380,8 @@
     "api": {
       "busy": "插件正在处理的请求过多。请等待任务完成，或停止插件后重试。",
       "invalidStorage": "无法读取插件保存的数据。请先导出或修复数据再重试；原有数据已保留。",
-      "storageTooLarge": "插件保存的数据超过支持的大小。请先导出或精简数据再重试；原有数据已保留。"
+      "storageTooLarge": "插件保存的数据超过支持的大小。请先导出或精简数据再重试；原有数据已保留。",
+      "invalidText": "文件不是有效的 UTF-8 文本"
     },
     "input": {
       "invalid": "插件输入无效。"

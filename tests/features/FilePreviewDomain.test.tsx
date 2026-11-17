@@ -71,7 +71,12 @@ beforeEach(async () => {
     renderer: "image",
   }));
   vi.mocked(api.filePreviewClose).mockResolvedValue();
-  vi.mocked(api.searchPreviewLocal).mockResolvedValue("preview text");
+  vi.mocked(api.searchPreviewLocal).mockResolvedValue({
+    content: "preview text",
+    size: 12,
+    encoding: "utf-8",
+    bom: false,
+  });
   vi.mocked(api.sftpReadText).mockResolvedValue({ content: "remote preview", size: 14 });
 });
 

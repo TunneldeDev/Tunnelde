@@ -18,15 +18,15 @@ export function TextPreview({
   const { t } = useTranslation();
   const [result, setResult] = useState<{
     file: PreviewFile;
-    content?: string;
+    fileData?: { content: string; encoding?: string };
     cause?: unknown;
   } | null>(null);
   useEffect(() => {
     const resource = createFileReadResource(file.path, file.source);
     void readFileText(resource, "preview").then(
-      (content) => {
+      (fileData) => {
         if (!resource.scope.signal.aborted) {
-          setResult({ file, content });
+          setResult({ file, fileData });
           onReady?.();
         }
       },
@@ -39,24 +39,31 @@ export function TextPreview({
     );
     return resource.scope.dispose;
   }, [file, onReady, onError]);
-  const content = result?.file === file ? result.content : undefined;
+  const fileData = result?.file === file ? result.fileData : undefined;
   const error = result?.file === file && "cause" in result ? translateError(result.cause) : "";
   return error ? (
     <p role="alert">{error}</p>
-  ) : content === undefined ? (
+  ) : fileData === undefined ? (
     <p role="status">{t("common.loading")}</p>
   ) : (
-    <TextContent file={file} content={content} markdown={/\.(md|markdown)$/i.test(file.path)} />
+    <TextContent
+      file={file}
+      content={fileData.content}
+      encoding={fileData.encoding ?? "utf-8"}
+      markdown={/\.(md|markdown)$/i.test(file.path)}
+    />
   );
 }
 
 export function TextContent({
   file,
   content,
+  encoding,
   markdown,
 }: {
   file: PreviewFile;
   content: string;
+  encoding?: string;
   markdown: boolean;
 }) {
   const { t } = useTranslation();
@@ -77,15 +84,18 @@ export function TextContent({
   }, [content, file, renderMarkdown]);
   return (
     <>
-      {markdown ? (
+      {markdown || encoding ? (
         <div className="file-preview__toolbar">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setRenderMarkdown((value) => !value)}
-          >
-            {t(renderMarkdown ? "sftp.previewSource" : "sftp.previewRendered")}
-          </Button>
+          {encoding ? <span className="file-preview__encoding">{encoding}</span> : null}
+          {markdown ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setRenderMarkdown((value) => !value)}
+            >
+              {t(renderMarkdown ? "sftp.previewSource" : "sftp.previewRendered")}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {renderMarkdown ? (

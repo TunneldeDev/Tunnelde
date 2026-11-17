@@ -16,6 +16,10 @@ const remote: EditorDraft = {
   source: { kind: "remote", hostId: "original-host", address: "alice@example.test:22" },
   baseline: "original",
   content: "未保存的“修改”\n",
+  encoding: "utf-8",
+  bom: false,
+  baselineEncoding: "utf-8",
+  baselineBom: false,
 };
 let stop: (() => void) | undefined;
 const start = async (resumed = false) => {
@@ -40,7 +44,12 @@ beforeEach(() => {
   });
   vi.spyOn(api, "editorDraftsRead").mockResolvedValue({ revision: "checkpoint", drafts: [] });
   vi.spyOn(api, "editorDraftsSave").mockResolvedValue("next");
-  vi.spyOn(api, "sftpReadText").mockResolvedValue({ content: "original", size: 8 });
+  vi.spyOn(api, "sftpReadText").mockResolvedValue({
+    content: "original",
+    size: 8,
+    encoding: "utf-8",
+    bom: false,
+  });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
   vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
 });
@@ -84,9 +93,74 @@ it("restores remote text offline without a connection, file read, file write or 
   expect(api.sftpWriteText).not.toHaveBeenCalled();
 });
 
+it("restores and persists the strict baseline format independently from the target format", async () => {
+  const converted: EditorDraft = {
+    ...remote,
+    encoding: "gb18030",
+    bom: false,
+    baselineEncoding: "utf-16le",
+    baselineBom: true,
+  };
+  vi.mocked(api.editorDraftsRead).mockResolvedValue({
+    revision: "checkpoint",
+    drafts: [converted],
+  });
+  await start();
+  const id = useWorkspace.getState().tabs[0]!.id;
+  expect(useEditors.getState().entries[id]).toMatchObject({
+    encoding: "gb18030",
+    bom: false,
+    baselineEncoding: "utf-16le",
+    baselineBom: true,
+  });
+  useEditors.getState().change(id, "next draft");
+  await flushEditorDrafts();
+  expect(api.editorDraftsSave).toHaveBeenLastCalledWith("checkpoint", [
+    expect.objectContaining({
+      encoding: "gb18030",
+      bom: false,
+      baselineEncoding: "utf-16le",
+      baselineBom: true,
+    }),
+  ]);
+});
+
+it("persists a same-text draft whose only difference is its target format", async () => {
+  const converted: EditorDraft = {
+    ...remote,
+    content: remote.baseline,
+    encoding: "gb18030",
+    bom: false,
+    baselineEncoding: "utf-16le",
+    baselineBom: true,
+  };
+  vi.mocked(api.editorDraftsRead).mockResolvedValue({
+    revision: "checkpoint",
+    drafts: [converted],
+  });
+  await start();
+  const id = useWorkspace.getState().tabs[0]!.id;
+  expect(useEditors.getState().isDirty(id)).toBe(true);
+  await flushEditorDrafts();
+  expect(api.editorDraftsSave).toHaveBeenLastCalledWith("checkpoint", [
+    expect.objectContaining({
+      content: remote.baseline,
+      baseline: remote.baseline,
+      encoding: "gb18030",
+      baselineEncoding: "utf-16le",
+      baselineBom: true,
+    }),
+  ]);
+});
+
 it("retains the draft and original baseline when the matching destination file has changed", async () => {
   vi.mocked(api.editorDraftsRead).mockResolvedValue({ revision: "checkpoint", drafts: [remote] });
-  vi.mocked(api.sftpReadText).mockResolvedValue({ content: "external edit", size: 13 });
+  vi.mocked(api.sftpReadText).mockResolvedValue({
+    content: "external edit",
+    size: 13,
+    encoding: "utf-8",
+    bom: false,
+  });
   await start();
   const id = useWorkspace.getState().tabs[0]!.id;
   expect(

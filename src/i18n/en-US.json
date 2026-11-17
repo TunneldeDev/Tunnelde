@@ -723,8 +723,9 @@
     "fileTypeUnsupported": "Only regular files and folders can be transferred. Devices, pipes and sockets are not supported.",
     "fileMetadataMissing": "The server did not provide the file type or size needed to prepare this transfer.",
     "transferTooLarge": "The combined transfer size exceeds the supported limit.",
-    "unsupportedEncoding": "Only UTF-8 text files can be edited",
+    "unsupportedEncoding": "The file could not be decoded with the selected text encoding",
     "binaryFile": "Binary files cannot be edited as text",
+    "textFormatChanged": "The file encoding or BOM changed since it was opened. Review the changes before saving.",
     "absolutePathRequired": "An absolute path is required",
     "notRegularFile": "Only regular files can be edited",
     "fileTooLarge": "Text editing is limited to files up to 2 MB",
@@ -852,7 +853,9 @@
     "retainedCreationUnknown": "The old directory creation has no confirmed result. This record keeps its exact path while the original transfer can continue with a fresh temporary directory. It cannot be cleaned until the old request is confirmed.",
     "retainedCreationSettled": "The old request has finished. Retry cleanup to remove its empty temporary directory or clear a rejected request. Other files are preserved.",
     "retainedCreationInvalid": "The retained operation record or its host identity does not match. Keep the record and review the application log.",
-    "retainedCreationLimit": "Too many unconfirmed temporary directories are retained. Finish or review existing recovery tasks before trying another transfer generation."
+    "retainedCreationLimit": "Too many unconfirmed temporary directories are retained. Finish or review existing recovery tasks before trying another transfer generation.",
+    "invalidEncoding": "Choose a supported text encoding",
+    "encodingEncodeFailed": "The file contains characters that cannot be represented in the selected encoding"
   },
   "processes": {
     "title": "Processes",
@@ -996,7 +999,8 @@
     "replaceDisk": "Replace disk version",
     "diskVersion": "Current disk version",
     "yourDraft": "Your unsaved draft",
-    "reviewChanges": "Compare changes"
+    "reviewChanges": "Compare changes",
+    "encoding": "Encoding"
   },
   "plugins": {
     "requiredDependencies": "Required plugins",
@@ -1376,7 +1380,8 @@
     "api": {
       "busy": "The plugin has too many requests in progress. Wait for a task to finish or stop the plugin, then try again.",
       "invalidStorage": "The plugin's saved data could not be read. Export or repair its data before retrying; existing data has been preserved.",
-      "storageTooLarge": "The plugin's saved data exceeds the supported size. Export or reduce it before retrying; existing data has been preserved."
+      "storageTooLarge": "The plugin's saved data exceeds the supported size. Export or reduce it before retrying; existing data has been preserved.",
+      "invalidText": "The file is not valid UTF-8 text."
     },
     "input": {
       "invalid": "Invalid plugin input."

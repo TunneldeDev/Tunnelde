@@ -7,10 +7,20 @@ import { useEditors } from "@/store/editors";
 
 beforeEach(async () => {
   for (const key of Object.keys(useEditors.getState().entries)) useEditors.getState().discard(key);
-  vi.spyOn(api, "sftpReadText").mockResolvedValue({ content: "original", size: 8 });
+  vi.spyOn(api, "sftpReadText").mockResolvedValue({
+    content: "original",
+    size: 8,
+    encoding: "utf-8",
+    bom: false,
+  });
   await useEditors.getState().open("review", "session", "/note.txt");
   useEditors.getState().change("review", "unsaved draft");
-  vi.mocked(api.sftpReadText).mockResolvedValue({ content: "external update", size: 15 });
+  vi.mocked(api.sftpReadText).mockResolvedValue({
+    content: "external update",
+    size: 15,
+    encoding: "utf-16le",
+    bom: true,
+  });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
 });
 
@@ -35,12 +45,54 @@ it("only replaces the disk version the user actually reviewed", async () => {
   await screen.findByDisplayValue("external update");
   fireEvent.click(screen.getByRole("button", { name: "Replace disk version" }));
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(useEditors.getState().entries.review).toMatchObject({
+    baseline: "unsaved draft",
+    baselineEncoding: "utf-8",
+    baselineBom: false,
+  });
   expect(api.sftpWriteText).toHaveBeenCalledWith(
     "session",
     "/note.txt",
     "unsaved draft",
     "external update",
+    "utf-8",
+    false,
+    "utf-16le",
+    true,
   );
+});
+
+it("reloads the encoding and BOM of the reviewed disk version", async () => {
+  const onClose = vi.fn();
+  render(<EditorConflictDialog tabId="review" onClose={onClose} />);
+  await screen.findByDisplayValue("external update");
+  expect(screen.getByText("utf-16le")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Reload from disk" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(useEditors.getState().entries.review).toMatchObject({
+    content: "external update",
+    baseline: "external update",
+    encoding: "utf-16le",
+    bom: true,
+  });
+});
+
+it("reads the reviewed baseline with its baseline encoding", async () => {
+  useEditors.setState((state) => ({
+    entries: {
+      ...state.entries,
+      review: {
+        ...state.entries.review!,
+        encoding: "gb18030",
+        bom: false,
+        baselineEncoding: "big5",
+        baselineBom: false,
+      },
+    },
+  }));
+  render(<EditorConflictDialog tabId="review" onClose={vi.fn()} />);
+  await screen.findByDisplayValue("external update");
+  expect(api.sftpReadText).toHaveBeenLastCalledWith("session", "/note.txt", "big5");
 });
 
 it("keeps replacement disabled when the latest disk version could not be read", async () => {

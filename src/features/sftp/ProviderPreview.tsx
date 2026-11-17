@@ -35,6 +35,7 @@ export function ProviderPreview({
     resource: ReturnType<typeof createProviderPreviewResource>;
     info?: FilePreviewInfo;
     content?: string | null;
+    encoding?: string;
     failure?: { cause: unknown };
   } | null>(null);
   useEffect(() => {
@@ -72,7 +73,7 @@ export function ProviderPreview({
     view?.file === file && view.providerId === provider.id && view.renderer === provider.renderer
       ? view
       : null;
-  const { info, content, failure } = current ?? {};
+  const { info, content, encoding, failure } = current ?? {};
   const fail = useCallback(
     (cause: unknown) => {
       current?.resource.dispose();
@@ -94,7 +95,12 @@ export function ProviderPreview({
   const url = convertFileSrc(info.id, "preview");
   if (info.renderer === "text" || info.renderer === "markdown")
     return content != null ? (
-      <TextContent file={file} content={content} markdown={info.renderer === "markdown"} />
+      <TextContent
+        file={file}
+        content={content}
+        encoding={encoding}
+        markdown={info.renderer === "markdown"}
+      />
     ) : null;
   if (info.renderer === "pdf")
     return (

@@ -346,6 +346,14 @@
   gap: 12px;
 }
 
+.editor-review__encoding {
+  margin-left: 6px;
+  color: var(--td-faint);
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+
 .editor-review__columns label {
   display: flex;
   flex-direction: column;
@@ -1137,6 +1145,14 @@
 
 .file-preview .td-dialog__body {
   min-height: 0;
+}
+
+.file-preview__encoding {
+  margin-right: auto;
+  color: var(--td-faint);
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
 }
 
 .file-preview__toolbar {

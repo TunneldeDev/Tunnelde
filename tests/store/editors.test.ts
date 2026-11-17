@@ -18,7 +18,12 @@ const state = () => useEditors.getState();
 
 beforeEach(() => {
   for (const key of Object.keys(state().entries)) state().discard(key);
-  vi.spyOn(api, "sftpReadText").mockResolvedValue({ content: "original", size: 8 });
+  vi.spyOn(api, "sftpReadText").mockResolvedValue({
+    content: "original",
+    size: 8,
+    encoding: "utf-8",
+    bom: false,
+  });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
 });
 
@@ -60,8 +65,23 @@ describe("editor requests", () => {
       saving: false,
     });
     const review = editorDocument(id)!;
-    expect(await state().resolveConflict(review, "external edit", "replace")).toBe(true);
-    expect(api.sftpWriteText).toHaveBeenLastCalledWith("s1", "/a.txt", "my draft", "external edit");
+    expect(
+      await state().resolveConflict(
+        review,
+        { content: "external edit", encoding: "utf-8", bom: false },
+        "replace",
+      ),
+    ).toBe(true);
+    expect(api.sftpWriteText).toHaveBeenLastCalledWith(
+      "s1",
+      "/a.txt",
+      "my draft",
+      "external edit",
+      "utf-8",
+      false,
+      "utf-8",
+      false,
+    );
     expect(state().entries[id]).toMatchObject({
       content: "my draft",
       baseline: "my draft",
@@ -74,14 +94,107 @@ describe("editor requests", () => {
     state().change(id, "my draft");
     const stale = editorDocument(id)!;
     state().change(id, "newer draft");
-    expect(await state().resolveConflict(stale, "external", "replace")).toBe(false);
+    expect(
+      await state().resolveConflict(
+        stale,
+        { content: "external", encoding: "utf-8", bom: false },
+        "replace",
+      ),
+    ).toBe(false);
     expect(api.sftpWriteText).not.toHaveBeenCalled();
     expect(state().entries[id]?.content).toBe("newer draft");
-    expect(await state().resolveConflict(editorDocument(id)!, "external", "reload")).toBe(true);
+    expect(
+      await state().resolveConflict(
+        editorDocument(id)!,
+        { content: "external", encoding: "utf-16le", bom: true },
+        "reload",
+      ),
+    ).toBe(true);
     expect(state().isDirty(id)).toBe(false);
+    expect(state().entries[id]).toMatchObject({ encoding: "utf-16le", bom: true });
     undoEditorEdit(id, false);
     expect(state().entries[id]).toMatchObject({ content: "newer draft", baseline: "external" });
     expect(state().isDirty(id)).toBe(true);
+  });
+
+  it.each([
+    { sessionId: null as string | null, write: "localWriteText" as const },
+    { sessionId: "s1" as string | null, write: "sftpWriteText" as const },
+  ])(
+    "replaces equal text into the selected format through $write and retries after failure",
+    async ({ sessionId, write }) => {
+      const tabId = sessionId === null ? "editor:format-local" : id;
+      const read = {
+        content: "hello",
+        size: 5,
+        encoding: "utf-8" as const,
+        bom: false,
+      };
+      if (sessionId === null) vi.spyOn(api, "localReadText").mockResolvedValue(read);
+      else vi.mocked(api.sftpReadText).mockResolvedValueOnce(read);
+      const writeCall = vi.spyOn(api, write);
+      writeCall.mockRejectedValueOnce({
+        code: "validation",
+        message: "editor.localFileChanged",
+      });
+      await state().open(tabId, sessionId, sessionId === null ? "/format.txt" : "/a.txt");
+      state().change(tabId, "draft");
+      const review = editorDocument(tabId)!;
+      expect(
+        await state().resolveConflict(
+          review,
+          { content: "draft", encoding: "utf-16le", bom: true },
+          "replace",
+        ),
+      ).toBe(false);
+      expect(writeCall).toHaveBeenCalledOnce();
+      expect(state().isDirty(tabId)).toBe(true);
+      expect(state().entries[tabId]).toMatchObject({
+        content: "draft",
+        baseline: "draft",
+        encoding: "utf-8",
+        bom: false,
+        baselineEncoding: "utf-16le",
+        baselineBom: true,
+      });
+      vi.mocked(writeCall).mockResolvedValueOnce(undefined);
+      expect(await state().save(tabId)).toBe(true);
+      expect(writeCall).toHaveBeenCalledTimes(2);
+      expect(state().isDirty(tabId)).toBe(false);
+      expect(state().entries[tabId]).toMatchObject({
+        baselineEncoding: "utf-8",
+        baselineBom: false,
+      });
+    },
+  );
+
+  it("keeps a same-text format-only draft dirty through a save failure", async () => {
+    vi.spyOn(api, "localReadText").mockResolvedValue({
+      content: "original",
+      size: 8,
+      encoding: "utf-8",
+      bom: false,
+    });
+    vi.spyOn(api, "localWriteText").mockRejectedValueOnce({
+      code: "validation",
+      message: "editor.localFileChanged",
+    });
+    await state().open("format-only", null, "/format-only.txt");
+    state().change("format-only", "draft");
+    const review = editorDocument("format-only")!;
+    await state().resolveConflict(
+      review,
+      { content: "draft", encoding: "utf-16le", bom: true },
+      "replace",
+    );
+    expect(state().entries["format-only"]).toMatchObject({
+      content: "draft",
+      baseline: "draft",
+      encoding: "utf-8",
+      baselineEncoding: "utf-16le",
+      saveConflict: true,
+    });
+    expect(state().isDirty("format-only")).toBe(true);
   });
 
   it("keeps the draft dirty after a failed reviewed replacement", async () => {
@@ -91,7 +204,13 @@ describe("editor requests", () => {
       code: "ssh",
       message: "sftp.reconnectRequired",
     });
-    expect(await state().resolveConflict(editorDocument(id)!, "external", "replace")).toBe(false);
+    expect(
+      await state().resolveConflict(
+        editorDocument(id)!,
+        { content: "external", encoding: "utf-8", bom: false },
+        "replace",
+      ),
+    ).toBe(false);
     expect(state().entries[id]).toMatchObject({
       content: "my draft",
       baseline: "external",
@@ -102,19 +221,79 @@ describe("editor requests", () => {
   it("opens and saves local documents without an SSH session, preserving drafts on conflict", async () => {
     const localId = "editor-local:C:\\work\\notes.txt";
     const path = "C:\\work\\notes.txt";
-    vi.spyOn(api, "localReadText").mockResolvedValue({ content: "original", size: 8 });
+    vi.spyOn(api, "localReadText").mockResolvedValue({
+      content: "original",
+      size: 8,
+      encoding: "utf-8",
+      bom: false,
+    });
     const write = vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
     await state().open(localId, null, path);
     state().change(localId, "draft");
     state().markDisconnected("s1");
     expect(await state().save(localId)).toBe(true);
-    expect(write).toHaveBeenCalledWith(path, "draft", "original");
+    expect(write).toHaveBeenCalledWith(path, "draft", "original", "utf-8", false, "utf-8", false);
     state().change(localId, "new draft");
     write.mockRejectedValueOnce({ code: "validation", message: "editor.localFileChanged" });
     expect(await state().save(localId)).toBe(false);
     expect(state().entries[localId]).toMatchObject({ content: "new draft", baseline: "draft" });
     expect(state().isDirty(localId)).toBe(true);
     expect(api.sftpWriteText).not.toHaveBeenCalled();
+  });
+
+  it("reopens a clean document with an explicit encoding and saves using that metadata", async () => {
+    await state().open(id, "s1", "/a.txt");
+    vi.mocked(api.sftpReadText).mockResolvedValueOnce({
+      content: "旧版中文",
+      size: 8,
+      encoding: "gb18030",
+      bom: false,
+    });
+    expect(await state().reopen(id, "gb18030")).toBe(true);
+    expect(api.sftpReadText).toHaveBeenLastCalledWith("s1", "/a.txt", "gb18030");
+    expect(state().entries[id]).toMatchObject({
+      content: "旧版中文",
+      baseline: "旧版中文",
+      encoding: "gb18030",
+      bom: false,
+    });
+    state().change(id, "新版中文");
+    expect(await state().save(id)).toBe(true);
+    expect(state().entries[id]?.encoding).toBe("gb18030");
+    expect(state().entries[id]?.bom).toBe(false);
+    expect(api.sftpWriteText).toHaveBeenLastCalledWith(
+      "s1",
+      "/a.txt",
+      "新版中文",
+      "旧版中文",
+      "gb18030",
+      false,
+      "gb18030",
+      false,
+    );
+  });
+
+  it("does not change encoding while the document has unsaved edits", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "draft");
+    expect(await state().reopen(id, "big5")).toBe(false);
+    expect(api.sftpReadText).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks editing while reopening and preserves a draft typed after the operation settles", async () => {
+    await state().open(id, "s1", "/a.txt");
+    const read = deferred<{ content: string; size: number; encoding: "utf-8"; bom: boolean }>();
+    vi.mocked(api.sftpReadText).mockReturnValueOnce(read.promise);
+    const reopening = state().reopen(id, "gb18030");
+    expect(state().entries[id]?.loading).toBe(true);
+    state().change(id, "draft during reopen");
+    expect(state().entries[id]?.content).toBe("original");
+    read.resolve({ content: "重新读取", size: 12, encoding: "utf-8", bom: false });
+    expect(await reopening).toBe(true);
+    state().change(id, "draft after reopen");
+    expect(state().entries[id]?.content).toBe("draft after reopen");
+    expect(state().entries[id]?.baseline).toBe("重新读取");
+    expect(state().entries[id]?.loading).toBe(false);
   });
 
   it("cannot save a file when opening rejected its text encoding", async () => {
@@ -124,7 +303,9 @@ describe("editor requests", () => {
     });
     await state().open(id, "s1", "/a.txt");
     expect(state().entries[id]?.loading).toBe(false);
-    expect(state().entries[id]?.error).toBe("Only UTF-8 text files can be edited");
+    expect(state().entries[id]?.error).toBe(
+      "The file could not be decoded with the selected text encoding",
+    );
     state().change(id, "replacement text");
     expect(await state().save(id)).toBe(false);
     expect(api.sftpWriteText).not.toHaveBeenCalled();
@@ -142,7 +323,16 @@ describe("editor requests", () => {
     write.resolve();
     expect(await first).toBe(true);
     expect(api.sftpWriteText).toHaveBeenCalledTimes(1);
-    expect(api.sftpWriteText).toHaveBeenCalledWith("s1", "/a.txt", "first", "original");
+    expect(api.sftpWriteText).toHaveBeenCalledWith(
+      "s1",
+      "/a.txt",
+      "first",
+      "original",
+      "utf-8",
+      false,
+      "utf-8",
+      false,
+    );
     expect(state().entries[id]?.baseline).toBe("first");
     expect(state().entries[id]?.content).toBe("second");
     expect(state().isDirty(id)).toBe(true);
@@ -173,6 +363,151 @@ describe("editor requests", () => {
     expect(await old).toBe(false);
     expect(state().entries[id]?.baseline).toBe("original");
     expect(state().entries[id]?.content).toBe("new draft");
+  });
+
+  it("keeps an explicit encoding after reconnect when the unchanged bytes decode correctly", async () => {
+    await state().open(id, "s1", "/a.txt");
+    vi.mocked(api.sftpReadText).mockResolvedValueOnce({
+      content: "中文",
+      size: 4,
+      encoding: "big5",
+      bom: false,
+    });
+    expect(await state().reopen(id, "big5")).toBe(true);
+    state().change(id, "中文 draft");
+    state().markDisconnected("s1");
+    vi.mocked(api.sftpReadText).mockResolvedValueOnce({
+      content: "中文",
+      size: 4,
+      encoding: "big5",
+      bom: false,
+    });
+    expect(await state().reconnect(id, "s2")).toBe("ready");
+    expect(api.sftpReadText).toHaveBeenLastCalledWith("s2", "/a.txt", "big5");
+    expect(state().entries[id]).toMatchObject({
+      content: "中文 draft",
+      baseline: "中文",
+      encoding: "big5",
+      baselineEncoding: "big5",
+      disconnected: false,
+    });
+  });
+
+  it("allows a safe explicit retry after initial decoding fails and clears the error", async () => {
+    vi.mocked(api.sftpReadText)
+      .mockRejectedValueOnce({ code: "validation", message: "sftp.binaryFile" })
+      .mockResolvedValueOnce({
+        content: "hello",
+        size: 10,
+        encoding: "utf-16le",
+        bom: false,
+      });
+    await state().open(id, "s1", "/utf16.txt");
+    expect(state().entries[id]?.decodeError).toBe(true);
+    expect(await state().reopen(id, "utf-16le")).toBe(true);
+    expect(api.sftpReadText).toHaveBeenLastCalledWith("s1", "/utf16.txt", "utf-16le");
+    expect(state().entries[id]).toMatchObject({
+      content: "hello",
+      baseline: "hello",
+      encoding: "utf-16le",
+      baselineLoaded: true,
+      error: null,
+      decodeError: false,
+    });
+    state().change(id, "changed");
+    expect(await state().save(id)).toBe(true);
+  });
+
+  it("clears a decode error after a failed retry and keeps retrying allowed", async () => {
+    vi.mocked(api.sftpReadText)
+      .mockRejectedValueOnce({ code: "validation", message: "sftp.binaryFile" })
+      .mockRejectedValueOnce({ code: "validation", message: "sftp.unsupportedEncoding" })
+      .mockResolvedValueOnce({
+        content: "hello",
+        size: 10,
+        encoding: "utf-16le",
+        bom: false,
+      });
+    await state().open(id, "s1", "/utf16.txt");
+    expect(await state().reopen(id, "utf-8")).toBe(false);
+    expect(state().entries[id]).toMatchObject({ error: expect.any(String), decodeError: true });
+    expect(await state().reopen(id, "utf-16le")).toBe(true);
+    expect(state().entries[id]).toMatchObject({
+      content: "hello",
+      error: null,
+      decodeError: false,
+    });
+  });
+
+  it("does not retry unrelated initial read failures", async () => {
+    vi.mocked(api.sftpReadText).mockRejectedValueOnce({
+      code: "ssh",
+      message: "sftp.fileTooLarge",
+    });
+    await state().open(id, "s1", "/large.txt");
+    expect(state().entries[id]?.decodeError).toBe(false);
+    expect(await state().reopen(id, "utf-8")).toBe(false);
+    expect(api.sftpReadText).toHaveBeenCalledTimes(1);
+  });
+
+  it("auto-detects on first reconnect after the initial open was disconnected", async () => {
+    const initial = deferred<{ content: string; size: number }>();
+    vi.mocked(api.sftpReadText).mockReturnValueOnce(initial.promise);
+    const opening = state().open(id, "s1", "/legacy.txt");
+    state().markDisconnected("s1");
+    await opening;
+    expect(state().entries[id]).toMatchObject({
+      encoding: "utf-8",
+      bom: false,
+      baselineLoaded: false,
+      disconnected: true,
+    });
+    vi.mocked(api.sftpReadText).mockResolvedValueOnce({
+      content: "中文",
+      size: 8,
+      encoding: "gb18030",
+      bom: true,
+    });
+    expect(await state().reconnect(id, "s2")).toBe("ready");
+    expect(api.sftpReadText).toHaveBeenLastCalledWith("s2", "/legacy.txt", undefined);
+    expect(state().entries[id]).toMatchObject({
+      content: "中文",
+      baseline: "中文",
+      encoding: "gb18030",
+      bom: true,
+      baselineEncoding: "gb18030",
+      baselineBom: true,
+      baselineLoaded: true,
+    });
+  });
+
+  it("does not allow edits or saves while an initial decode is unresolved", async () => {
+    vi.mocked(api.sftpReadText).mockRejectedValueOnce({
+      code: "validation",
+      message: "sftp.binaryFile",
+    });
+    await state().open(id, "s1", "/binary.txt");
+    state().change(id, "replacement");
+    expect(state().entries[id]?.content).toBe("");
+    expect(await state().save(id)).toBe(false);
+  });
+
+  it("treats a reconnect format-only change as a conflict unless accepted", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().markDisconnected("s1");
+    vi.mocked(api.sftpReadText).mockResolvedValue({
+      content: "original",
+      size: 8,
+      encoding: "utf-8",
+      bom: true,
+    });
+    expect(await state().reconnect(id, "s2")).toBe("conflict");
+    expect(await state().reconnect(id, "s2", true)).toBe("ready");
+    expect(state().entries[id]).toMatchObject({
+      baseline: "original",
+      baselineEncoding: "utf-8",
+      baselineBom: true,
+    });
   });
 
   it("keeps a disconnected draft and requires approval for a changed remote file", async () => {
@@ -212,6 +547,10 @@ describe("editor requests", () => {
       "/different.txt",
       "new draft",
       "original",
+      "utf-8",
+      false,
+      "utf-8",
+      false,
     );
     oldWrite.resolve();
     expect(await oldSave).toBe(false);
@@ -283,6 +622,10 @@ describe("editor requests", () => {
       "/a.txt",
       "disconnected draft",
       "original",
+      "utf-8",
+      false,
+      "utf-8",
+      false,
     );
   });
 
@@ -291,14 +634,19 @@ describe("editor requests", () => {
     state().change(id, "local draft");
     state().markDisconnected("s1");
     const older = deferred<{ content: string; size: number }>();
-    const newer = deferred<{ content: string; size: number }>();
+    const newer = deferred<{
+      content: string;
+      size: number;
+      encoding: "utf-8";
+      bom: boolean;
+    }>();
     vi.mocked(api.sftpReadText)
       .mockReturnValueOnce(older.promise)
       .mockReturnValueOnce(newer.promise);
     const first = state().reconnect(id, "s2");
     const second = state().reconnect(id, "s3");
     expect(await first).toBe("failed");
-    newer.resolve({ content: "original", size: 8 });
+    newer.resolve({ content: "original", size: 8, encoding: "utf-8", bom: false });
     expect(await second).toBe("ready");
     useToasts.setState({ items: [] });
     older.reject(new Error("stale connection failure"));

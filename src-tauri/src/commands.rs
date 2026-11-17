@@ -589,16 +589,19 @@ pub fn files_search_cancel(request_id: String) {
 }
 
 #[tauri::command]
-pub async fn search_preview_local(path: String) -> AppResult<String> {
+pub async fn search_preview_local(path: String) -> AppResult<sftp::TextFile> {
     let (reader, _) = crate::services::files::read::LocalReader::open(path).await?;
     let bytes = reader.prefix(512 * 1024).await?;
     if bytes.len() > 512 * 1024 {
         return Err(AppError::validation("sftp.fileTooLarge"));
     }
-    if bytes.contains(&0) {
-        return Err(AppError::validation("sftp.binaryFile"));
-    }
-    String::from_utf8(bytes).map_err(|_| AppError::validation("sftp.unsupportedEncoding"))
+    let decoded = crate::services::files::text_encoding::decode(&bytes, None)?;
+    Ok(sftp::TextFile {
+        content: decoded.content,
+        size: bytes.len() as u64,
+        encoding: decoded.encoding,
+        bom: decoded.bom,
+    })
 }
 
 #[tauri::command]
@@ -731,8 +734,8 @@ pub async fn remote_kill(
 }
 
 #[tauri::command]
-pub async fn local_read_text(path: String) -> AppResult<sftp::TextFile> {
-    sftp::local_read_text(&path).await
+pub async fn local_read_text(path: String, encoding: Option<String>) -> AppResult<sftp::TextFile> {
+    sftp::local_read_text(&path, encoding.as_deref()).await
 }
 
 #[tauri::command]
@@ -741,8 +744,9 @@ pub async fn local_write_text(
     path: String,
     content: String,
     baseline: String,
+    options: crate::services::files::text_encoding::TextWriteOptions,
 ) -> AppResult<()> {
-    sftp::local_editor::save(app, path, content, baseline).await
+    sftp::local_editor::save(app, path, content, baseline, options.editor_mode()?).await
 }
 
 #[tauri::command]
@@ -750,8 +754,9 @@ pub async fn sftp_read_text(
     app: AppHandle,
     session_id: String,
     path: String,
+    encoding: Option<String>,
 ) -> AppResult<sftp::TextFile> {
-    sftp::read_text(&app, &session_id, &path).await
+    sftp::read_text(&app, &session_id, &path, encoding.as_deref()).await
 }
 
 #[tauri::command]
@@ -773,8 +778,17 @@ pub async fn sftp_write_text(
     path: String,
     content: String,
     baseline: Option<String>,
+    options: crate::services::files::text_encoding::TextWriteOptions,
 ) -> AppResult<()> {
-    sftp::write_text(&app, &session_id, &path, &content, baseline.as_deref()).await
+    sftp::write_text(
+        &app,
+        &session_id,
+        &path,
+        &content,
+        baseline.as_deref(),
+        &options,
+    )
+    .await
 }
 
 #[tauri::command]

@@ -4,7 +4,7 @@ import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
-import { isIpcError } from "@/lib/api/types";
+import { isIpcError, type TextEncoding } from "@/lib/api/types";
 import type { EditorDraft } from "@/lib/editor/recovery/contracts";
 
 import {
@@ -24,8 +24,16 @@ export interface EditorEntry {
   name: string;
   content: string;
   baseline: string;
+  /** Older in-memory checkpoints may omit these fields. */
+  encoding?: TextEncoding;
+  bom?: boolean;
+  /** Strict format of the on-disk baseline used for optimistic save checks. */
+  baselineEncoding?: TextEncoding;
+  baselineBom?: boolean;
   /** False until a successful initial read; older checkpoints infer it from load state. */
   baselineLoaded?: boolean;
+  /** An initial decode error may be retried with an explicit safe encoding. */
+  decodeError?: boolean;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -45,10 +53,11 @@ interface EditorsStore {
     target?: EditorEntry["recoveryTarget"],
   ) => Promise<void>;
   change: (tabId: string, content: string) => void;
+  reopen: (tabId: string, encoding: TextEncoding) => Promise<boolean>;
   save: (tabId: string) => Promise<boolean>;
   resolveConflict: (
     document: EditorDocument,
-    disk: string,
+    disk: EditorDiskVersion,
     action: "reload" | "replace",
   ) => Promise<boolean>;
   discard: (tabId: string) => void;
@@ -63,6 +72,21 @@ interface EditorsStore {
 }
 
 const versions = new Map<string, symbol>();
+const RETRYABLE_DECODE_ERRORS = ["sftp.binaryFile", "sftp.unsupportedEncoding"];
+function isDecodeError(error: unknown) {
+  return isIpcError(error) && RETRYABLE_DECODE_ERRORS.includes(error.message);
+}
+/** A draft can differ from disk in text or in its selected output format. */
+function hasPendingFormat(entry: EditorEntry) {
+  return (
+    (entry.baselineEncoding !== undefined &&
+      entry.baselineEncoding !== (entry.encoding ?? "utf-8")) ||
+    (entry.baselineBom !== undefined && entry.baselineBom !== (entry.bom ?? false))
+  );
+}
+export function editorHasPendingChanges(entry: EditorEntry) {
+  return entry.content !== entry.baseline || hasPendingFormat(entry);
+}
 const saves = new Map<string, { version: symbol; operation: Promise<boolean> }>();
 const reads = new Map<string, FileReadResource>();
 function cancelRead(tabId: string) {
@@ -145,6 +169,12 @@ export interface EditorDocument {
   dirty: boolean;
 }
 
+export interface EditorDiskVersion {
+  content: string;
+  encoding: TextEncoding;
+  bom: boolean;
+}
+
 /** Upgrade an older window checkpoint lazily, without exposing internal editor state. */
 export function editorDocument(tabId: string): EditorDocument | null {
   let entry = useEditors.getState().entries[tabId];
@@ -161,7 +191,7 @@ export function editorDocument(tabId: string): EditorDocument | null {
     path: entry.path,
     name: entry.name,
     content: entry.content,
-    dirty: entry.content !== entry.baseline,
+    dirty: editorHasPendingChanges(entry),
   };
 }
 
@@ -239,10 +269,15 @@ export function restoreEditorDraft(tabId: string, draft: EditorDraft): void {
         name: fileName(draft.path),
         content: draft.content,
         baseline: draft.baseline,
+        encoding: draft.encoding ?? "utf-8",
+        bom: draft.bom ?? false,
+        baselineEncoding: draft.baselineEncoding ?? draft.encoding,
+        baselineBom: draft.baselineBom ?? draft.bom,
         baselineLoaded: true,
         loading: false,
         saving: false,
         error: null,
+        decodeError: false,
         disconnected: remote,
         documentId: draft.id,
         version: 0,
@@ -274,10 +309,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           name: fileName(path),
           content: "",
           baseline: "",
+          encoding: "utf-8",
+          bom: false,
           baselineLoaded: false,
           loading: true,
           saving: false,
           error: null,
+          decodeError: false,
           disconnected: false,
           documentId: crypto.randomUUID(),
           version: 0,
@@ -287,7 +325,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     }));
 
     try {
-      const content = await readFileText(resource, "editor");
+      const file = await readFileText(resource, "editor");
       if (versions.get(tabId) !== version) return;
       set((state) => {
         const current = state.entries[tabId];
@@ -299,10 +337,16 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             ...state.entries,
             [tabId]: {
               ...current,
-              content,
-              baseline: content,
+              content: file.content,
+              baseline: file.content,
+              encoding: file.encoding,
+              bom: file.bom,
+              baselineEncoding: file.encoding,
+              baselineBom: file.bom,
               baselineLoaded: true,
               loading: false,
+              error: null,
+              decodeError: false,
             },
           },
         };
@@ -317,7 +361,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
         return {
           entries: {
             ...state.entries,
-            [tabId]: { ...current, loading: false, error: translateError(error) },
+            [tabId]: {
+              ...current,
+              loading: false,
+              baselineLoaded: false,
+              error: translateError(error),
+              decodeError: isDecodeError(error),
+            },
           },
         };
       });
@@ -329,7 +379,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
   change: (tabId, content) => {
     set((state) => {
       const current = state.entries[tabId];
-      if (!current || current.loading) {
+      if (!current || current.loading || (!current.baselineLoaded && !!current.error)) {
         return state;
       }
       if (current.content === content) return state;
@@ -348,16 +398,116 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     });
   },
 
+  reopen: async (tabId, encoding) => {
+    const current = get().entries[tabId];
+    if (
+      !current ||
+      current.loading ||
+      current.saving ||
+      current.disconnected ||
+      (!!current.error && !current.decodeError) ||
+      (current.baselineLoaded === false && !current.decodeError) ||
+      current.content !== current.baseline
+    )
+      return false;
+    const version = Symbol();
+    versions.set(tabId, version);
+    const resource = beginRead(tabId, current.sessionId, current.path);
+    set((state) => {
+      const entry = state.entries[tabId];
+      if (!entry) return state;
+      return {
+        entries: {
+          ...state.entries,
+          [tabId]: { ...entry, loading: true, error: null, decodeError: false },
+        },
+      };
+    });
+    try {
+      const file = await readFileText(resource, "editor", encoding);
+      if (versions.get(tabId) !== version || reads.get(tabId) !== resource) return false;
+      set((state) => {
+        const entry = state.entries[tabId];
+        if (!entry) return state;
+        return {
+          entries: {
+            ...state.entries,
+            [tabId]: {
+              ...entry,
+              content: file.content,
+              baseline: file.content,
+              encoding: file.encoding,
+              bom: file.bom,
+              baselineEncoding: file.encoding,
+              baselineBom: file.bom,
+              loading: false,
+              baselineLoaded: true,
+              decodeError: false,
+              documentId: crypto.randomUUID(),
+              version: 0,
+            },
+          },
+        };
+      });
+      histories.delete(tabId);
+      return true;
+    } catch (error) {
+      if (versions.get(tabId) === version && !resource.scope.signal.aborted) {
+        const message = translateError(error);
+        toast(message, "error");
+        set((state) => {
+          const entry = state.entries[tabId];
+          if (!entry || entry.baselineLoaded !== false) return state;
+          return {
+            entries: {
+              ...state.entries,
+              [tabId]: {
+                ...entry,
+                loading: false,
+                error: message,
+                decodeError: isDecodeError(error),
+              },
+            },
+          };
+        });
+      }
+      return false;
+    } finally {
+      if (versions.get(tabId) === version) {
+        set((state) => {
+          const entry = state.entries[tabId];
+          if (!entry) return state;
+          return {
+            entries: {
+              ...state.entries,
+              [tabId]: {
+                ...entry,
+                loading: false,
+              },
+            },
+          };
+        });
+      }
+      finishRead(tabId, resource);
+    }
+  },
+
   save: (tabId) => {
     const current = get().entries[tabId];
-    if (!current || current.loading || current.error || current.disconnected) {
+    if (
+      !current ||
+      current.loading ||
+      current.error ||
+      current.disconnected ||
+      current.baselineLoaded === false
+    ) {
       return Promise.resolve(false);
     }
     const version = versions.get(tabId) ?? Symbol();
     versions.set(tabId, version);
     const pending = saves.get(tabId);
     if (pending?.version === version) return pending.operation;
-    if (current.content === current.baseline) {
+    if (!editorHasPendingChanges(current)) {
       return Promise.resolve(true);
     }
 
@@ -369,9 +519,26 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     const operation = (async () => {
       try {
         if (current.sessionId === null) {
-          await api.localWriteText(current.path, submitted, current.baseline);
+          await api.localWriteText(
+            current.path,
+            submitted,
+            current.baseline,
+            current.encoding ?? "utf-8",
+            current.bom ?? false,
+            current.baselineEncoding,
+            current.baselineBom,
+          );
         } else {
-          await api.sftpWriteText(current.sessionId, current.path, submitted, current.baseline);
+          await api.sftpWriteText(
+            current.sessionId,
+            current.path,
+            submitted,
+            current.baseline,
+            current.encoding ?? "utf-8",
+            current.bom ?? false,
+            current.baselineEncoding,
+            current.baselineBom,
+          );
         }
         if (versions.get(tabId) !== version || !get().entries[tabId]) return false;
         set((state) => {
@@ -385,6 +552,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
               [tabId]: {
                 ...entry,
                 baseline: submitted,
+                baselineEncoding: current.encoding ?? "utf-8",
+                baselineBom: current.bom ?? false,
                 saving: false,
                 saveFailure: undefined,
                 saveConflict: false,
@@ -410,7 +579,11 @@ export const useEditors = create<EditorsStore>((set, get) => ({
                 saveFailure: translateError(error),
                 saveConflict:
                   isIpcError(error) &&
-                  ["editor.localFileChanged", "editor.remoteFileChanged"].includes(error.message),
+                  [
+                    "editor.localFileChanged",
+                    "editor.remoteFileChanged",
+                    "editor.textFormatChanged",
+                  ].includes(error.message),
               },
             },
           };
@@ -447,8 +620,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
         ...state.entries,
         [document.tabId]: {
           ...entry,
-          baseline: disk,
-          content: action === "reload" ? disk : entry.content,
+          baseline: disk.content,
+          content: action === "reload" ? disk.content : entry.content,
+          encoding: action === "reload" ? disk.encoding : entry.encoding,
+          bom: action === "reload" ? disk.bom : entry.bom,
+          // The reviewed disk format is the strict source for the next save.
+          baselineEncoding: disk.encoding,
+          baselineBom: disk.bom,
           version: (entry.version ?? 0) + (action === "reload" ? 1 : 0),
           saveFailure: undefined,
           saveConflict: false,
@@ -472,7 +650,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
 
   isDirty: (tabId) => {
     const entry = get().entries[tabId];
-    return !!entry && !entry.loading && entry.content !== entry.baseline;
+    return !!entry && !entry.loading && editorHasPendingChanges(entry);
   },
 
   markDisconnected: (sessionId) =>
@@ -508,7 +686,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     const version = versions.get(tabId);
     const resource = beginRead(tabId, sessionId, current.path);
     try {
-      const content = await readFileText(resource, "editor");
+      // Only a successful/restored baseline carries an explicit decoding
+      // choice. A failed initial open still has placeholder UTF-8 metadata and
+      // must auto-detect on its first successful reconnect.
+      const reviewedEncoding = current.baselineLoaded
+        ? (current.baselineEncoding ?? current.encoding)
+        : undefined;
+      const file = await readFileText(resource, "editor", reviewedEncoding);
       const entry = get().entries[tabId];
       if (
         !entry ||
@@ -518,7 +702,15 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       )
         return "failed";
       const baselineLoaded = entry.baselineLoaded ?? (!entry.loading && !entry.error);
-      if (baselineLoaded && content !== entry.baseline && !acceptChanges) return "conflict";
+      const baselineEncoding = entry.baselineEncoding ?? entry.encoding ?? "utf-8";
+      const baselineBom = entry.baselineBom ?? entry.bom ?? false;
+      // A first read/retry has no reviewed baseline; preserve its explicit
+      // selection as the save target instead of overwriting it with detection.
+      const changed =
+        file.content !== entry.baseline ||
+        file.encoding !== baselineEncoding ||
+        file.bom !== baselineBom;
+      if (baselineLoaded && changed && !acceptChanges) return "conflict";
       versions.set(tabId, Symbol());
       set((state) => ({
         entries: {
@@ -528,14 +720,22 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             sessionId,
             documentId: crypto.randomUUID(),
             version: 0,
-            content: baselineLoaded || entry.content !== entry.baseline ? entry.content : content,
-            baseline: content,
+            content:
+              baselineLoaded || entry.content !== entry.baseline ? entry.content : file.content,
+            baseline: file.content,
+            encoding: baselineLoaded ? (entry.encoding ?? file.encoding) : file.encoding,
+            bom: baselineLoaded ? (entry.bom ?? file.bom) : file.bom,
+            // Keep the explicitly selected draft format as the save target;
+            // the re-read format is the baseline that must still match.
+            baselineEncoding: file.encoding,
+            baselineBom: file.bom,
             baselineLoaded: true,
             loading: false,
             saveFailure: undefined,
             saveConflict: false,
             disconnected: false,
             error: null,
+            decodeError: false,
           },
         },
       }));

@@ -3,12 +3,13 @@ use super::*;
 use crate::services::files::operations::{Budget, Cancellation};
 use std::future::Future;
 
-pub(super) struct Request {
+pub(crate) struct Request {
     pub session_id: String,
     pub host_id: String,
     pub address: String,
     pub path: String,
     pub content: String,
+    pub mode: TextSaveMode,
     pub baseline: Option<String>,
 }
 
@@ -111,11 +112,17 @@ async fn save_opened(
     journal.writable(&request.address, &target)?;
     job.check()?;
     policy.authorize()?;
-    let original = read_remote_text(sftp, &target).await?;
+    let original = match read_remote_text(sftp, &target, request.mode).await {
+        Ok(original) => original,
+        Err(error) if error.to_string() == "editor.textFormatChanged" => {
+            return Err(AppError::validation("editor.remoteFileChanged"));
+        }
+        Err(error) => return Err(error),
+    };
     job.check()?;
     policy.check(sftp, &target, &original.content).await?;
     job.check()?;
-    if original.content == request.content {
+    if original.content == request.content && request.mode.same_format() {
         policy.admit(job)?;
         journal.published(&request.session_id);
         return Ok(());
@@ -127,6 +134,10 @@ async fn save_opened(
     {
         return Err(AppError::validation("editor.remoteFileChanged"));
     }
+    let encoded =
+        request
+            .mode
+            .encode_from_metadata(&request.content, original.encoding, original.bom)?;
     // Negotiate only for a real save, after validating the original. A no-op
     // must still succeed on a server without atomic replacement support.
     let replacement = replacement.await?;
@@ -173,6 +184,8 @@ async fn save_opened(
             requested: &request.path,
             target: &target,
             content: &request.content,
+            encoded: &encoded,
+            mode: request.mode,
             baseline: &original.content,
         },
         &mut record,

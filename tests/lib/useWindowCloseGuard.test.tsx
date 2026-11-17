@@ -38,6 +38,8 @@ const draft = (tabId = "draft"): EditorEntry => ({
   name: `${tabId}.conf`,
   content: "edited",
   baseline: "original",
+  encoding: "utf-8",
+  bom: false,
   loading: false,
   saving: false,
   error: null,

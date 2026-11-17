@@ -26,17 +26,21 @@ beforeEach(() => {
 
 describe("file read lifetimes", () => {
   it("captures the exact session and path and retains unsettled IPC after cancellation", async () => {
-    const read = deferred<{ content: string; size: number }>();
+    const read = deferred<{ content: string; size: number; encoding: "utf-8"; bom: boolean }>();
     vi.spyOn(api, "sftpReadText").mockReturnValue(read.promise);
     const source = { kind: "remote" as const, sessionId: "original-session" };
     const resource = createFileReadResource("/a/../document.txt", source);
     source.sessionId = "replacement-session";
     const result = readFileText(resource, "editor");
-    expect(api.sftpReadText).toHaveBeenCalledWith("original-session", "/a/../document.txt");
+    expect(api.sftpReadText).toHaveBeenCalledWith(
+      "original-session",
+      "/a/../document.txt",
+      undefined,
+    );
     resource.scope.dispose();
     await expect(result).rejects.toThrow("extension.scope.closed");
     expect(resource.scope.size).toBe(1);
-    read.resolve({ content: "late", size: 4 });
+    read.resolve({ content: "late", size: 4, encoding: "utf-8", bom: false });
     await vi.waitFor(() => expect(resource.scope.size).toBe(0));
   });
 

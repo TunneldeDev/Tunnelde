@@ -22,6 +22,32 @@ async fn staged_save(
     baseline: &str,
     record: &mut Record,
 ) -> AppResult<()> {
+    staged_save_encoded(
+        sftp,
+        replacement,
+        requested,
+        target,
+        content,
+        content.as_bytes(),
+        TextSaveMode::editor(None, false),
+        baseline,
+        record,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn staged_save_encoded(
+    sftp: &SftpSession,
+    replacement: &remote_commit::Replacement,
+    requested: &str,
+    target: &str,
+    content: &str,
+    encoded: &[u8],
+    mode: TextSaveMode,
+    baseline: &str,
+    record: &mut Record,
+) -> AppResult<()> {
     let (job, _caller) =
         crate::services::files::operations::Cancellation::for_test("editor.saveCancelled");
     transaction::staged_save(
@@ -31,6 +57,8 @@ async fn staged_save(
             requested,
             target,
             content,
+            encoded,
+            mode,
             baseline,
         },
         record,
@@ -48,6 +76,7 @@ async fn staged_save(
 struct Probe {
     failure: Mutex<String>,
     mutate: AtomicBool,
+    mutate_format: AtomicBool,
     commits: AtomicUsize,
     closes: AtomicUsize,
     hold_close: AtomicBool,
@@ -255,6 +284,9 @@ impl russh_sftp::server::Handler for Server {
             }
             if self.probe.mutate.swap(false, Ordering::SeqCst) {
                 std::fs::write(self.path("/note.txt"), "external change").map_err(io)?;
+            }
+            if self.probe.mutate_format.swap(false, Ordering::SeqCst) {
+                std::fs::write(self.path("/note.txt"), b"\xEF\xBB\xBForiginal").map_err(io)?;
             }
             if self.fails("close") {
                 return Err(StatusCode::Failure);
@@ -474,16 +506,70 @@ impl Drop for Fixture {
 }
 
 #[tokio::test]
+async fn atomically_preserves_legacy_encoding_bytes_during_save() {
+    let f = Fixture::new();
+    let sftp = f.client().await;
+    let original = encoding_rs::GB18030.encode("旧版中文\r\n").0;
+    std::fs::write(f.root.join("note.txt"), original.as_ref()).unwrap();
+    let content = "新版中文\r\n";
+    let encoded = encoding_rs::GB18030.encode(content).0;
+    let mut record = f.record();
+    staged_save_encoded(
+        &sftp,
+        &f.replacement().await.unwrap(),
+        "/note.txt",
+        "/note.txt",
+        content,
+        encoded.as_ref(),
+        TextSaveMode::editor(Some(TextEncoding::Gb18030), false),
+        "旧版中文\r\n",
+        &mut record,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(f.root.join("note.txt")).unwrap(),
+        encoded.as_ref()
+    );
+    cleanup(&sftp, &mut record, |_| Ok(())).await.unwrap();
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn conflict_replacement_verifies_disk_format_and_writes_the_selected_format() {
+    let f = Fixture::new();
+    let sftp = f.client().await;
+    std::fs::write(f.root.join("note.txt"), b"\xEF\xBB\xBForiginal").unwrap();
+    let encoded = encoding_rs::GB18030.encode("draft").0;
+    let mut record = f.record();
+    staged_save_encoded(
+        &sftp,
+        &f.replacement().await.unwrap(),
+        "/note.txt",
+        "/note.txt",
+        "draft",
+        encoded.as_ref(),
+        TextSaveMode::editor_with_baseline(TextEncoding::Gb18030, false, TextEncoding::Utf8, true),
+        "original",
+        &mut record,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(f.root.join("note.txt")).unwrap(),
+        encoded.as_ref()
+    );
+    cleanup(&sftp, &mut record, |_| Ok(())).await.unwrap();
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
 async fn atomically_saves_short_empty_unicode_bom_and_crlf() {
     let f = Fixture::new();
     let sftp = f.client().await;
     let mut baseline = "original".to_string();
-    for text in [
-        "短\r\n",
-        "",
-        "\u{feff}hello\r\nworld\n",
-        &"界".repeat(40000),
-    ] {
+    let long = "界".repeat(40000);
+    for text in ["短\r\n", "", long.as_str()] {
         let mut record = f.record();
         staged_save(
             &sftp,
@@ -501,7 +587,7 @@ async fn atomically_saves_short_empty_unicode_bom_and_crlf() {
         assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 1);
         baseline = text.to_string();
     }
-    assert_eq!(f.probe.commits.load(Ordering::SeqCst), 4);
+    assert_eq!(f.probe.commits.load(Ordering::SeqCst), 3);
     sftp.close().await.unwrap();
 }
 
@@ -713,4 +799,111 @@ fn same_host_file_is_serialized_and_active_cleanup_cannot_be_reserved_twice() {
     assert!(Reservation::acquire("test-reservation", false).is_err());
     drop(held);
     assert!(Reservation::acquire("test-reservation", false).is_ok());
+}
+
+#[tokio::test]
+async fn rejects_external_format_only_changes_before_remote_save() {
+    for external in [
+        b"\xEF\xBB\xBForiginal".as_slice(),
+        &[
+            0xff, 0xfe, b'o', 0, b'r', 0, b'i', 0, b'g', 0, b'i', 0, b'n', 0, b'a', 0, b'l', 0,
+        ],
+    ] {
+        let f = Fixture::new();
+        let sftp = f.client().await;
+        std::fs::write(f.root.join("note.txt"), external).unwrap();
+        let mut record = f.record();
+        let replacement = f.replacement().await.unwrap();
+        assert_eq!(
+            staged_save_encoded(
+                &sftp,
+                &replacement,
+                "/note.txt",
+                "/note.txt",
+                "draft",
+                b"draft",
+                TextSaveMode::editor_with_baseline(
+                    TextEncoding::Utf8,
+                    false,
+                    TextEncoding::Utf8,
+                    false,
+                ),
+                "original",
+                &mut record,
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+            "editor.remoteFileChanged"
+        );
+        assert_eq!(std::fs::read(f.root.join("note.txt")).unwrap(), external);
+        sftp.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn conflict_replacement_converts_equal_text_to_the_selected_format() {
+    let f = Fixture::new();
+    let sftp = f.client().await;
+    std::fs::write(f.root.join("note.txt"), b"\xEF\xBB\xBFsame").unwrap();
+    let encoded = encoding_rs::GB18030.encode("same").0;
+    let mut record = f.record();
+    staged_save_encoded(
+        &sftp,
+        &f.replacement().await.unwrap(),
+        "/note.txt",
+        "/note.txt",
+        "same",
+        encoded.as_ref(),
+        TextSaveMode::editor_with_baseline(TextEncoding::Gb18030, false, TextEncoding::Utf8, true),
+        "same",
+        &mut record,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(f.root.join("note.txt")).unwrap(),
+        encoded.as_ref()
+    );
+    cleanup(&sftp, &mut record, |_| Ok(())).await.unwrap();
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn rejects_format_only_change_during_remote_staging() {
+    let f = Fixture::new();
+    let sftp = f.client().await;
+    let replacement = f.replacement().await.unwrap();
+    f.probe.hold_close.store(true, Ordering::SeqCst);
+    f.probe.mutate_format.store(true, Ordering::SeqCst);
+    let mut record = f.record();
+    let (result, ()) = tokio::join!(
+        staged_save_encoded(
+            &sftp,
+            &replacement,
+            "/note.txt",
+            "/note.txt",
+            "draft",
+            b"draft",
+            TextSaveMode::editor_with_baseline(
+                TextEncoding::Utf8,
+                false,
+                TextEncoding::Utf8,
+                false,
+            ),
+            "original",
+            &mut record,
+        ),
+        async {
+            f.probe.close_started.notified().await;
+            assert_eq!(f.disk(), "original");
+            f.probe.release_close.notify_one();
+        }
+    );
+    assert_eq!(result.unwrap_err().to_string(), "editor.remoteFileChanged");
+    assert_eq!(
+        std::fs::read(f.root.join("note.txt")).unwrap(),
+        b"\xEF\xBB\xBForiginal"
+    );
+    sftp.close().await.unwrap();
 }

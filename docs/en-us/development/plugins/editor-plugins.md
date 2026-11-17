@@ -27,7 +27,10 @@ back, checks the original identity and contents again, then replaces it atomical
 on the same volume. A write, verification or publication failure leaves the
 original intact. Deleted files are not recreated; symbolic links retain their
 resolved target behavior. Saving requires write access to the original file and
-permission to create a private staging directory in its parent.
+permission to create a private staging directory in its parent. The editor
+carries the detected or explicitly selected encoding and BOM through reads,
+recovery drafts and saves; an unrepresentable edit fails without replacing the
+original.
 
 Windows saves preserve owner/group, DACL, alternate data streams and supported
 file attributes. Unix saves preserve owner/group, mode and extended attributes;
@@ -47,13 +50,16 @@ create a new file object, so hard links and already-open readers keep the old
 object. Flushing staging data does not guarantee directory durability after
 power loss.
 
-`files.local.writeText` uses the same transaction for existing UTF-8 text files,
-with an optional `baseline` holding the last text read. Older callers can omit it:
-the host snapshots the file at the start and checks it again before publication.
-Without a baseline, changes made before the call cannot be detected. Both the
-original and replacement must be text and at most 512 KiB; the serialized request
-must also fit the existing 256 KiB RPC limit. `fs.write` is sufficient; the internal
-comparison does not require granting `fs.read`.
+`files.local.writeText` uses the same transaction for existing text files, with
+an optional `baseline` holding the last text read. The plugin API remains a UTF-8
+text interface: it rejects binary input, and reads use strict UTF-8 rather than
+guessing a legacy encoding. The built-in editor handles its additional encodings
+through private native commands, not this public plugin contract. Older callers
+can omit `baseline`: the host snapshots the file at the start and checks it again
+before publication. Without a baseline, changes made before the call cannot be
+detected. Both the original and replacement must be text and at most 512 KiB; the
+serialized request must also fit the existing 256 KiB RPC limit. `fs.write` is
+sufficient; the internal comparison does not require granting `fs.read`.
 
 For AI/MCP tool writes, the approved path, canonical grant roots and original
 content hash are checked again inside the transaction. Runtime authorization,

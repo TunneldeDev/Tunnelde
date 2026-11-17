@@ -1,3 +1,4 @@
+use crate::services::files::text_encoding::TextEncoding;
 use serde::{Deserialize, Serialize};
 
 pub(super) const MAX_DOCUMENT_BYTES: usize = 128 * 1024;
@@ -22,6 +23,16 @@ pub(crate) struct Draft {
     pub source: Source,
     pub baseline: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<TextEncoding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bom: Option<bool>,
+    /// Strict format of the on-disk baseline. It may differ from the save
+    /// target after a conflict replacement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_encoding: Option<TextEncoding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_bom: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -29,6 +40,20 @@ pub(crate) struct Draft {
 pub(crate) struct Snapshot {
     pub revision: String,
     pub drafts: Vec<Draft>,
+}
+
+fn format_pending(draft: &Draft) -> bool {
+    match (
+        draft.encoding,
+        draft.bom,
+        draft.baseline_encoding,
+        draft.baseline_bom,
+    ) {
+        (Some(target_encoding), Some(target_bom), Some(source_encoding), Some(source_bom)) => {
+            target_encoding != source_encoding || target_bom != source_bom
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn validate(drafts: &[Draft]) -> crate::error::AppResult<()> {
@@ -42,7 +67,9 @@ pub(super) fn validate(drafts: &[Draft]) -> crate::error::AppResult<()> {
                 && !draft.path.contains('\0')
                 && draft.baseline.len() <= MAX_DOCUMENT_BYTES
                 && draft.content.len() <= MAX_DOCUMENT_BYTES
-                && draft.baseline != draft.content
+                && (draft.baseline != draft.content || format_pending(draft))
+                && draft.encoding.is_some() == draft.bom.is_some()
+                && draft.baseline_encoding.is_some() == draft.baseline_bom.is_some()
                 && match &draft.source {
                     Source::Local => std::path::Path::new(&draft.path).is_absolute(),
                     Source::Remote { host_id, address } => {

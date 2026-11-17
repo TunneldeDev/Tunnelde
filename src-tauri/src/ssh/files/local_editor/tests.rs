@@ -30,6 +30,9 @@ impl Fixture {
     fn clean(&self) {
         assert_eq!(std::fs::read_dir(&self.root).unwrap().count(), 1);
     }
+    fn disk_bytes(&self) -> Vec<u8> {
+        std::fs::read(&self.file).unwrap()
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -48,6 +51,111 @@ impl Drop for Fixture {
 
 mod authorization;
 mod workers;
+
+#[test]
+fn saves_legacy_encodings_with_their_original_bytes_and_bom() {
+    let f = Fixture::new();
+    let original = encoding_rs::GB18030.encode("旧版中文\r\n").0;
+    std::fs::write(&f.file, original.as_ref()).unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "新版中文\r\n",
+        Some("旧版中文\r\n"),
+        TextSaveMode::editor(Some(TextEncoding::Gb18030), false),
+        |_, original| {
+            assert_eq!(original, "旧版中文\r\n");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        f.disk_bytes(),
+        encoding_rs::GB18030.encode("新版中文\r\n").0.as_ref()
+    );
+    f.clean();
+
+    let original = b"\xEF\xBB\xBFhello".as_slice();
+    std::fs::write(&f.file, original).unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "changed",
+        Some("hello"),
+        TextSaveMode::editor(Some(TextEncoding::Utf8), true),
+        |_, original| {
+            assert_eq!(original, "hello");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBFchanged");
+    f.clean();
+}
+
+#[test]
+fn plugin_utf8_save_keeps_a_bom_as_content() {
+    let f = Fixture::new();
+    std::fs::write(&f.file, b"\xEF\xBB\xBFhello").unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "\u{feff}changed",
+        Some("\u{feff}hello"),
+        TextSaveMode::utf8(),
+        |_, original| {
+            assert_eq!(original, "\u{feff}hello");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBFchanged");
+    f.clean();
+
+    std::fs::write(&f.file, encoding_rs::GB18030.encode("中文").0.as_ref()).unwrap();
+    assert_eq!(
+        save_transaction_with_mode(
+            None,
+            &display_path(&f.file),
+            "changed",
+            Some("中文"),
+            TextSaveMode::utf8(),
+            |_, _| Ok(()),
+            |_, _| Ok(()),
+        )
+        .unwrap_err()
+        .to_string(),
+        "sftp.unsupportedEncoding"
+    );
+}
+
+#[test]
+fn conflict_replacement_decodes_the_reviewed_format_and_writes_the_selected_format() {
+    let f = Fixture::new();
+    std::fs::write(&f.file, b"\xEF\xBB\xBFdisk").unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "draft",
+        Some("disk"),
+        TextSaveMode::editor(Some(TextEncoding::Gb18030), false)
+            .with_source(TextEncoding::Utf8, true),
+        |_, original| {
+            assert_eq!(original, "disk");
+            Ok(())
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        f.disk_bytes(),
+        encoding_rs::GB18030.encode("draft").0.as_ref()
+    );
+    f.clean();
+}
 
 #[test]
 fn legacy_plugin_save_uses_an_atomic_snapshot_and_explicit_baseline_detects_conflicts() {
@@ -293,10 +401,11 @@ fn cleanup_identities_remain_readable_when_a_profile_moves_between_platforms() {
 }
 
 #[test]
-fn saves_short_empty_unicode_and_bom_crlf_without_changing_original_until_commit() {
+fn saves_short_empty_unicode_bom_crlf_and_long_text_without_changing_original_until_commit() {
     let f = Fixture::new();
     let mut baseline = "original".to_string();
-    for content in ["短\r\n", "", "\u{feff}new\r\n", &"界".repeat(30000)] {
+    let long = "界".repeat(30000);
+    for content in ["短\r\n", "", long.as_str()] {
         let before = baseline.clone();
         save_sync(
             None,
@@ -802,4 +911,96 @@ fn windows_saves_handle_unicode_long_paths_and_existing_readers() {
         native::read_bounded(&mut old.try_clone().unwrap(), MAX_TEXT).unwrap(),
         b"original"
     );
+}
+
+#[test]
+fn rejects_external_bom_and_encoding_only_changes_before_save() {
+    for external in [
+        b"\xEF\xBB\xBFhello".as_slice(),
+        &[0xff, 0xfe, b'h', 0, b'e', 0, b'l', 0, b'l', 0, b'o', 0],
+    ] {
+        let f = Fixture::new();
+        std::fs::write(&f.file, external).unwrap();
+        let result = save_transaction_with_mode(
+            None,
+            &display_path(&f.file),
+            "draft",
+            Some("hello"),
+            TextSaveMode::editor_with_baseline(
+                TextEncoding::Utf8,
+                false,
+                TextEncoding::Utf8,
+                false,
+            ),
+            |_, _| Ok(()),
+            |_, _| Ok(()),
+        );
+        assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
+        assert_eq!(f.disk_bytes(), external);
+    }
+}
+
+#[test]
+fn rejects_format_only_change_during_staging() {
+    let f = Fixture::new();
+    let result = save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "draft",
+        Some("original"),
+        TextSaveMode::editor_with_baseline(TextEncoding::Utf8, false, TextEncoding::Utf8, false),
+        |_, _| Ok(()),
+        |phase, _| {
+            if phase == "staged" {
+                let external = b"\xEF\xBB\xBForiginal";
+                #[cfg(windows)]
+                {
+                    // Windows keeps the source deny-write sharing mode through
+                    // publication. The security boundary must remain intact, so
+                    // verify that the competing write is rejected and the
+                    // original bytes stay unchanged.
+                    let error = std::fs::write(&f.file, external).unwrap_err();
+                    assert_eq!(error.raw_os_error(), Some(32));
+                    assert_eq!(f.disk_bytes(), b"original");
+                }
+                #[cfg(not(windows))]
+                std::fs::write(&f.file, external)?;
+            }
+            Ok(())
+        },
+    );
+    #[cfg(not(windows))]
+    {
+        assert_eq!(result.unwrap_err().to_string(), "editor.localFileChanged");
+        assert_eq!(f.disk_bytes(), b"\xEF\xBB\xBForiginal");
+    }
+    #[cfg(windows)]
+    {
+        // The competing write was denied by the source's deny-write sharing
+        // mode. Since the disk remained unchanged, publication must succeed.
+        result.unwrap();
+        assert_eq!(f.disk_bytes(), b"draft");
+    }
+    f.clean();
+}
+
+#[test]
+fn conflict_replacement_converts_equal_text_to_the_selected_format() {
+    let f = Fixture::new();
+    std::fs::write(&f.file, b"\xEF\xBB\xBFsame").unwrap();
+    save_transaction_with_mode(
+        None,
+        &display_path(&f.file),
+        "same",
+        Some("same"),
+        TextSaveMode::editor_with_baseline(TextEncoding::Gb18030, false, TextEncoding::Utf8, true),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(
+        f.disk_bytes(),
+        encoding_rs::GB18030.encode("same").0.as_ref()
+    );
+    f.clean();
 }
