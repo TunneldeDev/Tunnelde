@@ -16,20 +16,34 @@ use crate::{
 };
 use serde_json::Value;
 
+pub(in crate::plugins::api) fn owns_namespace(namespace: &str) -> bool {
+    matches!(
+        namespace,
+        "files" | "fileBrowser" | "filePreview" | "fileList"
+    )
+}
+
+pub(in crate::plugins::api) fn supports_file_list(method: &str) -> bool {
+    matches!(
+        method,
+        "fileList.setHighlights" | "fileList.removeHighlights"
+    )
+}
+
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
+    if supports_file_list(method) {
+        return crate::plugins::file_highlights::call(context, method, params);
+    }
     match method {
         name if name.starts_with("filePreview.") => preview::dispatch(context, name, params).await,
         name if name.starts_with("files.content.") => {
             content::dispatch(context, name, params).await
         }
         name if name.starts_with("fileBrowser.") => frontend_request(context, name, params).await,
-        "fileList.setHighlights" | "fileList.removeHighlights" => {
-            crate::plugins::file_highlights::call(context, method, params)
-        }
         "files.local.copy"
         | "files.sftp.copy"
         | "files.upload"
