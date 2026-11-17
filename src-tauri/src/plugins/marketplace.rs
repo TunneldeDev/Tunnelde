@@ -80,9 +80,7 @@ pub fn origin(path: &Path) -> Option<super::config::MarketSource> {
     if bytes.len() > 8192 {
         return None;
     }
-    let mut source = serde_json::from_slice(&bytes).ok()?;
-    super::config::migrate_official_source(&mut source);
-    Some(source)
+    serde_json::from_slice(&bytes).ok()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1,3 +1,4 @@
+import { brandMark } from "@/lib/brand";
 import { Plus, Settings as SettingsIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -35,7 +36,7 @@ export function WelcomePage() {
       <div className="welcome__inner">
         <img
           className="welcome__mark"
-          src="/brand/mark-256.png"
+          src={brandMark}
           width={84}
           height={84}
           alt=""
