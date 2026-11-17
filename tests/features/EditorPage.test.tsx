@@ -5,7 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { EditorPage } from "@/features/editor/EditorPage";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
-import { beginEditorInput, useEditors, type EditorEntry } from "@/store/editors";
+import {
+  beginEditorInput,
+  editorDocument,
+  replaceEditorDocument,
+  useEditors,
+  type EditorEntry,
+} from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
@@ -471,6 +477,38 @@ describe("EditorPage undo selection", () => {
     expect(editorView(textarea).state.selection.main.from).toBe(1);
     expect(editorView(textarea).state.selection.main.to).toBe(4);
     expect(editorView(textarea).state.selection.main.anchor).toBe(4);
+  });
+
+  it("keeps raw caret mapping across external replacement and host undo/redo", async () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          content: "a\r\nb\r\nc\r\ndefgh",
+          baseline: "a\r\nb\r\nc\r\ndefgh",
+          documentId: "document",
+          version: 0,
+        },
+      },
+    });
+    render(<EditorPage tabId="editor" active />);
+    const textarea = await editorBox();
+    replaceEditorDocument(editorDocument("editor")!, "xx\r\nyy\r\nzz\r\nnew\r\nabcdef");
+    await waitFor(() =>
+      expect(useEditors.getState().entries.editor?.content).toBe("xx\r\nyy\r\nzz\r\nnew\r\nabcdef"),
+    );
+    const view = editorView(textarea);
+    await waitFor(() => expect(view.state.doc.length).toBe(19));
+    view.dispatch({ selection: { anchor: 19 } });
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    await waitFor(() =>
+      expect(useEditors.getState().entries.editor?.content).toBe("a\r\nb\r\nc\r\ndefgh"),
+    );
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true, shiftKey: true });
+    await waitFor(() =>
+      expect(useEditors.getState().entries.editor?.content).toBe("xx\r\nyy\r\nzz\r\nnew\r\nabcdef"),
+    );
+    expect(editorView(textarea).state.selection.main.from).toBe(19);
   });
 
   it("treats a long IME composition as one host undo transaction", async () => {

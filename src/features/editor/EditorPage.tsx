@@ -154,6 +154,10 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   }, [entry, selectionRevision, tabId]);
 
   useEffect(() => {
+    if (entry?.content !== undefined) lastEditorContent.current = entry.content;
+  }, [entry?.content, entry?.documentId, entry?.version]);
+
+  useEffect(() => {
     if (!largeRestore) return;
     const timer = setTimeout(() => setLargeRestore(null), 0);
     return () => clearTimeout(timer);
