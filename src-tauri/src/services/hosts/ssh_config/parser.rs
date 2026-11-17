@@ -1111,7 +1111,7 @@ mod tests {
 
     #[test]
     fn production_parser_expands_identity_variables_and_windows_quotes() {
-        let f = Fixture::new("Host App\n HostName = endpoint.test\n User = alice\n Port=2222\n IdentityFile \"~/.ssh/%h_%n_%r_%p_%%\"\nHost win\n User bob\n IdentityFile \"C:\\Users\\bob\\my keys\\id_ed25519\" # note\n");
+        let f = Fixture::new("Host App\n HostName = endpoint.test\n User = alice\n Port=2222\n IdentityFile \"~/.ssh/%h_%n_%r_%p_%%\"\nHost win\n User bob\n IdentityFile \"C:\\FixtureAccounts\\bob\\my keys\\id_ed25519\" # note\n");
         let entries = f.entries();
         let app = entries.iter().find(|e| e.alias == "app").unwrap();
         assert!(app.issues.is_empty(), "{:?}", app.issues);
@@ -1126,7 +1126,7 @@ mod tests {
         assert!(win.issues.is_empty(), "{:?}", win.issues);
         assert_eq!(
             win.input.as_ref().unwrap().key_path.as_deref(),
-            Some(r"C:\Users\bob\my keys\id_ed25519")
+            Some(r"C:\FixtureAccounts\bob\my keys\id_ed25519")
         );
     }
 
