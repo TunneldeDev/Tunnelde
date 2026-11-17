@@ -2,7 +2,7 @@ import type { MarketEntry, PluginInfo } from "@/lib/api/types";
 import { api } from "@/lib/api/ipc";
 import { bytesToBase64 } from "@/lib/text/base64";
 
-/** The catalogue lives in the repository, so adding a plugin is a reviewable commit. */
+/** The official catalogue is maintained only in the independent plugin hub. */
 export const MARKETPLACE_INDEX_URL =
   "https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json";
 

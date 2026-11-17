@@ -653,8 +653,8 @@ them. Existing read-only views continue to work. See the hub plugin README for t
 ## Marketplace
 
 The official catalogue is `https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json`,
-maintained in the independent `TunneldeDev/tunnelde-hub` repository. The old `marketplace/index.json`
-is a compatibility snapshot for older clients. Settings → Plugins can add up to 20 sources
+maintained exclusively in the independent `TunneldeDev/tunnelde-hub` repository. This application
+repository does not ship a catalogue or support historical client snapshots. Settings → Plugins can add up to 20 sources
 including the official source. Custom sources are public HTTPS JSON catalogues and require an
 explicit trust confirmation. Disabling or removing a source keeps its installed plugins.
 Authentication-protected sources are outside this version's scope.

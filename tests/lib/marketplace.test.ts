@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import catalogue from "../../marketplace/index.json";
-import { fetchMarketplace } from "@/lib/plugins/marketplace";
+import { fetchMarketplace, MARKETPLACE_INDEX_URL } from "@/lib/plugins/marketplace";
 
 const example = {
   id: "hello",
@@ -15,6 +14,12 @@ const example = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("production marketplace", () => {
+  it("uses only the independent official hub catalogue", () => {
+    expect(MARKETPLACE_INDEX_URL).toBe(
+      "https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json",
+    );
+  });
+
   it("accepts theme catalogues and rejects unknown executable runtimes", async () => {
     const theme = {
       ...example,
@@ -24,32 +29,12 @@ describe("production marketplace", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: async () => ({ plugins: [theme, { ...theme, runtime: "shell" }] }),
-        }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ plugins: [theme, { ...theme, runtime: "shell" }] }),
+      }),
     );
     expect(await fetchMarketplace()).toEqual([theme]);
-  });
-  it("ships independently installable utility plugins with versioned release archives and checksums", () => {
-    expect(catalogue.plugins.map((entry) => entry.id).sort()).toEqual([
-      "json-formatter",
-      "studio-themes",
-      "timestamp",
-      "uuid",
-    ]);
-    for (const entry of catalogue.plugins) {
-      expect(entry.name).toBeTruthy();
-      expect(entry.runtime).toBe(entry.id === "studio-themes" ? "theme" : "node");
-      expect(entry.apiVersion).toBe(1);
-      expect(entry.url).toBe(
-        `https://github.com/TunneldeDev/tunnelde-hub/releases/download/plugins-v${entry.version}/${entry.id}-${entry.version}.zip`,
-      );
-      expect(entry.sha256).toMatch(/^[a-f\d]{64}$/);
-      expect(entry.id).not.toBe("hello");
-    }
   });
 
   it("removes the historical official SDK artifact while retaining unrelated Hello plugins", async () => {

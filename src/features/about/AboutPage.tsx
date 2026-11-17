@@ -1,3 +1,4 @@
+import { brandMark } from "@/lib/brand";
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -21,7 +22,7 @@ export function AboutPage({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={embedded ? "about" : "page about"}>
       <section className="card about__head">
-        <img src="/brand/mark-256.png" width={64} height={64} alt="" draggable={false} />
+        <img src={brandMark} width={64} height={64} alt="" draggable={false} />
         <div className="about__identity">
           <h1 className="about__name">Tunnelde</h1>
           <p className="about__meta">

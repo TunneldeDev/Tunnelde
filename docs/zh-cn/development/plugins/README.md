@@ -474,7 +474,7 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 ## 插件市场
 
 官方索引为 `https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json`，
-在独立市场仓库维护。旧 `marketplace/index.json` 保留为老客户端兼容快照。
+仅在独立的 `TunneldeDev/tunnelde-hub` 仓库维护；应用仓库不再提供索引副本或支持旧客户端快照。
 **设置 → 插件**含官方来源最多可配 20 个来源。自定义来源需公开 HTTPS JSON，并明确确认信任。
 禁用/移除来源不删除已安装插件；当前不支持需要认证的来源。
 
