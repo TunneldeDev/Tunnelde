@@ -35,6 +35,32 @@ const LANGUAGES = new Set([
   "hpp",
 ]);
 
+const TOKEN_LIMIT = 16_384;
+const RESULT_LIMIT_BYTES = 128 * 1024;
+
+/** Keep the most useful early semantic tokens and never exceed the host result budget. */
+function boundedTokens(tokens) {
+  const ranked = [...tokens].sort(
+    (a, b) =>
+      Number(b.type !== "variable") - Number(a.type !== "variable") ||
+      Number(b.type === "keyword" || b.type === "string" || b.type === "comment") -
+        Number(a.type === "keyword" || a.type === "string" || a.type === "comment") ||
+      Number(b.end - b.start > 32) - Number(a.end - a.start > 32) ||
+      a.start - b.start,
+  );
+  const selected = [];
+  let bytes = Buffer.byteLength('{"tokens":[]}', "utf8");
+  for (const token of ranked) {
+    if (selected.length >= TOKEN_LIMIT) break;
+    const tokenBytes = Buffer.byteLength(JSON.stringify(token), "utf8");
+    const separator = selected.length ? 1 : 0;
+    if (bytes + tokenBytes + separator > RESULT_LIMIT_BYTES) continue;
+    selected.push(token);
+    bytes += tokenBytes + separator;
+  }
+  return selected.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
 function tokenize(source, extensions, mode = "inline") {
   const tokens = [];
   let i = 0;
@@ -142,9 +168,11 @@ function tokenize(source, extensions, mode = "inline") {
   if (quote) tokens.push({ start: quoteStart, end: i, type: "invalid" });
   // A window is intentionally approximate: comments/templates that start
   // before the window may be classified from the visible fragment only.
-  return mode === "window"
-    ? tokens.filter((token) => token.end > token.start && token.end <= source.length)
-    : tokens.filter((token) => token.end > token.start);
+  return boundedTokens(
+    tokens.filter(
+      (token) => token.end > token.start && (mode !== "window" || token.end <= source.length),
+    ),
+  );
 }
 
 function extensionFromPath(path, extensions) {

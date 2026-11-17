@@ -17,9 +17,8 @@ or guarantee exact language semantics.
 
 Tunnelde never starts this plugin or prompts for permission just to highlight a
 file. Stopping or updating the plugin, revoking its permission, or switching to
-another document immediately clears the rendered tokens. Errors, timeouts,
-invalid token ranges and files above the 128 KiB highlighting cap fall back to
-plain editor text.
+another document immediately clears the rendered tokens. Errors, timeouts and invalid token ranges fall back to plain editor text.
+Larger files use bounded visible-window requests and readRange when a viewport is available.
 
 ## Protocol
 

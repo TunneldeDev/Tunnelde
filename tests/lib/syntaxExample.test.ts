@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { describe, expect, it } from "vitest";
+import { parseSyntaxResult } from "@/lib/plugins/syntax";
 
 const root = "examples/plugins/syntax-basic";
 const sdk = readFileSync(`${root}/sdk.mjs`);
@@ -77,6 +78,25 @@ describe("syntax-basic installable example", () => {
         },
       })) as { tokens: Array<{ type: string }> };
       expect(inline.tokens.some((token) => token.type === "keyword")).toBe(true);
+      const inlineLarge = (await request("command.run", {
+        command: "highlight",
+        input: {
+          mode: "inline",
+          source: "const value = 42;\n".repeat(5882),
+          document: {
+            tabId: "e2e",
+            documentId: "doc",
+            version: 1,
+            path: "/large.js",
+            name: "large.js",
+          },
+          extensions: ["js"],
+          _locale: "en-US",
+        },
+      })) as { tokens: Array<{ start: number; end: number; type: string }> };
+      expect(() =>
+        parseSyntaxResult(inlineLarge, "const value = 42;\n".repeat(5882)),
+      ).not.toThrow();
       const windowed = (await request("command.run", {
         command: "highlight",
         input: {
@@ -90,13 +110,14 @@ describe("syntax-basic installable example", () => {
             name: "large.js",
           },
           extensions: ["js"],
-          range: { offset: 0, length: 16_384 },
+          range: { offset: 0, length: 32_768 },
           _locale: "en-US",
         },
       })) as { tokens: Array<{ start: number; end: number; type: string }> };
+      expect(() => parseSyntaxResult(windowed, source.slice(0, 32_768))).not.toThrow();
       expect(windowed.tokens.length).toBeGreaterThan(100);
       expect(windowed.tokens[0]).toEqual({ start: 0, end: 5, type: "keyword" });
-      expect(windowed.tokens.every((token) => token.end <= 16_384)).toBe(true);
+      expect(windowed.tokens.every((token) => token.end <= 32_768)).toBe(true);
       expect(await request("shutdown", {})).toBeNull();
     } finally {
       child.stdin!.end();

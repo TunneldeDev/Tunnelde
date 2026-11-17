@@ -83,10 +83,24 @@ export function useEditorSyntax({
   const path = document?.path ?? "";
   const name = document?.name ?? "";
   const dirty = document?.dirty ?? false;
-  const provider = useMemo(
-    () => (path ? (syntaxProviders(path, plugins)[0] ?? null) : null),
-    [path, plugins],
-  );
+  const providers = useMemo(() => (path ? syntaxProviders(path, plugins) : []), [path, plugins]);
+  const stoppingIds = usePlugins((state) => state.stoppingIds);
+  const provider = useMemo(() => {
+    for (const candidate of providers) {
+      const info = plugins.find((item) => item.id === candidate.id);
+      const command = info?.commands.find((item) => item.id === candidate.command);
+      if (
+        info?.status === "running" &&
+        !stoppingIds.includes(info.id) &&
+        info.permissions.includes("editor.read") &&
+        command?.editor?.syntax &&
+        command.editor.format !== true &&
+        (!isTauri() || (!security.restricted && hasPluginGrant(security, info)))
+      )
+        return candidate;
+    }
+    return null;
+  }, [plugins, providers, security, stoppingIds]);
   const providerKey = provider
     ? `${provider.id}:${provider.command}:${provider.extensions.join(",")}`
     : "";
@@ -96,9 +110,7 @@ export function useEditorSyntax({
     !!command?.editor?.syntax &&
     !command.editor.format &&
     editorSyntaxMatches(path, command.editor.extensions);
-  const stopping = usePlugins((state) =>
-    provider ? state.stoppingIds.includes(provider.id) : false,
-  );
+  const stopping = provider ? stoppingIds.includes(provider.id) : false;
   const runtime = plugin
     ? `${plugin.status}:${plugin.fingerprint ?? ""}:${plugin.runtimeId ?? ""}:${plugin.permissions.join(",")}:${stopping}`
     : "";
