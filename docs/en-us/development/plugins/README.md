@@ -655,8 +655,7 @@ them. Existing read-only views continue to work. See the hub plugin README for t
 ## Marketplace
 
 The official catalogue is `https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json`,
-maintained in the independent `TunneldeDev/tunnelde-hub` repository. The old `marketplace/index.json`
-is a compatibility snapshot for older clients. Settings → Plugins can add up to 20 sources
+maintained in `TunneldeDev/tunnelde-hub`. Settings → Plugins can add up to 20 sources
 including the official source. Custom sources are public HTTPS JSON catalogues and require an
 explicit trust confirmation. Disabling or removing a source keeps its installed plugins.
 Authentication-protected sources are outside this version's scope.
@@ -706,8 +705,6 @@ and include the repository LICENSE. In the hub, `npm run verify` checks catalogu
 algorithms and real JSON-RPC processes. `npm run package` produces ZIPs, SHA256SUMS and a
 catalogue under `artifacts/plugins/`. Push/PR CI and weekly published-asset audits run separately
 from desktop releases. Publish and verify versioned archives before merging registry changes.
-Legacy official-source configuration and package origins migrate to the hub while preserving
-custom sources and Node consent.
 
 ## Installing
 

@@ -2,11 +2,19 @@ import type { MarketEntry, PluginInfo } from "@/lib/api/types";
 import { api } from "@/lib/api/ipc";
 import { bytesToBase64 } from "@/lib/text/base64";
 
-/** The catalogue lives in the repository, so adding a plugin is a reviewable commit. */
+/** The official catalogue is maintained only in the independent plugin hub. */
 export const MARKETPLACE_INDEX_URL =
   "https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json";
 
 const CHECKSUM = /^[0-9a-f]{64}$/i;
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 function isEntry(value: unknown): value is MarketEntry {
   if (!value || typeof value !== "object") {
@@ -30,23 +38,7 @@ function isEntry(value: unknown): value is MarketEntry {
             new TextEncoder().encode(tag).length <= 64,
         ))) &&
     CHECKSUM.test(entry.sha256) &&
-    entry.url.startsWith("https://")
-  );
-}
-
-function isProductionEntry(entry: MarketEntry): boolean {
-  let source: URL;
-  try {
-    source = new URL(entry.url);
-  } catch {
-    return false;
-  }
-  // Older catalogues advertised the SDK example as a marketplace release.
-  // Match only our example artifact; users may publish unrelated "Hello" plugins.
-  return !(
-    entry.id === "hello" &&
-    source.hostname === "github.com" &&
-    /^\/TunneldeDev\/Tunnelde\/releases\/download\/[^/]+\/hello-plugin\.zip$/.test(source.pathname)
+    isHttpsUrl(entry.url)
   );
 }
 
@@ -56,9 +48,7 @@ export async function fetchMarketplace(): Promise<MarketEntry[]> {
     throw new Error(`marketplace.index: ${response.status}`);
   }
   const payload = (await response.json()) as { plugins?: unknown };
-  return Array.isArray(payload.plugins)
-    ? payload.plugins.filter(isEntry).filter(isProductionEntry)
-    : [];
+  return Array.isArray(payload.plugins) ? payload.plugins.filter(isEntry) : [];
 }
 
 /** Downloads an archive and lets Rust verify the checksum before installing. */
