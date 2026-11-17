@@ -43,6 +43,7 @@ their notices are reproduced or referenced as required.
 | IBM Plex Mono  | SIL Open Font License 1.1 |
 | Fira Code      | SIL Open Font License 1.1 |
 | JetBrains Mono | SIL Open Font License 1.1 |
+| Noto Sans Mono CJK SC (editor subset) | SIL Open Font License 1.1 |
 
 The SIL Open Font License permits bundling and redistribution with the application.
 

@@ -15,6 +15,7 @@ import { bracketMatching, indentOnInput, indentUnit } from "@codemirror/language
 import { search, searchKeymap } from "@codemirror/search";
 import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from "react";
 import "./CodeEditorSurface.css";
+import { observeEditorFont } from "./editorFont";
 
 import type { EditorSelectionSnapshot } from "@/store/editors";
 import {
@@ -377,7 +378,7 @@ export function CodeEditorSurface({
           EditorView.theme({
             "&": {
               height: "100%",
-              fontFamily: "var(--td-mono)",
+              fontFamily: '"Tunnelde Editor CJK", var(--td-mono)',
               fontSize: "var(--td-mono-size)",
             },
             ".cm-scroller": {
@@ -454,6 +455,7 @@ export function CodeEditorSurface({
       }),
     });
     viewRef.current = instance;
+    const stopObservingFont = observeEditorFont(instance);
     instance.contentDOM.spellcheck = spellCheck;
     instance.contentDOM.setAttribute("autocorrect", "off");
     instance.contentDOM.setAttribute("autocapitalize", "off");
@@ -473,6 +475,7 @@ export function CodeEditorSurface({
     };
     instance.scrollDOM.addEventListener("scroll", onScroll, { passive: true });
     return () => {
+      stopObservingFont();
       instance.scrollDOM.removeEventListener("scroll", onScroll);
       if (scrollFrame) cancelAnimationFrame(scrollFrame);
       if (visibleTimer.current) clearTimeout(visibleTimer.current);
