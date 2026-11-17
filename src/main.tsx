@@ -15,6 +15,7 @@ import "@/styles/workbench.css";
 import "@/styles/plugins.css";
 import "@/styles/settings.css";
 import "@/styles/colors.css";
+import "@/styles/corners.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

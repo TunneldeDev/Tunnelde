@@ -64,7 +64,6 @@ img {
 :focus-visible {
   outline: none;
   box-shadow: var(--td-focus);
-  border-radius: var(--td-radius-sm);
 }
 
 ::-webkit-scrollbar {

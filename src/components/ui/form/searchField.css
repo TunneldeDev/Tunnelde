@@ -45,7 +45,8 @@
 }
 .td-search__filter.is-active {
   color: var(--td-accent);
-  background: var(--td-accent-soft);
+  --td-surface-fill: var(--td-accent-soft);
+  background: var(--td-surface-background, var(--td-surface-fill));
 }
 .td-search__presets {
   min-width: 230px;
