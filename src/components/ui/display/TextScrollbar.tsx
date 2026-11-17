@@ -151,17 +151,25 @@ export function TextScrollbar({ target }: TextScrollbarProps) {
 
   useEffect(() => {
     const view = target.current;
-    if (!view) return;
+    const track = rail.current;
+    if (!view || !track) return;
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
     observer?.observe(view);
     view.addEventListener("scroll", scheduleUpdate, { passive: true });
     view.addEventListener("input", scheduleUpdate);
+    const wheel = (event: WheelEvent) => {
+      const unit = event.deltaMode === 2 ? view.clientHeight : event.deltaMode === 1 ? 16 : 1;
+      view.scrollTop += event.deltaY * unit;
+      event.preventDefault();
+    };
+    track.addEventListener("wheel", wheel, { passive: false });
     update();
     return () => {
       observer?.disconnect();
       view.removeEventListener("scroll", scheduleUpdate);
       view.removeEventListener("input", scheduleUpdate);
+      track.removeEventListener("wheel", wheel);
       if (updateFrame.current !== null) cancelAnimationFrame(updateFrame.current);
       updateFrame.current = null;
       stopAutoScroll();
@@ -172,9 +180,8 @@ export function TextScrollbar({ target }: TextScrollbarProps) {
 
   useLayoutEffect(() => {
     update();
-    // The target ref is stable for this component's lifetime.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target]);
+    // Controlled textarea values can change without input, scroll, or resize events.
+  });
 
   const moveThumb = (clientY: number, offset: number) => {
     const element = target.current,
