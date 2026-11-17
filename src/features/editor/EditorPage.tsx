@@ -107,12 +107,10 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const [selectionRevision, setSelectionRevision] = useState(0);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
   useBackgroundGuard(reconnecting || formatting || reviewing || settingUp || reopening);
-  const syntaxDocument =
-    entry && !entry.loading && !entry.error && !entry.disconnected ? editorDocument(tabId) : null;
   const syntax = useEditorSyntax({
-    document: syntaxDocument,
+    document: null,
     composing: syntaxComposing,
-    enabled: !!entry && !entry.loading && !entry.error && !entry.disconnected,
+    enabled: false,
   });
   const syntaxMetrics = useEditorSyntaxMetrics(textarea, syntax.highlighted, [
     entry?.content,
