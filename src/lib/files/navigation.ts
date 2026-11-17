@@ -5,6 +5,20 @@ export interface PathCrumb {
   path: string;
 }
 
+/** Windows drive paths exposed by OpenSSH SFTP use a leading slash before the drive. */
+export function pathForEditing(path: string, source: FsSource): string {
+  return source.kind === "remote" && /^\/[A-Za-z]:\//.test(path) ? path.slice(1) : path;
+}
+
+/** Convert Explorer-friendly remote drive spellings back to canonical SFTP paths. */
+export function pathForNavigation(path: string, source: FsSource): string {
+  if (source.kind !== "remote") return path;
+  const driveRoot = /^([A-Za-z]:)([\\/])(.*)$/.exec(path);
+  if (driveRoot) return `/${driveRoot[1]}/${driveRoot[3]!.replaceAll("\\", "/")}`;
+  const canonicalRoot = /^(\/[A-Za-z]:)\/(.*)$/.exec(path);
+  return canonicalRoot ? `${canonicalRoot[1]}/${canonicalRoot[2]!.replaceAll("\\", "/")}` : path;
+}
+
 /** Preserve drive/UNC roots and treat backslashes as file names on POSIX sources. */
 export function pathCrumbs(path: string, source: FsSource): PathCrumb[] {
   if (!path) return [];
