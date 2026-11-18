@@ -42,6 +42,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
         }
         "forwards" => domains::forwarding::dispatch(context, method, params).await,
         "mounts" => domains::mounts::dispatch(context, method, params).await,
+        "bus" => plugins::bus::dispatch(context, method, params).await,
         "events" if method == "events.publish" => plugins::events::publish(context, params),
         "tasks" => plugins::tasks::dispatch(context, method, params).await,
         "runners" => plugins::runners::dispatch(context, method, params).await,

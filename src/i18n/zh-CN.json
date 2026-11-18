@@ -1631,7 +1631,8 @@
       "storageRecoveryWrite": "经确认后安排下次启动重试或取消存储迁移",
       "filePreviewRead": "读取当前文件预览元数据和渲染器选项，不含文件内容",
       "filePreviewWrite": "关闭、重试或切换文件预览；打开目标还需对应文件读取权限",
-      "mountsHostDetails": "在主机详情中显示可交互的挂载板块"
+      "mountsHostDetails": "在主机详情中显示可交互的挂载板块",
+      "busCommunicate": "与其他已获授权的插件交换消息"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {

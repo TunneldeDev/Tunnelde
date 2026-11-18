@@ -1,4 +1,5 @@
 pub mod api;
+mod bus;
 pub mod config;
 pub mod configuration;
 mod contributions;
@@ -220,6 +221,7 @@ pub struct PluginsManager {
     host_sources: contributions::Registry<host_sources::Source>,
     sessions: Arc<runtime::ownership::Registry<String>>,
     file_content: files::content::Content,
+    bus: bus::Bus,
     profile_drafts: Arc<crate::settings_profiles::mutations::drafts::Registry>,
 }
 
@@ -414,6 +416,7 @@ impl PluginsManager {
             host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
             sessions: runtime::ownership::Registry::new(8, 64),
             file_content: files::content::Content::default(),
+            bus: bus::Bus::default(),
             profile_drafts: Arc::default(),
         }
     }
