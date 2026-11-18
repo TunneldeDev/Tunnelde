@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import process from "node:process";
 
 const { createPlugin } = await import(pathToFileURL(process.argv[2]).href);
 createPlugin({
