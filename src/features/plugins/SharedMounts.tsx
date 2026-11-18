@@ -34,6 +34,31 @@ interface LegacyMount {
 }
 const active = (operation: MountOperation) => ["pending", "running"].includes(operation.phase);
 
+function useMountActions() {
+  const pending = useRef(false);
+  const refresh = useRef<() => void>(() => {});
+  const setRefresh = useCallback((read: () => void) => { refresh.current = read; }, []);
+  const requestRefresh = useCallback(() => refresh.current(), []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const run = useCallback(async (action: () => Promise<unknown>) => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (cause) {
+      setError(translateError(cause));
+    } finally {
+      pending.current = false;
+      setBusy(false);
+      requestRefresh();
+    }
+  }, [requestRefresh]);
+  return { busy, error, setError, setRefresh, requestRefresh, run };
+}
+
 export function SharedMounts({
   pluginId,
   viewId,
@@ -113,10 +138,7 @@ function MountPanel({
   const [draft, setDraft] = useState<Draft>();
   const [legacy, setLegacy] = useState<LegacyMount[]>([]);
   const [dependency, setDependency] = useState<boolean>();
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
-  const refresh = useRef<() => void>(() => {});
+  const { busy, error, setError, setRefresh, requestRefresh, run } = useMountActions();
   const [time, setTime] = useState(Date.now);
   const operationId = operation && active(operation) ? operation.id : undefined;
 
@@ -150,7 +172,7 @@ function MountPanel({
         reading = false;
       }
     };
-    refresh.current = () => void read();
+    setRefresh(() => void read());
     void Promise.all([
       nativeEvents.on("mounts://changed", () => void read(), controller.signal),
       nativeEvents.on(
@@ -174,9 +196,9 @@ function MountPanel({
     );
     return () => {
       controller.abort();
-      refresh.current = () => {};
+      setRefresh(() => {});
     };
-  }, [call, hostId, operationId, visible]);
+  }, [call, hostId, operationId, visible, setRefresh, setError]);
 
   const retrying = snapshot?.connections.some((c) => c.phase === "retrying") ?? false;
   useEffect(() => {
@@ -185,21 +207,6 @@ function MountPanel({
     return () => clearInterval(timer);
   }, [retrying, visible]);
 
-  const run = async (action: () => Promise<unknown>) => {
-    if (pending.current) return;
-    pending.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-    } catch (cause) {
-      setError(translateError(cause));
-    } finally {
-      pending.current = false;
-      setBusy(false);
-      refresh.current();
-    }
-  };
   const mutate = (method: string, params: object = {}, receipt = true) =>
     void run(async () => {
       if (receipt) setOperation(await call<MountOperation>(method, params));
@@ -249,6 +256,7 @@ function MountPanel({
   );
   return (
     <div className="shared-mounts" aria-busy={!snapshot && !error}>
+      {!snapshot && !error && <p role="status">{t("common.loading")}</p>}
       {error && (
         <p role="alert" className="panel__error">
           {error}{" "}
@@ -257,7 +265,7 @@ function MountPanel({
             size="sm"
             onClick={() => {
               setError("");
-              refresh.current();
+              requestRefresh();
             }}
           >
             {t("mounts.shared.refresh")}
