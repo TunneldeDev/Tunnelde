@@ -17,6 +17,7 @@ export type * from "./contracts/frontend/providers.js";
 export type * from "./contracts/frontend/lifecycle.js";
 export type * from "./contracts/forwarding/entry.js";
 export type * from "./contracts/forwarding/provider.js";
+export type * from "./contracts/hosts/routes.js";
 export type * from "./contracts/hosts/sshConfig.js";
 export type { FrontendMonitorSample } from "./contracts/monitor/sample.js";
 export type { FrontendMonitorReading } from "./contracts/monitor/reading.js";

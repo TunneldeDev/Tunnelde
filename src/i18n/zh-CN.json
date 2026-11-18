@@ -2021,6 +2021,7 @@
     "addJump": "添加跳板主机",
     "chooseHost": "选择已保存主机…",
     "jumpCycle": "最多使用八台不同的跳板主机，目标主机不能作为自己的跳板。",
+    "routeChanged": "已保存的连接路由发生变化，请重新读取后再保存。",
     "jumpCredential": "跳板主机：{{name}}",
     "verifyRoute": "验证连接路径",
     "keyFor": "主机密钥：{{name}}",

@@ -1,3 +1,5 @@
+export type { HostConnectionRoute as ConnectionRoute } from "../extensions/contracts/hosts/routes";
+
 export interface ProxyProfile {
   id: string;
   name: string;
@@ -10,10 +12,6 @@ export interface NetworkSettings {
   profiles: ProxyProfile[];
   defaultProxy: string;
   features: Record<string, string>;
-}
-export interface ConnectionRoute {
-  proxy: string;
-  jumpHosts: string[];
 }
 export interface NetworkConnectionQuality {
   https?: {

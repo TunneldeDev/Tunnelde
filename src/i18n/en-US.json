@@ -2021,6 +2021,7 @@
     "addJump": "Add jump host",
     "chooseHost": "Choose saved host…",
     "jumpCycle": "Use at most eight distinct jump hosts; the target cannot be a jump host.",
+    "routeChanged": "The saved connection route changed. Reload it before saving.",
     "jumpCredential": "Jump host: {{name}}",
     "verifyRoute": "Verify connection route",
     "keyFor": "Host key: {{name}}",

@@ -799,6 +799,14 @@ Start with `{}`. The response is `{ found, revision, entries, total, nextOffset,
 
 `hosts.sshConfig.import({ aliases, revision })` also requires `hosts.write`. It atomically saves the selected aliases and any supported `ProxyJump` dependencies, reuses matching saved hosts without editing them, and rejects conflicting or invalid selections. It returns `{ importedIds, skipped }`, including dependencies in both the created and reused counts, and publishes the same host invalidation as the welcome page.
 
+## Saved host routes (experimental)
+
+`hosts.routes.get({ hostId })` requires `hosts.read`. It returns `{ hostId, revision, route: { proxy, jumpHosts } }` for a saved host. `proxy` is a configured proxy ID, `direct`, `system`, or an empty string to inherit the application's SSH proxy. It never contains a proxy URL or credentials. `jumpHosts` lists saved host IDs in connection order.
+
+`hosts.routes.save({ hostId, expectedRevision, route })` also requires `hosts.write`. It validates and saves the route through the native host editor's persistence service. On `network.routeChanged`, read again and reconcile the edits. Saving a route does not modify credentials or reconnect existing sessions.
+
+`hosts.routes.observe({ hostId, revision? })` requires `hosts.read` and returns `{ revision, changed, snapshot }` immediately. A matching revision yields `snapshot: null`; otherwise `snapshot` is the current route. This also detects native editor changes. It observes the saved route and connection identity, not availability of proxies or jump hosts and not the runtime state of a connected session.
+
 ## Dynamic host sources (experimental)
 
 Plugins with `hosts.read` and `hosts.write` can publish runtime-owned discovery data with `hosts.setSource({ id, label, entries })` and remove it with `hosts.removeSource({ id })`. Each entry has a source-local `id`, `name`, `host`, `username`, optional `port` (22), `tags` and `note`. Credentials and private-key paths are rejected. A source allows 256 entries; a plugin allows 8 sources and 512 entries; the host allows 128 sources, 4096 entries and 4 MiB of source JSON. Each replacement also fits the shared 256 KiB request budget. Replacement is atomic; a failed validation leaves the previous source intact.
