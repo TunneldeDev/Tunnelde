@@ -2,7 +2,7 @@
 mod broker;
 use super::{
     api::{field, optional, HostContext},
-    security::Lease,
+    security::{Lease, PluginSecurity},
 };
 use crate::{
     error::{AppError, AppResult},
@@ -67,30 +67,45 @@ pub(super) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     let state = context.app.state::<AppState>();
-    let security = &state.plugins.security;
-    let bus = &state.plugins.bus;
     let lease = Lease {
         id: context.id.clone(),
         generation: context.generation,
         fingerprint: context.fingerprint.clone(),
         permissions: context.permissions.clone(),
     };
+    call(
+        &state.plugins.bus,
+        &state.plugins.security,
+        &lease,
+        method,
+        params,
+    )
+    .await
+}
+
+async fn call(
+    bus: &Bus,
+    security: &PluginSecurity,
+    lease: &Lease,
+    method: &str,
+    params: Value,
+) -> AppResult<Value> {
     let peer = Peer {
         id: lease.id.clone(),
         generation: lease.generation,
     };
     let admitted = |f: &mut dyn FnMut(&mut Book) -> AppResult<Value>| {
-        security.with_authorized(&lease, PERMISSION, || bus.edit(f))
+        security.with_authorized(lease, PERMISSION, || bus.edit(f))
     };
     if method == "bus.receive" {
         let signal: Arc<Signal> =
-            security.with_authorized(&lease, PERMISSION, || bus.edit(|book| book.signal(&peer)))?;
+            security.with_authorized(lease, PERMISSION, || bus.edit(|book| book.signal(&peer)))?;
         let _receiver = signal
             .receiver
             .try_acquire()
             .map_err(|_| AppError::validation("plugin.bus.receiveBusy"))?;
         return security
-            .guard(&lease, async {
+            .guard(lease, async {
                 let drain = || admitted(&mut |book| book.drain(&peer));
                 let wait = async {
                     loop {
@@ -157,3 +172,6 @@ pub(super) async fn dispatch(
         _ => Err(invalid()),
     })
 }
+
+#[cfg(test)]
+mod integration;

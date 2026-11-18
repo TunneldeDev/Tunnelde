@@ -303,8 +303,12 @@ jobs:
 
       - name: Check actual SDK cancellation against native request lifetime
         timeout-minutes: 3
+        env:
+          TUNNELDE_TEST_CANCEL_SDK: ${{ github.workspace }}/.tmp/ci/cancellation-sdk/sdk/tunnelde-plugin.mjs
         run: |
-          TUNNELDE_TEST_NODE="$(command -v node)" TUNNELDE_TEST_CANCEL_SDK="$GITHUB_WORKSPACE/.tmp/ci/cancellation-sdk/sdk/tunnelde-plugin.mjs" cargo test --manifest-path src-tauri/Cargo.toml --lib current_sdk_control_frames_cancel_native_owned_futures_and_preserve_next_reply -- --ignored
+          export TUNNELDE_TEST_NODE="$(command -v node)"
+          cargo test --manifest-path src-tauri/Cargo.toml --lib current_sdk_control_frames_cancel_native_owned_futures_and_preserve_next_reply -- --ignored
+          cargo test --manifest-path src-tauri/Cargo.toml --lib native_bus_exchanges_messages_between_live_sdk_processes -- --ignored
 
       - name: Checkout current helper protocol fixture
         uses: actions/checkout@v4
