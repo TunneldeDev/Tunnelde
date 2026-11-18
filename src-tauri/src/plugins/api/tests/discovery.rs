@@ -74,6 +74,8 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "files.content.read",
             "forwards.automation.list",
             "forwards.automation.save",
+            "hosts.sshConfig.import",
+            "hosts.sshConfig.preview",
             "logs.read",
             "mounts.connections.get",
             "mounts.connections.list",

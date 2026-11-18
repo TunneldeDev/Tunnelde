@@ -392,6 +392,7 @@ old cancellation cleanup affect a newer request. Completed remote effects are no
 | `app.read`, `app.openExternal`      | App/platform metadata; validated HTTP(S) browser links                                                                         |
 | `settings.read`, `settings.write`   | Read preferences; merge and validate preference patches                                                                        |
 | `hosts.read`, `hosts.write`         | Saved-host/group metadata, create/update/delete, order and usage                                                               |
+| `hosts.sshConfig.read`              | Preview host aliases, connection settings and identity paths from the local OpenSSH configuration                               |
 | `sessions.read`, `ssh.exec`         | Connected sessions; connect with normal host-key checks, disconnect, separate-channel command execution, terminal input/resize |
 | `fs.read`, `fs.write`               | Local directory listing, UTF-8 text reads/writes, file/folder creation, rename, copy and deletion                              |
 | `sftp.read`, `sftp.write`           | Corresponding remote file operations through existing SSH sessions                                                             |
@@ -789,6 +790,14 @@ not run document scripts or interactive forms. Password-protected PDFs require a
 Trusted components can compose the native file listing or render a paged replacement through the experimental [file browser provider](file-browser.md). Native navigation, authorization and recovery remain available.
 
 The built-in host table accepts runtime-owned [typed plugin columns](host-columns.md), with user-controlled visibility, width, order and sorting.
+
+## OpenSSH import (experimental)
+
+`hosts.sshConfig.preview({ offset?, revision? })` requires `hosts.sshConfig.read` and uses the same importer as the welcome page. It reads the user's local OpenSSH config and supported `Include` files; the caller cannot supply a path. It does not return raw files, read private-key contents, run directives or open connections.
+
+Start with `{}`. The response is `{ found, revision, entries, total, nextOffset, issues }`. An entry has `alias`, `input`, `jumpAliases`, `issues` and `existingId`. `input` is a proposed host draft or `null`; nonempty `issues` mean the entry cannot be imported. Diagnostics and invalid route previews are bounded. Each page has at most 16 entries and may be shorter to fit the response budget. Pass `nextOffset` as `offset` with the same `revision` until `nextOffset` is `null`. `sshImport.changed` means the source changed; restart the preview. Saved-host matches are reevaluated on each call and at import.
+
+`hosts.sshConfig.import({ aliases, revision })` also requires `hosts.write`. It atomically saves the selected aliases and any supported `ProxyJump` dependencies, reuses matching saved hosts without editing them, and rejects conflicting or invalid selections. It returns `{ importedIds, skipped }`, including dependencies in both the created and reused counts, and publishes the same host invalidation as the welcome page.
 
 ## Dynamic host sources (experimental)
 

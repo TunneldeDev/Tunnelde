@@ -1,25 +1,6 @@
-import type { Host, HostInput } from "./types";
-
-export interface SshConfigIssue {
-  code:
-    | "readFailed"
-    | "tooLarge"
-    | "invalidLine"
-    | "unsupportedOption"
-    | "invalidValue"
-    | "missingJump"
-    | "existingConflict"
-    | "includeCycle";
-  detail: string;
-}
-
-export interface SshConfigEntry {
-  alias: string;
-  input: HostInput | null;
-  jumpAliases: string[];
-  issues: SshConfigIssue[];
-  existingId: string | null;
-}
+import type { Host } from "./types";
+import type { SshConfigEntry, SshConfigIssue } from "../extensions/contracts/hosts/sshConfig";
+export type { SshConfigEntry, SshConfigIssue } from "../extensions/contracts/hosts/sshConfig";
 
 export interface SshConfigPreview {
   path: string;

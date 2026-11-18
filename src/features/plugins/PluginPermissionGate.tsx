@@ -22,6 +22,7 @@ export function PluginPermissionList({ permissions }: { permissions: string[] })
     "storage.recovery.write": "pluginSecurity.permission.storageRecoveryWrite",
     "hosts.read": "pluginSecurity.permission.hostsRead",
     "hosts.write": "pluginSecurity.permission.hostsWrite",
+    "hosts.sshConfig.read": "pluginSecurity.permission.hostsSshConfigRead",
     "sessions.read": "pluginSecurity.permission.sessionsRead",
     "clipboard.read": "pluginSecurity.permission.clipboardRead",
     "clipboard.write": "pluginSecurity.permission.clipboardWrite",

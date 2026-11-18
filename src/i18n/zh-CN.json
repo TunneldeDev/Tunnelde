@@ -1594,6 +1594,7 @@
       "settingsWrite": "修改应用偏好设置。",
       "hostsRead": "读取已配置的主机信息。",
       "hostsWrite": "创建、修改或删除已配置的主机。",
+      "hostsSshConfigRead": "读取本机 OpenSSH 配置中的主机别名、连接设置和私钥路径。",
       "sessionsRead": "读取 SSH 会话信息。",
       "clipboardRead": "读取剪贴板内容。",
       "clipboardWrite": "替换剪贴板内容。",

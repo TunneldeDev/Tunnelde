@@ -117,6 +117,66 @@ fn source_revision_change_and_cancelled_admission_never_publish() {
 }
 
 #[test]
+fn paged_preview_uses_source_revision_and_visits_every_alias_once() {
+    let config = (0..35)
+        .map(|index| format!("Host server-{index}\n User deploy\n"))
+        .collect::<String>();
+    let fixture = Fixture::new(&config);
+    let source = fixture.discover();
+    let db = db::Database::in_memory().unwrap();
+    let first = db.with(|conn| page_at(conn, &source, 0, None)).unwrap();
+    let revision = first.revision.clone();
+    let resume_at = first.next_offset.unwrap();
+    assert_eq!(first.total, 35);
+    assert_eq!(resume_at, 16);
+    let mut next = first.next_offset;
+    let mut seen: Vec<_> = first.entries.into_iter().map(|entry| entry.alias).collect();
+    while let Some(offset) = next {
+        let page = db
+            .with(|conn| page_at(conn, &source, offset, Some(&revision)))
+            .unwrap();
+        next = page.next_offset;
+        seen.extend(page.entries.into_iter().map(|entry| entry.alias));
+    }
+    assert_eq!(
+        seen,
+        (0..35)
+            .map(|index| format!("server-{index}"))
+            .collect::<Vec<_>>()
+    );
+    fixture.write(&format!("{config}\n# revision changed"));
+    assert!(db
+        .with(|conn| page_at(conn, &fixture.discover(), resume_at, Some(&revision)))
+        .is_err());
+}
+
+#[test]
+fn preview_pages_bound_diagnostics_and_move_the_offset_only_past_returned_entries() {
+    let fixture = Fixture::new(CONFIG);
+    let mut source = fixture.discover();
+    let mut entry = source.preview.entries[0].clone();
+    entry.alias = "\u{1}".repeat(4096);
+    let input = entry.input.as_mut().unwrap();
+    input.name.clone_from(&entry.alias);
+    input.key_path = Some("x".repeat(1025));
+    entry.issues = vec![Issue::new(IssueCode::InvalidValue, "界".repeat(200)); 20];
+    entry.jump_aliases = vec!["\u{1}".repeat(4096); 10];
+    source.preview.issues = entry.issues.clone();
+    source.preview.entries = vec![entry; 35];
+    let page = PreviewPage::from_preview(source.preview, 0).unwrap();
+    assert!(!page.entries.is_empty());
+    assert_eq!(page.next_offset, Some(page.entries.len()));
+    assert_eq!(page.issues.len(), 16);
+    assert!(page.issues.iter().all(|issue| issue.detail.len() <= 256));
+    for entry in &page.entries {
+        assert!(entry.input.is_none());
+        assert_eq!(entry.issues.len(), 8);
+        assert_eq!(entry.jump_aliases.len(), 8);
+    }
+    assert!(serde_json::to_vec(&page).unwrap().len() < 540 * 1024);
+}
+
+#[test]
 fn route_failure_rolls_back_hosts_and_credential_rows() {
     let fixture = Fixture::new(CONFIG);
     let db = db::Database::in_memory().unwrap();
