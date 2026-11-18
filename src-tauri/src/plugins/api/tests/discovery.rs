@@ -48,6 +48,18 @@ fn domain_catalogue_preserves_existing_method_contracts() {
     assert_eq!(
         added,
         [
+            "bus.advertise",
+            "bus.close",
+            "bus.create",
+            "bus.discover",
+            "bus.invitations",
+            "bus.invite",
+            "bus.join",
+            "bus.leave",
+            "bus.publish",
+            "bus.receive",
+            "bus.subscribe",
+            "bus.unsubscribe",
             "configuration.backups",
             "configuration.deleteBackup",
             "configuration.migrate",

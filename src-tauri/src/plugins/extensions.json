@@ -318,7 +318,7 @@
     },
     {
       "id": "governance",
-      "namespaces": ["events", "log", "logs", "secrets"]
+      "namespaces": ["bus", "events", "log", "logs", "secrets"]
     }
   ],
   "points": [
@@ -507,6 +507,15 @@
       }
     }
   ],
+  "bus": {
+    "stability": "experimental",
+    "permission": "bus.communicate",
+    "publicBus": "public",
+    "privateAdmission": "invitation-and-runtime-generation",
+    "events": ["bus.discovery", "bus.invitation", "bus.closed"],
+    "payloadBytes": 16384,
+    "queueSize": 128
+  },
   "mounts": {
     "ownership": "host",
     "configuration": "persistent-shared",

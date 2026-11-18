@@ -25,6 +25,7 @@ pub(super) use package::{frontend_snapshot, FrontendSnapshot};
 pub const EVENT: &str = "plugin:security-changed";
 pub const PERMISSIONS: &[&str] = &[
     "ui.trusted",
+    "bus.communicate",
     "backgroundTasks.read",
     "backgroundTasks.write",
     "log",

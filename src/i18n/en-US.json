@@ -1631,7 +1631,8 @@
       "storageRecoveryWrite": "Schedule storage recovery or cancellation at next startup with native confirmation",
       "filePreviewRead": "Read current file-preview metadata and renderer choices, without file contents",
       "filePreviewWrite": "Close, retry or change file previews; opening a target also requires its file read permission",
-      "mountsHostDetails": "Display an interactive mount section in host details"
+      "mountsHostDetails": "Display an interactive mount section in host details",
+      "busCommunicate": "Exchange messages with other approved plugins"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {

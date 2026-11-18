@@ -46,6 +46,8 @@ macro_rules! stable_method {
 
 #[path = "application/methods.rs"]
 mod application;
+#[path = "bus/methods.rs"]
+mod bus;
 #[path = "clipboard/methods.rs"]
 mod clipboard;
 #[path = "configuration/methods.rs"]
@@ -110,6 +112,7 @@ const DOMAINS: &[&[ApiMethod]] = &[
     forwarding::METHODS,
     execution::METHODS,
     events::METHODS,
+    bus::METHODS,
     storage::METHODS,
     tools::METHODS,
     logging::METHODS,

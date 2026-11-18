@@ -50,6 +50,7 @@ export function PluginPermissionList({ permissions }: { permissions: string[] })
     "mounts.read": "pluginSecurity.permission.mountsRead",
     "mounts.write": "pluginSecurity.permission.mountsWrite",
     "mounts.hostDetails": "pluginSecurity.permission.mountsHostDetails",
+    "bus.communicate": "pluginSecurity.permission.busCommunicate",
     "backgroundTasks.read": "pluginSecurity.permission.backgroundTasksRead",
     "backgroundTasks.write": "pluginSecurity.permission.backgroundTasksWrite",
     "forwards.read": "pluginSecurity.permission.forwardsRead",
