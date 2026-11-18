@@ -1594,6 +1594,7 @@
       "settingsWrite": "Change application preferences.",
       "hostsRead": "Read configured host metadata.",
       "hostsWrite": "Create, change or delete configured hosts.",
+      "hostsSshConfigRead": "Read host aliases, connection settings and identity paths from your local OpenSSH configuration.",
       "sessionsRead": "Read SSH session metadata.",
       "clipboardRead": "Read your clipboard contents.",
       "clipboardWrite": "Replace your clipboard contents.",

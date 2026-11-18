@@ -38,6 +38,7 @@ pub const PERMISSIONS: &[&str] = &[
     "settings.write",
     "hosts.read",
     "hosts.write",
+    "hosts.sshConfig.read",
     "sessions.read",
     "ssh.exec",
     "fs.read",

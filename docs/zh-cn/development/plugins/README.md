@@ -300,6 +300,7 @@ schema 允许新增字段和未知稳定性值，不代表其余方法均已有�
 | `app.read`、`app.openExternal`      | 应用/平台元数据、经验证 HTTP(S) 浏览器链接                        |
 | `settings.read`、`settings.write`   | 读取偏好、合并并校验补丁                                          |
 | `hosts.read`、`hosts.write`         | 主机/分组元数据及增删改、顺序和使用记录                           |
+| `hosts.sshConfig.read`              | 预览本机 OpenSSH 配置中的主机别名、连接设置和私钥路径              |
 | `sessions.read`、`ssh.exec`         | 连接列表、正常密钥验证后的连接、断开、独立通道命令、终端输入/尺寸 |
 | `fs.read`、`fs.write`               | 本地目录、UTF-8 读写、创建、重命名、复制、删除                    |
 | `sftp.read`、`sftp.write`           | 通过现有 SSH 连接进行对应远端文件操作                             |
@@ -581,6 +582,14 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 受信任组件可通过实验性[文件浏览器提供者](file-browser.md)组合原生文件列表，或分页读取数据自行渲染，同时保留原生导航、授权和恢复入口。
 
 内置主机表格支持运行时归属的[插件数据列](host-columns.md)，用户可控制显隐、宽度、顺序和排序。
+
+## OpenSSH 导入（实验性）
+
+`hosts.sshConfig.preview({ offset?, revision? })` 要求 `hosts.sshConfig.read`，复用欢迎页的导入服务。它读取本机 OpenSSH 配置及支持的 `Include` 文件，插件不能指定读取路径。接口不返回原始文件，不读取私钥内容，不执行配置指令，也不建立连接。
+
+首次传入 `{}`，返回 `{ found, revision, entries, total, nextOffset, issues }`。条目包含 `alias`、`input`、`jumpAliases`、`issues` 和 `existingId`。`input` 是待保存的主机草稿或 `null`，存在条目级 `issues` 表示该条目不可导入。诊断和无效跳转路径的预览有长度限制。每页最多 16 条，响应过大时会返回更少条目。后续用 `nextOffset` 作为 `offset` 并携带原 `revision`，直到 `nextOffset` 为 `null`。收到 `sshImport.changed` 后从头预览。每次预览和导入都会重新检查已保存主机是否匹配。
+
+`hosts.sshConfig.import({ aliases, revision })` 还要求 `hosts.write`。它在一个事务中保存选中的主机和支持的 `ProxyJump` 依赖，复用匹配的主机而不修改原记录，遇到冲突或无效选择则整批拒绝。返回 `{ importedIds, skipped }`，分别记录新增 ID 和复用数量，两者都含依赖项。提交后发出与欢迎页导入相同的主机变更通知。
 
 ## 动态主机来源（实验性）
 

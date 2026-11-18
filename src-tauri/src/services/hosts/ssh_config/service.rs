@@ -1,18 +1,18 @@
 //! Preview against current storage, then import the selected source revision atomically.
 use super::{
-    contract::{Entry, ImportResult, Issue, IssueCode, Preview},
+    contract::{Entry, ImportResult, Issue, IssueCode, Preview, PreviewPage},
     parser::{self, Discovered},
 };
 use crate::{
     db,
     error::{AppError, AppResult},
     models::Host,
-    services::operations::{Budget, Errors},
+    plugins::security::Lease,
+    services::operations::{Budget, Cancellation, Errors},
 };
 use rusqlite::Connection;
 use std::{
     collections::{BTreeMap, HashSet},
-    path::Path,
     sync::LazyLock,
 };
 use tauri::{AppHandle, Manager};
@@ -30,20 +30,92 @@ static WORKERS: LazyLock<Budget> = LazyLock::new(|| {
 });
 
 pub(crate) async fn preview(app: &AppHandle) -> AppResult<Preview> {
+    source_task(
+        app,
+        None,
+        |conn, source, _| preview_at(conn, source),
+        std::convert::identity,
+    )
+    .await
+}
+
+const READ: &[&str] = &["hosts.sshConfig.read"];
+const IMPORT: &[&str] = &["hosts.sshConfig.read", "hosts.write"];
+
+pub(crate) async fn preview_page(
+    app: &AppHandle,
+    lease: Lease,
+    offset: usize,
+    revision: Option<String>,
+) -> AppResult<PreviewPage> {
+    if offset > 1024
+        || (offset > 0 && revision.is_none())
+        || revision.as_ref().is_some_and(|value| value.len() != 64)
+    {
+        return Err(AppError::validation("sshImport.invalidSelection"));
+    }
+    source_task(
+        app,
+        Some((lease, READ)),
+        move |conn, source, _| page_at(conn, source, offset, revision.as_deref()),
+        std::convert::identity,
+    )
+    .await
+}
+
+fn page_at(
+    conn: &Connection,
+    source: &Discovered,
+    offset: usize,
+    revision: Option<&str>,
+) -> AppResult<PreviewPage> {
+    if let Some(revision) = revision {
+        match_revision(source, revision)?;
+    }
+    PreviewPage::from_preview(preview_at(conn, source)?, offset)
+}
+
+async fn source_task<T: Send + 'static>(
+    app: &AppHandle,
+    authority: Option<(Lease, &'static [&'static str])>,
+    run: impl FnOnce(&Connection, &Discovered, &Cancellation) -> AppResult<T> + Send + 'static,
+    publish: impl FnOnce(T) -> T + Send + 'static,
+) -> AppResult<T> {
     let app = app.clone();
     WORKERS
         .blocking(move |cancel| {
+            let state = app.state::<crate::state::AppState>();
+            if let Some((lease, _)) = &authority {
+                state.plugins.security.authorize(
+                    &lease.id,
+                    &lease.fingerprint,
+                    &lease.permissions,
+                    None,
+                    Some(lease.generation),
+                )?;
+            }
+            cancel.check()?;
             let home = app
                 .path()
                 .home_dir()
                 .map_err(|_| AppError::validation("sshImport.noHome"))?;
             let discovered = parser::discover(&home)?;
             cancel.check()?;
-            let state = app.state::<crate::state::AppState>();
-            state.db.with(|conn| {
-                cancel.check()?;
-                preview_at(conn, &discovered)
-            })
+            let result = if let Some((lease, permissions)) = authority {
+                state.plugins.security.with_authorized_database(
+                    &state.db,
+                    &lease,
+                    permissions,
+                    || cancel.check(),
+                    |conn| run(conn, &discovered, cancel),
+                )
+            } else {
+                state.db.with(|conn| {
+                    cancel.check()?;
+                    run(conn, &discovered, cancel)
+                })
+            }?;
+            Ok(publish(result))
         })
         .await
 }
@@ -53,6 +125,15 @@ pub(crate) async fn import(
     aliases: Vec<String>,
     revision: String,
 ) -> AppResult<ImportResult> {
+    import_checked(app, aliases, revision, None).await
+}
+
+pub(crate) async fn import_checked(
+    app: &AppHandle,
+    aliases: Vec<String>,
+    revision: String,
+    lease: Option<Lease>,
+) -> AppResult<ImportResult> {
     if aliases.is_empty()
         || aliases.len() > 1024
         || revision.len() != 64
@@ -60,19 +141,23 @@ pub(crate) async fn import(
     {
         return Err(AppError::validation("sshImport.invalidSelection"));
     }
-    let app = app.clone();
-    WORKERS
-        .blocking(move |cancel| {
-            let home = app
-                .path()
-                .home_dir()
-                .map_err(|_| AppError::validation("sshImport.noHome"))?;
-            let state = app.state::<crate::state::AppState>();
-            let result = import_from(&state.db, &home, &aliases, &revision, || cancel.commit())?;
-            super::super::service(&app, &state).published_import(&result.imported);
-            Ok(result)
-        })
-        .await
+    let handle = app.clone();
+    // Publish from the retained worker even if the caller drops its response
+    // after the transaction has already been admitted.
+    source_task(
+        app,
+        lease.map(|lease| (lease, IMPORT)),
+        move |conn, source, cancel| {
+            match_revision(source, &revision)?;
+            import_at(conn, source, &aliases, || cancel.commit())
+        },
+        move |result: ImportResult| {
+            let state = handle.state::<crate::state::AppState>();
+            super::super::service(&handle, &state).published_import(&result.imported);
+            result
+        },
+    )
+    .await
 }
 
 fn same_destination(host: &Host, entry: &Entry) -> bool {
@@ -179,18 +264,24 @@ fn preview_at(conn: &Connection, discovered: &Discovered) -> AppResult<Preview> 
     Ok(preview)
 }
 
+#[cfg(test)]
 fn import_from(
     db: &db::Database,
-    home: &Path,
+    home: &std::path::Path,
     aliases: &[String],
     revision: &str,
     admit: impl FnOnce() -> AppResult<()>,
 ) -> AppResult<ImportResult> {
     let discovered = parser::discover(home)?;
+    match_revision(&discovered, revision)?;
+    db.with(|conn| import_at(conn, &discovered, aliases, admit))
+}
+
+fn match_revision(discovered: &Discovered, revision: &str) -> AppResult<()> {
     if discovered.preview.revision != revision {
         return Err(AppError::validation("sshImport.changed"));
     }
-    db.with(|conn| import_at(conn, &discovered, aliases, admit))
+    Ok(())
 }
 
 fn import_at(

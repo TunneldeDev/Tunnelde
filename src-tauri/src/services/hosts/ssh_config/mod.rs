@@ -5,4 +5,4 @@ mod parser;
 mod service;
 
 pub(crate) use contract::{ImportResult, Preview};
-pub(crate) use service::{import, preview};
+pub(crate) use service::{import, import_checked, preview, preview_page};

@@ -206,6 +206,12 @@ describe("public UI contract boundaries", () => {
       "RuntimeResourceState",
       "RuntimeResourcesQuery",
       "RuntimeResourcesSnapshot",
+      "SshConfigEntry",
+      "SshConfigImportReceipt",
+      "SshConfigImportRequest",
+      "SshConfigIssue",
+      "SshConfigPreviewPage",
+      "SshConfigPreviewRequest",
       "UiChildResourceOptions",
     ]);
     const widened: string[] = [];
