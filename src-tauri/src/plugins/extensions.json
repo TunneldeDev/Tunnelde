@@ -509,6 +509,14 @@
     "ownership": "host",
     "configuration": "persistent-shared",
     "connection": "dedicated-per-group",
+    "groupLifecycle": {
+      "save": "mounts.groups.save",
+      "connect": "mounts.groups.connect",
+      "disconnect": "mounts.groups.disconnect",
+      "reconnect": "mounts.groups.reconnect",
+      "connectAndStartAuto": "mounts.runtime.connectAndStartAuto",
+      "autoReconnectField": "autoReconnect"
+    },
     "rules": "mounts.rules.snapshot",
     "runtime": "mounts.runtime.start",
     "operations": "mounts.operations.observe",

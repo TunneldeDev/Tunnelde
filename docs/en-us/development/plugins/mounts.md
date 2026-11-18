@@ -10,6 +10,26 @@ The UI contract exports `MountGroup`, `MountRule`, `MountSnapshot` and `MountOpe
 configuration, starts/stops transports and cancels operations. A mount host-details
 contribution additionally needs `mounts.hostDetails`.
 
+## Migrating one-off views
+
+Check the running host, not a bundled SDK catalogue. Use `context.api.call` in a
+component or `host.call` in Node. A host advertising
+`extensions.describe().mounts.configuration === "persistent-shared"` and the
+required methods in `api.describe` supports shared rules. In particular, look for
+`mounts.rules.snapshot`, `mounts.groups.save`, `mounts.groups.connect`,
+`mounts.groups.observe` and `mounts.runtime.connectAndStartAuto`.
+
+Read saved groups and rules from `mounts.rules.snapshot({hostId})`; do not mirror
+them in plugin-local storage. Save the group's `autoReconnect` flag, then offer
+an explicit connect or connect-and-start action. The host owns the connection and
+restores desired mounts. No caller-supplied `sessionId` or cross-plugin messaging
+is required. Disconnect before changing a group and pass its current revision.
+
+The legacy declarative `{ "type": "mounts" }` block still renders the one-off
+panel and cannot call arbitrary RPCs. A shared-rules view currently needs a trusted
+component. Keep the legacy fallback visibly separate; it does not share rules or
+automatically restore them.
+
 A group is `{id,hostId,name,autoReconnect}`. A rule is
 `{id,hostId,groupId,name,remotePath,mountPoint,readOnly,autoMount}`. Reads return
 `{revision,value}` or null. Saves accept `{group|rule,expectedRevision?}`: omitting

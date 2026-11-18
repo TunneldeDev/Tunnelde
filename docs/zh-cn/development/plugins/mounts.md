@@ -9,6 +9,36 @@
 卸载及取消操作。交互主机详情贡献另外需要 `mounts.hostDetails`，见 [主机详情扩展](host-details.md)。
 这些接口既可用于详情卡片，也可用于跨主机总览或后台插件。
 
+## 从一次性挂载迁移
+
+用运行中的宿主做能力检查，而不是根据旧版 SDK 的方法列表判断。前端使用
+`context.api.call(method, params)`，Node 插件使用 `host.call(method, params)`：
+
+```js
+const capabilities = await api.call("extensions.describe", {});
+const { methods } = await api.call("api.describe", {});
+const supported = new Set(methods.map(({ name }) => name));
+const sharedMounts =
+  capabilities.mounts?.configuration === "persistent-shared" &&
+  [
+    "mounts.rules.snapshot",
+    "mounts.groups.save",
+    "mounts.groups.connect",
+    "mounts.groups.observe",
+    "mounts.runtime.connectAndStartAuto",
+  ].every((method) => supported.has(method));
+```
+
+已保存的组和规则直接读 `mounts.rules.snapshot({hostId})`，不要在插件私有存储中另建副本。
+保存组时设 `autoReconnect: true`，然后由用户显式调用 `mounts.groups.connect({id})`，
+或调用 `mounts.runtime.connectAndStartAuto({groupId})` 同时启动标记了 `autoMount` 的规则。
+连接和恢复由宿主运行，插件不用提供 `sessionId`、自己重连或把规则广播给另一款插件。
+更新已有组时须先断开，并传当前 `expectedRevision`。已存在的一次性挂载只在用户确认后迁移。
+
+旧声明式视图块 `{ "type": "mounts" }` 仍显示一次性面板，不会自动升级成共享规则管理器。
+它不执行任意 RPC；目前要使用共享规则界面，需要可信组件视图。旧 SDK 未声明的方法应以
+实时 `api.describe` 为准，不应回退到旧 `mounts.mount` 后仍标记为「共享」或「自动恢复」。
+
 ## 配置
 
 组为 `{id, hostId, name, autoReconnect}`；规则为
