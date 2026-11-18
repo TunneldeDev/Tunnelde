@@ -8,6 +8,15 @@ describe("normalizeBlocks", () => {
       normalizeBlocks([{ type: "mounts", command: "unsafe", owner: "other" }, { type: "mounts" }]),
     ).toEqual([{ type: "mounts" }]);
   });
+  it("keeps one shared-mount block without changing the legacy block", () => {
+    expect(
+      normalizeBlocks([
+        { type: "sharedMounts", method: "mounts.runtime.start", hostId: "injected" },
+        { type: "sharedMounts" },
+        { type: "mounts" },
+      ]),
+    ).toEqual([{ type: "sharedMounts" }, { type: "mounts" }]);
+  });
   it("keeps known blocks in order", () => {
     const blocks = normalizeBlocks([
       { type: "heading", text: "Title" },

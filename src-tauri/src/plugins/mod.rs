@@ -26,6 +26,7 @@ pub mod runners;
 mod runtime;
 pub mod security;
 mod sessions;
+pub(crate) mod shared_mounts;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod tasks;

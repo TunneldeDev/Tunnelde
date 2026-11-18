@@ -22,6 +22,7 @@ import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/plu
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginChat } from "./PluginChat";
 import { PluginMounts } from "./PluginMounts";
+import { SharedMounts } from "./SharedMounts";
 import "@/styles/pluginTools.css";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { usePlugins } from "@/store/plugins";
@@ -184,6 +185,15 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
         ) : (
           view.blocks.map((block, index) => {
             if (block.type === "mounts") return <PluginMounts key="mounts" pluginId={pluginId} />;
+            if (block.type === "sharedMounts")
+              return (
+                <SharedMounts
+                  key="sharedMounts"
+                  pluginId={pluginId}
+                  viewId={viewId}
+                  visible={visible}
+                />
+              );
             if (block.type === "chat") {
               return (
                 <PluginChat

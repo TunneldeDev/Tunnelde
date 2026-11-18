@@ -421,7 +421,9 @@ impl PluginManifest {
                 || view
                     .kind
                     .as_deref()
-                    .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component"))
+                    .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component" | "sharedMounts"))
+                || (view.kind.as_deref() == Some("sharedMounts")
+                    && !super::host_details::permits_native_mounts(self))
                 || (view.kind.as_deref() == Some("component") && self.frontend.is_none())
                 || view.provider.as_deref().is_some_and(|target| {
                     !matches!(

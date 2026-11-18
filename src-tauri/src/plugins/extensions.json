@@ -11,6 +11,8 @@
     "mounts": {
       "permission": "mounts.hostDetails",
       "readPermission": "mounts.read",
+      "nativeViewKind": "sharedMounts",
+      "nativeViewPermissions": ["hosts.read", "mounts.read", "mounts.hostDetails"],
       "selection": "mountHostDetailsSelection",
       "composition": "single-selected-contributor"
     }
@@ -508,6 +510,12 @@
   "mounts": {
     "ownership": "host",
     "configuration": "persistent-shared",
+    "nativeView": {
+      "kind": "sharedMounts",
+      "block": "sharedMounts",
+      "runtimes": ["node", "declarative"],
+      "permissions": ["hosts.read", "mounts.read"]
+    },
     "connection": "dedicated-per-group",
     "groupLifecycle": {
       "save": "mounts.groups.save",
