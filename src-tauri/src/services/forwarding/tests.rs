@@ -95,6 +95,30 @@ fn rule_input_still_rejects_unknown_runtime_status_fields() {
 }
 
 #[test]
+fn targeted_runtime_lookup_isolates_other_malformed_rules() {
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let saved = service.save_checked(rule(host(&db)), None).unwrap();
+    db.with(|conn| {
+        conn.execute(
+            "INSERT INTO settings(key,value,updated_at) VALUES('forward:corrupt','not json',1)",
+            [],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    assert!(service.rule("corrupt").is_err());
+    assert!(service.rule("missing").unwrap().is_none());
+    let selected = service.rule(&saved.rule.id).unwrap().unwrap();
+    assert_eq!(selected.rule, saved.rule);
+    assert_eq!(selected.revision, saved.revision);
+}
+
+#[test]
 fn checked_edits_reject_stale_and_deleted_rules_without_publishing() {
     let db = Database::in_memory().unwrap();
     let count = Arc::new(AtomicUsize::new(0));

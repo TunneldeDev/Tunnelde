@@ -55,6 +55,9 @@ impl Forwarding<'_> {
     fn rules(&self) -> AppResult<Vec<RevisionedRule>> {
         repository::list(self.db)
     }
+    fn rule(&self, id: &str) -> AppResult<Option<RevisionedRule>> {
+        self.db.with(|conn| repository::find(conn, id))
+    }
     fn list(&self) -> AppResult<Vec<ForwardInfo>> {
         Ok(self
             .list_revisioned()?
