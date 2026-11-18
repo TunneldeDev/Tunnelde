@@ -52,3 +52,5 @@
 `forwards.automation.save({id, expectedRevision, automation:{autoStart,autoRetry}})` 按精确
 revision 保存选项。旧的 `forwards.list`/`forwards.save` 契约不变。自动化设置属于持久宿主配置，
 停止插件不会撤销已保存的设置；自动启动在下次启动应用时生效，保存选项不会立即建立连接。
+
+`forwards.startMany({sessionId, items:[{id, expectedRevision}]})` 要求 `forwards.write`。传入最多 16 条不同的规则，从 `forwards.automation.list` 取得版本，并指定该主机已有的已认证会话。按输入顺序返回 `{id, status:"started"}`、`{id, status:"failed", error}`，或因 90 秒批次预算耗尽而未尝试的 `{id, status:"notStarted"}`。单条监听失败或版本冲突不会回滚已启动的规则。取消请求不撤销已提交的启动；插件停止或撤权仍会回收它的监听器。接口不会新建 SSH 会话，也不会为规则切换主机。
