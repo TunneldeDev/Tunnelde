@@ -1,5 +1,5 @@
-//! Interactive host-detail contributions use the same trusted module lifecycle
-//! as ordinary component views. A contribution never grants API permissions.
+//! Host details can render a trusted component or the fixed host mount panel.
+//! A contribution never grants API permissions.
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -22,6 +22,15 @@ pub struct MountHostDetailsSelection {
     pub contribution_id: String,
 }
 
+pub(super) fn permits_native_mounts(manifest: &super::manifest::PluginManifest) -> bool {
+    matches!(
+        manifest.runtime.as_deref(),
+        None | Some("declarative" | "node")
+    ) && ["hosts.read", "mounts.read"]
+        .iter()
+        .all(|p| manifest.permissions.iter().any(|s| s == p))
+}
+
 pub(super) fn validate(manifest: &super::manifest::PluginManifest) -> AppResult<()> {
     let invalid = || AppError::validation("plugin.hostDetails.invalid");
     if manifest.host_details.len() > 8 {
@@ -29,25 +38,33 @@ pub(super) fn validate(manifest: &super::manifest::PluginManifest) -> AppResult<
     }
     let mut ids = HashSet::new();
     for item in &manifest.host_details {
+        let valid_view = manifest.views.iter().any(|view| {
+            view.id == item.view_id
+                && view.provider.is_none()
+                && match view.kind.as_deref() {
+                    Some("sharedMounts") => {
+                        item.kind.as_deref() == Some("mounts") && permits_native_mounts(manifest)
+                    }
+                    Some("component") => {
+                        manifest.frontend.is_some()
+                            && ["hosts.read", "ui.trusted"]
+                                .iter()
+                                .all(|p| manifest.permissions.iter().any(|s| s == p))
+                    }
+                    _ => false,
+                }
+        });
         if !super::manifest::valid_id(&item.id)
             || !ids.insert(&item.id)
             || item.title.trim().is_empty()
             || item.title.len() > 120
             || item.title.chars().any(char::is_control)
             || item.kind.as_deref().is_some_and(|kind| kind != "mounts")
-            || manifest.frontend.is_none()
-            || !["hosts.read", "ui.trusted"]
-                .iter()
-                .all(|required| manifest.permissions.iter().any(|p| p == required))
+            || !valid_view
             || (item.kind.as_deref() == Some("mounts")
                 && !["mounts.read", "mounts.hostDetails"]
                     .iter()
                     .all(|required| manifest.permissions.iter().any(|p| p == required)))
-            || !manifest.views.iter().any(|view| {
-                view.id == item.view_id
-                    && view.kind.as_deref() == Some("component")
-                    && view.provider.is_none()
-            })
         {
             return Err(invalid());
         }
@@ -79,6 +96,19 @@ mod tests {
         assert!(validate(&value).is_err());
         value.host_details[0].kind = None;
         validate(&value).unwrap();
+    }
+
+    #[test]
+    fn declarative_mount_contributions_are_native_only() {
+        let mut value = manifest();
+        value.runtime = Some("declarative".into());
+        value.frontend = None;
+        value.permissions.retain(|p| p != "ui.trusted");
+        assert!(validate(&value).is_err());
+        value.views[0].kind = Some("sharedMounts".into());
+        validate(&value).unwrap();
+        value.host_details[0].kind = None;
+        assert!(validate(&value).is_err());
     }
 
     #[test]

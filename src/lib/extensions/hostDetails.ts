@@ -5,7 +5,7 @@ export function hostDetailsContributors(plugins: readonly PluginInfo[]) {
   return [...plugins]
     .sort((a, b) => a.id.localeCompare(b.id))
     .flatMap((plugin) =>
-      plugin.frontend && ["ui.trusted", "hosts.read"].every((p) => plugin.permissions.includes(p))
+      plugin.permissions.includes("hosts.read")
         ? (plugin.hostDetails ?? [])
             .filter(
               (item) =>
@@ -14,7 +14,15 @@ export function hostDetailsContributors(plugins: readonly PluginInfo[]) {
                     plugin.permissions.includes(p),
                   )) &&
                 plugin.views.some(
-                  (view) => view.id === item.viewId && view.kind === "component" && !view.provider,
+                  (view) =>
+                    view.id === item.viewId &&
+                    !view.provider &&
+                    ((view.kind === "component" &&
+                      plugin.frontend &&
+                      plugin.permissions.includes("ui.trusted")) ||
+                      (view.kind === "sharedMounts" &&
+                        item.kind === "mounts" &&
+                        [undefined, "node", "declarative"].includes(plugin.runtime))),
                 ),
             )
             .map((contribution) => ({ plugin, contribution }))

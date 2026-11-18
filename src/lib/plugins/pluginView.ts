@@ -18,6 +18,7 @@ export interface PluginFormBlock {
 
 export type PluginBlock =
   | { type: "mounts" }
+  | { type: "sharedMounts" }
   | { type: "heading"; text: string }
   | { type: "text"; text: string }
   | { type: "kv"; items: { label: string; value: string }[] }
@@ -82,8 +83,9 @@ export function normalizeBlocks(value: unknown): PluginBlock[] {
     }
     const record = raw as Record<string, unknown>;
 
-    if (record.type === "mounts") {
-      if (!blocks.some((block) => block.type === "mounts")) blocks.push({ type: "mounts" });
+    if (record.type === "mounts" || record.type === "sharedMounts") {
+      const type = record.type;
+      if (!blocks.some((block) => block.type === type)) blocks.push({ type });
       continue;
     }
 

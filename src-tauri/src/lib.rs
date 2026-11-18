@@ -172,6 +172,7 @@ pub fn run() {
             platform::background::main_window_snapshot,
             platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
+            plugins::shared_mounts::plugin_shared_mounts_action,
             ssh::files::durable::durable_transfer_list,
             ssh::files::remote_editor::editor_cleanup_list,
             ssh::files::remote_editor::editor_cleanup_retry,

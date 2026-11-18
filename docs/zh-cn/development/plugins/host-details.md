@@ -5,10 +5,10 @@
 
 ```json
 {
-  "frontend": {"entry": "ui/index.mjs", "sdk": "^0.1.0"},
+  "frontend": { "entry": "ui/index.mjs", "sdk": "^0.1.0" },
   "permissions": ["ui.trusted", "hosts.read", "mounts.read", "mounts.hostDetails"],
-  "views": [{"id": "mounts", "title": "挂载", "kind": "component"}],
-  "hostDetails": [{"id": "mounts", "title": "挂载", "viewId": "mounts", "kind": "mounts"}]
+  "views": [{ "id": "mounts", "title": "挂载", "kind": "component" }],
+  "hostDetails": [{ "id": "mounts", "title": "挂载", "viewId": "mounts", "kind": "mounts" }]
 }
 ```
 
@@ -30,22 +30,30 @@
 发现支持情况使用 `extensions.describe().hostDetails`。不要根据版本号猜测功能，也不要把
 `hostFields` 当作交互表单或渲染任意 HTML 的入口。
 
+## 宿主渲染的挂载视图
+
+Node 和声明式插件可声明 `views[].kind: "sharedMounts"`，由宿主提供共享挂载总览。
+视图要求 `hosts.read` 和 `mounts.read`；写操作另需 `mounts.write`。通过
+`hostDetails` 引用此视图时，`kind` 必须是 `mounts`，并声明 `mounts.hostDetails`。
+不需要可信前端或 `ui.trusted`。通过 `extensions.describe().mounts.nativeView` 发现支持情况。
+旧 `mounts` 视图块仍是一次性挂载入口。
+
 # 板块操作与 API
 
 插件调用与宿主界面应共享领域服务。新功能的读取、修改、启停、批量操作和状态观察应同步开放，
 并通过 `api.describe` 发布真实实现的方法与权限。UI 贡献点负责呈现，操作调用公开 API。
 
-| 板块 | API / 贡献点 |
-| --- | --- |
-| 主机与分组 | `hosts.*`、`groups.*`、`hostList.*`、`hostDetails` |
-| SSH 会话与终端 | `sessions.*`、`terminal.*` |
-| 文件面板与预览 | `files.*`、`fileBrowser.*`、`fileList.*`、`filePreview.*` |
-| 文本编辑 | `editor.*`、`files.content.*` |
-| 转发 | `forwards.*`、`forwards.automation.*` |
-| 挂载 | `mounts.*` |
-| 监控与命令历史 | `monitor.*`、`history.*` |
-| 工作区与底栏 | `workspace.*`、`statusBar.*`、`tabBar.*` |
-| 设置与配置方案 | `settings.*`、`preferences.*`、`profiles.*` |
+| 板块                   | API / 贡献点                                                            |
+| ---------------------- | ----------------------------------------------------------------------- |
+| 主机与分组             | `hosts.*`、`groups.*`、`hostList.*`、`hostDetails`                      |
+| SSH 会话与终端         | `sessions.*`、`terminal.*`                                              |
+| 文件面板与预览         | `files.*`、`fileBrowser.*`、`fileList.*`、`filePreview.*`               |
+| 文本编辑               | `editor.*`、`files.content.*`                                           |
+| 转发                   | `forwards.*`、`forwards.automation.*`                                   |
+| 挂载                   | `mounts.*`                                                              |
+| 监控与命令历史         | `monitor.*`、`history.*`                                                |
+| 工作区与底栏           | `workspace.*`、`statusBar.*`、`tabBar.*`                                |
+| 设置与配置方案         | `settings.*`、`preferences.*`、`profiles.*`                             |
 | 任务、存储、日志与工具 | `tasks.*`、`runners.*`、`resources.*`、`storage.*`、`logs.*`、`tools.*` |
 
 `forwards.automation.list` 返回原生面板相同的规则、revision、自动启动/重试选项和恢复状态；

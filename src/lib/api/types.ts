@@ -491,7 +491,7 @@ export interface PluginView {
   id: string;
   title: string;
   location?: "sidebar" | "workspace";
-  kind?: "chat" | "blocks" | "component";
+  kind?: "chat" | "blocks" | "component" | "sharedMounts";
   icon?: string;
   provider?:
     | "hostList"
