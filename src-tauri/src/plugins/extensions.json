@@ -504,5 +504,32 @@
         "total": 128
       }
     }
-  ]
+  ],
+  "mounts": {
+    "ownership": "host",
+    "configuration": "persistent-shared",
+    "connection": "dedicated-per-group",
+    "rules": "mounts.rules.snapshot",
+    "runtime": "mounts.runtime.start",
+    "operations": "mounts.operations.observe",
+    "events": ["mounts://changed", "mounts://operation-changed"],
+    "observation": {
+      "groups": "mounts.groups.observe",
+      "connections": "mounts.connections.observe"
+    },
+    "permissions": {
+      "read": "mounts.read",
+      "write": "mounts.write",
+      "hostDetails": "mounts.hostDetails"
+    },
+    "limits": {
+      "groupsPerHost": 32,
+      "rulesPerHost": 128,
+      "groupsTotal": 512,
+      "rulesTotal": 2048,
+      "pageSize": 32,
+      "activeOperations": 8,
+      "retainedOperations": 128
+    }
+  }
 }

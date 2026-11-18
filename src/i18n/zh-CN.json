@@ -2645,6 +2645,7 @@
     "imported_other": "已导入 {{count}} 台主机"
   },
   "connections": {
+    "mounts": "文件挂载",
     "title": "连接详情",
     "sessions": "当前 {{count}} 条会话",
     "empty": "暂无活动连接",

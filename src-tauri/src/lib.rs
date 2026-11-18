@@ -124,6 +124,7 @@ pub fn run() {
             let handle = app.handle().clone();
             state::init(&handle)?;
             services::forwarding::automation::start(&handle);
+            services::mounts::runtime::launch(&handle);
             automation::transport::start(&handle);
             window::restore_main_geometry(&handle);
             let (theme, title_bar_style, locale) = {
@@ -388,6 +389,7 @@ pub fn run() {
                 automation::transport::stop(app);
                 use tauri::Manager;
                 if let Some(state) = app.try_state::<state::AppState>() {
+                    services::mounts::runtime::shutdown(&state);
                     state.forwards.stop_all();
                     tauri::async_runtime::block_on(async {
                         let _ = tokio::time::timeout(
@@ -396,6 +398,7 @@ pub fn run() {
                         )
                         .await;
                     });
+                    state.mount_runtime.release_connections();
                     if let Err(error) = state.plugins.mark_clean(&state.db) {
                         tracing::warn!(%error, "could not clear extension recovery marker");
                     }

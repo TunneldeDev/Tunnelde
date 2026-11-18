@@ -35,8 +35,10 @@ function HostDetails({ host }: { host: Host }) {
   const openSftp = useWorkspace((state) => state.openSftp);
   const session = useSsh(
     (state) =>
-      state.sessions.find((item) => item.hostId === host.id && item.purpose !== "forwarding") ??
-      null,
+      state.sessions.find(
+        (item) =>
+          item.hostId === host.id && item.purpose !== "forwarding" && item.purpose !== "mounts",
+      ) ?? null,
   );
   const confirm = useDialogs((state) => state.confirm);
   const deleteHost = useHosts((state) => state.deleteHost);

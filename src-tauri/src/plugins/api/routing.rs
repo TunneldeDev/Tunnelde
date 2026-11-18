@@ -41,16 +41,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
             domains::workbench::dispatch(context, method, params).await
         }
         "forwards" => domains::forwarding::dispatch(context, method, params).await,
-        "mounts" => {
-            crate::mounts::action(
-                context.app.clone(),
-                context.id.clone(),
-                method.trim_start_matches("mounts.").into(),
-                params,
-                Some(context.generation),
-            )
-            .await
-        }
+        "mounts" => domains::mounts::dispatch(context, method, params).await,
         "events" if method == "events.publish" => plugins::events::publish(context, params),
         "tasks" => plugins::tasks::dispatch(context, method, params).await,
         "runners" => plugins::runners::dispatch(context, method, params).await,

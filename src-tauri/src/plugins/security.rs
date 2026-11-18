@@ -319,7 +319,7 @@ impl PluginSecurity {
     /// policy -> metadata -> database, matching permission persistence. The
     /// callback must not reenter security or await. Only bounded local metadata
     /// persistence is permitted; no resource traversal, network or process I/O.
-    pub(super) fn with_authorized<T>(
+    pub(crate) fn with_authorized<T>(
         &self,
         lease: &Lease,
         permissions: &[&str],
