@@ -85,9 +85,25 @@ pub async fn start_checked(
     owner: Option<(String, u64)>,
     expected: Option<&str>,
 ) -> AppResult<()> {
-    prepare_checked(app, id, session_id, owner, expected)
-        .await?
-        .commit()
+    let attempt = if owner.is_none() {
+        Some(super::automation::Attempt::begin(app, id, expected)?)
+    } else {
+        None
+    };
+    let result = async {
+        let pending = if let Some(attempt) = &attempt {
+            tokio::select! { biased;
+                _ = attempt.cancelled() => return Err(AppError::validation("forward.startCancelled")),
+                result = prepare_checked(app, id, session_id, owner, Some(attempt.revision())) => result?,
+            }
+        } else { prepare_checked(app, id, session_id, owner, expected).await? };
+        if let Some(attempt) = &attempt { attempt.commit(|| pending.commit()) }
+        else { pending.commit() }
+    }.await;
+    if let Some(attempt) = attempt {
+        attempt.finish(&result, session_id);
+    }
+    result
 }
 pub(crate) fn take_checked(
     app: &AppHandle,
@@ -108,5 +124,6 @@ pub(crate) fn take_checked(
     })
 }
 pub async fn stop(app: &AppHandle, id: &str) -> AppResult<()> {
+    super::automation::pause(app, id);
     app.state::<AppState>().forwards.stop(id).await
 }

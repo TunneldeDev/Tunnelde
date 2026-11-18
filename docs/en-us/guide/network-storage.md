@@ -486,7 +486,7 @@ Names are optional and default to the service address and port. Choose **Save an
 start**, or **Save** to keep an inactive rule. Starting creates a dedicated background
 SSH connection when needed, using normal credential and host-key verification. All
 ports under that host share this connection; **Start all** starts its inactive ports
-and **Disconnect** stops its connection and ports. Existing terminal connections
+and **Disconnect** stops all of that host’s forwarding connections and ports. Existing terminal connections
 remain independent, and no SSH session selector is required. The forwarding panel
 can be dragged into any workspace group, collapsed and restored with its layout intact.
 
@@ -518,11 +518,21 @@ forwarding connection before retrying. Interrupted cleanup also reserves its rem
 endpoint until cancellation finishes, preventing an older cleanup from closing a
 new listener on the same port.
 
-Rules persist, but listeners start manually after connecting. Loopback is the
-default; exposing a listener requires confirmation. Remote listeners depend on
+Each rule has independent **Start when the app opens** and **Retry automatically** switches,
+both off for existing rules. Startup uses saved credentials and trusted host keys. Retry alone
+requires a manual start first. Failed starts and lost SSH connections retry after 2, 4, 8, 16,
+32 and 60 seconds, then at most once per minute. Authentication or host-key failures show
+**Needs attention**; resolve the problem and start manually. Stopping a rule or disconnecting
+that host's forwarding connections pauses recovery for this application run. Starting manually
+arms retry again. These tasks run while the forwarding page is closed; revoked plugin resources
+are not automatically recovered. Loopback is the default; exposing a listener requires confirmation. Remote listeners depend on
 the SSH server's forwarding policy and `GatewayPorts`. Stopping a rule or closing
 its session stops its listener and existing forwarded connections. Rules owned by
 a plugin also stop when its permissions are revoked or its runtime exits.
+
+The bottom-left connection count appears beside the saved host count. Click it for the live
+session count and each session's purpose (terminal, background or forwarding), address,
+connection time and session ID. Multiple connections to the same host appear separately.
 
 ## SSHFS plugins
 

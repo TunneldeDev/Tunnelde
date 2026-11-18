@@ -2,7 +2,7 @@ import { ArrowRight, Laptop, Server } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import { Field, Input } from "@/components/ui/form/Field";
+import { Field, Input, Switch } from "@/components/ui/form/Field";
 import type { ForwardRule } from "../model/contract";
 
 import { endpointAddress, localConnectionAddress } from "../model/endpoint";
@@ -148,6 +148,35 @@ export function ForwardRuleEditor({
             onChange={(event) => setForm({ ...form, name: event.target.value })}
           />
         </Field>
+        <div className="forward-automation">
+          {(["autoStart", "autoRetry"] as const).map((option) => (
+            <div className="forward-automation__option" key={option}>
+              <div>
+                <strong>{t(`forward.${option}`)}</strong>
+                <p id={`${id}-${option}`} className="forward-help">
+                  {t(`forward.${option}Hint`)}
+                </p>
+              </div>
+              <Switch
+                label={t(`forward.${option}`)}
+                checked={form.automation?.[option] ?? false}
+                descriptionId={`${id}-${option}`}
+                disabled={busy}
+                onChange={(checked) =>
+                  setForm({
+                    ...form,
+                    automation: {
+                      autoStart: false,
+                      autoRetry: false,
+                      ...form.automation,
+                      [option]: checked,
+                    },
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
         {local ? (
           <p className="forward-connect-hint">
             {t("forward.connectTo", {

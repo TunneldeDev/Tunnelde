@@ -4,14 +4,15 @@ use crate::{
     plugins::forwarding::Origin,
     services::forwarding::{
         self,
-        contract::{ForwardRule, RevisionedInfo, RevisionedRule},
+        automation::{self, ConfiguredInfo, ConfiguredRule, Options},
+        contract::ForwardRule,
     },
 };
 use tauri::AppHandle;
 
 #[tauri::command]
-pub fn forwarding_list(app: AppHandle) -> AppResult<Vec<RevisionedInfo>> {
-    forwarding::list_revisioned(&app)
+pub fn forwarding_list(app: AppHandle) -> AppResult<Vec<ConfiguredInfo>> {
+    automation::list(&app)
 }
 #[tauri::command]
 pub fn forwarding_save(
@@ -19,11 +20,23 @@ pub fn forwarding_save(
     rule: ForwardRule,
     expected_revision: Option<String>,
     origin: Option<Origin>,
-) -> AppResult<RevisionedRule> {
+    automation: Option<Options>,
+) -> AppResult<ConfiguredRule> {
+    let options = automation.unwrap_or_default();
     if let Some(origin) = origin {
-        return crate::plugins::forwarding::save(&app, &origin, rule, expected_revision.as_deref());
+        let entry = crate::plugins::forwarding::save(
+            &app,
+            &origin,
+            rule,
+            expected_revision.as_deref(),
+            options,
+        )?;
+        return Ok(ConfiguredRule {
+            entry,
+            automation: options,
+        });
     }
-    forwarding::save_checked(&app, rule, expected_revision.as_deref())
+    automation::save(&app, rule, expected_revision.as_deref(), options)
 }
 #[tauri::command]
 pub fn forwarding_remove(

@@ -2,6 +2,7 @@
 //! Callers authorize; SSH transport remains internal to the runtime adapter.
 use crate::{db::Database, error::AppResult, ssh::forward::ForwardRegistry, state::AppState};
 use tauri::{AppHandle, Emitter, Manager};
+pub(crate) mod automation;
 pub mod contract;
 pub(crate) mod interaction;
 pub(crate) mod query;
@@ -15,6 +16,7 @@ pub use runtime::{start_checked, stop};
 pub(crate) fn registry(app: &AppHandle) -> ForwardRegistry {
     let app = app.clone();
     ForwardRegistry::with_notifier(move || {
+        automation::wake(&app);
         let _ = app.emit(
             "plugin://domain-changed",
             serde_json::json!({"domain":"forwards"}),
@@ -75,10 +77,14 @@ impl Forwarding<'_> {
     fn save(&self, rule: ForwardRule) -> AppResult<ForwardRule> {
         Ok(self.save_checked(rule, None)?.rule)
     }
-    fn save_checked(
+    fn save_checked(&self, rule: ForwardRule, expected: Option<&str>) -> AppResult<RevisionedRule> {
+        self.save_configured(rule, expected, automation::Options::default())
+    }
+    fn save_configured(
         &self,
         mut rule: ForwardRule,
         expected: Option<&str>,
+        options: automation::Options,
     ) -> AppResult<RevisionedRule> {
         if rule.id.is_empty() {
             if expected.is_some() {
@@ -87,8 +93,9 @@ impl Forwarding<'_> {
             rule.id = uuid::Uuid::new_v4().to_string();
         }
         validate(&rule)?;
-        self.registry
-            .edit(&rule.id, || repository::save(self.db, &rule, expected))
+        self.registry.edit(&rule.id, || {
+            repository::save_configured(self.db, &rule, expected, options)
+        })
     }
     fn remove(&self, id: &str) -> AppResult<()> {
         self.remove_checked(id, None)
@@ -129,6 +136,14 @@ pub fn save_checked(
     expected: Option<&str>,
 ) -> AppResult<RevisionedRule> {
     service(&app.state::<AppState>()).save_checked(rule, expected)
+}
+pub(crate) fn save_configured(
+    app: &AppHandle,
+    rule: ForwardRule,
+    expected: Option<&str>,
+    options: automation::Options,
+) -> AppResult<RevisionedRule> {
+    service(&app.state::<AppState>()).save_configured(rule, expected, options)
 }
 pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
     service(&app.state::<AppState>()).remove(id)

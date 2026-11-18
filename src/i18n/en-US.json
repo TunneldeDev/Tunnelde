@@ -529,7 +529,10 @@
     "ready": "Ready",
     "hosts": "{{count}} hosts",
     "memory": "{{value}} MB",
-    "version": "v{{version}}"
+    "version": "v{{version}}",
+    "connections": "{{count}} connections",
+    "connections_one": "{{count}} connection",
+    "connections_other": "{{count}} connections"
   },
   "toast": {
     "saved": "Saved",
@@ -2125,7 +2128,13 @@
     "startBusy": "Another forwarding operation is pending. Retry later.",
     "startUnknown": "Startup receipt unavailable. Check current forwarding state first.",
     "startReused": "This request ID is already bound to different input.",
-    "startUiChanged": "The window reloaded; pending startup was cancelled."
+    "startUiChanged": "The window reloaded; pending startup was cancelled.",
+    "autoStart": "Start when the app opens",
+    "autoStartHint": "Start this rule on application launch using saved credentials.",
+    "autoRetry": "Retry automatically",
+    "autoRetryHint": "Retry failed starts or interrupted connections with backoff. Manual stops pause recovery; authentication or host key problems require attention.",
+    "retrying": "Waiting to retry",
+    "needsAttention": "Needs attention"
   },
   "mounts": {
     "dependencies": {
@@ -2628,5 +2637,18 @@
     },
     "imported_one": "Imported {{count}} host",
     "imported_other": "Imported {{count}} hosts"
+  },
+  "connections": {
+    "title": "Connection details",
+    "sessions": "{{count}} active sessions",
+    "empty": "No active connections",
+    "terminal": "Terminal",
+    "background": "Background",
+    "forwarding": "Port forwarding",
+    "address": "Address",
+    "connectedAt": "Connected at",
+    "sessionId": "Session ID",
+    "sessions_one": "{{count}} active session",
+    "sessions_other": "{{count}} active sessions"
   }
 }
