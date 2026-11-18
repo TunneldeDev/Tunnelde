@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, expect, it, vi } from "vitest";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
-vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true, api: {} }));
+vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true, api: { sshDisconnect: async () => {} } }));
 vi.mock("@/features/connect/ConnectDialog", () => ({
   ConnectDialog: ({
     onConnected,
@@ -33,7 +33,8 @@ vi.mock("@/features/connect/ConnectDialog", () => ({
   ),
 }));
 import "@/i18n/i18n";
-import { ForwardingSection, type ForwardRule } from "@/features/forwarding/ForwardingSection";
+import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
+import type { ForwardInfo } from "@/features/forwarding/model/contract";
 import type { Host } from "@/lib/api/types";
 import { useSsh } from "@/store/ssh";
 import { useDialogs } from "@/store/dialogs";
@@ -41,7 +42,7 @@ import { domainEvents } from "@/lib/events/domain";
 const copyMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/session/clipboard", () => ({ copyText: copyMock }));
 const host = { id: "host", name: "server" } as Host;
-let rows: (ForwardRule & { active: boolean; sessionId: string | null; revision: string })[];
+let rows: ForwardInfo[];
 beforeEach(() => {
   rows = [];
   copyMock.mockReset();
@@ -557,4 +558,73 @@ it("does not start a changed endpoint after the user finishes connecting", async
     sessionId: "forward",
     expectedRevision: "original-version",
   });
+});
+
+it("saves independent automation preferences outside the stable rule payload and preserves them on edit", async () => {
+  rows = [{ ...savedRule(), automation: { autoStart: true, autoRetry: false } }];
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Actions for Database" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit" }));
+  expect(
+    screen.getByRole("switch", { name: "Start when the app opens" }).getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    screen.getByRole("switch", { name: "Retry automatically" }).getAttribute("aria-checked"),
+  ).toBe("false");
+  fireEvent.click(screen.getByRole("switch", { name: "Retry automatically" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(invokeMock).toHaveBeenCalledWith("forwarding_save", {
+      rule: forwardingRuleWithoutAutomation(),
+      expectedRevision: "original-version",
+      automation: { autoStart: true, autoRetry: true },
+    }),
+  );
+});
+
+function forwardingRuleWithoutAutomation() {
+  const { active: _active, sessionId: _session, revision: _revision, ...rule } = savedRule();
+  return rule;
+}
+
+it("allows stopping automatic retries even when no SSH connection is active", async () => {
+  rows = [
+    {
+      ...savedRule(),
+      automation: { autoStart: false, autoRetry: true },
+      automationStatus: {
+        phase: "retrying",
+        retryAt: Date.now() + 2000,
+        error: { code: "ssh", message: "ssh.timeout" },
+      },
+    },
+  ];
+  render(<ForwardingSection host={host} />);
+  expect(await screen.findByText("Waiting to retry")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", { id: "rule" }));
+  expect(screen.queryByRole("button", { name: "Connect forwarding" })).toBeNull();
+});
+
+it("disconnects every forwarding connection for the host while preserving terminal sessions", async () => {
+  const connection = {
+    hostId: "host",
+    title: "server",
+    address: "qa@server:22",
+    cols: 80,
+    rows: 24,
+    connectedAt: 1,
+  };
+  useSsh.setState({
+    sessions: [
+      { ...connection, id: "one", purpose: "forwarding" },
+      { ...connection, id: "two", purpose: "forwarding" },
+      { ...connection, id: "terminal", terminal: true },
+    ],
+  });
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+  const confirmMock = useDialogs.getState().confirm as ReturnType<typeof vi.fn>;
+  await act(async () => confirmMock.mock.calls[0]![0].onConfirm());
+  expect(useSsh.getState().sessions.map((session) => session.id)).toEqual(["terminal"]);
 });

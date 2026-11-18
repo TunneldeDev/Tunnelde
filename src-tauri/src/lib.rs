@@ -123,6 +123,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
+            services::forwarding::automation::start(&handle);
             automation::transport::start(&handle);
             window::restore_main_geometry(&handle);
             let (theme, title_bar_style, locale) = {

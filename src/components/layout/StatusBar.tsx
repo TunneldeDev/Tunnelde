@@ -17,6 +17,7 @@ import { orderStatusItems } from "@/lib/plugins/statusBar";
 import { isTauri } from "@/lib/api/ipc";
 import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { OutputStatusButton } from "@/features/output/OutputStatusButton";
+import { ConnectionStatus } from "./ConnectionStatus";
 
 interface StatusBarProps {
   panelOpen: boolean;
@@ -68,6 +69,7 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
         </>
       ),
     },
+    { id: "core.connections", priority: 8999, content: <ConnectionStatus /> },
     ...pluginItems("left"),
   ];
   const rightItems: StatusItem[] = [

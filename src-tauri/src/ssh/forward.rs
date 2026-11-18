@@ -146,6 +146,11 @@ pub struct ForwardRegistry {
     changed: watch::Sender<u64>,
     notify: Option<Arc<dyn Fn() + Send + Sync>>,
 }
+pub(crate) struct AutomationRuntime {
+    pub session: Option<String>,
+    pub plugin_owned: bool,
+    pub stop_revision: (u64, u64),
+}
 impl Default for ForwardRegistry {
     fn default() -> Self {
         Self {
@@ -157,6 +162,34 @@ impl Default for ForwardRegistry {
     }
 }
 impl ForwardRegistry {
+    /// Explicit rule/global stops fence recovery; transport loss only fences its session.
+    pub(crate) fn automation_revision(&self, id: &str) -> AppResult<(u64, u64)> {
+        let revisions = self
+            .revisions
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        Ok((
+            *revisions.get("").unwrap_or(&0),
+            *revisions.get(&format!("rule:{id}")).unwrap_or(&0),
+        ))
+    }
+    pub(crate) fn inspect_automation<T>(
+        &self,
+        read: impl FnOnce(&dyn Fn(&str) -> AppResult<AutomationRuntime>) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        read(&|id| {
+            let item = active.get(id);
+            Ok(AutomationRuntime {
+                session: item.map(|item| item.session.clone()),
+                plugin_owned: item.is_some_and(|item| item.owner.is_some()),
+                stop_revision: self.automation_revision(id)?,
+            })
+        })
+    }
     pub(crate) fn with_notifier(notify: impl Fn() + Send + Sync + 'static) -> Self {
         Self {
             notify: Some(Arc::new(notify)),

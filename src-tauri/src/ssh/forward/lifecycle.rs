@@ -142,3 +142,50 @@ mod tests {
             .unwrap();
     }
 }
+
+#[cfg(test)]
+mod automation_tests {
+    use super::*;
+    fn insert(registry: &ForwardRegistry, owner: Option<&str>) {
+        registry.active.lock().unwrap().insert(
+            "rule".into(),
+            ActiveForward {
+                lifetime: None,
+                admitted: Arc::new(AtomicBool::new(true)),
+                identity: "runtime".into(),
+                session: "ssh".into(),
+                owner: owner.map(str::to_owned),
+                generation: owner.map(|_| 1),
+                cancel: watch::channel(false).0,
+                listener: None,
+                remote: None,
+            },
+        );
+    }
+    #[tokio::test]
+    async fn recovery_snapshot_distinguishes_transport_loss_explicit_stops_and_plugin_ownership() {
+        let registry = ForwardRegistry::default();
+        insert(&registry, None);
+        let snapshot = || registry.inspect_automation(|read| read("rule")).unwrap();
+        let running = snapshot();
+        assert_eq!(running.session.as_deref(), Some("ssh"));
+        assert!(!running.plugin_owned);
+        registry.stop_session("ssh");
+        let interrupted = snapshot();
+        assert!(interrupted.session.is_none());
+        assert_eq!(running.stop_revision, interrupted.stop_revision);
+        registry.stop("rule").await.unwrap();
+        let stopped = snapshot();
+        assert_ne!(interrupted.stop_revision, stopped.stop_revision);
+        // Stops before network preparation must fence that preparation as well.
+        registry.stop("rule").await.unwrap();
+        assert_ne!(stopped.stop_revision, snapshot().stop_revision);
+        insert(&registry, Some("plugin"));
+        assert!(snapshot().plugin_owned);
+        registry.stop_generation("plugin", 1);
+        assert!(snapshot().session.is_none());
+        let before = snapshot().stop_revision;
+        registry.stop_all();
+        assert_ne!(before, snapshot().stop_revision);
+    }
+}

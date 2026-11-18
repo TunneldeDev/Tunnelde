@@ -302,3 +302,18 @@
     transform: rotate(90deg);
   }
 }
+
+.forward-automation {
+  display: grid;
+  gap: 12px;
+}
+.forward-automation__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.forward-automation__option strong {
+  font-size: 12px;
+  font-weight: 500;
+}

@@ -341,3 +341,83 @@ fn exact_reads_reject_oversized_or_misidentified_records_without_rewriting_them(
     .unwrap();
     assert!(service.find(&saved.rule.id).is_err());
 }
+
+#[test]
+fn automation_settings_are_opt_in_revision_bound_and_clear_on_public_writes() {
+    use automation::{settings, Options};
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let old = service.save_checked(rule(host(&db)), None).unwrap();
+    let read = |revision: &str| {
+        db.with(|conn| settings::read(conn, &old.rule.id, revision))
+            .unwrap()
+    };
+    assert_eq!(read(&old.revision), Options::default());
+    let options = Options {
+        auto_start: true,
+        auto_retry: true,
+    };
+    let configured = service
+        .save_configured(old.rule.clone(), Some(&old.revision), options)
+        .unwrap();
+    assert_eq!(read(&configured.revision), options);
+    assert_eq!(read(&old.revision), Options::default());
+    assert!(service
+        .save_configured(old.rule.clone(), Some(&old.revision), Options::default())
+        .is_err());
+    assert_eq!(read(&configured.revision), options);
+    let public = service
+        .save_checked(old.rule.clone(), Some(&configured.revision))
+        .unwrap();
+    assert_eq!(read(&public.revision), Options::default());
+    assert!(!serde_json::to_string(&service.list().unwrap())
+        .unwrap()
+        .contains("automation"));
+    let configured = service
+        .save_configured(old.rule.clone(), Some(&public.revision), options)
+        .unwrap();
+    service
+        .remove_checked(&old.rule.id, Some(&configured.revision))
+        .unwrap();
+    assert_eq!(read(&configured.revision), Options::default());
+    let mut wire = serde_json::to_value(&old.rule).unwrap();
+    wire["automation"] = serde_json::json!({"autoStart":true});
+    assert!(serde_json::from_value::<ForwardRule>(wire).is_err());
+}
+
+#[test]
+fn automation_preference_failure_rolls_back_rule_and_version() {
+    use automation::{settings, Options};
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let saved = service.save_checked(rule(host(&db)), None).unwrap();
+    db.with(|conn| { conn.execute_batch("CREATE TRIGGER refuse_automation BEFORE INSERT ON settings WHEN NEW.key LIKE 'forward-automation:%' BEGIN SELECT RAISE(ABORT, 'test failure'); END;")?; Ok(()) }).unwrap();
+    let mut edited = saved.rule.clone();
+    edited.name = "Must roll back".into();
+    assert!(service
+        .save_configured(
+            edited,
+            Some(&saved.revision),
+            Options {
+                auto_start: true,
+                auto_retry: false
+            }
+        )
+        .is_err());
+    let current = service.find(&saved.rule.id).unwrap().unwrap();
+    assert_eq!(current.revision, saved.revision);
+    assert_eq!(current.info.rule, saved.rule);
+    assert_eq!(
+        db.with(|conn| settings::read(conn, &saved.rule.id, &saved.revision))
+            .unwrap(),
+        Options::default()
+    );
+}

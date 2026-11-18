@@ -1,0 +1,41 @@
+.connection-list__summary,
+.connection-list__empty {
+  color: var(--td-muted);
+  font-size: 12px;
+}
+.connection-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.connection-list__item {
+  padding: 12px;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius);
+}
+.connection-list__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+.connection-list__heading span,
+.connection-list dt {
+  color: var(--td-muted);
+  font-size: 11px;
+}
+.connection-list dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+.connection-list dd {
+  margin: 0;
+  user-select: text;
+  overflow-wrap: anywhere;
+}

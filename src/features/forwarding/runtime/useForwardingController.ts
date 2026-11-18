@@ -129,6 +129,7 @@ export function useForwardingController(host: Host) {
           const saved = await invoke<RevisionedRule>("forwarding_save", {
             ...(await authorizedArgs(draftAuthority)),
             rule: forwardingSavePayload(rule),
+            ...(rule.automation ? { automation: rule.automation } : {}),
             ...(draft.id ? { expectedRevision: draft.revision } : {}),
           });
           forwardingStore.saved(saved);
@@ -173,7 +174,8 @@ export function useForwardingController(host: Host) {
     authority?.authorize();
     setFailure(null);
     setDraftAuthority(authority);
-    setForm({ ...rule });
+    const native = rules.find((entry) => entry.id === rule.id && entry.revision === rule.revision);
+    setForm({ ...rule, ...(native?.automation ? { automation: native.automation } : {}) });
   };
   const requestRemove = (rule: RevisionedRule, authority?: ForwardingAuthority) => {
     authority?.authorize();
@@ -218,24 +220,19 @@ export function useForwardingController(host: Host) {
         await run(
           "group",
           async () => {
-            if (
-              !useSsh
-                .getState()
-                .sessions.some(
-                  (item) =>
-                    item.id === session.id &&
-                    item.hostId === host.id &&
-                    item.purpose === "forwarding",
-                )
-            )
-              throw new Error("ssh.sessionMissing");
-            if (authority) {
-              await invoke("forwarding_provider_disconnect", {
-                sessionId: session.id,
-                ...(await authorizedArgs(authority)),
-              });
-              useSsh.getState().forget(session.id);
-            } else await useSsh.getState().disconnect(session.id);
+            const connected = useSsh
+              .getState()
+              .sessions.filter((item) => item.hostId === host.id && item.purpose === "forwarding");
+            if (!connected.length) throw new Error("ssh.sessionMissing");
+            for (const item of connected) {
+              if (authority) {
+                await invoke("forwarding_provider_disconnect", {
+                  sessionId: item.id,
+                  ...(await authorizedArgs(authority)),
+                });
+                useSsh.getState().forget(item.id);
+              } else await useSsh.getState().disconnect(item.id);
+            }
           },
           "stop",
         );

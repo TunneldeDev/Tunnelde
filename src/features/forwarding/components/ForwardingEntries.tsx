@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { copyText } from "@/lib/session/clipboard";
+import { translateError } from "@/lib/api/errors";
 import { endpointAddress, localConnectionAddress } from "../model/endpoint";
 import type { ForwardingController } from "../runtime/useForwardingController";
 
@@ -35,10 +36,20 @@ export function ForwardingEntries({
   return (
     <ul className="forward-rules" aria-label={t("forward.title")}>
       {rules.map((rule) => {
-        const ruleError = failure?.target === rule.id ? failure.message : null;
+        const automation = rule.automationStatus;
+        const ruleError =
+          failure?.target === rule.id
+            ? failure.message
+            : automation?.error
+              ? translateError(automation.error)
+              : null;
         const local = rule.mode === "local";
         const active = isActive(rule);
-        const starting = pendingKind === "start" && (pending === rule.id || pending === "group");
+        const manualStarting =
+          pendingKind === "start" && (pending === rule.id || pending === "group");
+        const starting = manualStarting || automation?.phase === "starting";
+        const recovering = automation?.phase === "retrying";
+        const stoppable = active || starting || recovering;
         const stopping = pendingKind === "stop" && pending === rule.id;
         return (
           <li key={rule.id} className="forward-rule">
@@ -55,24 +66,28 @@ export function ForwardingEntries({
                       ? "forward.stopping"
                       : active
                         ? "forward.running"
-                        : "forward.stopped",
+                        : recovering
+                          ? "forward.retrying"
+                          : automation?.phase === "needsAttention"
+                            ? "forward.needsAttention"
+                            : "forward.stopped",
                 )}
               </span>
               <IconButton
                 size="sm"
                 label={t(
-                  stopping || starting
-                    ? stopping
-                      ? "forward.stopping"
-                      : "forward.starting"
-                    : active
-                      ? "forward.stop"
-                      : "forward.start",
+                  stopping
+                    ? "forward.stopping"
+                    : manualStarting
+                      ? "forward.starting"
+                      : stoppable
+                        ? "forward.stop"
+                        : "forward.start",
                 )}
                 disabled={busy}
-                onClick={() => (active ? void stop(rule) : start([rule.id]))}
+                onClick={() => (stoppable ? void stop(rule) : start([rule.id]))}
               >
-                {active ? <Square size={14} /> : <Play size={14} />}
+                {stoppable ? <Square size={14} /> : <Play size={14} />}
               </IconButton>
               <Menu
                 label={t("forward.ruleActions", { name: rule.name })}
@@ -102,6 +117,16 @@ export function ForwardingEntries({
                 ]}
               />
             </div>
+            {rule.automation?.autoStart || rule.automation?.autoRetry ? (
+              <p className="forward-rule__hint">
+                {[
+                  rule.automation.autoStart && t("forward.autoStart"),
+                  rule.automation.autoRetry && t("forward.autoRetry"),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : null}
             <div className="forward-rule__route">
               <div>
                 {local ? <Laptop size={13} /> : <Server size={13} />}

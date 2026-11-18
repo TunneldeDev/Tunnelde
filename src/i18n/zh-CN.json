@@ -529,7 +529,10 @@
     "ready": "就绪",
     "hosts": "{{count}} 台主机",
     "memory": "{{value}} MB",
-    "version": "v{{version}}"
+    "version": "v{{version}}",
+    "connections": "{{count}} 条连接",
+    "connections_one": "{{count}} 条连接",
+    "connections_other": "{{count}} 条连接"
   },
   "toast": {
     "saved": "已保存",
@@ -2125,7 +2128,13 @@
     "startBusy": "另一个转发操作正在等待处理，请稍后重试。",
     "startUnknown": "找不到此启动回执，请先检查转发状态。",
     "startReused": "此请求编号已用于不同的转发参数。",
-    "startUiChanged": "页面已重新加载，待启动请求已取消。"
+    "startUiChanged": "页面已重新加载，待启动请求已取消。",
+    "autoStart": "启动时自动连接",
+    "autoStartHint": "打开应用时启动此规则，使用已保存的认证信息。",
+    "autoRetry": "失败后自动重试",
+    "autoRetryHint": "启动失败或连接中断后逐步重试；手动停止后暂停，认证或主机密钥问题需处理后再启动。",
+    "retrying": "等待重试",
+    "needsAttention": "需要处理"
   },
   "mounts": {
     "dependencies": {
@@ -2628,5 +2637,18 @@
     },
     "imported_one": "已导入 {{count}} 台主机",
     "imported_other": "已导入 {{count}} 台主机"
+  },
+  "connections": {
+    "title": "连接详情",
+    "sessions": "当前 {{count}} 条会话",
+    "empty": "暂无活动连接",
+    "terminal": "终端",
+    "background": "后台",
+    "forwarding": "端口转发",
+    "address": "地址",
+    "connectedAt": "连接时间",
+    "sessionId": "会话 ID",
+    "sessions_one": "当前 {{count}} 条会话",
+    "sessions_other": "当前 {{count}} 条会话"
   }
 }

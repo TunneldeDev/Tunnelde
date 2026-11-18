@@ -15,6 +15,7 @@ pub(crate) fn save(
     origin: &Origin,
     rule: ForwardRule,
     expected: Option<&str>,
+    options: forwarding::automation::Options,
 ) -> AppResult<RevisionedRule> {
     let scope = access::resolve(app, origin)?;
     access::with_authorized(app, &scope, true, |_| {
@@ -24,7 +25,7 @@ pub(crate) fn save(
         if let Some(revision) = expected {
             access::check_rule(app, &scope, &rule.id, revision)?;
         }
-        forwarding::save_checked(app, rule, expected)
+        forwarding::save_configured(app, rule, expected, options)
     })
 }
 pub(crate) fn remove(

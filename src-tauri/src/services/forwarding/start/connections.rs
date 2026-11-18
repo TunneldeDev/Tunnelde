@@ -92,6 +92,7 @@ pub(super) async fn connect(
         manager.pool.insert(key, Arc::downgrade(&connection));
         Ok(())
     })?;
+    super::super::automation::started(app, &op.captured.entry.rule.id, &connection.info.id);
     crate::logs::record(&state.db, "ssh.connect", Some(&op.captured.host.id));
     let _ = app.emit(
         "plugin://domain-changed",

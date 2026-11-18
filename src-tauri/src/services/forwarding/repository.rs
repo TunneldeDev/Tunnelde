@@ -66,21 +66,24 @@ fn check(conn: &Connection, id: &str, expected: Option<&str>) -> AppResult<()> {
     Ok(())
 }
 pub(super) fn list(db: &Database) -> AppResult<Vec<RevisionedRule>> {
-    db.with(|conn| {
-        let mut stmt = conn.prepare(
+    db.with(list_conn)
+}
+pub(super) fn list_conn(conn: &Connection) -> AppResult<Vec<RevisionedRule>> {
+    let mut stmt = conn.prepare(
             "SELECT r.value,v.value FROM settings r LEFT JOIN settings v ON v.key='forward-version:' || substr(r.key,9) WHERE r.key LIKE 'forward:%' ORDER BY r.updated_at DESC",
         )?;
-        let raw = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)))?;
-        let mut result = Vec::new();
-        for item in raw {
-            let (raw, token) = item?;
-            result.push(RevisionedRule {
-                rule: serde_json::from_str(&raw)?,
-                revision: revision(&raw, token)?,
-            });
-        }
-        Ok(result)
-    })
+    let raw = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+    })?;
+    let mut result = Vec::new();
+    for item in raw {
+        let (raw, token) = item?;
+        result.push(RevisionedRule {
+            rule: serde_json::from_str(&raw)?,
+            revision: revision(&raw, token)?,
+        });
+    }
+    Ok(result)
 }
 
 pub(super) fn page(
@@ -126,23 +129,25 @@ pub(super) fn page(
     })
 }
 
-pub(super) fn save(
+pub(super) fn save_configured(
     db: &Database,
     rule: &ForwardRule,
     expected: Option<&str>,
+    options: super::automation::Options,
 ) -> AppResult<RevisionedRule> {
-    write(db, rule, expected, false)
+    write(db, rule, expected, false, options)
 }
 /// Public creation is conditional too: a caller-chosen ID must never replace
 /// an existing rule, including after an uncertain reply or concurrent create.
 pub(super) fn create(db: &Database, rule: &ForwardRule) -> AppResult<RevisionedRule> {
-    write(db, rule, None, true)
+    write(db, rule, None, true, super::automation::Options::default())
 }
 fn write(
     db: &Database,
     rule: &ForwardRule,
     expected: Option<&str>,
     create_only: bool,
+    options: super::automation::Options,
 ) -> AppResult<RevisionedRule> {
     db.with(|conn| {
         let tx = conn.unchecked_transaction()?;
@@ -159,6 +164,7 @@ fn write(
         ] {
             tx.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![key, value, updated])?;
         }
+        super::automation::settings::write(&tx, &rule.id, &revision, options)?;
         tx.commit()?;
         Ok(RevisionedRule { rule: rule.clone(), revision })
     })
@@ -169,6 +175,7 @@ pub(super) fn remove(db: &Database, id: &str, expected: Option<&str>) -> AppResu
         check(&tx, id, expected)?;
         let removed = tx.execute("DELETE FROM settings WHERE key=?1", [key(id)])? != 0;
         tx.execute("DELETE FROM settings WHERE key=?1", [version_key(id)])?;
+        super::automation::settings::clear(&tx, id)?;
         tx.commit()?;
         Ok(removed)
     })
