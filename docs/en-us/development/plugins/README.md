@@ -82,6 +82,9 @@ only the internal error key. Installed plugins are independent of Node consent.
 
 ## SSHFS and data-only plugins (0.27.0+)
 
+See [shared mount APIs](mounts.md) for persistent rules, groups and dedicated connections.
+The older methods below retain per-plugin ownership.
+
 Mount providers can use the native mount panel, including declarative plugins that do not
 need Node. Connect a saved SSH host first,
 then choose its session, browse the remote directory, and choose an empty local

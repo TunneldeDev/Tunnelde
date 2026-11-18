@@ -2645,6 +2645,7 @@
     "imported_other": "Imported {{count}} hosts"
   },
   "connections": {
+    "mounts": "Mounts",
     "title": "Connection details",
     "sessions": "{{count}} active sessions",
     "empty": "No active connections",

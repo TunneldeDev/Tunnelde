@@ -1,6 +1,8 @@
 //! SSHFS transports reuse an authenticated SSH channel. No credentials or
 //! unauthenticated local listening sockets are exposed to the mount program.
 mod lifecycle;
+mod managed;
+pub(crate) use managed::open_managed;
 mod negotiation;
 mod transport;
 use crate::{
@@ -178,6 +180,31 @@ struct ActiveMount {
     #[cfg(target_os = "macos")]
     mount_device: Option<u64>,
 }
+impl ActiveMount {
+    async fn matches_mount_identity(&self) -> AppResult<bool> {
+        #[cfg(windows)]
+        {
+            Ok(self.device_mapping.is_some()
+                && windows_device_mapping(&self.info.mount_point) == self.device_mapping)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+            Ok(self.mount_id.is_some()
+                && mount_id_in_table(&table, &self.info.mount_point) == self.mount_id)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Ok(self.mount_device.is_some()
+                && mac_mount_device(PathBuf::from(&self.info.mount_point))
+                    .await
+                    .ok()
+                    == self.mount_device)
+        }
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        Ok(false)
+    }
+}
 impl Drop for ActiveMount {
     fn drop(&mut self) {
         self.bridge.abort();
@@ -185,6 +212,7 @@ impl Drop for ActiveMount {
 }
 #[derive(Default)]
 pub struct MountRegistry {
+    closed: std::sync::atomic::AtomicBool,
     mounts: Mutex<HashMap<String, ActiveMount>>,
 }
 
@@ -533,7 +561,33 @@ fn validate(request: &MountRequest) -> AppResult<()> {
     Ok(())
 }
 impl MountRegistry {
-    async fn live_owned_mount(
+    /// Configuration admission and transfer occur under one registry lock.
+    /// The original SSH session is borrowed, never adopted or disconnected.
+    pub(crate) async fn adopt_managed<T>(
+        &self,
+        id: &str,
+        commit: impl FnOnce(&MountInfo) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let mut mounts = self.mounts.lock().await;
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(AppError::validation("mounts.operations.cancelled"));
+        }
+        let active = mounts
+            .get_mut(id)
+            .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
+        if active.info.owner == crate::services::mounts::runtime::OWNER
+            || active.info.cleanup_error.is_some()
+            || active.bridge.is_finished()
+            || active.child.try_wait()?.is_some()
+        {
+            return Err(AppError::validation("mounts.transportClosed"));
+        }
+        let result = commit(&active.info)?;
+        active.info.owner = crate::services::mounts::runtime::OWNER.into();
+        active.generation = 0;
+        Ok(result)
+    }
+    pub(crate) async fn live_owned_mount(
         &self,
         owner: &str,
         generation: u64,
@@ -555,28 +609,7 @@ impl MountRegistry {
         {
             return Err(AppError::validation("mounts.transportClosed"));
         }
-        #[cfg(windows)]
-        if active.device_mapping.is_none()
-            || windows_device_mapping(&active.info.mount_point) != active.device_mapping
-        {
-            return Err(AppError::validation("mounts.transportClosed"));
-        }
-        #[cfg(target_os = "linux")]
-        {
-            let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
-            if active.mount_id.is_none()
-                || mount_id_in_table(&table, &active.info.mount_point) != active.mount_id
-            {
-                return Err(AppError::validation("mounts.transportClosed"));
-            }
-        }
-        #[cfg(target_os = "macos")]
-        if active.mount_device.is_none()
-            || mac_mount_device(PathBuf::from(&active.info.mount_point))
-                .await
-                .ok()
-                != active.mount_device
-        {
+        if !active.matches_mount_identity().await? {
             return Err(AppError::validation("mounts.transportClosed"));
         }
         Ok(active.info.clone())
@@ -597,6 +630,9 @@ impl MountRegistry {
         generation: u64,
         mut request: MountRequest,
     ) -> AppResult<MountInfo> {
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(AppError::validation("mounts.operations.cancelled"));
+        }
         validate(&request)?;
         let dependencies = dependencies().await;
         if !dependencies.available {
@@ -621,6 +657,9 @@ impl MountRegistry {
         // Serialize only publication so concurrent negotiations cannot spawn
         // two processes targeting the same drive or directory.
         let mut mounts = self.mounts.lock().await;
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(AppError::validation("mounts.operations.cancelled"));
+        }
         if handle.is_closed() || !std::sync::Arc::ptr_eq(&handle, &ssh.handle(&request.session_id)?)
         {
             return Err(AppError::validation("mounts.transportClosed"));
@@ -750,7 +789,7 @@ impl MountRegistry {
         self.unmount_checked(owner, id, force, None, || Ok(()))
             .await
     }
-    async fn unmount_checked(
+    pub(crate) async fn unmount_checked(
         &self,
         owner: &str,
         id: &str,
@@ -773,6 +812,9 @@ impl MountRegistry {
             lifecycle::settle_process(active).await?;
             mounts.remove(id);
             return Ok(());
+        }
+        if !active.matches_mount_identity().await? {
+            return Err(AppError::validation("mounts.mountPoint.changed"));
         }
         #[cfg(windows)]
         let _volume_lock = if force {
@@ -909,6 +951,8 @@ impl MountRegistry {
         }
     }
     pub async fn shutdown(&self) {
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Release);
         for mount in self.list(None).await {
             self.stop_resource(&mount).await;
         }
@@ -1497,6 +1541,39 @@ mod tests {
         assert_eq!(
             advertised_transport("supports slave devices\n-o slave_other"),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    #[tokio::test]
+    async fn shutdown_fences_new_mounts_before_dependency_or_transport_work() {
+        let registry = MountRegistry::default();
+        registry.shutdown().await;
+        let ssh = SshManager::default();
+        let result = registry
+            .mount(
+                &ssh,
+                "test",
+                0,
+                MountRequest {
+                    session_id: "missing".into(),
+                    remote_path: "/source".into(),
+                    mount_point: "/tmp/test".into(),
+                    read_only: true,
+                },
+            )
+            .await;
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "mounts.operations.cancelled"
+        );
+        let result = registry.adopt_managed("missing", |_| Ok(())).await;
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "mounts.operations.cancelled"
         );
     }
 }

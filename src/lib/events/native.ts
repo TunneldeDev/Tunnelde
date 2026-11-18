@@ -23,6 +23,8 @@ import type { HostColumnsSnapshot } from "@/lib/hosts/columns";
 import type { FrontendActivation } from "@/lib/plugins/activation/contracts";
 
 export interface NativeEvents {
+  "mounts://changed": null;
+  "mounts://operation-changed": { id: string; revision: string };
   "plugin://activate-frontend": FrontendActivation;
   "plugin://configuration-changed": { pluginId: string; revision: string; schemaDigest: string };
   "plugin://host-columns-changed": HostColumnsSnapshot;

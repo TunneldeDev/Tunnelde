@@ -791,7 +791,9 @@ async fn connect_captured(
         rows: request.rows,
         connected_at: now_ms(),
         terminal: !request.background,
-        purpose: if request.background && request.purpose.as_deref() == Some("forwarding") {
+        purpose: if request.background
+            && matches!(request.purpose.as_deref(), Some("forwarding" | "mounts"))
+        {
             request.purpose.clone()
         } else {
             None

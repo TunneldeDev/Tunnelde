@@ -7,6 +7,7 @@ pub mod forwarding;
 pub mod history;
 pub mod host_fields;
 pub mod hosts;
+pub mod mounts;
 pub(crate) mod operations;
 pub mod plugin_configuration;
 pub mod settings;

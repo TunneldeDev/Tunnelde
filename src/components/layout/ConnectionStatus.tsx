@@ -42,9 +42,11 @@ export function ConnectionStatus() {
                     {t(
                       session.purpose === "forwarding"
                         ? "connections.forwarding"
-                        : session.terminal === false
-                          ? "connections.background"
-                          : "connections.terminal",
+                        : session.purpose === "mounts"
+                          ? "connections.mounts"
+                          : session.terminal === false
+                            ? "connections.background"
+                            : "connections.terminal",
                     )}
                   </span>
                 </div>

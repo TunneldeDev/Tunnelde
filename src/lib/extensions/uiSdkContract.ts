@@ -61,3 +61,6 @@ export type * from "./contracts/storage/recovery/request.js";
 export type * from "./contracts/logging/entry.js";
 export type * from "./contracts/logging/query.js";
 export type * from "./contracts/logging/page.js";
+
+export type * from "./contracts/mounts/configuration.js";
+export type * from "./contracts/mounts/runtime.js";
