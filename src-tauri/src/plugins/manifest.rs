@@ -153,6 +153,8 @@ pub struct PluginManifest {
     pub dependencies: Vec<super::PluginDependency>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_fields: Option<crate::services::host_fields::Schema>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_details: Vec<super::host_details::Contribution>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration:
         Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
@@ -232,6 +234,7 @@ impl PluginManifest {
             return Err(AppError::validation("plugin.activation.declarationVersion"));
         }
         super::runtime::activation::validate_dependencies(&self.id, &self.dependencies)?;
+        super::host_details::validate(self)?;
         if let Some(configuration) = &self.configuration {
             configuration.validate()?;
         }

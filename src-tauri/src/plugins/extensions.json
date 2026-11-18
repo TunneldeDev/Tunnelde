@@ -1,6 +1,20 @@
 {
   "version": 1,
   "stability": "experimental",
+  "hostDetails": {
+    "manifest": "hostDetails",
+    "viewKind": "component",
+    "permissions": ["ui.trusted", "hosts.read"],
+    "context": "view.hostDetails",
+    "composition": "append",
+    "limitPerPlugin": 8,
+    "mounts": {
+      "permission": "mounts.hostDetails",
+      "readPermission": "mounts.read",
+      "selection": "mountHostDetailsSelection",
+      "composition": "single-selected-contributor"
+    }
+  },
   "frontend": {
     "sdkVersion": "0.1.0",
     "stability": "experimental",

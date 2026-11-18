@@ -72,6 +72,8 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "files.content.open",
             "files.content.prepare",
             "files.content.read",
+            "forwards.automation.list",
+            "forwards.automation.save",
             "logs.read",
             "preferences.observe",
             "preferences.schema",

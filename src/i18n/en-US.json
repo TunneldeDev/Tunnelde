@@ -1524,6 +1524,9 @@
       "changed": "The preview changed. Refresh its state before trying again.",
       "unavailable": "This preview renderer is unavailable.",
       "permissionDenied": "This plugin is not allowed to control the preview."
+    },
+    "hostDetails": {
+      "invalid": "Invalid host detail contribution."
     }
   },
   "themes": {
@@ -1626,7 +1629,8 @@
       "storageRecoveryRead": "Read storage recovery direction, error presence and recorded copy locations, without contents",
       "storageRecoveryWrite": "Schedule storage recovery or cancellation at next startup with native confirmation",
       "filePreviewRead": "Read current file-preview metadata and renderer choices, without file contents",
-      "filePreviewWrite": "Close, retry or change file previews; opening a target also requires its file read permission"
+      "filePreviewWrite": "Close, retry or change file previews; opening a target also requires its file read permission",
+      "mountsHostDetails": "Display an interactive mount section in host details"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -2411,7 +2415,9 @@
     "processes": "Process manager",
     "quickAccess": "Quick access",
     "preferences": "Preference forms",
-    "filePreview": "File preview"
+    "filePreview": "File preview",
+    "hostMounts": "Host mounts",
+    "disabled": "Disabled"
   },
   "hostFields": {
     "operation": {

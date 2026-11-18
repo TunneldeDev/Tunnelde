@@ -15,6 +15,31 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
+        "forwards.automation.list" => encode(crate::services::forwarding::automation::list(app)?),
+        "forwards.automation.save" => {
+            let id: String = field(&params, "id")?;
+            let revision: String = field(&params, "expectedRevision")?;
+            let options = field(&params, "automation")?;
+            let lease = crate::plugins::security::Lease {
+                id: context.id.clone(),
+                fingerprint: context.fingerprint.clone(),
+                permissions: context.permissions.clone(),
+                generation: context.generation,
+            };
+            state
+                .plugins
+                .security
+                .with_authorized(&lease, &["forwards.write"], || {
+                    let entry = crate::services::forwarding::find(app, &id)?
+                        .ok_or_else(|| AppError::validation("forward.missing"))?;
+                    encode(crate::services::forwarding::automation::save(
+                        app,
+                        entry.info.rule,
+                        Some(&revision),
+                        options,
+                    )?)
+                })
+        }
         "forwards.list" => encode(crate::services::forwarding::list(app)?),
         "forwards.save" => encode(crate::services::forwarding::save(
             app,

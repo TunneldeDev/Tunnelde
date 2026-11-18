@@ -64,6 +64,7 @@ pub const PERMISSIONS: &[&str] = &[
     "secrets",
     "mounts.read",
     "mounts.write",
+    "mounts.hostDetails",
     "forwards.read",
     "forwards.write",
 ];

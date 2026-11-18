@@ -49,7 +49,7 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "preview.showPanel") useFilePreview.getState().dock();
   else if (id === "transfers.show") useTransferPanel.getState().show();
   else if (id === "panel.restoreWorkbench") {
-    void settings.update({ uiProviders: {} });
+    void settings.update({ uiProviders: {}, mountHostDetailsSelection: null });
   } else if (id === "app.reload" || id === "app.restart")
     requestApplicationAction(id === "app.reload" ? "reload" : "restart");
   else if (id === "update.check") {

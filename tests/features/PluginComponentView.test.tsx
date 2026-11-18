@@ -483,3 +483,24 @@ it("keeps nested terminal validation and its scope live while a workbench provid
   expect(scope.signal.aborted).toBe(false);
   expect(scopes).toHaveLength(1);
 });
+
+it("passes host detail context and retires its resource scope when the host section unmounts", async () => {
+  let signal: AbortSignal | undefined;
+  fixture.activate.mockImplementation((ctx: FrontendContext) => {
+    ctx.views.register("main", function View(props: FrontendViewProps) {
+      signal = props.resources?.signal;
+      return <p>Host: {props.hostDetails?.hostId}</p>;
+    });
+  });
+  const view = render(
+    <PluginComponentView
+      pluginId={plugin.id}
+      viewId="main"
+      hostDetails={{ hostId: "server-a", contributionId: "mounts", kind: "mounts" }}
+    />,
+  );
+  expect(await screen.findByText("Host: server-a")).toBeTruthy();
+  expect(signal?.aborted).toBe(false);
+  view.unmount();
+  await waitFor(() => expect(signal?.aborted).toBe(true));
+});

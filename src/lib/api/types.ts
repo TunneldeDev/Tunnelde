@@ -67,6 +67,7 @@ export interface Settings {
   preloadCount: number;
   motion: MotionPreference;
   showStatusBar: boolean;
+  mountHostDetailsSelection: { pluginId: string; contributionId: string } | null;
   uiProviders: Partial<
     Record<
       | "hostList"
@@ -564,7 +565,15 @@ export interface NodeRuntimeInfo {
   issue: string | null;
 }
 
+export interface HostDetailsContribution {
+  id: string;
+  title: string;
+  viewId: string;
+  kind?: "mounts";
+}
+
 export interface PluginInfo {
+  hostDetails?: HostDetailsContribution[];
   hostFields?: HostFieldsSchema | null;
   configuration?: ConfigurationSchema | null;
   tags?: string[];

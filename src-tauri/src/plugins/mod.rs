@@ -13,6 +13,7 @@ pub mod forwarding;
 pub mod frontend;
 mod host;
 pub mod host_columns;
+pub mod host_details;
 pub mod host_fields;
 pub mod host_list;
 pub mod host_sources;
@@ -71,6 +72,7 @@ pub struct PluginInfo {
     pub api_version: u32,
     pub dependencies: Vec<PluginDependency>,
     pub host_fields: Option<crate::services::host_fields::Schema>,
+    pub host_details: Vec<host_details::Contribution>,
     pub configuration:
         Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
     pub description: Option<String>,
@@ -167,6 +169,7 @@ impl Instance {
             api_version: self.manifest.api_version,
             dependencies: self.manifest.dependencies.clone(),
             host_fields: self.manifest.host_fields.clone(),
+            host_details: self.manifest.host_details.clone(),
             configuration: self.manifest.configuration.clone(),
             description: self.manifest.description.clone(),
             commands: self.manifest.commands.clone(),
