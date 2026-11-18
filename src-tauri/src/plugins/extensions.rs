@@ -28,6 +28,13 @@ mod tests {
             super::super::frontend::UI_SDK_VERSION
         );
         assert_eq!(catalogue["frontend"]["permission"], "ui.trusted");
+        assert_eq!(catalogue["hostDetails"]["manifest"], "hostDetails");
+        assert_eq!(catalogue["hostDetails"]["context"], "view.hostDetails");
+        assert!(PERMISSIONS.contains(
+            &catalogue["hostDetails"]["mounts"]["permission"]
+                .as_str()
+                .unwrap()
+        ));
         assert!(PERMISSIONS.contains(&"ui.trusted"));
         let providers = &catalogue["frontend"]["providers"];
         assert_eq!(providers["manifest"], "views[].provider");

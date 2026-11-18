@@ -8,6 +8,7 @@ import { reportError } from "@/lib/diagnostics";
 import { usePlugins } from "@/store/plugins";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
+import type { FrontendViewProps } from "@/lib/extensions/contracts/frontend/views";
 
 class ViewBoundary extends Component<
   { children: ReactNode; pluginId: string; fallback: (error: Error) => ReactNode },
@@ -29,10 +30,12 @@ export function PluginComponentView({
   pluginId,
   viewId,
   visible = true,
+  hostDetails,
 }: {
   pluginId: string;
   viewId: string;
   visible?: boolean;
+  hostDetails?: FrontendViewProps["hostDetails"];
 }) {
   const { t } = useTranslation();
   const plugin = usePlugins((state) => state.items.find((item) => item.id === pluginId));
@@ -88,7 +91,7 @@ export function PluginComponentView({
         >
           <PluginRuntimeView
             View={View}
-            viewProps={{ pluginId, viewId, visible }}
+            viewProps={{ pluginId, viewId, visible, hostDetails }}
             token={token}
             fingerprint={plugin?.fingerprint}
             onFailure={setError}

@@ -1,5 +1,6 @@
 import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
 import { HostFieldsSection } from "./HostFieldsSection";
+import { HostDetailsSections } from "./HostDetailsSections";
 import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -184,6 +185,7 @@ function HostDetails({ host }: { host: Host }) {
 
       <ForwardingSection key={host.id} host={host} />
       {!host.source && <HostFieldsSection key={`fields:${host.id}`} hostId={host.id} />}
+      {!host.source && <HostDetailsSections key={`details:${host.id}`} hostId={host.id} />}
       <div className="host-page__foot">
         <Button variant="secondary" onClick={() => void duplicate()}>
           {t(host.source ? "hostSources.saveCopy" : "common.duplicate")}

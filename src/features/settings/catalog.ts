@@ -30,6 +30,7 @@ export interface SettingDefinition {
     | "shortcutRules"
     | "network"
     | "uiProviders"
+    | "mountHostDetails"
     | "hostList"
     | "updateUrl";
   hint?: MessageKey;
@@ -252,6 +253,12 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     label: "providers.title",
     hint: "providers.hint",
     kind: "uiProviders",
+  },
+  {
+    key: "mountHostDetailsSelection",
+    section: "plugins",
+    label: "providers.hostMounts",
+    kind: "mountHostDetails",
   },
   {
     key: "network",

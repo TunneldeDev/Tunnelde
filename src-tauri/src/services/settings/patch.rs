@@ -13,6 +13,7 @@ const REPLACED_KEYS: &[&str] = &[
     "shortcutRules",
     "network",
     "uiProviders",
+    "mountHostDetailsSelection",
 ];
 
 pub(super) fn apply(previous: &Settings, patch: Value) -> AppResult<Settings> {

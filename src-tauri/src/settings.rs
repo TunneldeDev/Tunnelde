@@ -51,6 +51,8 @@ pub struct UiProviderSelection {
 pub struct Settings {
     pub host_list: host_list::HostListPreferences,
     pub ui_providers: BTreeMap<String, UiProviderSelection>,
+    pub mount_host_details_selection:
+        Option<crate::plugins::host_details::MountHostDetailsSelection>,
     pub network: crate::network::NetworkSettings,
     pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
     pub shortcut_rules: BTreeMap<String, BTreeMap<String, ShortcutRule>>,
@@ -137,6 +139,7 @@ impl Default for Settings {
         Self {
             host_list: host_list::HostListPreferences::default(),
             ui_providers: BTreeMap::new(),
+            mount_host_details_selection: None,
             network: crate::network::NetworkSettings::default(),
             keyboard_shortcuts: BTreeMap::new(),
             shortcut_rules: BTreeMap::new(),
@@ -269,6 +272,16 @@ impl Settings {
     /// values that break the layout or the update state machine.
     pub fn sanitize(&mut self) {
         self.host_list.sanitize();
+        if self
+            .mount_host_details_selection
+            .as_ref()
+            .is_some_and(|selection| {
+                !crate::plugins::manifest::valid_id(&selection.plugin_id)
+                    || !crate::plugins::manifest::valid_id(&selection.contribution_id)
+            })
+        {
+            self.mount_host_details_selection = None;
+        }
         self.ui_providers.retain(|target, selection| {
             matches!(
                 target.as_str(),
@@ -615,6 +628,23 @@ mod tests {
             "uiProviders":{"workbench":{"pluginId":"custom-ui","viewId":"desktop","extra":true}}
         }))
         .is_err());
+    }
+
+    #[test]
+    fn mount_contributor_selection_is_validated_and_can_be_disabled() {
+        let mut settings: Settings = serde_json::from_value(serde_json::json!({
+            "mountHostDetailsSelection":{"pluginId":"sshfs","contributionId":"mounts"}
+        }))
+        .unwrap();
+        settings.sanitize();
+        assert!(settings.mount_host_details_selection.is_some());
+        settings
+            .mount_host_details_selection
+            .as_mut()
+            .unwrap()
+            .plugin_id = "../invalid".into();
+        settings.sanitize();
+        assert!(settings.mount_host_details_selection.is_none());
     }
 
     #[test]

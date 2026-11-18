@@ -15,6 +15,12 @@ import type { FrontendQuickAccess } from "../search/quickAccess/provider.js";
 import type { FrontendPreferences } from "../preferences/provider.js";
 
 export interface FrontendViewProps {
+  /** Interactive manifest hostDetails contribution. Does not grant API access. */
+  hostDetails?: Readonly<{
+    hostId: string;
+    contributionId: string;
+    kind?: "mounts";
+  }>;
   pluginId: string;
   viewId: string;
   visible: boolean;

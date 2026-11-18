@@ -43,6 +43,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     motion: "system",
     showStatusBar: true,
     uiProviders: {},
+    mountHostDetailsSelection: null,
     restoreWorkspace: true,
     hostActivation: "details",
     hostDirectConnect: true,

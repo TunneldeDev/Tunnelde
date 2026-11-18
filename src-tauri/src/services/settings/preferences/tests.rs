@@ -74,6 +74,7 @@ fn independent_schema_covers_exactly_the_public_projection() {
     }
     let excluded = [
         "uiProviders",
+        "mountHostDetailsSelection",
         "lastUpdateCheck",
         "skippedVersion",
         "editorDraftRecovery",

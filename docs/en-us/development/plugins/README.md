@@ -1,5 +1,7 @@
 # Plugins
 
+Interactive host-detail sections and mount contributor selection: [Host details](host-details.md).
+
 [简体中文](../../../zh-cn/development/plugins/README.md)
 
 Overview and compatibility: [English](../../guide/plugins.md) · [简体中文](../../../zh-cn/guide/plugins.md).

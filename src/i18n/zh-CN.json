@@ -1524,6 +1524,9 @@
       "changed": "预览已变更，请刷新状态后重试。",
       "unavailable": "此预览渲染器不可用。",
       "permissionDenied": "此插件未获准操作预览。"
+    },
+    "hostDetails": {
+      "invalid": "主机详情板块声明无效。"
     }
   },
   "themes": {
@@ -1626,7 +1629,8 @@
       "storageRecoveryRead": "读取存储恢复方向、错误状态及已记录的副本位置（不含内容）",
       "storageRecoveryWrite": "经确认后安排下次启动重试或取消存储迁移",
       "filePreviewRead": "读取当前文件预览元数据和渲染器选项，不含文件内容",
-      "filePreviewWrite": "关闭、重试或切换文件预览；打开目标还需对应文件读取权限"
+      "filePreviewWrite": "关闭、重试或切换文件预览；打开目标还需对应文件读取权限",
+      "mountsHostDetails": "在主机详情中显示可交互的挂载板块"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -2411,7 +2415,9 @@
     "processes": "进程管理",
     "quickAccess": "快捷搜索",
     "preferences": "设置表单",
-    "filePreview": "文件预览"
+    "filePreview": "文件预览",
+    "hostMounts": "主机挂载",
+    "disabled": "不显示"
   },
   "hostFields": {
     "operation": {
