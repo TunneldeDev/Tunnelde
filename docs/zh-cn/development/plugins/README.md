@@ -591,6 +591,14 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 
 `hosts.sshConfig.import({ aliases, revision })` 还要求 `hosts.write`。它在一个事务中保存选中的主机和支持的 `ProxyJump` 依赖，复用匹配的主机而不修改原记录，遇到冲突或无效选择则整批拒绝。返回 `{ importedIds, skipped }`，分别记录新增 ID 和复用数量，两者都含依赖项。提交后发出与欢迎页导入相同的主机变更通知。
 
+## 主机连接路由（实验性）
+
+`hosts.routes.get({ hostId })` 要求 `hosts.read`，返回已保存主机的 `{ hostId, revision, route: { proxy, jumpHosts } }`。`proxy` 是代理配置 ID、`direct`、`system`，或表示继承应用 SSH 代理设置的空字符串，不含代理 URL 或凭据。`jumpHosts` 按连接顺序列出跳板主机 ID。
+
+`hosts.routes.save({ hostId, expectedRevision, route })` 还要求 `hosts.write`，复用原生主机编辑器的路由校验与保存逻辑。收到 `network.routeChanged` 时应重新读取并协调修改。保存路由不会修改凭据，也不会重连已有会话。
+
+`hosts.routes.observe({ hostId, revision? })` 要求 `hosts.read`，立即返回 `{ revision, changed, snapshot }`。版本相同则 `snapshot` 为 `null`，否则返回当前快照。原生编辑器的修改也会反映在版本中。此接口观察已保存的路由和连接标识，不检测代理或跳板机是否可用，也不报告活动会话状态。
+
 ## 动态主机来源（实验性）
 
 拥有 `hosts.read` 与 `hosts.write` 的插件可通过 `hosts.setSource({ id, label, entries })` 发布运行实例所属的发现清单，通过 `hosts.removeSource({ id })` 移除。条目包含来源内唯一的 `id`、`name`、`host`、`username`，以及可选的 `port`（默认 22）、`tags` 和 `note`。接口拒绝凭据和私钥路径。每个来源最多 256 条；每个插件最多 8 个来源、512 条；全局最多 128 个来源、4096 条及 4 MiB 来源 JSON。每次替换也须符合共享的 256 KiB 请求上限。替换是原子的，验证失败会保留上一份清单。

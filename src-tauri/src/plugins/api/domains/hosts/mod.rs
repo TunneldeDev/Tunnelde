@@ -10,6 +10,8 @@ use crate::{
 use serde_json::Value;
 use tauri::Manager;
 
+mod routes;
+
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
     method: &str,
@@ -18,6 +20,9 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
+        "hosts.routes.get" | "hosts.routes.observe" | "hosts.routes.save" => {
+            routes::call(context, method, params).await
+        }
         "hosts.snapshot" => {
             let worker = context.clone();
             encode(
