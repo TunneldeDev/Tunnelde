@@ -1,5 +1,10 @@
 //! Plugin RPC adapter for forwarding. Authorization and runtime ownership stay at this boundary.
-use crate::plugins::api::{authorize, encode, field, HostContext};
+mod batch;
+
+use crate::plugins::{
+    api::{authorize, encode, field, HostContext},
+    security::Lease,
+};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -50,39 +55,17 @@ pub(in crate::plugins::api) async fn dispatch(
             Ok(Value::Null)
         }
         "forwards.start" => {
-            let lease = crate::plugins::security::Lease {
-                id: context.id.clone(),
-                fingerprint: context.fingerprint.clone(),
-                permissions: context.permissions.clone(),
-                generation: context.generation,
-            };
-            let result = state
-                .plugins
-                .security
-                .guard(
-                    &lease,
-                    crate::services::forwarding::prepare_checked(
-                        app,
-                        &field::<String>(&params, "id")?,
-                        &field::<String>(&params, "sessionId")?,
-                        Some((context.id.clone(), context.generation)),
-                        None,
-                    ),
-                )
-                .await;
-            if let Err(error) = authorize(context, &["forwards.write"]) {
-                state
-                    .forwards
-                    .stop_generation(&context.id, context.generation);
-                return Err(error);
-            }
-            let prepared = result?;
-            state
-                .plugins
-                .security
-                .with_authorized(&lease, &["forwards.write"], || prepared.commit())?;
+            start_one(
+                context,
+                &field::<String>(&params, "id")?,
+                &field::<String>(&params, "sessionId")?,
+                None,
+                None,
+            )
+            .await?;
             Ok(Value::Null)
         }
+        "forwards.startMany" => batch::start(context, params).await,
         "forwards.stop" => {
             crate::services::forwarding::stop(app, &field::<String>(&params, "id")?).await?;
             Ok(Value::Null)
@@ -90,4 +73,52 @@ pub(in crate::plugins::api) async fn dispatch(
 
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }
+}
+
+async fn start_one(
+    context: &HostContext,
+    id: &str,
+    session_id: &str,
+    expected_revision: Option<&str>,
+    deadline: Option<tokio::time::Instant>,
+) -> AppResult<()> {
+    let app = &context.app;
+    let state = app.state::<AppState>();
+    let lease = Lease {
+        id: context.id.clone(),
+        fingerprint: context.fingerprint.clone(),
+        permissions: context.permissions.clone(),
+        generation: context.generation,
+    };
+    authorize(context, &["forwards.write"])?;
+    let result = state
+        .plugins
+        .security
+        .guard(
+            &lease,
+            crate::services::forwarding::prepare_checked(
+                app,
+                id,
+                session_id,
+                Some((context.id.clone(), context.generation)),
+                expected_revision,
+            ),
+        )
+        .await;
+    if let Err(error) = authorize(context, &["forwards.write"]) {
+        state
+            .forwards
+            .stop_generation(&context.id, context.generation);
+        return Err(error);
+    }
+    let prepared = result?;
+    state
+        .plugins
+        .security
+        .with_authorized(&lease, &["forwards.write"], || {
+            if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+                return Err(AppError::validation("plugin.timeout"));
+            }
+            prepared.commit()
+        })
 }

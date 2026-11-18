@@ -98,6 +98,8 @@ describe("public UI contract boundaries", () => {
       "FilePreviewRenderer",
       "FilePreviewSource",
       "FilePreviewState",
+      "ForwardStartManyOutcome",
+      "ForwardStartManyRequest",
       "FrontendBackgroundTaskContext",
       "FrontendBackgroundTaskEntry",
       "FrontendBackgroundTaskOptions",

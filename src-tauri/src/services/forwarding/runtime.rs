@@ -26,9 +26,10 @@ impl PendingStart {
                 return Err(AppError::validation("ssh.sessionMissing"));
             }
             if !service(&state)
-                .rules()?
-                .iter()
-                .any(|saved| saved.rule == self.entry.rule && saved.revision == self.entry.revision)
+                .rule(&self.entry.rule.id)?
+                .is_some_and(|saved| {
+                    saved.rule == self.entry.rule && saved.revision == self.entry.revision
+                })
             {
                 return Err(AppError::validation("forward.changed"));
             }
@@ -46,9 +47,7 @@ pub(crate) async fn prepare_checked(
 ) -> AppResult<PendingStart> {
     let state = app.state::<AppState>();
     let entry = service(&state)
-        .rules()?
-        .into_iter()
-        .find(|entry| entry.rule.id == id)
+        .rule(id)?
         .ok_or_else(|| AppError::validation("forward.missing"))?;
     if expected.is_some_and(|expected| expected != entry.revision) {
         return Err(AppError::validation("forward.changed"));
@@ -114,9 +113,8 @@ pub(crate) fn take_checked(
     let state = app.state::<AppState>();
     state.forwards.take_checked(id, Some(runtime), || {
         if !service(&state)
-            .rules()?
-            .iter()
-            .any(|entry| entry.rule.id == id && entry.revision == revision)
+            .rule(id)?
+            .is_some_and(|entry| entry.revision == revision)
         {
             return Err(AppError::validation("forward.changed"));
         }

@@ -74,6 +74,7 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "files.content.read",
             "forwards.automation.list",
             "forwards.automation.save",
+            "forwards.startMany",
             "hosts.routes.get",
             "hosts.routes.observe",
             "hosts.routes.save",
