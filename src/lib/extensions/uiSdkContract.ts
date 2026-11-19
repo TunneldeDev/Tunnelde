@@ -67,3 +67,5 @@ export type * from "./contracts/logging/page.js";
 
 export type * from "./contracts/mounts/configuration.js";
 export type * from "./contracts/mounts/runtime.js";
+
+export type * from "./contracts/workbench/windows.js";

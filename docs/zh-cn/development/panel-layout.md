@@ -227,3 +227,31 @@ AppInfo、插件运行令牌、安装／数据路径或全部设置。刷新、�
 协议 CORS 使用受信任配置中的开发 URL origin，不回显请求的 Origin，也不硬编码
 开发端口；打包应用的 origin 保持不变。隔离原生 QA 的标识和数据，不接触已安装应用；
 需测试真实模块导入，而不只是 mock 加载器。
+
+### 公开原生窗口元数据与生命周期 API
+
+`extensions.describe().nativeWindows` 声明实验性、权限受控的 RPC：
+`workspace.windows.list/observe/create/close` 和 `workspace.panels.ownership`。
+读取要求 `workspace.read`，生命周期操作要求 `workspace.write`。不改变冻结的
+`workspace.snapshot` v1，不暴露私有文档令牌、草稿快照或模型，也不授予卫星窗口底层
+应用 IPC 权限。所有者 generation 和 `canMove` 仅供参考，实际修改仍检查原生状态。
+
+list 和 ownership 返回同一份带 revision 的原生快照，包括窗口角色、就绪/关闭状态、
+面板 ID 与当前所有者 generation。observe 是先订阅后检查的、可取消的十秒长轮询；
+单纯业务进度不会改变 revision。`workspace://windows-changed` 仅包含不透明 revision
+作为失效提示。RPC 插件可用 observe 替代原生 JS 事件；revision 不保证持久重放。
+
+create 返回宿主构造的隐藏卫星占位窗口，使用现有原生多显示器定位，全局最多 16 个
+窗口。不接受 URL、脚本、调用方窗口标签或任意原生命令。空占位窗口二十秒后回收。
+创建等待被取消时，后台保留原生构造直到实际完成，清理迟到的空结果，包括已发送却未
+被接收方读取的结果。插件撤销仅清理其旧 generation 的空占位窗口，不能销毁已有用户
+面板的窗口，也不能中断正在交接的面板。
+
+close 仅请求正常的卫星窗口捕获/归还流程，不能关闭协调窗口、强制卸载视图、丢弃草稿、
+绕过凭据确认或停止 SSH/任务。`{windowId, requested: true}` 仅表示接受请求，不表示
+已经关闭；应观察原生元数据确认结果，或在交互保护解除后重试。原生关闭或捕获失败时
+必须保留可恢复的所有权。
+
+平台创建或设置窗口失败时，也必须复用原子空窗清理预留，不可直接销毁目标窗口。
+目标可能在创建者返回前就已接收其他用户面板；创建者刷新或失去权限不代表可以
+销毁这些面板，也不能中断正在进行的交接。

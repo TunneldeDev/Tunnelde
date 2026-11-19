@@ -1,3 +1,4 @@
+mod windows;
 use crate::error::{AppError, AppResult};
 use crate::plugins::api::{frontend_request, HostContext};
 use serde_json::Value;
@@ -8,6 +9,11 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     match method {
+        "workspace.windows.list"
+        | "workspace.windows.observe"
+        | "workspace.windows.create"
+        | "workspace.windows.close"
+        | "workspace.panels.ownership" => windows::dispatch(context, method, params).await,
         "statusBar.set" | "statusBar.remove" => {
             crate::plugins::status_bar::call(context, method, params)
         }

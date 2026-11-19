@@ -7,6 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(super) fn transferable(id: &str) -> bool {
+    matches!(id, "connections" | "tasks" | "output" | "knownHosts")
+}
+
 pub(super) const MAIN: &str = "main";
 const MAX_WINDOWS: usize = 16;
 const MAX_PANELS: usize = 128;
@@ -224,10 +228,8 @@ impl Ownership {
         if let Some(lease) = lease {
             self.action(window, document, lease)?;
             let panel = self.owned(window, document, lease)?;
-            if !matches!(
-                lease.panel_id.as_str(),
-                "connections" | "tasks" | "output" | "knownHosts"
-            ) || panel.blocked
+            if !transferable(&lease.panel_id)
+                || panel.blocked
                 || !panel.interactions.is_empty()
                 || !panel.native_actions.is_empty()
             {

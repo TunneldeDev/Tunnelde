@@ -588,5 +588,29 @@
     "writePermission": "workspace.write",
     "events": ["workspace://panels-changed"],
     "ownership": "One retained renderer per panel in the main window. Presentation changes do not disconnect resources. Metadata only; drafts and feature contents are excluded."
+  },
+  "nativeWindows": {
+    "version": 1,
+    "experimental": true,
+    "methods": [
+      "workspace.windows.list",
+      "workspace.windows.observe",
+      "workspace.windows.create",
+      "workspace.windows.close",
+      "workspace.panels.ownership"
+    ],
+    "readPermission": "workspace.read",
+    "writePermission": "workspace.write",
+    "events": ["workspace://windows-changed"],
+    "eventPayload": "revision-only-invalidation",
+    "ownership": "host-native; singleton coordinator retained",
+    "maximumWindows": 16,
+    "placeholder": {
+      "visible": false,
+      "emptyTimeoutSeconds": 20,
+      "retirement": "creator-cancel-or-revocation-empty-only"
+    },
+    "close": "normal-capture-return; coordinator-close-forbidden",
+    "state": "metadata-only; no document tokens, drafts, resources or feature contents"
   }
 }

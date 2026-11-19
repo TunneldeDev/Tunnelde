@@ -1,9 +1,11 @@
 //! Native multiwindow control plane and generation-fenced view ownership.
 mod actions;
 mod geometry;
+mod lifecycle;
 pub(crate) mod native;
 mod ownership;
 mod protocol;
+pub(crate) mod public;
 mod read_models;
 #[cfg(test)]
 mod tests;

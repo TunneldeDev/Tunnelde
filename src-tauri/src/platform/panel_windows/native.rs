@@ -12,24 +12,25 @@ use std::{collections::HashMap, sync::Mutex, time::Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent};
 
 #[derive(Clone)]
-struct Creation {
+pub(super) struct Creation {
     window: String,
     document: String,
 }
 #[derive(Default)]
 pub(crate) struct Registry {
-    creations: Mutex<HashMap<String, Creation>>,
+    pub(super) creations: Mutex<HashMap<String, Creation>>,
+    pub(super) public: super::public::PublicWindows,
     ownership: Mutex<Ownership>,
     // Native focus order only; never trust browser screenX/screenY for drops.
     focus: Mutex<Vec<String>>,
 }
-fn lock(registry: &Registry) -> std::sync::MutexGuard<'_, Ownership> {
+pub(super) fn lock(registry: &Registry) -> std::sync::MutexGuard<'_, Ownership> {
     registry
         .ownership
         .lock()
         .unwrap_or_else(|error| error.into_inner())
 }
-fn invalid(error: &'static str) -> AppError {
+pub(super) fn invalid(error: &'static str) -> AppError {
     AppError::validation(error)
 }
 pub(crate) fn has_satellites(app: &AppHandle) -> bool {
@@ -49,6 +50,7 @@ pub(crate) fn registered(app: &AppHandle, window: &str) -> bool {
         .is_some_and(|registry| lock(&registry).document(window).is_some())
 }
 pub(crate) fn changed(app: &AppHandle) {
+    super::public::snapshot(app);
     let windows = lock(&app.state::<Registry>()).windows();
     for window in windows {
         if let Some(window) = app.get_webview_window(&window.id) {
@@ -117,11 +119,15 @@ pub(crate) fn panel_window_control(
     );
     let result = lock(&registry)
         .dispatch(window.label(), &document, request, Instant::now())
-        .map_err(invalid)?;
-    if notify {
+        .map_err(invalid);
+    if notify && result.is_ok() {
         changed(app);
+    } else {
+        // Even read/failed dispatches can expire a handoff before the timer.
+        // Refresh public availability without feeding private read-model loops.
+        super::public::snapshot(app);
     }
-    Ok(result)
+    result
 }
 #[tauri::command]
 pub(crate) async fn panel_window_create(
@@ -156,6 +162,9 @@ pub(crate) async fn panel_window_create(
             },
         );
     super::super::background::cancel(&app);
+    // Publish a registered-but-not-ready placeholder before platform creation.
+    // Observers must see pending construction, not only its eventual WebView.
+    changed(&app);
     let bounds = match placement(&window) {
         Ok(bounds) => bounds,
         Err(error) => {
@@ -165,6 +174,7 @@ pub(crate) async fn panel_window_create(
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .remove(&id);
+            changed(&app);
             return Err(error);
         }
     };
@@ -209,69 +219,14 @@ pub(crate) async fn panel_window_create(
             .authorize_creation(window.label(), &document, lease.as_ref())
             .map_err(invalid)
     });
+    // Start cleanup even if the source document or platform setup failed. The
+    // destination may already be ready and holding an unrelated user handoff;
+    // failure of its creator is not authority to destroy that window.
+    super::lifecycle::reap_empty_later(&app, &id);
     if let Err(error) = result {
-        if let Some(target) = app.get_webview_window(&id) {
-            let _ = target.destroy();
-        }
-        let _ = lock(&registry).destroyed(&id);
-        registry
-            .creations
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .remove(&id);
-        changed(&app);
+        super::lifecycle::discard_empty(&app, &id);
         return Err(error);
     }
-    // An initialized destination can still be abandoned (source reload, failed
-    // capture, cancelled handoff). Reap it even if it reached frontend ready;
-    // never destroy an owned window or interrupt an active transfer.
-    let timeout_app = app.clone();
-    let timeout_id = id.clone();
-    tauri::async_runtime::spawn(async move {
-        let deadline = Instant::now() + std::time::Duration::from_secs(20);
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let registry = timeout_app.state::<Registry>();
-            let (gone_or_owned, empty) = {
-                let ownership = lock(&registry);
-                (
-                    ownership.document(&timeout_id).is_none()
-                        || ownership
-                            .leases()
-                            .iter()
-                            .any(|lease| lease.window_id == timeout_id),
-                    ownership.can_destroy(&timeout_id),
-                )
-            };
-            if gone_or_owned {
-                registry
-                    .creations
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .remove(&timeout_id);
-                break;
-            }
-            if empty && Instant::now() >= deadline {
-                let Ok(_) = lock(&registry).reserve_empty_close(&timeout_id) else {
-                    continue;
-                };
-                if let Some(window) = timeout_app.get_webview_window(&timeout_id) {
-                    if window.destroy().is_err() {
-                        lock(&registry).release_empty_close(&timeout_id);
-                        continue;
-                    }
-                }
-                let _ = lock(&registry).destroyed(&timeout_id);
-                registry
-                    .creations
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .remove(&timeout_id);
-                changed(&timeout_app);
-                break;
-            }
-        }
-    });
     changed(&app);
     Ok(id)
 }
@@ -490,6 +445,7 @@ pub(crate) fn native_event(app: &AppHandle, window: &str, event: &WindowEvent) {
             }
         }
         WindowEvent::Destroyed if window != MAIN => {
+            registry.public.forget(window);
             let _ = lock(&registry).destroyed(window);
             registry
                 .creations
@@ -556,6 +512,7 @@ pub(crate) async fn panel_window_disconnect(
         panel: lease.panel_id,
         id,
     };
+    changed(&app);
     crate::commands::ssh_disconnect(app.clone(), session_id).await
 }
 

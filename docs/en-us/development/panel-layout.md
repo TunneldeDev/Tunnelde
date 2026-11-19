@@ -303,3 +303,38 @@ Protocol CORS uses the trusted configured development URL's origin, never an
 Origin header echoed from a request or a hardcoded port. Packaged application
 origins stay unchanged. Keep isolated native QA identifiers/data separate from
 the installed application and test actual module imports, not only mock loaders.
+
+### Public native-window metadata and lifecycle APIs
+
+`extensions.describe().nativeWindows` advertises the permission-checked
+experimental RPCs `workspace.windows.list/observe/create/close` and
+`workspace.panels.ownership`. Read methods require `workspace.read`; lifecycle
+methods require `workspace.write`. They do not change frozen
+`workspace.snapshot` v1, reveal private document tokens/capsules/models, or grant
+satellites raw application IPC. Ownership generations and `canMove` are advisory;
+all actual mutations still check native state.
+
+List and ownership return the same revisioned native snapshot, including window
+roles/readiness/close state, panel IDs and current owner generations. Observe is a
+cancellable ten-second long-poll subscribed before inspection; feature progress
+alone does not change its revision. `workspace://windows-changed` contains only an
+opaque revision invalidation hint. RPC clients can use observe instead of native
+JS events; revisions have no durable replay guarantee.
+
+Create returns a hidden host-built satellite placeholder, using existing native
+monitor-aware placement and a global limit of 16 windows. It accepts no URL,
+script, caller label or arbitrary native command. Empty placeholders expire after
+20 seconds. Cancelled creation waits retain native construction to settlement and
+clean late empty results, including sent-but-unconsumed replies. Plugin revocation
+cleans only its older-generation empty placeholders. Never destroy a populated
+window or interrupt an active handoff because its creating plugin retired.
+
+Close only requests the usual satellite capture/return protocol; it cannot close
+the coordinator, force-unmount a view, discard drafts, bypass credential consent
+or stop SSH/tasks. The reply `{windowId, requested: true}` means accepted, not
+closed; observe native metadata for completion or retry after a guarded failure.
+Native platform close/capture failure must leave ownership recoverable.
+Platform construction/setup errors use the same atomic empty-window reservation
+as cancellation and timeout cleanup. A newly ready destination can already hold
+an unrelated user handoff before its creator finishes; never force-destroy it
+merely because that creator reloads or loses authorization.
