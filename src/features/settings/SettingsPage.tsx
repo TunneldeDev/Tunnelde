@@ -329,7 +329,7 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
                   )
                   .map((definition) =>
                     definition.kind === "uiProviders" ? (
-                      <UiProviderSettings key={definition.key} />
+                      <UiProviderSettings key={definition.key} expanded={filtering} />
                     ) : definition.kind === "mountHostDetails" ? (
                       <MountHostDetailsSettings key={definition.key} />
                     ) : definition.key === "editorDraftRecovery" ? (

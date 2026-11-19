@@ -1278,12 +1278,30 @@
   overflow-wrap: anywhere;
 }
 
-.ui-provider-settings {
+.ui-provider-settings__rows {
   display: grid;
-  gap: 16px;
 }
-.ui-provider-settings > .settings-subtitle {
-  margin-bottom: 0;
+.ui-provider-settings__row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-block: 6px;
+}
+.ui-provider-settings__row > label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-provider-settings__row > .td-select {
+  min-width: 0;
+  width: 100%;
+}
+@media (max-width: 480px) {
+  .ui-provider-settings__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
 }
 
 .sftp-pane__drag {

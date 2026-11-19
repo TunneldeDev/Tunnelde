@@ -137,6 +137,10 @@ describe("plugin security interactions", () => {
       },
     });
     render(<PluginSecuritySection />);
+    const label = screen.getByText("Restricted mode", { selector: "label" });
+    expect((label as HTMLLabelElement).control).toBe(
+      screen.getByRole("switch", { name: "Restricted mode" }),
+    );
     expect(
       (screen.getByRole("switch", { name: "Restricted mode" }) as HTMLButtonElement).disabled,
     ).toBe(true);

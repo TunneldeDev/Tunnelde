@@ -2479,6 +2479,9 @@
   "providers": {
     "forwarding": "端口转发",
     "monitor": "性能监控",
+    "allBuiltin": "全部使用内置界面",
+    "customCount": "{{count}} 项自定义",
+    "unavailableCount": "{{count}} 项不可用",
     "title": "界面提供者",
     "hint": "为主机列表、文件浏览器、终端、历史记录或工作台选择已安装的扩展。切换时保留已打开的页面和会话，可在此处、F1 命令或恢复栏中恢复内置界面。",
     "hostList": "主机列表",

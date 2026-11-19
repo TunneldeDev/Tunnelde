@@ -1439,40 +1439,6 @@
   color: var(--td-accent);
 }
 
-.td-switch {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid var(--td-border);
-  border-radius: 999px;
-  background: var(--td-raised);
-  transition:
-    background var(--td-ease),
-    border-color var(--td-ease);
-}
-
-.td-switch.is-on {
-  background: var(--td-accent);
-  border-color: var(--td-accent);
-}
-
-.td-switch__thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--td-text);
-  transition: transform var(--td-ease);
-}
-
-.td-switch.is-on .td-switch__thumb {
-  transform: translateX(14px);
-  background: #fff;
-}
-
 .td-tags {
   display: flex;
   flex-wrap: wrap;

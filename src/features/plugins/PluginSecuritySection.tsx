@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronRight, ShieldAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import { Switch } from "@/components/ui/form/Field";
+import { SwitchRow } from "@/components/ui/form/Switch";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { usePlugins } from "@/store/plugins";
 import { useNavigation } from "@/store/navigation";
@@ -140,16 +140,14 @@ export function PluginSecuritySection() {
   }, [load]);
   return (
     <section className="settings-subsection plugin-security" aria-label={t("pluginSecurity.title")}>
-      <div className="settings-section__head">
-        <h3 className="settings-subtitle">{t("pluginSecurity.title")}</h3>
-        <Switch
-          label={t("pluginSecurity.restricted")}
-          checked={state.restricted}
-          disabled={!ready || loading || busy || state.cliLocked}
-          onChange={(enabled) => void setRestricted(enabled)}
-        />
-      </div>
-      <p className="settings-hint">{t("pluginSecurity.description")}</p>
+      <h3 className="settings-subtitle">{t("pluginSecurity.title")}</h3>
+      <SwitchRow
+        label={t("pluginSecurity.restricted")}
+        hint={t("pluginSecurity.description")}
+        checked={state.restricted}
+        disabled={!ready || loading || busy || state.cliLocked}
+        onChange={(enabled) => void setRestricted(enabled)}
+      />
       {state.cliLocked ? <p className="settings-message">{t("pluginSecurity.cliLocked")}</p> : null}
       {loading ? <p role="status">{t("common.loading")}</p> : null}
       {error ? (
