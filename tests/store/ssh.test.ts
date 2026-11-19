@@ -224,3 +224,40 @@ it("records sessions removed by a snapshot without making up a disconnect cause"
   });
   expect(useSsh.getState().history[0]!.events[1]!.detail).toBeUndefined();
 });
+
+it("reports a coalesced disconnect failure to every initiating window without duplicate effects", async () => {
+  let fail!: (reason: unknown) => void;
+  const error = new Error("disconnect failed");
+  apiMock.sshDisconnect.mockImplementationOnce(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  const local = vi.fn(),
+    remote = vi.fn();
+  const first = useSsh.getState().disconnect(session.id, local);
+  const joined = useSsh.getState().disconnect(session.id, remote);
+  fail(error);
+  await Promise.all([first, joined]);
+  expect(apiMock.sshDisconnect).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(local).toHaveBeenCalledExactlyOnceWith(error);
+  expect(remote).toHaveBeenCalledExactlyOnceWith(error);
+  expect(
+    useSsh.getState().history[0]!.events.filter((event) => event.kind === "disconnectFailed"),
+  ).toHaveLength(1);
+  expect(useSsh.getState().sessions).toEqual([session]);
+});
+
+it("does not lose other disconnect observers when one caller's notification throws", async () => {
+  apiMock.sshDisconnect.mockRejectedValueOnce(new Error("offline"));
+  const notified = vi.fn();
+  const first = useSsh.getState().disconnect(session.id, () => {
+    throw new Error("broken observer");
+  });
+  const joined = useSsh.getState().disconnect(session.id, notified);
+  await expect(first).rejects.toThrow("broken observer");
+  await joined;
+  expect(notified).toHaveBeenCalledOnce();
+  expect(useSsh.getState().disconnectingSessionIds).toEqual([]);
+});

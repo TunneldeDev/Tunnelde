@@ -88,7 +88,9 @@ pub(super) struct TransferInfo {
 #[derive(Default)]
 pub(super) struct Ownership {
     generation: u64,
+    pub(super) actions: HashMap<String, super::actions::PendingAction>,
     windows: HashMap<String, Document>,
+    destroying: HashSet<String>,
     pub(super) panels: HashMap<String, Panel>,
     transfers: HashMap<String, Transfer>,
     drags: HashMap<String, DragGrant>,
@@ -103,6 +105,7 @@ impl Ownership {
         if !self.windows.contains_key(window) && self.windows.len() >= MAX_WINDOWS {
             return Err("window limit");
         }
+        self.retire_document_actions(window);
         self.save_pending_source(window);
         self.cancel_window_transfers(window);
         let document = token();
@@ -202,6 +205,30 @@ impl Ownership {
         }
         Ok(())
     }
+    /// Creating a destination is a presentation capability, not a general
+    /// application proxy. Satellites must prove an exact, interactive adapter
+    /// lease; an old document or another window's panel cannot spawn windows.
+    pub fn authorize_creation(
+        &self,
+        window: &str,
+        document: &str,
+        lease: Option<&Lease>,
+    ) -> Result<()> {
+        self.authorize(window, document)?;
+        if let Some(lease) = lease {
+            self.action(window, document, lease)?;
+            let panel = self.owned(window, document, lease)?;
+            if !matches!(lease.panel_id.as_str(), "connections" | "tasks")
+                || panel.blocked
+                || !panel.native_actions.is_empty()
+            {
+                return Err("panel interaction in progress");
+            }
+        } else {
+            self.main(window, document)?;
+        }
+        Ok(())
+    }
     pub fn add_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<Lease> {
         self.main(window, document)?;
         if panel_id.is_empty() || panel_id.len() > 256 || self.panels.len() >= MAX_PANELS {
@@ -242,6 +269,7 @@ impl Ownership {
     pub fn action(&self, window: &str, document: &str, lease: &Lease) -> Result<()> {
         self.owned(window, document, lease)?;
         if !self.windows[window].ready
+            || self.destroying.contains(window)
             || self.windows[window].closing
             || self
                 .transfers
@@ -254,6 +282,7 @@ impl Ownership {
     }
     pub fn remove_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<()> {
         self.main(window, document)?;
+        self.retire_panel_actions(panel_id);
         self.panels.remove(panel_id).ok_or("panel not found")?;
         self.transfers
             .retain(|_, pending| pending.lease.panel_id != panel_id);
@@ -301,6 +330,20 @@ impl Ownership {
     pub fn view(&self, window: &str, document: &str, lease: &Lease) -> Result<Value> {
         Ok(self.owned(window, document, lease)?.checkpoint.clone())
     }
+    pub(super) fn relay_fence(&mut self, panel_id: &str, id: &str, busy: bool) -> Result<()> {
+        let Some(panel) = self.panels.get_mut(panel_id) else {
+            return if busy { Err("panel not found") } else { Ok(()) };
+        };
+        if busy {
+            if panel.blocked {
+                return Err("panel interaction in progress");
+            }
+            panel.native_actions.insert(id.into());
+        } else {
+            panel.native_actions.remove(id);
+        }
+        Ok(())
+    }
     pub fn block(
         &mut self,
         window: &str,
@@ -339,6 +382,9 @@ impl Ownership {
         }
         if target == window {
             return Err("same window");
+        }
+        if self.destroying.contains(target) || self.destroying.contains(window) {
+            return Err("window closing");
         }
         let destination = self
             .windows
@@ -459,6 +505,7 @@ impl Ownership {
         Ok(())
     }
     pub fn expire(&mut self, now: Instant) -> Vec<String> {
+        self.expire_actions(now);
         let expired: Vec<_> = self
             .transfers
             .iter()
@@ -570,6 +617,24 @@ impl Ownership {
                 .values()
                 .any(|pending| pending.target_window == window || pending.lease.window_id == window)
     }
+    /// Reserve empty-window destruction while holding the ownership mutex. A
+    /// destination cannot acquire an incoming handoff between the emptiness
+    /// check and the platform's asynchronous destroy notification.
+    pub fn reserve_empty_close(&mut self, window: &str) -> Result<String> {
+        if !self.can_destroy(window) {
+            return Err("window still owns panels");
+        }
+        let target = self.windows.get_mut(window).ok_or("invalid window")?;
+        target.closing = true;
+        self.destroying.insert(window.into());
+        Ok(target.id.clone())
+    }
+    pub fn release_empty_close(&mut self, window: &str) {
+        self.destroying.remove(window);
+        if let Some(target) = self.windows.get_mut(window) {
+            target.closing = false;
+        }
+    }
     fn save_pending_source(&mut self, window: &str) {
         for pending in self
             .transfers
@@ -592,12 +657,14 @@ impl Ownership {
         if window == MAIN {
             return Err("coordinator must stay alive");
         }
+        self.retire_document_actions(window);
         if !self.windows.contains_key(MAIN) {
             return Err("coordinator unavailable");
         }
         self.save_pending_source(window);
         self.cancel_window_transfers(window);
         self.windows.remove(window);
+        self.destroying.remove(window);
         self.drags
             .retain(|_, grant| grant.lease.window_id != window);
         let mut recovered = Vec::new();

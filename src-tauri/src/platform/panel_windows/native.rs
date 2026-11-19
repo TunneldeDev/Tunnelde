@@ -8,11 +8,17 @@ use super::{
 use crate::error::{AppError, AppResult};
 use serde::Serialize;
 use serde_json::Value;
-use std::{sync::Mutex, time::Instant};
+use std::{collections::HashMap, sync::Mutex, time::Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent};
 
+#[derive(Clone)]
+struct Creation {
+    window: String,
+    document: String,
+}
 #[derive(Default)]
 pub(crate) struct Registry {
+    creations: Mutex<HashMap<String, Creation>>,
     ownership: Mutex<Ownership>,
     // Native focus order only; never trust browser screenX/screenY for drops.
     focus: Mutex<Vec<String>>,
@@ -95,7 +101,9 @@ pub(crate) fn panel_window_control(
     let registry = app.state::<Registry>();
     let notify = !matches!(
         &request,
-        Command::Snapshot {}
+        Command::ClaimActions {}
+            | Command::ActionResult { .. }
+            | Command::Snapshot {}
             | Command::Authorize { .. }
             | Command::View { .. }
             | Command::Staged { .. }
@@ -114,22 +122,17 @@ pub(crate) fn panel_window_control(
     }
     Ok(result)
 }
-fn coordinator(registry: &Registry, window: &WebviewWindow, document: &str) -> AppResult<()> {
-    if window.label() != MAIN {
-        return Err(invalid("coordinator required"));
-    }
-    lock(registry)
-        .authorize(window.label(), document)
-        .map_err(invalid)
-}
 #[tauri::command]
 pub(crate) async fn panel_window_create(
     app: AppHandle,
     window: WebviewWindow,
     document: String,
+    lease: Option<Lease>,
 ) -> AppResult<String> {
     let registry = app.state::<Registry>();
-    coordinator(&registry, &window, &document)?;
+    lock(&registry)
+        .authorize_creation(window.label(), &document, lease.as_ref())
+        .map_err(invalid)?;
     let id = format!("panel-{}", uuid::Uuid::new_v4());
     // Register before building: pending creations also keep the coordinator
     // alive. A tray checkpoint already queued is invalidated before it commits.
@@ -140,11 +143,27 @@ pub(crate) async fn panel_window_create(
         }
         ownership.register(&id).map_err(invalid)?;
     }
+    registry
+        .creations
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .insert(
+            id.clone(),
+            Creation {
+                window: window.label().into(),
+                document: document.clone(),
+            },
+        );
     super::super::background::cancel(&app);
     let bounds = match placement(&window) {
         Ok(bounds) => bounds,
         Err(error) => {
             let _ = lock(&registry).destroyed(&id);
+            registry
+                .creations
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .remove(&id);
             return Err(error);
         }
     };
@@ -182,30 +201,73 @@ pub(crate) async fn panel_window_create(
     .await
     .map_err(|error| AppError::internal(error.to_string()))
     .and_then(|result| result);
+    // Source ownership may have changed while native WebView construction was
+    // awaiting the platform thread. Never return a destination to a stale caller.
+    let result = result.and_then(|()| {
+        lock(&registry)
+            .authorize_creation(window.label(), &document, lease.as_ref())
+            .map_err(invalid)
+    });
     if let Err(error) = result {
         if let Some(target) = app.get_webview_window(&id) {
             let _ = target.destroy();
         }
         let _ = lock(&registry).destroyed(&id);
+        registry
+            .creations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&id);
         changed(&app);
         return Err(error);
     }
-    // Creation must become ready in bounded time or rollback the empty window.
+    // An initialized destination can still be abandoned (source reload, failed
+    // capture, cancelled handoff). Reap it even if it reached frontend ready;
+    // never destroy an owned window or interrupt an active transfer.
     let timeout_app = app.clone();
     let timeout_id = id.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(20)).await;
-        let registry = timeout_app.state::<Registry>();
-        let ownership = lock(&registry);
-        let timed_out = ownership
-            .windows()
-            .iter()
-            .any(|window| window.id == timeout_id && !window.ready)
-            && ownership.can_destroy(&timeout_id);
-        drop(ownership);
-        if timed_out {
-            if let Some(window) = timeout_app.get_webview_window(&timeout_id) {
-                let _ = window.destroy();
+        let deadline = Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let registry = timeout_app.state::<Registry>();
+            let (gone_or_owned, empty) = {
+                let ownership = lock(&registry);
+                (
+                    ownership.document(&timeout_id).is_none()
+                        || ownership
+                            .leases()
+                            .iter()
+                            .any(|lease| lease.window_id == timeout_id),
+                    ownership.can_destroy(&timeout_id),
+                )
+            };
+            if gone_or_owned {
+                registry
+                    .creations
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(&timeout_id);
+                break;
+            }
+            if empty && Instant::now() >= deadline {
+                let Ok(_) = lock(&registry).reserve_empty_close(&timeout_id) else {
+                    continue;
+                };
+                if let Some(window) = timeout_app.get_webview_window(&timeout_id) {
+                    if window.destroy().is_err() {
+                        lock(&registry).release_empty_close(&timeout_id);
+                        continue;
+                    }
+                }
+                let _ = lock(&registry).destroyed(&timeout_id);
+                registry
+                    .creations
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(&timeout_id);
+                changed(&timeout_app);
+                break;
             }
         }
     });
@@ -273,19 +335,39 @@ pub(crate) fn panel_window_destroy(
     target: String,
 ) -> AppResult<()> {
     let registry = window.state::<Registry>();
-    let ownership = lock(&registry);
+    let mut ownership = lock(&registry);
     ownership
         .authorize(window.label(), &document)
         .map_err(invalid)?;
     if window.label() != MAIN && window.label() != target {
-        return Err(invalid("invalid window"));
+        let created = registry
+            .creations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&target)
+            .cloned();
+        if !created.is_some_and(|creation| {
+            creation.window == window.label() && creation.document == document
+        }) {
+            return Err(invalid("invalid window"));
+        }
     }
-    if ownership.document(&target).is_none() || !ownership.can_destroy(&target) {
-        return Err(invalid("window still owns panels"));
-    }
+    ownership.reserve_empty_close(&target).map_err(invalid)?;
     drop(ownership);
-    if let Some(target) = window.app_handle().get_webview_window(&target) {
-        target.destroy()?;
+    if let Some(target_window) = window.app_handle().get_webview_window(&target) {
+        if let Err(error) = target_window.destroy() {
+            lock(&registry).release_empty_close(&target);
+            changed(window.app_handle());
+            return Err(error.into());
+        }
+    } else {
+        let _ = lock(&registry).destroyed(&target);
+        registry
+            .creations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&target);
+        changed(window.app_handle());
     }
     Ok(())
 }
@@ -361,6 +443,11 @@ pub(crate) fn native_event(app: &AppHandle, window: &str, event: &WindowEvent) {
         }
         WindowEvent::Destroyed if window != MAIN => {
             let _ = lock(&registry).destroyed(window);
+            registry
+                .creations
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .remove(window);
             registry
                 .focus
                 .lock()

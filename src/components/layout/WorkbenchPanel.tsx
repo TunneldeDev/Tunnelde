@@ -1,5 +1,9 @@
+import { useStore } from "zustand";
+import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
 import { usePanelWindows } from "@/store/panelWindows";
-import { windowViews } from "@/lib/panels/windowViews";
+import { movePanelToWindow } from "@/lib/panels/windowMoves";
+import { toast } from "@/store/toasts";
+import { translateError } from "@/lib/api/errors";
 import {
   createContext,
   useContext,
@@ -59,8 +63,8 @@ export function PanelHeader({
 /** Default integrated panel. Content has one retained owner regardless of presentation. */
 export function WorkbenchPanel({
   view,
-  location,
-  visible,
+  location: requestedLocation,
+  visible: requestedVisible,
   showTitle = false,
   children,
 }: {
@@ -71,16 +75,19 @@ export function WorkbenchPanel({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const local = useLocalPanelScope();
+  const location = local?.location ?? requestedLocation;
+  const visible = requestedVisible && (local?.visible ?? true);
   const windowId = usePanelWindows((state) => state.windowId);
   const close = () => {
     if (windowId === "main") closePanel(view);
     else {
-      void windowViews()?.close?.();
+      void movePanelToWindow(view, "main").catch((error) => toast(translateError(error), "error"));
     }
   };
-  const store = panelPresentation(view);
-  const pinned = store((state) => state.pinned);
-  const bounds = store((state) => state.bounds);
+  const store = local?.floating ?? panelPresentation(view);
+  const pinned = useStore(store, (state) => state.pinned);
+  const bounds = useStore(store, (state) => state.bounds);
   const panel = useRef<HTMLElement>(null);
   const actions = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -123,11 +130,15 @@ export function WorkbenchPanel({
       )
         return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      store.getState().close();
+      if (windowId === "main") store.getState().close();
+      else
+        void movePanelToWindow(view, "main").catch((error) =>
+          toast(translateError(error), "error"),
+        );
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
-  }, [visible, location, pinned, store, view]);
+  }, [visible, location, pinned, store, view, windowId]);
   return (
     <PanelScope.Provider value={scope}>
       <HelpPresentationProvider value="tooltip">
@@ -184,7 +195,7 @@ export function WorkbenchPanel({
                 </span>
                 <strong>{sidebarLabel(view, t)}</strong>
               </button>
-            ) : location === "sidebar" || showTitle ? (
+            ) : location === "sidebar" || (showTitle && !local) ? (
               <SidebarTitle view={view}>{sidebarLabel(view, t)}</SidebarTitle>
             ) : (
               <span className="workbench-panel__spacer" />

@@ -20,7 +20,22 @@ export interface NativePanelSnapshot {
   panels: PanelLease[];
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
+export type PanelViewAction =
+  | { kind: "task"; key: string; ticket: string; actionId: string }
+  | { kind: "clearTasks" }
+  | { kind: "disconnect"; sessionId: string };
+export type PanelActionResult =
+  { status: "done"; value: unknown } | { status: "failed"; message: string };
+export interface PanelActionJob {
+  id: string;
+  lease: PanelLease;
+  request: PanelViewAction;
+}
 export type PanelWindowCommand =
+  | { action: "requestAction"; lease: PanelLease; request: PanelViewAction }
+  | { action: "claimActions" }
+  | { action: "completeAction"; id: string; result: PanelActionResult }
+  | { action: "actionResult" | "cancelAction"; id: string }
   | { action: "snapshot" | "ready" | "beginClose" | "cancelClose" }
   | { action: "addPanel" | "removePanel"; panelId: string }
   | { action: "authorize" | "view" | "readModel" | "issueDrag"; lease: PanelLease }

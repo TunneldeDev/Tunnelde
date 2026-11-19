@@ -3,6 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   NativePanelIdentity,
   PanelLease,
+  PanelViewAction,
+  PanelActionResult,
+  PanelActionJob,
   NativePanelSnapshot,
   PanelWindowCommand,
 } from "./windowProtocol";
@@ -60,9 +63,12 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       cleanups.add(release);
       return release;
     },
-    async create() {
+    async create(lease?: PanelLease) {
       check();
-      const id = await invoke<string>("panel_window_create", { document: identity.document });
+      const id = await invoke<string>("panel_window_create", {
+        document: identity.document,
+        lease,
+      });
       check();
       return id;
     },
@@ -74,6 +80,59 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
     async destroy(target: string) {
       check();
       await invoke("panel_window_destroy", { document: identity.document, target });
+    },
+    async action<T = unknown>(
+      lease: PanelLease,
+      request: PanelViewAction,
+      signal?: AbortSignal,
+    ): Promise<T> {
+      check();
+      if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+      // Keep the returned request id even if dispose wins this IPC reply, so an
+      // unclaimed job cannot execute later merely because its view disappeared.
+      const id = await invoke<string>("panel_window_control", {
+        document: identity.document,
+        request: { action: "requestAction", lease, request },
+      });
+      let completed = false;
+      try {
+        for (;;) {
+          check();
+          if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+          const result = await control<PanelActionResult | null>({ action: "actionResult", id });
+          if (result) {
+            completed = true;
+            if (result.status === "failed") throw new Error(result.message);
+            return result.value as T;
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        }
+      } finally {
+        if (!completed)
+          await invoke("panel_window_control", {
+            document: identity.document,
+            request: { action: "cancelAction", id },
+          }).catch(() => {});
+      }
+    },
+    // Unlike ordinary reads, keep late claim replies: native has admitted these
+    // jobs and the executor must finalize them even if local disposal won the IPC.
+    async claimActions() {
+      check();
+      return invoke<PanelActionJob[]>("panel_window_control", {
+        document: identity.document,
+        request: { action: "claimActions" },
+      });
+    },
+    // Finalization is the only operation permitted after local disposal. It
+    // cannot start work or change its payload, and native still checks the exact
+    // coordinator document/job identity. Running singleton work must release its
+    // handoff fence even after its original component/lifecycle has gone away.
+    finalizeAction(id: string, result: PanelActionResult) {
+      return invoke("panel_window_control", {
+        document: identity.document,
+        request: { action: "completeAction", id, result },
+      });
     },
     async focus(panelId: string) {
       check();

@@ -6,14 +6,20 @@ import { translateError } from "@/lib/api/errors";
 import { formatBytes } from "@/lib/text/format";
 import type { TaskViewProps } from "./presentation";
 
-import { runBackgroundTaskAction } from "@/lib/tasks/registry";
+import { useTaskPanelModel } from "@/lib/panels/taskModel";
+import { usePanelViewState } from "@/lib/panels/viewState";
 
 const ICONS = { cancel: X, pause: Pause, resume: Play, retry: RefreshCw, clear: Trash2 };
 
 export function BackgroundTaskRow({ task }: TaskViewProps) {
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const model = useTaskPanelModel();
+  const [error, setError] = usePanelViewState<string | null>(
+    `task:${model.viewKey(task)}:error`,
+    null,
+    (value): value is string | null => value === null || typeof value === "string",
+  );
   const progress = task.progress;
   const completed = Number.isFinite(progress?.completed) ? Math.max(0, progress!.completed) : 0;
   const total =
@@ -51,7 +57,7 @@ export function BackgroundTaskRow({ task }: TaskViewProps) {
                   setBusy(true);
                   setError(null);
                   void Promise.resolve()
-                    .then(() => runBackgroundTaskAction(task, action.id))
+                    .then(() => model.run(task, action.id))
                     .catch((error) => setError(translateError(error)))
                     .finally(() => setBusy(false));
                 }}

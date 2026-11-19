@@ -1,7 +1,10 @@
+import { PanelWorkspace } from "@/components/layout/PanelWorkspace";
+import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
+import type { SidebarView } from "@/store/navigation";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WindowTitleBar } from "@/components/layout/WindowTitleBar";
 import { useTranslation } from "react-i18next";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { brandMark } from "@/lib/brand";
 import { initializePanelWindow, type PanelWindowClient } from "@/lib/panels/windowClient";
 import {
@@ -16,7 +19,13 @@ import { NativePanelView } from "@/components/layout/NativePanelView";
 import { WorkbenchPanel } from "@/components/layout/WorkbenchPanel";
 import { ConnectionDetails } from "@/components/layout/ConnectionStatus";
 import { ConnectionModelScope } from "@/lib/panels/connectionModel";
-import type { ConnectionWindowModel } from "./panelReadModels";
+import type {
+  ConnectionWindowModel,
+  TaskWindowModel,
+  WindowModelAppearance,
+} from "./panelReadModels";
+import { TaskModelScope, type ClearTasksResult } from "@/lib/panels/taskModel";
+import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
 import { applyAppearance, observeSystemAppearance } from "@/lib/prefs/appearance";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
 import i18n from "@/i18n/i18n";
@@ -26,17 +35,17 @@ import { translateError } from "@/lib/api/errors";
 import { loadStartupFonts } from "./startupFonts";
 import "./satellite.css";
 
-function ConnectionView({
+interface NativeViewProps {
+  client: PanelWindowClient;
+  record: WindowViewRecord;
+  presented: (model: WindowModelAppearance) => void;
+}
+function useNativeReadModel<T extends WindowModelAppearance>({
   client,
   record,
   presented,
-}: {
-  client: PanelWindowClient;
-  record: WindowViewRecord;
-  presented: (model: ConnectionWindowModel) => void;
-}) {
-  const [model, setModel] = useState<ConnectionWindowModel | null>(null);
-  const [pending, setPending] = useState<string[]>([]);
+}: NativeViewProps) {
+  const [model, setModel] = useState<T | null>(null);
   useEffect(() => {
     let disposed = false,
       queued = false,
@@ -59,7 +68,7 @@ function ConnectionView({
                 ? { action: "readModel" as const, lease: record.lease }
                 : null;
             if (!request) continue;
-            const next = await client.control<ConnectionWindowModel | null>(request);
+            const next = await client.control<T | null>(request);
             if (disposed || !next) continue;
             // This data originates only from the coordinator's explicit private
             // projection. Do not hydrate writable main stores in a satellite.
@@ -96,6 +105,12 @@ function ConnectionView({
   useEffect(() => {
     if (model) presented(model);
   }, [model, presented]);
+  return model;
+}
+function ConnectionView(props: NativeViewProps) {
+  const { client, record } = props;
+  const model = useNativeReadModel<ConnectionWindowModel>(props);
+  const [pending, setPending] = useState<string[]>([]);
   if (!model) return null; // Never mark staged-ready until a real model is rendered.
   return (
     <NativePanelView panelId={record.panelId}>
@@ -111,7 +126,7 @@ function ConnectionView({
             if (!record.lease || record.staged) return;
             setPending((items) => [...items, id]);
             try {
-              await client.disconnect(record.lease, id);
+              await client.action(record.lease, { kind: "disconnect", sessionId: id });
             } catch (error) {
               toast(translateError(error), "error");
             } finally {
@@ -121,6 +136,47 @@ function ConnectionView({
         >
           <ConnectionDetails />
         </ConnectionModelScope>
+      </WorkbenchPanel>
+    </NativePanelView>
+  );
+}
+
+function TaskView(props: NativeViewProps) {
+  const { client, record } = props;
+  const model = useNativeReadModel<TaskWindowModel>(props);
+  const items = useMemo(
+    () =>
+      model?.tasks.map((task) => ({
+        ...task,
+        actions: task.actions.map((action) => ({ ...action, run: () => {} })),
+      })) ?? [],
+    [model],
+  );
+  if (!model) return null;
+  return (
+    <NativePanelView panelId={record.panelId}>
+      <WorkbenchPanel view="tasks" location="workspace" visible={!record.staged} showTitle>
+        <TaskModelScope
+          value={{
+            items,
+            viewKey: (task) => model.tasks.find((entry) => entry.key === task.key)!.ticket,
+            run: async (task, actionId) => {
+              if (!record.lease || record.staged) throw new Error("panel.window.staleOwner");
+              return client.action(record.lease, {
+                kind: "task",
+                key: task.key,
+                ticket: model.tasks.find((entry) => entry.key === task.key)!.ticket,
+                actionId,
+              });
+            },
+            clear: async () => {
+              if (!record.lease || record.staged) throw new Error("panel.window.staleOwner");
+              return client.action<ClearTasksResult>(record.lease, { kind: "clearTasks" });
+            },
+          }}
+        >
+          <DockedBackgroundTasks />
+        </TaskModelScope>
       </WorkbenchPanel>
     </NativePanelView>
   );
@@ -136,7 +192,7 @@ export function SatelliteApp() {
     style: ConnectionWindowModel["appearance"]["titleBarStyle"];
     os: string;
   } | null>(null);
-  const presented = useCallback((model: ConnectionWindowModel) => {
+  const presented = useCallback((model: WindowModelAppearance) => {
     setChrome((current) =>
       current?.style === model.appearance.titleBarStyle && current.os === model.platform
         ? current
@@ -226,10 +282,20 @@ export function SatelliteApp() {
           {failed ? <span>{t("panels.windowInitializationFailed")}</span> : null}
         </div>
       ) : (
-        [...entries.values()].map((record) => (
-          <ConnectionView key={record.key} client={client} record={record} presented={presented} />
-        ))
+        <PanelWorkspace
+          entries={[...entries.values()].map((record) => ({
+            id: record.panelId as SidebarView,
+            key: record.key,
+            content:
+              record.panelId === "tasks" ? (
+                <TaskView client={client} record={record} presented={presented} />
+              ) : (
+                <ConnectionView client={client} record={record} presented={presented} />
+              ),
+          }))}
+        />
       )}
+      <ContextMenuHost />
       <ToastHost />
     </div>
   );

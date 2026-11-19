@@ -35,7 +35,9 @@ it("publishes only explicit credential-free connection/appearance projections, t
       network: { ...oldSettings.network, defaultProxy: "private-proxy-reference" },
     },
   });
-  const control = vi.fn().mockResolvedValue(null).mockResolvedValueOnce("producer-1");
+  const control = vi.fn(async (request: { action: string; panelId: string; revision?: number }) =>
+    request.action === "beginModel" ? `producer-${request.panelId}` : null,
+  );
   const client = { control } as unknown as PanelWindowClient;
   const failure = vi.fn();
   const stop = startPanelReadModels(client, failure);
@@ -63,6 +65,18 @@ it("publishes only explicit credential-free connection/appearance projections, t
   stop();
   useHosts.setState({ hosts: oldHosts });
   await settle();
-  expect(control).toHaveBeenCalledTimes(3);
+  expect(control.mock.calls.filter(([request]) => request.panelId === "connections")).toHaveLength(
+    3,
+  );
+  expect(control.mock.calls.filter(([request]) => request.panelId === "tasks")).toHaveLength(2);
+  expect(control).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: "publishModel",
+      panelId: "tasks",
+      publisher: "producer-tasks",
+      revision: 1,
+      model: expect.objectContaining({ tasks: [] }),
+    }),
+  );
   expect(failure).not.toHaveBeenCalled();
 });

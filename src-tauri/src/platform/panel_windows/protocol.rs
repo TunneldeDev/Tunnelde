@@ -1,5 +1,6 @@
 //! Closed control-plane grammar. No "invoke arbitrary command" variant and no
 //! caller-controlled window identity. Native transport supplies the IPC label.
+use super::actions::{ActionResult, ViewAction};
 use super::ownership::{Lease, Ownership};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -14,6 +15,21 @@ use std::time::Instant;
 )]
 pub(crate) enum Command {
     Snapshot {},
+    RequestAction {
+        lease: Lease,
+        request: ViewAction,
+    },
+    ClaimActions {},
+    CompleteAction {
+        id: String,
+        result: ActionResult,
+    },
+    ActionResult {
+        id: String,
+    },
+    CancelAction {
+        id: String,
+    },
     Authorize {
         lease: Lease,
     },
@@ -93,6 +109,18 @@ impl Ownership {
             Command::Snapshot {} => Ok(
                 json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?}),
             ),
+            Command::RequestAction { lease, request } => Ok(json!(
+                self.request_action(window, document, &lease, request, now)?
+            )),
+            Command::ClaimActions {} => Ok(json!(self.claim_actions(window, document, now)?)),
+            Command::CompleteAction { id, result } => {
+                self.complete_action(window, document, &id, result, now)?;
+                Ok(Value::Null)
+            }
+            Command::ActionResult { id } => {
+                Ok(json!(self.action_result(window, document, &id, now)?))
+            }
+            Command::CancelAction { id } => Ok(json!(self.cancel_action(window, document, &id)?)),
             Command::Authorize { lease } => {
                 self.action(window, document, &lease)?;
                 Ok(Value::Null)

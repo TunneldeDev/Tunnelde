@@ -1,3 +1,5 @@
+import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
+import { localPanelMoveActions } from "@/lib/panels/localWorkspaceActions";
 import { nativePanelMoveActions } from "@/lib/panels/windowMoves";
 import { usePanelWindows } from "@/store/panelWindows";
 import { panelLocation, setPanelLocation } from "@/lib/panels/controller";
@@ -51,18 +53,26 @@ export function sidebarMoveActions(view: SidebarView, t: TFunction): MenuAction[
 
 export function SidebarDockControls({ view }: { view: SidebarView }) {
   const { t } = useTranslation();
+  const local = useLocalPanelScope();
   usePanelWindows((state) => state.snapshot);
   const docked = useWorkspace((state) => state.tabs.some((tab) => tab.id === sidebarTabId(view)));
   return (
     <Menu
-      label={t(docked ? "docking.returnToSidebar" : "docking.moveToWorkspace")}
-      items={sidebarMoveActions(view, t)}
+      label={t(
+        local ? "common.more" : docked ? "docking.returnToSidebar" : "docking.moveToWorkspace",
+      )}
+      items={
+        local
+          ? [...nativePanelMoveActions(view, t), ...localPanelMoveActions(local.workspace, view, t)]
+          : sidebarMoveActions(view, t)
+      }
     />
   );
 }
 
 export function SidebarTitle({ view, children }: { view: SidebarView; children: ReactNode }) {
   const { t } = useTranslation();
+  const local = useLocalPanelScope();
   return (
     <span
       className="sidebar__title sidebar-drag-title"
@@ -78,7 +88,17 @@ export function SidebarTitle({ view, children }: { view: SidebarView; children: 
         event.stopPropagation();
         useContextMenu
           .getState()
-          .open(event.clientX, event.clientY, sidebarMoveActions(view, t), event.currentTarget);
+          .open(
+            event.clientX,
+            event.clientY,
+            local
+              ? [
+                  ...nativePanelMoveActions(view, t),
+                  ...localPanelMoveActions(local.workspace, view, t),
+                ]
+              : sidebarMoveActions(view, t),
+            event.currentTarget,
+          );
       }}
     >
       <GripVertical size={11} aria-hidden="true" />

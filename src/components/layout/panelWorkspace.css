@@ -1,0 +1,25 @@
+.panel-workspace,
+.panel-workspace__docked,
+.panel-workspace__group,
+.panel-workspace__group-body,
+.panel-workspace__page,
+.panel-workspace__mount,
+.panel-workspace__content {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel-workspace,
+.panel-workspace__group,
+.panel-workspace__group-body {
+  flex-direction: column;
+}
+.panel-workspace__page[hidden] {
+  display: none;
+}
+.panel-workspace .workbench-floating-slot .panel-workspace__mount,
+.panel-workspace .workbench-floating-slot .panel-workspace__content {
+  overflow: visible;
+}

@@ -1,3 +1,5 @@
+import { useTaskPanelModel } from "@/lib/panels/taskModel";
+import { usePanelViewState } from "@/lib/panels/viewState";
 import { ListTodo, CheckCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,7 +11,6 @@ import {
   useBackgroundTasks,
   isFinishedTask,
   canClearBackgroundTask,
-  clearFinishedBackgroundTasks,
   type BackgroundTaskEntry,
 } from "@/lib/tasks/background";
 import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
@@ -118,18 +119,29 @@ export function BackgroundTaskStatusButton({ floating = false }: { floating?: bo
 
 function TaskGroup({
   name,
+  stateKey,
   items,
   now,
   defaultOpen = true,
 }: {
   name: string;
+  stateKey: string;
   items: BackgroundTaskEntry[];
   now: number;
   defaultOpen?: boolean;
 }) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(defaultOpen);
-  const [limit, setLimit] = useState(20);
+  const model = useTaskPanelModel();
+  const [expanded, setExpanded] = usePanelViewState(
+    stateKey + ":expanded",
+    defaultOpen,
+    (v): v is boolean => typeof v === "boolean",
+  );
+  const [limit, setLimit] = usePanelViewState(
+    stateKey + ":limit",
+    20,
+    (v): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 20 && v <= 100_000,
+  );
   if (!items.length) return null;
   return (
     <section className="background-group">
@@ -147,7 +159,7 @@ function TaskGroup({
         <>
           {items.slice(0, limit).map((task) => {
             const View = taskPresentation(task.source) ?? BackgroundTaskRow;
-            return <View key={task.key} task={task} now={now} />;
+            return <View key={model.viewKey(task)} task={task} now={now} />;
           })}
           {items.length > limit ? (
             <Button
@@ -170,7 +182,8 @@ export { FloatingPanelLayer as BackgroundTasks } from "@/components/layout/Sideb
 
 export function DockedBackgroundTasks() {
   const { t } = useTranslation();
-  const allItems = useBackgroundTasks((s) => s.items);
+  const model = useTaskPanelModel();
+  const allItems = model.items;
   const items = allItems.filter((item) => item.visible !== false);
   const scope = useWorkbenchPanel();
   const visible = scope?.visible ?? true;
@@ -193,12 +206,11 @@ export function DockedBackgroundTasks() {
     clearingRef.current = true;
     setClearing(true);
     try {
-      const errors = await clearFinishedBackgroundTasks();
-      if (errors.length)
-        toast(
-          t("tasks.clearFailed", { count: errors.length, error: translateError(errors[0]) }),
-          "error",
-        );
+      const errors = await model.clear();
+      if (errors.count)
+        toast(t("tasks.clearFailed", { count: errors.count, error: errors.first ?? "" }), "error");
+    } catch (error) {
+      toast(translateError(error), "error");
     } finally {
       clearingRef.current = false;
       setClearing(false);
@@ -227,14 +239,25 @@ export function DockedBackgroundTasks() {
         </Button>
       </div>
       <BackgroundTasksSurface entries={allItems} embedded={embedded} visible={visible}>
-        <div className="background-panel__body">
+        <div className="background-panel__body" data-panel-scroll="tasks.body">
           {!items.length ? (
             <p className="background-panel__empty">{t("tasks.empty")}</p>
           ) : (
             <>
-              <TaskGroup name={t("tasks.inProgress")} items={active} now={now} />
-              <TaskGroup name={t("tasks.attention")} items={attention} now={now} />
               <TaskGroup
+                stateKey="tasks.active"
+                name={t("tasks.inProgress")}
+                items={active}
+                now={now}
+              />
+              <TaskGroup
+                stateKey="tasks.attention"
+                name={t("tasks.attention")}
+                items={attention}
+                now={now}
+              />
+              <TaskGroup
+                stateKey="tasks.finished"
                 name={t("tasks.finished")}
                 items={finished}
                 now={now}

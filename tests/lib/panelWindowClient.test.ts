@@ -106,3 +106,93 @@ it("binds the closed resource/focus gateways to native document identity and the
   await expect(client.focus("connections")).rejects.toThrow("disposed");
   await expect(client.disconnect(lease, "session-1")).rejects.toThrow("disposed");
 });
+
+it("retains a late native claim reply so disposed executors can release admitted fences", async () => {
+  let reply!: (jobs: unknown[]) => void;
+  native.invoke.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        reply = done;
+      }),
+  );
+  const client = createPanelWindowClient({ windowId: "main", document: "main-document" });
+  const pending = client.claimActions();
+  client.dispose();
+  const jobs = [{ id: "claimed" }];
+  reply(jobs);
+  expect(await pending).toEqual(jobs);
+  native.invoke.mockResolvedValueOnce(null);
+  await client.finalizeAction("claimed", { status: "failed", message: "disposed" });
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_control", {
+    document: "main-document",
+    request: {
+      action: "completeAction",
+      id: "claimed",
+      result: { status: "failed", message: "disposed" },
+    },
+  });
+  await expect(client.claimActions()).rejects.toThrow("disposed");
+});
+
+it("polls an action using only its native-issued id and propagates remote failures", async () => {
+  const lease = { panelId: "tasks", windowId: identity.windowId, generation: 5 };
+  native.invoke
+    .mockResolvedValueOnce("request-id")
+    .mockResolvedValueOnce({ status: "failed", message: "changed" });
+  const client = createPanelWindowClient(identity);
+  await expect(client.action(lease, { kind: "clearTasks" })).rejects.toThrow("changed");
+  expect(native.invoke.mock.calls).toEqual([
+    [
+      "panel_window_control",
+      {
+        document: identity.document,
+        request: { action: "requestAction", lease, request: { kind: "clearTasks" } },
+      },
+    ],
+    [
+      "panel_window_control",
+      { document: identity.document, request: { action: "actionResult", id: "request-id" } },
+    ],
+  ]);
+});
+
+it("cancels a submission when disposal wins its reply and never starts a new request after abort", async () => {
+  const lease = { panelId: "tasks", windowId: identity.windowId, generation: 5 };
+  let reply!: (id: string) => void;
+  native.invoke
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          reply = done;
+        }),
+    )
+    .mockResolvedValue(null);
+  const client = createPanelWindowClient(identity);
+  const pending = client.action(lease, { kind: "clearTasks" });
+  client.dispose();
+  reply("unclaimed");
+  await expect(pending).rejects.toThrow("disposed");
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_control", {
+    document: identity.document,
+    request: { action: "cancelAction", id: "unclaimed" },
+  });
+  const other = createPanelWindowClient(identity);
+  const abort = new AbortController();
+  abort.abort();
+  const count = native.invoke.mock.calls.length;
+  await expect(other.action(lease, { kind: "clearTasks" }, abort.signal)).rejects.toThrow(
+    "Cancelled",
+  );
+  expect(native.invoke).toHaveBeenCalledTimes(count);
+});
+
+it("includes the exact owning lease when requesting a native destination from a satellite", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "tasks", windowId: identity.windowId, generation: 5 };
+  native.invoke.mockResolvedValueOnce("new-destination");
+  expect(await client.create(lease)).toBe("new-destination");
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_create", {
+    document: identity.document,
+    lease,
+  });
+});

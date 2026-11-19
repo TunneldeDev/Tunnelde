@@ -22,10 +22,9 @@ export async function movePanelToWindow(panelId: string, target?: string) {
     );
     if (!lease) throw new Error("panel.window.staleOwner");
     if (!target) {
-      // Only the main coordinator creates native windows. Satellite creation
-      // requests will use a closed coordinator request, not arbitrary invoke.
-      if (client.windowId !== "main") throw new Error("panel.window.coordinatorRequired");
-      target = created = await client.create();
+      // Native checks this exact document/lease before AND after platform window
+      // construction. Satellites cannot create arbitrary unowned windows.
+      target = created = await client.create(lease);
       const deadline = Date.now() + 18_000;
       while (Date.now() < deadline) {
         const current = await client.snapshot();
@@ -89,9 +88,7 @@ export function nativePanelMoveActions(panelId: string, t: TFunction): MenuActio
     void movePanelToWindow(panelId, target).catch((error) => toast(translateError(error), "error"));
   };
   return [
-    ...(state.windowId === "main"
-      ? [{ label: t("panels.newWindow"), separatorBefore: true, onSelect: () => move() }]
-      : []),
+    { label: t("panels.newWindow"), separatorBefore: true, onSelect: () => move() },
     ...state.snapshot.windows
       .filter((window) => window.id !== state.windowId && window.ready && !window.closing)
       .map((window, index) => ({

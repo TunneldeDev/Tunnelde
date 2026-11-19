@@ -113,8 +113,8 @@ A timed-out, cancelled, reloaded or retired destination never acquires authority
 Closing a satellite returns its views before native destruction. Recovery uses
 bounded in-memory checkpoints, not persisted drafts or feature-store clones.
 
-An adapter must explicitly opt into `windowViews.transferablePanel`. The first
-adapter is connection details: main publishes a credential-free projection;
+An adapter must explicitly opt into `windowViews.transferablePanel`. The current
+adapters are connection details and background tasks: main publishes explicit projections;
 `ConnectionModelScope` renders the same content in a satellite without hydrating
 writable application stores. `usePanelViewState` opts local React fields into a
 capsule; stable DOM markers preserve scroll/caret separately. A staged tree stays
@@ -124,13 +124,31 @@ schedule bounded native checkpoints. Never acknowledge a spinner/empty shell.
 The private native control grammar is closed. Model publication is coordinator-
 only; reads require an exact current lease or an active staged-destination offer.
 Metadata/events contain no model, credential draft or document token. Satellite
-application IPC is default-deny. Connection actions use a dedicated lease-checked
-native gateway, not an arbitrary command proxy; moving/closing is fenced until
-native cleanup completes, including during document reload. Status entry points
-focus the actual owner instead of creating a second main-window content owner.
+application IPC is default-deny. Closed task/disconnect action requests are
+admitted using the exact source document/lease, then claimed once by main. Task
+callbacks never leave the singleton registry; incarnation tickets fence replaced
+sources without invalidating buttons on every progress frame. Queued work may be
+cancelled or expire; claimed resource work retains its migration fence until main
+finalizes it, even after the source reloads or the executor's local scope disposes.
+Late claim replies must still be finalized; do not discard them through a generic
+post-disposal read guard. Requests, results and tickets never enter metadata/events.
+Status entry points focus the actual owner instead of creating a second main-window content owner.
 
 This is incremental implementation, not a claim of complete multiwindow support.
-Other built-ins/plugin views, multi-panel satellite docking and native cross-window
-drag-and-drop still need their adapters and platform acceptance. Do not advertise
-those capabilities or widen gateway permissions to hide an incomplete adapter.
+`PanelWorkspace` composes the existing `PanelLayout`/`SplitPanels` and
+`WorkbenchPanel`: document-local tabs, both split axes, floating and merging move
+retained portal containers, not React/resource owners. Satellite geometry is
+memory-only and cannot overwrite main-window preferences. Closing one satellite
+panel returns only that view; native close returns all its views. Creating another
+destination from a satellite requires an exact interactive adapter lease checked
+before and after platform construction. Only its creating document may discard
+an empty destination; abandoned initialized windows are also reaped. Reserve
+native empty-window destruction under the ownership mutex so an incoming handoff
+cannot race the platform destroy call. Frontend cancel/reload cannot release that
+reservation; only native failure cleanup or actual destruction can.
+
+Other built-ins/plugin views and native cross-window drag-and-drop still need
+their adapters and platform acceptance. Transfer-specific reconnect/consent UI and
+plugin task presentation providers still require window-aware adapters. Do not
+advertise those capabilities or widen gateway permissions to hide an incomplete adapter.
 The public plugin workspace v1 contract remains unchanged.

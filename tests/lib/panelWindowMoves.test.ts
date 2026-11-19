@@ -40,3 +40,56 @@ it("unfreezes the existing source on failure instead of leaving it stranded", as
     ["connections", false],
   ]);
 });
+
+it("can detach again from a satellite using its own exact lease, not coordinator authority", async () => {
+  const lease = { panelId: "tasks", windowId: "satellite-one", generation: 9 };
+  const create = vi.fn().mockResolvedValue("destination"),
+    control = vi.fn().mockResolvedValue({ id: "offer" });
+  const snapshot = vi
+    .fn()
+    .mockResolvedValueOnce({ panels: [lease], windows: [], transfers: [] })
+    .mockResolvedValueOnce({
+      panels: [lease],
+      windows: [{ id: "destination", ready: true }],
+      transfers: [],
+    })
+    .mockResolvedValue({
+      panels: [{ ...lease, windowId: "destination", generation: 10 }],
+      windows: [],
+      transfers: [],
+    });
+  mock.views = {
+    client: { windowId: "satellite-one", create, snapshot, control },
+    capture: vi.fn().mockReturnValue({ version: 1 }),
+    setMoving: vi.fn(),
+  } as unknown as WindowViews;
+  await movePanelToWindow("tasks");
+  expect(create).toHaveBeenCalledExactlyOnceWith(lease);
+  expect(control).toHaveBeenCalledWith({
+    action: "prepare",
+    lease,
+    targetWindow: "destination",
+    state: { version: 1 },
+  });
+});
+it("cleans up only the destination it created when handoff preparation fails", async () => {
+  const lease = { panelId: "tasks", windowId: "satellite-one", generation: 9 };
+  const destroy = vi.fn().mockResolvedValue(undefined);
+  mock.views = {
+    client: {
+      windowId: "satellite-one",
+      create: vi.fn().mockResolvedValue("abandoned"),
+      snapshot: vi.fn().mockResolvedValue({
+        panels: [lease],
+        windows: [{ id: "abandoned", ready: true }],
+        transfers: [],
+      }),
+      control: vi.fn().mockRejectedValue(new Error("blocked")),
+      destroy,
+    },
+    capture: vi.fn().mockReturnValue({ version: 1 }),
+    setMoving: vi.fn(),
+  } as unknown as WindowViews;
+  await expect(movePanelToWindow("tasks")).rejects.toThrow("blocked");
+  expect(destroy).toHaveBeenCalledExactlyOnceWith("abandoned");
+});

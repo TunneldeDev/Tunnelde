@@ -8,6 +8,7 @@ import { pluginSidebars } from "@/lib/plugins/sidebars";
 import { reportError } from "@/lib/diagnostics";
 
 import { createWindowViews, installWindowViews } from "@/lib/panels/windowViews";
+import { startPanelActions } from "./panelActions";
 import { startPanelReadModels } from "./panelReadModels";
 
 let client: PanelWindowClient | null = null;
@@ -45,6 +46,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     useFilePreview.subscribe(coordinator.refresh),
   ];
   let stopModels = () => {};
+  let stopActions = () => {};
   let disposed = false;
   const dispose = () => {
     if (disposed) return;
@@ -53,6 +55,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     for (const release of stop) release();
     coordinator.dispose();
     stopModels();
+    stopActions();
     uninstallViews();
     current.dispose();
     if (client === current) {
@@ -65,8 +68,10 @@ export async function startPanelWindows(signal: AbortSignal) {
   // Registration is asynchronous; publish only after its initial reconciliation.
   if (!disposed) {
     const snapshot = await current.snapshot();
-    if (snapshot.panels.some((p) => p.panelId === "connections"))
+    if (snapshot.panels.some((p) => p.panelId === "connections")) {
+      stopActions = startPanelActions(current, failure);
       stopModels = startPanelReadModels(current, failure);
+    }
   }
   return dispose;
 }

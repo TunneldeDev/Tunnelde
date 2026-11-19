@@ -2818,6 +2818,7 @@
     "exportChanged": "Host configuration changed during export. Try exporting again."
   },
   "panels": {
+    "moveToGroup": "Move to group {{index}}",
     "inOtherWindow": "This panel is open in another window.",
     "focusWindow": "Show window",
     "newWindow": "Move to a new window",

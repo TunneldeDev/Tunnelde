@@ -13,6 +13,7 @@ fn allowed(label: &str, command: &str, registered: bool) -> bool {
                 "panel_window_initialize"
                     | "panel_window_control"
                     | "panel_window_show"
+                    | "panel_window_create"
                     | "panel_window_destroy"
                     | "panel_window_drop_target"
                     | "panel_window_disconnect"
@@ -54,7 +55,6 @@ mod tests {
             "plugin_frontend_open",
             "settings_update",
             "main_window_suspend",
-            "panel_window_create",
         ] {
             assert!(allowed("main", command, false));
             assert!(!allowed("panel-one", command, true));
@@ -64,6 +64,7 @@ mod tests {
             "panel_window_initialize",
             "panel_window_control",
             "panel_window_show",
+            "panel_window_create",
             "panel_window_destroy",
             "panel_window_drop_target",
             "panel_window_disconnect",

@@ -2818,6 +2818,7 @@
     "exportChanged": "导出期间主机配置发生变化，请重新导出。"
   },
   "panels": {
+    "moveToGroup": "移至分组 {{index}}",
     "inOtherWindow": "此面板已在另一个窗体中打开。",
     "focusWindow": "显示所在窗体",
     "newWindow": "移至新窗体",

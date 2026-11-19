@@ -1,3 +1,7 @@
+import { usePanelWindows } from "@/store/panelWindows";
+import { windowViews } from "./windowViews";
+import { toast } from "@/store/toasts";
+import { translateError } from "@/lib/api/errors";
 import { createContext, useContext, type ReactNode } from "react";
 import { useSsh } from "@/store/ssh";
 import { useHosts } from "@/store/hosts";
@@ -43,5 +47,26 @@ export function useConnectionPanelModel() {
   const disconnectingSessionIds = useSsh((s) => s.disconnectingSessionIds);
   const disconnect = useSsh((s) => s.disconnect);
   const hosts = useHosts((s) => s.hosts);
-  return remote ?? { sessions, history, hosts, disconnectingSessionIds, disconnect };
+  return (
+    remote ?? {
+      sessions,
+      history,
+      hosts,
+      disconnectingSessionIds,
+      disconnect: async (id: string) => {
+        const state = usePanelWindows.getState(),
+          client = windowViews()?.client;
+        const lease = state.snapshot.panels.find(
+          (panel) => panel.panelId === "connections" && panel.windowId === state.windowId,
+        );
+        if (!state.available) return disconnect(id);
+        try {
+          if (!client || !lease) throw new Error("panel.window.staleOwner");
+          await client.action(lease, { kind: "disconnect", sessionId: id });
+        } catch (error) {
+          toast(translateError(error), "error");
+        }
+      },
+    }
+  );
 }
