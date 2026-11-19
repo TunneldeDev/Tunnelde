@@ -100,9 +100,7 @@ export function useForwardingController(host: Host) {
     }
   };
   const rememberSession = (session: SshSession) => {
-    useSsh.setState((state) => ({
-      sessions: [...state.sessions.filter((item) => item.id !== session.id), session],
-    }));
+    useSsh.getState().acceptSession(session);
   };
   const startOne = async (
     rule: RevisionedRule,
