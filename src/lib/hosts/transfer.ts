@@ -40,6 +40,8 @@ export interface HostDocument {
   }>;
 }
 export interface HostImportPreview {
+  token?: string;
+  hasCredentials?: boolean;
   revision: string;
   document: HostDocument;
   entries: Array<{
@@ -88,17 +90,65 @@ export function indexHostPreview(preview: HostImportPreview) {
     expand: (roots: Iterable<string>) => reachable(roots, (id) => entries.get(id)?.requires ?? []),
   };
 }
+export interface LockedHostImport {
+  token: string;
+  locked: true;
+}
+interface NativeHostFile {
+  token: string;
+  encrypted: boolean;
+  hasCredentials: boolean;
+  preview: HostImportPreview | null;
+}
+export interface HostImportResult {
+  hosts: Host[];
+  credentialErrors: string[];
+}
+export interface HostExportOptions {
+  includeCredentials: boolean;
+  encrypt: boolean;
+  password: string | null;
+}
+function fileResult(file: NativeHostFile): HostImportPreview | LockedHostImport {
+  return file.preview
+    ? { ...file.preview, token: file.token, hasCredentials: file.hasCredentials }
+    : { token: file.token, locked: true };
+}
 export const hostTransferApi = {
-  pick: () => invoke<HostImportPreview | null>("hosts_file_import"),
-  preview: (document: HostDocument) =>
-    invoke<HostImportPreview>("hosts_import_preview", { document }),
-  apply: (
+  pick: async () => {
+    const file = await invoke<NativeHostFile | null>("hosts_file_import");
+    return file ? fileResult(file) : null;
+  },
+  unlock: async (token: string, password: string) =>
+    fileResult(await invoke<NativeHostFile>("hosts_file_unlock", { token, password })),
+  release: (token: string) => invoke<void>("hosts_file_release", { token }),
+  generatePassword: () => invoke<string>("hosts_export_password"),
+  retryCredentials: (token: string) =>
+    invoke<HostImportResult>("hosts_file_retry_credentials", { token }),
+  preview: async (preview: HostImportPreview) => {
+    if (preview.token)
+      return fileResult(
+        await invoke<NativeHostFile>("hosts_file_preview", { token: preview.token }),
+      ) as HostImportPreview;
+    return invoke<HostImportPreview>("hosts_import_preview", { document: preview.document });
+  },
+  apply: async (
     preview: HostImportPreview,
     selected: string[],
     copies: boolean,
     mountPoints: Record<string, string>,
-  ) =>
-    invoke<Host[]>("hosts_import_apply", {
+  ): Promise<HostImportResult> => {
+    if (preview.token)
+      return invoke<HostImportResult>("hosts_file_apply", {
+        request: {
+          token: preview.token,
+          revision: preview.revision,
+          selected,
+          copies,
+          mountPoints,
+        },
+      });
+    const hosts = await invoke<Host[]>("hosts_import_apply", {
       request: {
         document: preview.document,
         revision: preview.revision,
@@ -106,8 +156,11 @@ export const hostTransferApi = {
         copies,
         mountPoints,
       },
-    }),
-  export: (ids: string[]) => invoke<string | null>("hosts_file_export", { ids }),
+    });
+    return { hosts, credentialErrors: [] };
+  },
+  export: (ids: string[], options: HostExportOptions) =>
+    invoke<string | null>("hosts_file_export", { ids, options }),
 };
 export const useHostTransfer = create<{
   dialog: { kind: "import" } | { kind: "export"; ids?: string[] } | null;

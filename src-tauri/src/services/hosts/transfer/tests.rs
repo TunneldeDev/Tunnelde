@@ -4,7 +4,7 @@ fn host(conn: &Connection, name: &str, address: &str, folder: Option<String>) ->
     let input:HostInput=serde_json::from_value(serde_json::json!({"name":name,"host":address,"username":"tester","authMethod":"key","keyPath":"/private/keys/source-only","groupId":folder,"favorite":true,"tags":["work"],"note":"host notes"})).unwrap();
     db::hosts::create_host(conn, &input.validate().unwrap()).unwrap()
 }
-fn fixture(conn: &Connection) -> (Host, Host) {
+pub(super) fn fixture(conn: &Connection) -> (Host, Host) {
     let parent = db::hosts::create_group(conn, "Work", None).unwrap();
     let child = db::hosts::create_group(conn, "Production", Some(&parent.id)).unwrap();
     let jump = host(conn, "Jump", "jump.example", Some(parent.id));

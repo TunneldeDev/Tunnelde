@@ -1,7 +1,11 @@
-//! Explicit portable configuration. Credentials, runtime sessions and arbitrary
-//! plugin storage never enter this format. Imports only create fresh identities.
+//! Public portable configuration remains credential-free. Native file transfers
+//! may wrap it and saved credentials in an authenticated encrypted envelope.
+//! Runtime sessions and plugin storage are excluded; imports create fresh identities.
 mod apply;
+mod crypto;
 pub(crate) mod files;
+mod portable;
+pub(crate) mod runtime;
 #[cfg(test)]
 mod tests;
 use crate::{
@@ -393,9 +397,23 @@ pub(crate) struct PreviewEntry {
 }
 fn revision(conn: &Connection) -> AppResult<String> {
     let mut hash = Sha256::new();
-    for sql in ["SELECT id,name,coalesce(parent_id,'') FROM groups ORDER BY id", "SELECT id,name,host,port,username,auth_method,coalesce(group_id,''),updated_at FROM hosts ORDER BY id", "SELECT key,value FROM settings ORDER BY key", "SELECT revision FROM mount_state"] {
-        let mut stmt=conn.prepare(sql)?;let count=stmt.column_count();let mut rows=stmt.query([])?;
-        while let Some(row)=rows.next()? {for i in 0..count {let value:rusqlite::types::Value=row.get(i)?;let raw=format!("{value:?}");hash.update((raw.len() as u64).to_le_bytes());hash.update(raw);}}
+    for sql in [
+        "SELECT id,name,coalesce(parent_id,'') FROM groups ORDER BY id",
+        "SELECT * FROM hosts ORDER BY id",
+        "SELECT key,value FROM settings ORDER BY key",
+        "SELECT revision FROM mount_state",
+    ] {
+        let mut stmt = conn.prepare(sql)?;
+        let count = stmt.column_count();
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            for i in 0..count {
+                let value: rusqlite::types::Value = row.get(i)?;
+                let raw = format!("{value:?}");
+                hash.update((raw.len() as u64).to_le_bytes());
+                hash.update(raw);
+            }
+        }
     }
     Ok(format!("{:x}", hash.finalize()))
 }
