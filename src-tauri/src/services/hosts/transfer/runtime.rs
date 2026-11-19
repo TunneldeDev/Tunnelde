@@ -75,12 +75,10 @@ mod tests {
         let a = runtime.insert(Entry::new(None, None)).unwrap();
         let b = runtime.insert(Entry::new(None, None)).unwrap();
         assert!(runtime.insert(Entry::new(None, None)).is_err());
-        runtime
-            .with(&a, |e| {
-                e.touched = Instant::now() - Duration::from_secs(601);
-                Ok(())
-            })
-            .unwrap();
+        // Age the idle context directly: a completed request intentionally
+        // renews its last-activity timestamp even after an operation error.
+        runtime.0.lock().unwrap().get_mut(&a).unwrap().touched =
+            Instant::now() - Duration::from_secs(601);
         assert!(!runtime.prune(&a));
         assert!(runtime.with(&a, |_| Ok(())).is_err());
         let c = runtime.insert(Entry::new(None, None)).unwrap();
