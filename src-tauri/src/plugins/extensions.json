@@ -223,6 +223,23 @@
       "pendingLimit": 8,
       "cancellation": "cooperative-settlement",
       "hidden": "blocks-webview-suspension"
+    },
+    "viewFactories": {
+      "moduleExport": "createView",
+      "activation": "single-coordinator",
+      "transport": "per-instance",
+      "contexts": ["coordinator"],
+      "nativeWindows": false,
+      "state": {
+        "members": ["captureState", "restoreState"],
+        "optional": true,
+        "serialization": "strict-json",
+        "maximumBytes": 1048576,
+        "maximumNodes": 10000,
+        "maximumDepth": 64
+      },
+      "maximumPerActivation": 16,
+      "maximumTotal": 64
     }
   },
   "runtime": {

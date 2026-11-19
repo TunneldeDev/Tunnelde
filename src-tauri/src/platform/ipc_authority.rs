@@ -54,6 +54,10 @@ mod tests {
             "ssh_disconnect",
             "clipboard_read_text",
             "plugin_frontend_open",
+            "plugin_frontend_view_open",
+            "plugin_frontend_ready",
+            "plugin_frontend_failed",
+            "plugin_frontend_call",
             "settings_update",
             "main_window_suspend",
         ] {

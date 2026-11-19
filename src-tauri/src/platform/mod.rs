@@ -17,3 +17,5 @@ pub mod window;
 pub mod restart;
 
 pub(crate) mod panel_windows;
+
+pub(crate) mod protocol_origin;

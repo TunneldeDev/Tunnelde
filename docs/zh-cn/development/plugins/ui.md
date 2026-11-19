@@ -231,3 +231,56 @@ function View({ resources }) {
 取消 RPC 传输或停止持久/后台任务。用 `run`、`acquire` 包装异步视图工作，拒绝
 迟到交付并清理迟到资源；不配合取消的工作仍计入额度直到真实结算。原生资源的
 退出应使用明确的所有权和恢复接口。
+
+## 独立视图工厂（实验性）
+
+请检查 `extensions.describe().frontend.viewFactories`。模块可以在单例
+`activate(context)` 之外导出可选的 `createView(context)`。工厂获得 `sdk`、
+`pluginId`、`viewId`、`signal`、`resources` 和 `api.call`，不获得命令/视图注册表或
+后台任务执行器。单例工作留在 `activate`；创建或关闭视图不能重复启动或停止它。
+
+```js
+export function activate(context) {
+  // 在这里注册单例命令或后台工作，不要放进 createView。
+}
+export function createView(context) {
+  const React = context.sdk.react;
+  let query = "";
+  return {
+    component: function View() {
+      return React.createElement("div", null, context.viewId);
+    },
+    captureState() {
+      return { query };
+    },
+    restoreState(state) {
+      query = state.query;
+    },
+    dispose() {
+      /* 释放视图自己的注册项 */
+    },
+  };
+}
+```
+
+对于 Manifest 声明、但 `activate` 未注册的普通组件视图（不含 `provider` 视图），
+宿主提供稳定的工厂渲染器。
+已有 `views.register` 渲染器保持兼容路径。隐藏保留中的视图不会重新创建它；关闭会
+中止其作用域并执行清理，重新打开则创建新实例。每个实例通过独立可撤销令牌导入已
+批准的不可变资源，共享单例模块的作用域预算。每次激活最多 16 个原生视图传输实例，
+全局最多 64 个；资源字节共享而非重复复制。视图令牌不能确认单例激活、上报单例激活
+失败或再创建视图传输实例。关闭/替换激活会撤销所有子视图；关闭单个视图不影响兄弟
+令牌和插件依赖的就绪状态。
+
+`captureState`/`restoreState` 必须成对提供，也可以都不提供。恢复在首次渲染前完成，
+请将可恢复状态放在组件外部或视图局部 store 中。快照为复制后的严格 JSON，限制为
+1 MiB、10,000 个节点、深度 64。循环引用、函数、getter、类实例、稀疏数组及非有限
+数值会被拒绝，不会静默截断。不要包含凭据、原生句柄或后台工作；UI 状态不是持久化
+存储。异步创建/捕获/恢复有截止时间；取消后迟到的实例仍会被清理。
+
+目前发现信息仅声明 `contexts: ["coordinator"]`、`nativeWindows: false`：此工厂和
+传输能力本身**不**授权卫星窗口、不迁移提供者的原生资源，也不承诺旧渲染器的 DOM 能
+跨 WebView 移动。独立窗口仍须另外实现精确到面板/文档的授权和各提供者的专用网关。
+
+视图模块的顶层代码可能随每次实例导入重新执行，请勿在顶层执行单例副作用；单例工作
+只能由 `activate` 持有。这仍是受信任的进程内模块，不是 JavaScript 沙箱。

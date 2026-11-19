@@ -45,13 +45,7 @@ pub fn run() {
                 );
                 return;
             };
-            let origin = if cfg!(dev) {
-                "http://localhost:1420"
-            } else if cfg!(target_os = "windows") {
-                "http://tauri.localhost"
-            } else {
-                "tauri://localhost"
-            };
+            let origin = platform::protocol_origin::for_app(&app);
             tauri::async_runtime::spawn(async move {
                 let _capacity = capacity;
                 let state = app.state::<state::AppState>();
@@ -59,20 +53,13 @@ pub fn run() {
                     &app.state::<plugins::frontend::Registry>(),
                     &state.plugins.security,
                     request,
-                    origin,
+                    &origin,
                 ));
             });
         })
         .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
             let app = context.app_handle().clone();
-            let origin = if cfg!(dev) {
-                "http://localhost:1420"
-            } else if cfg!(target_os = "windows") {
-                "http://tauri.localhost"
-            } else {
-                "tauri://localhost"
-            }
-            .to_string();
+            let origin = platform::protocol_origin::for_app(&app);
             tauri::async_runtime::spawn(async move {
                 use tauri::Manager;
                 responder.respond(
@@ -257,6 +244,7 @@ pub fn run() {
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
             plugins::frontend::plugin_frontend_open,
+            plugins::frontend::views::plugin_frontend_view_open,
             plugins::frontend::plugin_frontend_ready,
             plugins::frontend::plugin_frontend_close,
             plugins::frontend::plugin_frontend_failed,

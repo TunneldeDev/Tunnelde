@@ -126,6 +126,8 @@ describe("public UI contract boundaries", () => {
       "FrontendQuickAccessEntry",
       "FrontendQuickAccessSnapshot",
       "FrontendTaskProgress",
+      "FrontendViewContext",
+      "FrontendViewInstance",
       "HostConnectionRoute",
       "HostRouteGetRequest",
       "HostRouteObservation",

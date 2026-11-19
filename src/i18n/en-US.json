@@ -1463,7 +1463,10 @@
       "activationFailed": "The plugin UI failed to activate. Check the software log and restart the plugin.",
       "missingWorkspace": "The workbench provider did not keep its workspace mounted. The built-in interface has been restored.",
       "duplicateSurface": "The interface provider mounted a host surface more than once.",
-      "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API."
+      "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API.",
+      "viewFactoryUnavailable": "This plugin does not provide an independent view factory. Keep this view in its original window.",
+      "invalidViewFactory": "The plugin returned an invalid view instance. Check its view factory and state methods.",
+      "viewStateUnavailable": "This view cannot preserve its state. Keep it in its current window or reopen it without state."
     },
     "fileBrowser": {
       "busy": "This file panel is loading or unavailable. Wait for it to finish.",

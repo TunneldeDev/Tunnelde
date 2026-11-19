@@ -14,6 +14,7 @@ use super::security::{FrontendSnapshot, Lease, PluginSecurity, RuntimeRetirement
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 pub(crate) mod requests;
+pub(crate) mod views;
 
 pub const UI_SDK_VERSION: &str = "0.1.0";
 
@@ -76,7 +77,10 @@ pub struct FrontendSession {
 
 struct Module {
     lease: Lease,
-    assets: BTreeMap<String, Arc<[u8]>>,
+    // None is the singleton activation. View sessions share its immutable
+    // approved bytes, but never participate in dependency readiness.
+    view: Option<views::ViewOwner>,
+    assets: Arc<BTreeMap<String, Arc<[u8]>>>,
     bytes: usize,
 }
 
@@ -122,7 +126,11 @@ impl Registry {
             .filter(|m| m.lease.id != lease.id)
             .map(|m| m.bytes)
             .sum();
-        if modules.values().filter(|m| m.lease.id != lease.id).count() >= 16
+        if modules
+            .values()
+            .filter(|m| m.view.is_none() && m.lease.id != lease.id)
+            .count()
+            >= 16
             || bytes + snapshot.bytes > 32 * 1024 * 1024
         {
             return Err(AppError::validation("plugin.frontend.busy"));
@@ -134,7 +142,8 @@ impl Registry {
             token.clone(),
             Module {
                 lease,
-                assets: snapshot.assets,
+                view: None,
+                assets: Arc::new(snapshot.assets),
                 bytes: snapshot.bytes,
             },
         );
@@ -193,7 +202,9 @@ impl Registry {
         let mut retired = Vec::new();
         for (token, module) in modules.drain() {
             self.calls.retire(&token);
-            retired.extend(closed(&module.lease, &token));
+            if module.view.is_none() {
+                retired.extend(closed(&module.lease, &token));
+            }
             tokens.push(token);
         }
         (tokens, retired)
@@ -312,7 +323,7 @@ pub fn plugin_frontend_ready(
     registry: State<'_, Registry>,
     token: String,
 ) -> AppResult<()> {
-    registry.with_lease(&token, |lease| {
+    registry.with_activation(&token, |lease| {
         let state = app.state::<AppState>();
         authorized(&state.plugins.security, lease)?;
         state.plugins.security.frontend_ready(lease, &token)
@@ -321,29 +332,34 @@ pub fn plugin_frontend_ready(
 
 #[tauri::command]
 pub fn plugin_frontend_close(app: AppHandle, registry: State<'_, Registry>, token: String) {
-    let mut modules = registry.modules.lock().unwrap_or_else(|e| e.into_inner());
     let state = app.state::<AppState>();
-    let retired = modules.remove(&token).map_or_else(Vec::new, |module| {
-        state
-            .plugins
-            .security
-            .frontend_closed(&module.lease, &token)
+    let (tokens, retired) = registry.close(&token, |lease, token| {
+        state.plugins.security.frontend_closed(lease, token)
     });
-    registry.calls.retire(&token);
-    drop(modules);
     state.plugins.cleanup_retired(&app, retired);
-    super::forwarding::remove_token(&app, &token);
+    for token in tokens {
+        super::forwarding::remove_token(&app, &token);
+    }
 }
 
 #[tauri::command]
 pub async fn plugin_frontend_failed(app: AppHandle, token: String) -> AppResult<super::PluginInfo> {
-    let lease = app.state::<Registry>().lease(&token)?;
+    let lease = app
+        .state::<Registry>()
+        .with_activation(&token, |lease| Ok(lease.clone()))?;
     let state = app.state::<AppState>();
     let handle = state.plugins.instance(&lease.id).await?;
     let mut instance = handle.lock().await;
     // Hold the owner lock while checking the generation and retiring resources.
-    // A late activation failure must never stop a newly restarted instance.
-    authorized(&state.plugins.security, &lease)?;
+    // A late activation failure must never stop a newly restarted instance,
+    // including a replacement frontend in the SAME native runtime generation.
+    // Opening/replacing activation holds this owner lock too.
+    app.state::<Registry>().with_activation(&token, |current| {
+        if current != &lease {
+            return Err(AppError::validation("plugin.frontend.expired"));
+        }
+        authorized(&state.plugins.security, current)
+    })?;
     if instance.retired || instance.status != super::PluginStatus::Running {
         return Err(AppError::validation("plugin.frontend.expired"));
     }

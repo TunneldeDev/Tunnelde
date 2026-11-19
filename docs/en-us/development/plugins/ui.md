@@ -284,3 +284,65 @@ adopt native handles, cancel RPC transport or stop durable/background tasks.
 Wrap asynchronous view work with `run` or `acquire` to reject late delivery and
 clean late results; underlying uncooperative work remains charged until settlement.
 Use the explicit native ownership/recovery APIs when retiring those resources.
+
+## Independent view factories (experimental)
+
+Check `extensions.describe().frontend.viewFactories`. A module can optionally
+export `createView(context)` as well as its singleton `activate(context)`. The
+factory receives `sdk`, `pluginId`, `viewId`, `signal`, `resources` and `api.call`.
+It has no command/view registries or background-task runner. Put singleton work
+in `activate`; creating or closing a view must not start or stop that work.
+
+```js
+export function activate(context) {
+  // Register singleton commands or background work here, not in createView.
+}
+export function createView(context) {
+  const React = context.sdk.react;
+  let query = "";
+  return {
+    component: function View() {
+      return React.createElement("div", null, context.viewId);
+    },
+    captureState() {
+      return { query };
+    },
+    restoreState(state) {
+      query = state.query;
+    },
+    dispose() {
+      /* release view-local registrations */
+    },
+  };
+}
+```
+
+For ordinary declared component views (not `provider` views) unregistered by
+`activate`, the host supplies a
+stable factory-backed renderer. Existing `views.register` renderers keep their
+compatibility path. Hiding a retained factory view does not recreate it; closing
+it aborts its scope and calls its cleanup. Reopening creates a new instance. Each
+instance imports approved immutable assets with a separate revocable transport,
+sharing the singleton module's scope budget. There are at most 16 live native
+view transports per activation and 64 overall; bytes are shared, not recopied.
+A view's token cannot acknowledge activation, report its failure, or create child
+view transports. Closing/replacing activation retires all its view transports;
+closing one view does not invalidate sibling tokens or dependency readiness.
+
+`captureState`/`restoreState` are an optional **pair**. Restore precedes first
+render; keep restorable state outside the component or in a view-local store.
+Snapshots are copied strict JSON, bounded to 1 MiB / 10,000 nodes / depth 64.
+Cycles, functions, getters, class instances, sparse arrays and nonfinite numbers
+are rejected rather than silently truncated. Never include credentials, native
+handles or background work in UI state. They are not durable storage. Async
+setup/capture/restore is deadline-bound; late acquired instances are cleaned.
+
+Currently discovery lists only `contexts: ["coordinator"]` and
+`nativeWindows: false`: this factory/transport capability alone does **not**
+authorize a satellite, transfer a provider's native resources, or promise that a
+legacy renderer's DOM can move across WebViews. Independent-window support must
+add exact panel/document admission and provider-specific gateways separately.
+
+View module top-level code may be evaluated for each imported instance. Keep it
+free of singleton side effects; only `activate` owns singleton work. These are
+trusted in-process modules, not a JavaScript sandbox.

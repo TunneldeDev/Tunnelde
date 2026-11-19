@@ -1,0 +1,413 @@
+import { expect, it, vi } from "vitest";
+import type { PluginInfo } from "@/lib/api/types";
+import { createFrontendRuntime, type FrontendTransport } from "@/lib/extensions/frontendRuntime";
+import type {
+  FrontendContext,
+  FrontendModule,
+  FrontendViewContext,
+  FrontendViewInstance,
+} from "@/lib/extensions/uiSdk";
+
+const plugin = {
+  id: "custom",
+  fingerprint: "approved",
+  runtimeId: "boot:1",
+  status: "running",
+  runtime: "frontend",
+  frontend: { entry: "ui/index.mjs", sdk: "^0.1.0" },
+  commands: [],
+  permissions: ["ui.trusted"],
+  views: [{ id: "main", title: "Custom", kind: "component" }],
+} as unknown as PluginInfo;
+const Component = () => null;
+function fixture(factory?: FrontendModule["createView"]) {
+  let context!: FrontendContext;
+  const activate = vi.fn((value: FrontendContext) => {
+    context = value;
+  });
+  const session = {
+    token: "activation",
+    pluginId: "custom",
+    generation: 1,
+    runtimeId: "boot:1",
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+  };
+  const transport: FrontendTransport = {
+    current: vi.fn(() => true),
+    open: vi.fn(async () => session),
+    openView: vi.fn(async () => ({ ...session, token: crypto.randomUUID() })),
+    close: vi.fn(async () => {}),
+    ready: vi.fn(async () => {}),
+    fail: vi.fn(async () => {}),
+    call: vi.fn(async () => undefined as never),
+    load: vi.fn(async () => ({ activate, createView: factory })),
+    report: vi.fn(),
+  };
+  const runtime = createFrontendRuntime(transport);
+  return { transport, runtime, activate, context: () => context };
+}
+
+it("mounts independent view factories without singleton activation, commands or background runners", async () => {
+  const contexts: FrontendViewContext[] = [];
+  const cleanup = vi.fn();
+  const f = fixture((context) => {
+    contexts.push(context);
+    return { component: Component, dispose: cleanup };
+  });
+  await f.runtime.ensure(plugin);
+  const first = (await f.runtime.mountView("custom", "main", "activation"))!;
+  const second = (await f.runtime.mountView("custom", "main", "activation"))!;
+  expect(f.activate).toHaveBeenCalledOnce();
+  expect(f.transport.ready).toHaveBeenCalledOnce();
+  expect(f.transport.open).toHaveBeenCalledOnce();
+  expect(f.transport.openView).toHaveBeenCalledTimes(2);
+  expect(contexts[0]!.signal).not.toBe(contexts[1]!.signal);
+  expect(contexts[0]).not.toHaveProperty("backgroundTasks");
+  expect(contexts[0]).not.toHaveProperty("commands");
+  expect(contexts[0]).not.toHaveProperty("views");
+  expect(Object.isFrozen(contexts[0])).toBe(true);
+  expect(first.component).toBe(Component);
+  await contexts[0]!.api.call("hosts.list", { limit: 1 });
+  const viewToken = vi.mocked(f.transport.openView!).mock.results[0]!.value;
+  expect(f.transport.call).toHaveBeenCalledWith(
+    (await viewToken).token,
+    "hosts.list",
+    { limit: 1 },
+    expect.any(AbortSignal),
+  );
+  first.dispose();
+  expect(contexts[0]!.signal.aborted).toBe(true);
+  expect(contexts[1]!.signal.aborted).toBe(false);
+  expect(f.context().signal.aborted).toBe(false);
+  expect(cleanup).toHaveBeenCalledOnce();
+  f.runtime.stop("custom");
+  expect(contexts[1]!.signal.aborted).toBe(true);
+  expect(cleanup).toHaveBeenCalledTimes(2);
+  second.dispose();
+  await vi.waitFor(() => expect(f.context().resources.size).toBe(0));
+  expect(f.transport.close).toHaveBeenCalledTimes(3);
+});
+
+it("does not start or open engines for unknown, stale or undeclared view owners", async () => {
+  const f = fixture(() => ({ component: Component }));
+  await expect(f.runtime.mountView("custom", "main", "activation")).rejects.toThrow("closed");
+  expect(f.transport.open).not.toHaveBeenCalled();
+  await f.runtime.ensure(plugin);
+  for (const [id, viewId, token] of [
+    ["other", "main", "activation"],
+    ["custom", "other", "activation"],
+    ["custom", "main", "stale"],
+  ])
+    await expect(f.runtime.mountView(id!, viewId!, token!)).rejects.toThrow("closed");
+  vi.mocked(f.transport.current).mockReturnValue(false);
+  await expect(f.runtime.mountView("custom", "main", "activation")).rejects.toThrow("closed");
+  expect(f.transport.openView).not.toHaveBeenCalled();
+  f.runtime.dispose();
+});
+
+it("leaves legacy modules document-local instead of reactivating them as a fake view", async () => {
+  const f = fixture();
+  await f.runtime.ensure(plugin);
+  expect(await f.runtime.mountView("custom", "main", "activation")).toBeNull();
+  expect(f.transport.openView).not.toHaveBeenCalled();
+  expect(f.activate).toHaveBeenCalledOnce();
+  f.runtime.dispose();
+});
+
+it("clones validated ephemeral capture/restore state and preserves method receivers", async () => {
+  const original = { query: "work", nested: ["one"] };
+  const restored = { query: "previous", nested: ["saved"] };
+  const factory = vi.fn(() => ({
+    component: Component,
+    value: original,
+    captureState() {
+      return this.value;
+    },
+    restoreState(state: unknown) {
+      this.value = state as typeof original;
+    },
+  }));
+  const f = fixture(factory);
+  await f.runtime.ensure(plugin);
+  const view = (await f.runtime.mountView("custom", "main", "activation", { value: restored }))!;
+  expect(view.stateful).toBe(true);
+  const captured = (await view.captureState()) as typeof original;
+  expect(captured).toEqual(restored);
+  expect(captured).not.toBe(restored);
+  captured.nested.push("edited");
+  restored.nested.push("outside");
+  expect(await view.captureState()).toEqual({ query: "previous", nested: ["saved"] });
+  f.runtime.dispose();
+});
+
+it("rejects invalid restore before allocating and rejects partial capture/restore support without failing the engine", async () => {
+  const f = fixture(() => ({ component: Component, captureState: () => null }));
+  await f.runtime.ensure(plugin);
+  await expect(
+    f.runtime.mountView("custom", "main", "activation", { value: { handler: () => {} } }),
+  ).rejects.toThrow("panel.viewState.invalid");
+  expect(f.transport.openView).not.toHaveBeenCalled();
+  await expect(f.runtime.mountView("custom", "main", "activation")).rejects.toThrow(
+    "invalidViewFactory",
+  );
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  expect(f.transport.close).toHaveBeenCalledOnce();
+  expect(f.runtime.token("custom")).toBe("activation");
+  f.runtime.dispose();
+});
+
+it.each([
+  { runtimeId: "old" },
+  { generation: 2 },
+  { pluginId: "other" },
+  { sdkVersion: "2" },
+  { entry: "changed.mjs" },
+  { token: "activation" },
+])("rejects mismatched view session %j before loading code", async (override) => {
+  const f = fixture(() => ({ component: Component }));
+  await f.runtime.ensure(plugin);
+  const original = await f.transport.open("custom", "boot:1");
+  vi.mocked(f.transport.openView!).mockResolvedValueOnce({
+    ...original,
+    token: "child",
+    ...override,
+  });
+  await expect(f.runtime.mountView("custom", "main", "activation")).rejects.toThrow("closed");
+  expect(f.transport.load).toHaveBeenCalledOnce(); // singleton only
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  f.runtime.dispose();
+});
+
+it("cleans a native view session which arrives after the parent has retired", async () => {
+  const f = fixture(() => ({ component: Component }));
+  await f.runtime.ensure(plugin);
+  let finish!: (value: Awaited<ReturnType<FrontendTransport["open"]>>) => void;
+  vi.mocked(f.transport.openView!).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = f.runtime.mountView("custom", "main", "activation");
+  const check = expect(pending).rejects.toThrow("closed");
+  f.runtime.stop("custom");
+  await check;
+  finish({
+    token: "late",
+    pluginId: "custom",
+    runtimeId: "boot:1",
+    generation: 1,
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+  });
+  await vi.waitFor(() => expect(f.transport.close).toHaveBeenCalledWith("late"));
+  expect(f.transport.load).toHaveBeenCalledOnce();
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(f.context().resources.size).toBe(0));
+});
+
+it("cleans a late factory result and never fails the singleton when view setup is cancelled", async () => {
+  let finish!: (value: FrontendViewInstance) => void;
+  const f = fixture(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await f.runtime.ensure(plugin);
+  const pending = f.runtime.mountView("custom", "main", "activation");
+  const check = expect(pending).rejects.toThrow("closed");
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  f.runtime.stop("custom");
+  await check;
+  const dispose = vi.fn();
+  finish({ component: Component, dispose });
+  await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce());
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(f.context().resources.size).toBe(0));
+});
+
+it("aborts only the disposed view's calls and rejects stale capture replies", async () => {
+  let context!: FrontendViewContext;
+  let capture!: (value: unknown) => void;
+  const f = fixture((value) => {
+    context = value;
+    return {
+      component: Component,
+      captureState: () =>
+        new Promise((resolve) => {
+          capture = resolve;
+        }),
+      restoreState: () => {},
+    };
+  });
+  await f.runtime.ensure(plugin);
+  const view = (await f.runtime.mountView("custom", "main", "activation"))!;
+  const received: AbortSignal[] = [];
+  vi.mocked(f.transport.call).mockImplementation((_token, _method, _params, signal) => {
+    received.push(signal!);
+    return new Promise((_resolve, reject) =>
+      signal!.addEventListener("abort", () => reject(new Error("aborted")), { once: true }),
+    );
+  });
+  const call = context.api.call("hosts.list");
+  const callCheck = expect(call).rejects.toThrow("closed");
+  const snapshot = view.captureState();
+  const snapshotCheck = expect(snapshot).rejects.toThrow("closed");
+  view.dispose();
+  await callCheck;
+  await snapshotCheck;
+  expect(received[0]!.aborted).toBe(true);
+  capture({ late: true });
+  expect(f.context().signal.aborted).toBe(false);
+  expect(() => context.api.call("hosts.list")).toThrow("closed");
+  f.runtime.dispose();
+  await vi.waitFor(() => expect(f.context().resources.size).toBe(0));
+});
+
+it.each([undefined, () => {}, new Date(), Infinity, "x".repeat(1024 * 1024)])(
+  "rejects nontransportable/oversized capture %s without truncation",
+  async (value) => {
+    const f = fixture(() => ({
+      component: Component,
+      captureState: () => value,
+      restoreState: () => {},
+    }));
+    await f.runtime.ensure(plugin);
+    const view = (await f.runtime.mountView("custom", "main", "activation"))!;
+    await expect(view.captureState()).rejects.toThrow("panel.viewState.");
+    expect(f.context().signal.aborted).toBe(false);
+    f.runtime.dispose();
+  },
+);
+
+it("renders factory-only declarations through an effect-owned adapter and keeps hidden views mounted", async () => {
+  const { render, screen } = await import("@testing-library/react");
+  const { useState } = await import("react");
+  const cleanup = vi.fn();
+  const factory = vi.fn(() => ({
+    component: function Counter({ visible }: { visible: boolean }) {
+      const [count, setCount] = useState(0);
+      return (
+        <button onClick={() => setCount(count + 1)}>
+          {visible ? "visible" : "hidden"}:{count}
+        </button>
+      );
+    },
+    dispose: cleanup,
+  }));
+  const f = fixture(factory);
+  await f.runtime.ensure(plugin);
+  const View = f.runtime.view("custom", "main")!;
+  expect(View).toBeTypeOf("function");
+  const props = {
+    pluginId: "custom",
+    viewId: "main",
+    visible: true,
+    resources: f.context().resources,
+  };
+  const ui = render(<View {...props} />);
+  const button = await screen.findByRole("button", { name: "visible:0" });
+  const { fireEvent } = await import("@testing-library/react");
+  fireEvent.click(button);
+  ui.rerender(<View {...props} visible={false} />);
+  expect(screen.getByRole("button", { name: "hidden:1" })).toBe(button);
+  expect(factory).toHaveBeenCalledOnce();
+  expect(f.activate).toHaveBeenCalledOnce();
+  expect(f.transport.openView).toHaveBeenCalledOnce();
+  ui.unmount();
+  expect(cleanup).toHaveBeenCalledOnce();
+  expect(f.context().signal.aborted).toBe(false);
+  f.runtime.dispose();
+});
+
+it("keeps existing registered renderers on their original compatibility path", async () => {
+  const f = fixture(() => ({ component: () => null }));
+  const Legacy = () => null;
+  vi.mocked(f.transport.load).mockResolvedValue({
+    activate: (context) => {
+      context.views.register("main", Legacy);
+    },
+    createView: () => ({ component: Component }),
+  });
+  await f.runtime.ensure(plugin);
+  expect(f.runtime.view("custom", "main")).toBe(Legacy);
+  expect(f.transport.openView).not.toHaveBeenCalled();
+  f.runtime.dispose();
+});
+
+it("cancels a single mount before native admission without disposing its parent", async () => {
+  const f = fixture(() => ({ component: Component }));
+  await f.runtime.ensure(plugin);
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    f.runtime.mountView("custom", "main", "activation", undefined, controller.signal),
+  ).rejects.toThrow("closed");
+  expect(f.transport.openView).not.toHaveBeenCalled();
+  expect(f.context().signal.aborted).toBe(false);
+  f.runtime.dispose();
+});
+
+it("effect replay cleans superseded native acquisition without replaying singleton activation", async () => {
+  const { render, screen } = await import("@testing-library/react");
+  const { StrictMode } = await import("react");
+  const cleanup = vi.fn();
+  const factory = vi.fn(() => ({ component: () => <span>factory ready</span>, dispose: cleanup }));
+  const f = fixture(factory);
+  await f.runtime.ensure(plugin);
+  const View = f.runtime.view("custom", "main")!;
+  const ui = render(
+    <StrictMode>
+      <View pluginId="custom" viewId="main" visible />
+    </StrictMode>,
+  );
+  await screen.findByText("factory ready");
+  expect(f.activate).toHaveBeenCalledOnce();
+  expect(factory).toHaveBeenCalledOnce();
+  expect(f.transport.openView).toHaveBeenCalledTimes(2);
+  ui.unmount();
+  expect(cleanup).toHaveBeenCalledOnce();
+  f.runtime.dispose();
+  await vi.waitFor(() => expect(f.context().resources.size).toBe(0));
+  expect(f.transport.close).toHaveBeenCalledTimes(3);
+});
+
+it("closes view-local setup failures and stateless restore attempts without stopping the singleton", async () => {
+  const f = fixture(() => ({ component: Component }));
+  await f.runtime.ensure(plugin);
+  await expect(
+    f.runtime.mountView("custom", "main", "activation", { value: null }),
+  ).rejects.toThrow("viewStateUnavailable");
+  expect(f.transport.close).toHaveBeenCalledOnce();
+  const view = (await f.runtime.mountView("custom", "main", "activation"))!;
+  expect(view.stateful).toBe(false);
+  await expect(view.captureState()).rejects.toThrow("viewStateUnavailable");
+  view.dispose();
+  vi.mocked(f.transport.load).mockResolvedValueOnce({
+    activate: () => {},
+    createView: () => {
+      throw new Error("view setup failed");
+    },
+  });
+  await expect(f.runtime.mountView("custom", "main", "activation")).rejects.toThrow(
+    "view setup failed",
+  );
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  expect(f.context().signal.aborted).toBe(false);
+  expect(f.transport.close).toHaveBeenCalledTimes(3);
+  f.runtime.dispose();
+});
+
+it("does not mistake an async factory shell for a synchronous native provider renderer", async () => {
+  const f = fixture(() => ({ component: Component }));
+  const provider: PluginInfo = {
+    ...plugin,
+    views: [{ ...plugin.views[0]!, provider: "workbench" }],
+  };
+  await f.runtime.ensure(provider);
+  expect(f.runtime.view("custom", "main")).toBeUndefined();
+  expect(f.transport.openView).not.toHaveBeenCalled();
+  f.runtime.dispose();
+});

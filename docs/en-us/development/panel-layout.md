@@ -286,3 +286,20 @@ credential status comes from one private preparation, not an unbounded fan-out o
 relay jobs. Never return key-installation paths, review tokens or credentials in
 read models, capsules, public metadata or events. Native admission cannot be
 undone by component cleanup; keep its independent fence until effect completion.
+
+### Independent plugin view transports
+
+Keep frontend activation/readiness in the coordinator; view transports are its
+bounded revocable descendants, not competing activations. Import immutable
+approved assets by reference. A view must not acknowledge or fail activation;
+closing it cannot retire sibling views or dependency consumers. Replacing or
+closing activation retires all descendants and their pending calls. Optional
+state factories do not themselves grant native window access or provider handle
+parity. In particular, do not substitute an async factory shell for a provider's
+synchronous Workspace/Screen contract. Retain legacy renderers until explicit
+per-document admission, state warnings and domain gateways are available.
+
+Protocol CORS uses the trusted configured development URL's origin, never an
+Origin header echoed from a request or a hardcoded port. Packaged application
+origins stay unchanged. Keep isolated native QA identifiers/data separate from
+the installed application and test actual module imports, not only mock loaders.
