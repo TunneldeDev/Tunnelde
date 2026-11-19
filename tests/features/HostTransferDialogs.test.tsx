@@ -333,6 +333,7 @@ it("decrypts before preview and retains the file for wrong-password retries", as
   useHostTransfer.getState().openImport();
   render(<HostTransferDialogs />);
   const password = await screen.findByLabelText("File password");
+  expect(screen.queryByText(/This file has no credentials/)).toBeNull();
   expect(screen.queryByRole("checkbox", { name: /Host A/ })).toBeNull();
   fireEvent.change(password, { target: { value: "wrong" } });
   fireEvent.click(screen.getByRole("button", { name: "Decrypt and preview" }));

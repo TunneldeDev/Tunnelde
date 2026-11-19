@@ -389,13 +389,15 @@ function ImportHosts() {
     >
       <div className="ssh-import" aria-busy={busy}>
         <p className="td-field__hint">{t("hostTransfer.importHint")}</p>
-        <p className="td-field__hint">
-          {t(
-            preview?.hasCredentials
-              ? "hostTransfer.includedCredentialsHint"
-              : "hostTransfer.credentialsHint",
-          )}
-        </p>
+        {preview && (
+          <p className="td-field__hint">
+            {t(
+              preview.hasCredentials
+                ? "hostTransfer.includedCredentialsHint"
+                : "hostTransfer.credentialsHint",
+            )}
+          </p>
+        )}
         {lockedToken && !preview && (
           <>
             <Field
