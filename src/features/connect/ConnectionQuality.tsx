@@ -18,6 +18,7 @@ interface Props {
   enabled: boolean;
   onTesting: (testing: boolean) => void;
   onKeyError: () => void;
+  cancelConnection?: (id: string) => Promise<void>;
   testConnection?: (id: string, credentials: Props["credentials"]) => Promise<Quality>;
 }
 
@@ -27,19 +28,22 @@ export function ConnectionQuality(props: Props) {
     credentials: props.credentials,
     enabled: props.enabled,
     testConnection: props.testConnection,
+    cancelConnection: props.cancelConnection,
     generation: 0,
   });
   if (
     scope.hostId !== props.hostId ||
     scope.credentials !== props.credentials ||
     scope.enabled !== props.enabled ||
-    scope.testConnection !== props.testConnection
+    scope.testConnection !== props.testConnection ||
+    scope.cancelConnection !== props.cancelConnection
   ) {
     setScope({
       hostId: props.hostId,
       credentials: props.credentials,
       enabled: props.enabled,
       testConnection: props.testConnection,
+      cancelConnection: props.cancelConnection,
       generation: scope.generation + 1,
     });
   }
@@ -55,6 +59,7 @@ function QualityTest({
   onTesting,
   onKeyError,
   testConnection,
+  cancelConnection = api.sshCancelTest,
 }: Props) {
   const { t, i18n } = useTranslation();
   const [result, setResult] = useState<Quality | null>(null);
@@ -71,11 +76,11 @@ function QualityTest({
       const id = request.current;
       request.current = null;
       if (id) {
-        void api.sshCancelTest(id).catch(() => undefined);
+        void cancelConnection(id).catch(() => undefined);
         onTesting(false);
       }
     };
-  }, [onTesting]);
+  }, [onTesting, cancelConnection]);
 
   const run = async () => {
     if (!enabled || request.current) return;
@@ -95,7 +100,7 @@ function QualityTest({
       if (active.current && request.current === id) {
         setError(translateError(cause));
         if (
-          isIpcError(cause) &&
+          (isIpcError(cause) || cause instanceof Error) &&
           ["ssh.hostKeyChanged", "ssh.hostKeyUntrusted", "ssh.connectionChanged"].includes(
             cause.message,
           )
@@ -120,7 +125,7 @@ function QualityTest({
     if (!id || cancelling) return;
     setCancelling(true);
     try {
-      await api.sshCancelTest(id);
+      await cancelConnection(id);
     } catch (cause) {
       if (active.current && request.current === id) {
         setError(translateError(cause));

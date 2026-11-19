@@ -241,3 +241,30 @@ trusted key. Preserve trust-lifecycle rollback and leave failures visible/retrya
 The legacy unconditional plugin operation remains compatible; built-in UI always
 sends the expected key identity. Never serialize dialogs, tokens or callbacks into
 view capsules, metadata events or persistent layouts.
+
+### Window-ready transfer and connection presentation boundaries
+
+`ConnectionPrompt` is the shared connection/host-key/credential UI, with only a
+small display-only host projection and explicit `ConnectionPromptServices`.
+It never bootstraps SSH, reads main credential/host stores, or navigates another
+window. `ConnectDialog` is the existing main-only adapter: it retains reviewed
+native targets, singleton connection acquisition and workspace navigation. Keep
+that wrapper out of satellites; missing remote services must not fall back to it.
+Quality testing **and cancellation** must use the same supplied owner backend.
+Nested credential-forget confirmation belongs to the originating prompt, and a
+failed forget must not dismiss consent or clear the saved-credential indication.
+
+Transfer rows accept a `TransferTaskControllerScope` instead of importing raw
+execution into their presentation. A native-window controller resolves closed
+location kinds from the current owned task; it must not accept arbitrary paths
+from the view. Local fallback preserves captured session-identity rechecks and
+must never reinterpret a disconnected remote as local. Satellite use without an
+explicit controller fails closed. Disclosure, speed-limit editor and unfinished
+draft are opt-in grouped capsule state; pending effects are not drafts.
+
+These reusable boundaries do not by themselves complete the satellite transfer
+adapter. Its controller must still validate current source/task incarnations,
+acquire native consent before mounting a prompt, relay all effects with native
+fences, retain a bounded owner/lease-scoped reviewed target, and clean up tests
+and prompts on close/reload/revocation. Do not advertise reconnect parity until
+that entire path and native acceptance are implemented.

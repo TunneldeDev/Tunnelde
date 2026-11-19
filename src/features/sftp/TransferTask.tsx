@@ -1,31 +1,60 @@
 import { ChevronDown, Gauge, Pause, Play, RefreshCw, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { durationParts, transferProgress } from "@/lib/files/transferProgress";
 import { transferNeedsReview } from "@/lib/files/transferRecovery";
 import { cn, formatBytes } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
-import { useTransfers, type TransferItem } from "@/store/transfers";
+import type { TransferItem } from "@/store/transfers";
+import { PanelViewStateGroup, usePanelViewState } from "@/lib/panels/viewState";
+import { toast } from "@/store/toasts";
+import { useTransferCommands } from "./transferTaskController";
 import { TransferSpeedLimit } from "./TransferSpeedLimit";
 import { TransferLocation } from "./TransferLocation";
 import "./transferTasks.css";
 
-export function TransferTask({
-  item,
-  now,
-  onResume,
-}: {
+export function TransferTask(props: TransferTaskProps) {
+  return (
+    <PanelViewStateGroup name={`transfer:${props.item.id}`}>
+      <TransferTaskContent {...props} />
+    </PanelViewStateGroup>
+  );
+}
+interface TransferTaskProps {
   item: TransferItem;
   now: number;
-  onResume: () => void;
-}) {
+  onResume: () => void | Promise<unknown>;
+}
+function TransferTaskContent({ item, now, onResume }: TransferTaskProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
-  const [limitOpen, setLimitOpen] = useState(false);
+  const [expanded, setExpanded] = usePanelViewState(
+    "expanded",
+    false,
+    (v): v is boolean => typeof v === "boolean",
+  );
+  const [limitOpen, setLimitOpen] = usePanelViewState(
+    "limitOpen",
+    false,
+    (v): v is boolean => typeof v === "boolean",
+  );
+  const [acting, setActing] = useState(false);
+  const pendingAction = useRef(false);
+  const perform = (action: () => void | Promise<unknown>) => {
+    if (pendingAction.current) return;
+    pendingAction.current = true;
+    setActing(true);
+    void Promise.resolve()
+      .then(action)
+      .catch((error: unknown) => toast(translateError(error), "error"))
+      .finally(() => {
+        pendingAction.current = false;
+        setActing(false);
+      });
+  };
   const progress = transferProgress(item, Math.max(now, item.updatedAt));
-  const actions = useTransfers.getState();
-  const busy = item.clearing || item.cancelling || item.pausing;
+  const actions = useTransferCommands(item.id);
+  const busy = acting || item.clearing || item.cancelling || item.pausing;
   const pending = item.status === "cleanupPending";
   const name = item.retainedCreation
     ? t("sftp.retainedCreationTask", { name: item.name })
@@ -114,7 +143,7 @@ export function TransferTask({
                   label={t("sftp.pauseTransfer")}
                   size="sm"
                   disabled={busy}
-                  onClick={() => actions.pause(item.id)}
+                  onClick={() => perform(actions.pause)}
                 >
                   <Pause size={13} />
                 </IconButton>
@@ -123,7 +152,7 @@ export function TransferTask({
                 label={t("sftp.cancelTransfer")}
                 size="sm"
                 disabled={busy}
-                onClick={() => actions.cancel(item.id)}
+                onClick={() => perform(actions.cancel)}
               >
                 <X size={13} />
               </IconButton>
@@ -138,7 +167,7 @@ export function TransferTask({
                   label={t("sftp.resumeTransfer")}
                   size="sm"
                   disabled={busy}
-                  onClick={onResume}
+                  onClick={() => perform(onResume)}
                 >
                   <Play size={13} />
                 </IconButton>
@@ -147,7 +176,7 @@ export function TransferTask({
                 label={t(pending ? "sftp.retryCleanup" : "sftp.clearTransfer")}
                 size="sm"
                 disabled={busy}
-                onClick={() => (pending && !reviewRequired ? onResume() : actions.clear(item.id))}
+                onClick={() => perform(pending && !reviewRequired ? onResume : actions.clear)}
               >
                 {pending ? <RefreshCw size={13} /> : <Trash2 size={13} />}
               </IconButton>
@@ -202,6 +231,7 @@ export function TransferTask({
           <TransferLocation
             item={item}
             side="to"
+            location="backup"
             path={item.backupRecovery.backup}
             label={t("sftp.backupPath")}
             inspect
@@ -209,6 +239,7 @@ export function TransferTask({
           <TransferLocation
             item={item}
             side="to"
+            location="backupDestination"
             path={item.backupRecovery.destination}
             label={t("sftp.backupDestination")}
             inspect
@@ -220,6 +251,7 @@ export function TransferTask({
           <TransferLocation
             item={item}
             side="to"
+            location="artifact"
             path={item.artifactRecovery}
             label={t(
               item.retainedCreation ? "sftp.retainedCreationPath" : "sftp.transferArtifactPath",
