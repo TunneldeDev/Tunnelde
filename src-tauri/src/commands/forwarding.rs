@@ -21,6 +21,8 @@ pub fn forwarding_save(
     expected_revision: Option<String>,
     origin: Option<Origin>,
     automation: Option<Options>,
+    group_id: Option<String>,
+    assign_group: Option<bool>,
 ) -> AppResult<ConfiguredRule> {
     let options = automation.unwrap_or_default();
     if let Some(origin) = origin {
@@ -30,13 +32,31 @@ pub fn forwarding_save(
             rule,
             expected_revision.as_deref(),
             options,
+            assign_group
+                .filter(|assign| *assign)
+                .map(|_| group_id.as_deref()),
         )?;
         return Ok(ConfiguredRule {
             entry,
             automation: options,
         });
     }
-    automation::save(&app, rule, expected_revision.as_deref(), options)
+    if assign_group == Some(true) {
+        let entry = forwarding::save_grouped(
+            &app,
+            rule,
+            expected_revision.as_deref(),
+            options,
+            group_id.as_deref(),
+        )?;
+        automation::changed(&app);
+        Ok(ConfiguredRule {
+            entry,
+            automation: options,
+        })
+    } else {
+        automation::save(&app, rule, expected_revision.as_deref(), options)
+    }
 }
 #[tauri::command]
 pub fn forwarding_remove(
@@ -94,4 +114,91 @@ pub async fn forwarding_stop(
         .await;
     }
     forwarding::stop(&app, &id).await
+}
+
+#[tauri::command]
+pub(crate) fn forwarding_groups_list(
+    app: AppHandle,
+    host_id: String,
+) -> AppResult<Vec<forwarding::groups::Group>> {
+    use tauri::Manager;
+    app.state::<crate::state::AppState>()
+        .db
+        .with(|conn| forwarding::groups::list(conn, Some(&host_id)))
+}
+#[tauri::command]
+pub(crate) fn forwarding_group_save(
+    app: AppHandle,
+    host_id: String,
+    name: String,
+    id: Option<String>,
+    expected_revision: Option<String>,
+) -> AppResult<forwarding::groups::Group> {
+    use tauri::Manager;
+    let group = app.state::<crate::state::AppState>().db.with(|conn| {
+        crate::db::atomic(conn, |conn| {
+            forwarding::groups::save_at(
+                conn,
+                id.as_deref(),
+                &host_id,
+                &name,
+                expected_revision.as_deref(),
+            )
+        })
+    })?;
+    automation::changed(&app);
+    Ok(group)
+}
+#[tauri::command]
+pub(crate) fn forwarding_group_remove(
+    app: AppHandle,
+    id: String,
+    expected_revision: String,
+) -> AppResult<()> {
+    use tauri::Manager;
+    let state = app.state::<crate::state::AppState>();
+    forwarding::groups::remove(&state.db, &state.forwards, &id, &expected_revision)?;
+    automation::changed(&app);
+    Ok(())
+}
+#[tauri::command]
+pub(crate) fn forwarding_move(
+    app: AppHandle,
+    id: String,
+    expected_revision: String,
+    group_id: Option<String>,
+) -> AppResult<crate::services::forwarding::contract::RevisionedRule> {
+    use tauri::Manager;
+    let state = app.state::<crate::state::AppState>();
+    let entry = forwarding::groups::move_rule(
+        &state.db,
+        &state.forwards,
+        &id,
+        &expected_revision,
+        group_id.as_deref(),
+    )?;
+    automation::changed(&app);
+    Ok(entry)
+}
+#[tauri::command]
+pub(crate) async fn forwarding_start_managed(
+    app: AppHandle,
+    id: String,
+    expected_revision: String,
+    request: Option<crate::ssh::SshConnectRequest>,
+    review: Option<crate::ssh::session::review::Review>,
+    origin: Option<Origin>,
+) -> AppResult<crate::ssh::SessionInfo> {
+    if let Some(origin) = origin {
+        return crate::plugins::forwarding::start_managed(
+            &app,
+            &origin,
+            &id,
+            &expected_revision,
+            request,
+            review,
+        )
+        .await;
+    }
+    forwarding::start_managed(&app, &id, Some(&expected_revision), request, review).await
 }

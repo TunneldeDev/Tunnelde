@@ -15,8 +15,7 @@ use crate::{
 };
 use receipt::{Book, Input, Phase, Receipt};
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, MutexGuard, Weak},
+    sync::{Mutex, MutexGuard},
     time::Instant,
 };
 use tauri::{AppHandle, Emitter, Manager};
@@ -31,7 +30,6 @@ struct Captured {
 #[derive(Default)]
 struct State {
     book: Book<Captured>,
-    pool: HashMap<String, Weak<connections::Connection>>,
 }
 #[derive(Default)]
 pub(crate) struct ManagerState(Mutex<State>);
@@ -67,6 +65,7 @@ pub(crate) fn begin(app: &AppHandle, input: Input) -> AppResult<Receipt> {
     let target = Target::from_displayed(app, &host)?;
     let captured = Captured {
         entry: RevisionedRule {
+            group_id: entry.group_id,
             rule: entry.info.rule,
             revision: entry.revision,
         },

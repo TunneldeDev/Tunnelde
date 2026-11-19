@@ -1,5 +1,6 @@
 //! Plugin RPC adapter for forwarding. Authorization and runtime ownership stay at this boundary.
 mod batch;
+mod groups;
 
 use crate::plugins::{
     api::{authorize, encode, field, HostContext},
@@ -20,6 +21,20 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
+        name if name.starts_with("forwards.groups.") || name == "forwards.move" => {
+            groups::dispatch(context, name, params)
+        }
+        "forwards.startManaged" => {
+            start_managed(
+                context,
+                &field::<String>(&params, "id")?,
+                &field::<String>(&params, "expectedRevision")?,
+                None,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "forwards.startManyManaged" => batch::start_managed(context, params).await,
         "forwards.automation.list" => encode(crate::services::forwarding::automation::list(app)?),
         "forwards.automation.save" => {
             let id: String = field(&params, "id")?;
@@ -121,4 +136,46 @@ async fn start_one(
             }
             prepared.commit()
         })
+}
+
+async fn start_managed(
+    context: &HostContext,
+    id: &str,
+    revision: &str,
+    deadline: Option<tokio::time::Instant>,
+) -> AppResult<()> {
+    let state = context.app.state::<AppState>();
+    let lease = Lease {
+        id: context.id.clone(),
+        fingerprint: context.fingerprint.clone(),
+        permissions: context.permissions.clone(),
+        generation: context.generation,
+    };
+    authorize(context, &["forwards.write"])?;
+    let pending = state
+        .plugins
+        .security
+        .guard(
+            &lease,
+            crate::services::forwarding::prepare_managed(
+                &context.app,
+                id,
+                Some(revision),
+                Some((context.id.clone(), context.generation)),
+                None,
+                None,
+            ),
+        )
+        .await?;
+    state
+        .plugins
+        .security
+        .with_authorized(&lease, &["forwards.write"], || {
+            if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+                return Err(AppError::validation("plugin.timeout"));
+            }
+            pending.commit()
+        })?;
+    crate::ssh::session::announce_connection(&context.app);
+    Ok(())
 }

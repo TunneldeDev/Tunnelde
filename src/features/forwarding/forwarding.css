@@ -317,3 +317,22 @@
   font-size: 12px;
   font-weight: 500;
 }
+
+.forward-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.forward-groups > .forwarding__group-actions {
+  flex-wrap: wrap;
+}
+
+.forward-group {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.forward-group > .forwarding__head {
+  margin-bottom: 0;
+}

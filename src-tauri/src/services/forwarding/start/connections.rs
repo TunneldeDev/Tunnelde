@@ -1,17 +1,6 @@
-//! Only this broker creates these connections. Weak pool entries never retain
-//! an idle transport; pending attempts and admitted exact instances own it.
+//! Interactive external requests acquire the same host/group transport.
 use super::*;
 use crate::ssh::{SessionInfo, SshConnectRequest};
-
-pub(super) struct Connection {
-    app: AppHandle,
-    pub info: SessionInfo,
-}
-impl Drop for Connection {
-    fn drop(&mut self) {
-        let _ = crate::ssh::disconnect(&self.app, &self.info.id);
-    }
-}
 
 pub(super) async fn connect(
     op: &operation::Operation,
@@ -25,33 +14,15 @@ pub(super) async fn connect(
     let app = &op.app;
     let state = app.state::<AppState>();
     let target = Target::capture(app, &op.captured.review)?;
-    let key = op.captured.review.identity().to_owned();
     op.phase(Phase::Connecting)?;
-    let pooled = op.with_current(|manager| {
-        verify_rule(app, &op.captured)?;
-        target.verify(app)?;
-        manager.pool.retain(|_, entry| entry.strong_count() > 0);
-        Ok(manager
-            .pool
-            .get(&key)
-            .and_then(Weak::upgrade)
-            .filter(|connection| state.ssh.is_active(&connection.info.id)))
-    })?;
-    let connection = match pooled {
-        Some(connection) => connection,
-        None => {
-            op.guard(async {
-                let info = target.connect(app.clone(), request, false, false).await?;
-                // Arm cleanup within the same poll which produced SessionInfo.
-                // A losing select branch cannot discard a bare private session.
-                Ok(Arc::new(Connection {
-                    app: app.clone(),
-                    info,
-                }))
-            })
-            .await?
-        }
-    };
+    let connection = op
+        .guard(state.forward_automation.connections.acquire(
+            app,
+            &op.captured.entry,
+            &target,
+            request,
+        ))
+        .await?;
     op.phase(Phase::Preparing)?;
     let (handle, routes) = op.with_current(|_| {
         verify_rule(app, &op.captured)?;
@@ -89,7 +60,6 @@ pub(super) async fn connect(
             })
         })?;
         entry.finish(Phase::Running, None, Instant::now());
-        manager.pool.insert(key, Arc::downgrade(&connection));
         Ok(())
     })?;
     super::super::automation::started(app, &op.captured.entry.rule.id, &connection.info.id);

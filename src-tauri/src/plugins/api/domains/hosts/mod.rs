@@ -11,6 +11,7 @@ use serde_json::Value;
 use tauri::Manager;
 
 mod routes;
+mod transfer;
 
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
@@ -20,6 +21,9 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
+        "hosts.transfer.export" | "hosts.transfer.preview" | "hosts.transfer.apply" => {
+            transfer::call(context, method, params).await
+        }
         "hosts.routes.get" | "hosts.routes.observe" | "hosts.routes.save" => {
             routes::call(context, method, params).await
         }

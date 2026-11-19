@@ -12,11 +12,7 @@ struct Stored {
 fn key(id: &str) -> String {
     format!("forward-automation:{id}")
 }
-pub(in crate::services::forwarding) fn read(
-    conn: &Connection,
-    id: &str,
-    revision: &str,
-) -> AppResult<Options> {
+pub(crate) fn read(conn: &Connection, id: &str, revision: &str) -> AppResult<Options> {
     let raw: Option<String> = conn
         .query_row(
             "SELECT value FROM settings WHERE key=?1",
@@ -32,7 +28,7 @@ pub(in crate::services::forwarding) fn read(
         .map(|value| value.options)
         .unwrap_or_default())
 }
-pub(in crate::services::forwarding) fn write(
+pub(crate) fn write(
     conn: &Connection,
     id: &str,
     revision: &str,
@@ -47,7 +43,7 @@ pub(in crate::services::forwarding) fn write(
     )?;
     Ok(())
 }
-pub(in crate::services::forwarding) fn clear(conn: &Connection, id: &str) -> AppResult<()> {
+pub(crate) fn clear(conn: &Connection, id: &str) -> AppResult<()> {
     conn.execute("DELETE FROM settings WHERE key=?1", [key(id)])?;
     Ok(())
 }

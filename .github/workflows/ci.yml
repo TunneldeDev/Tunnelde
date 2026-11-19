@@ -453,6 +453,9 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::groups
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::connections
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::hosts::transfer
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::application_actions
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
@@ -548,6 +551,9 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::groups
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::connections
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::hosts::transfer
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::application_actions
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser

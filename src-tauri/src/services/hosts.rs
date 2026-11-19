@@ -8,6 +8,7 @@ use crate::state::AppState;
 
 pub(crate) mod read;
 pub(crate) mod ssh_config;
+pub(crate) mod transfer;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

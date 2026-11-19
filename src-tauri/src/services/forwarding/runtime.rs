@@ -13,27 +13,31 @@ pub(crate) struct PendingStart {
     app: AppHandle,
     entry: RevisionedRule,
     session_id: String,
+    target: crate::ssh::session::review::Target,
     listener: crate::ssh::forward::PendingForward,
 }
 impl PendingStart {
     /// Lock order: caller policy/scope -> forwarding registry -> database.
+    pub(crate) fn session(&self) -> String {
+        self.session_id.clone()
+    }
     pub(crate) fn commit(self) -> AppResult<()> {
         let state = self.app.state::<AppState>();
         self.listener.commit(&state.forwards, || {
-            if !state.ssh.list().iter().any(|session| {
-                session.id == self.session_id && session.host_id == self.entry.rule.host_id
-            }) {
-                return Err(AppError::validation("ssh.sessionMissing"));
-            }
-            if !service(&state)
-                .rule(&self.entry.rule.id)?
-                .is_some_and(|saved| {
-                    saved.rule == self.entry.rule && saved.revision == self.entry.revision
-                })
-            {
-                return Err(AppError::validation("forward.changed"));
-            }
-            Ok(())
+            self.target.with_current(&self.app, |conn| {
+                if !state.ssh.is_active(&self.session_id) {
+                    return Err(AppError::validation("ssh.sessionMissing"));
+                }
+                let saved = super::repository::find(conn, &self.entry.rule.id)?;
+                if saved.is_none_or(|saved| {
+                    saved.rule != self.entry.rule
+                        || saved.revision != self.entry.revision
+                        || saved.group_id != self.entry.group_id
+                }) {
+                    return Err(AppError::validation("forward.changed"));
+                }
+                state.ssh.publish(&self.session_id)
+            })
         })
     }
 }
@@ -53,30 +57,113 @@ pub(crate) async fn prepare_checked(
         return Err(AppError::validation("forward.changed"));
     }
     validate(&entry.rule)?;
-    if !state
-        .ssh
-        .list()
-        .iter()
-        .any(|session| session.id == session_id && session.host_id == entry.rule.host_id)
-    {
-        return Err(AppError::validation("ssh.sessionMissing"));
-    }
-    let listener = crate::ssh::forward::prepare(
+    let handle = app.clone();
+    let host_id = entry.rule.host_id.clone();
+    let target = crate::services::credentials::inspect(move || {
+        let host = crate::services::hosts::resolve(&handle, &host_id)?;
+        crate::ssh::session::review::Target::from_displayed(&handle, &host)
+    })
+    .await?;
+    let connection = state
+        .forward_automation
+        .connections
+        .existing(app, &entry, &target, session_id)
+        .await?;
+    prepare_on(app, entry, target, connection, owner).await
+}
+async fn prepare_on(
+    app: &AppHandle,
+    entry: RevisionedRule,
+    target: crate::ssh::session::review::Target,
+    connection: std::sync::Arc<super::connections::Connection>,
+    owner: Option<(String, u64)>,
+) -> AppResult<PendingStart> {
+    let state = app.state::<AppState>();
+    let session_id = connection.info.id.clone();
+    let listener = crate::ssh::forward::prepare_scoped(
         &state.forwards,
         &entry.rule,
-        session_id,
-        state.ssh.handle(session_id)?,
-        state.ssh.remote_routes(session_id)?,
+        &session_id,
+        state.ssh.handle(&session_id)?,
+        state.ssh.remote_routes(&session_id)?,
         owner,
+        connection,
     )
     .await?;
     Ok(PendingStart {
         app: app.clone(),
         entry,
-        session_id: session_id.into(),
+        session_id,
+        target,
         listener,
     })
 }
+pub(crate) async fn prepare_managed(
+    app: &AppHandle,
+    id: &str,
+    expected: Option<&str>,
+    owner: Option<(String, u64)>,
+    request: Option<crate::ssh::SshConnectRequest>,
+    review: Option<crate::ssh::session::review::Review>,
+) -> AppResult<PendingStart> {
+    let entry = super::repository::find_entry(app, id)?;
+    if expected.is_some_and(|revision| revision != entry.revision) {
+        return Err(AppError::validation("forward.changed"));
+    }
+    validate(&entry.rule)?;
+    let handle = app.clone();
+    let host_id = entry.rule.host_id.clone();
+    let target = crate::services::credentials::inspect(move || {
+        if let Some(review) = review {
+            if review.host_id != host_id {
+                return Err(AppError::validation("ssh.connectionChanged"));
+            }
+            crate::ssh::session::review::Target::capture(&handle, &review)
+        } else {
+            let host = crate::services::hosts::resolve(&handle, &host_id)?;
+            crate::ssh::session::review::Target::from_displayed(&handle, &host)
+        }
+    })
+    .await?;
+    let request = request.unwrap_or_else(|| super::connections::request(&entry.rule.host_id));
+    let connection = app
+        .state::<AppState>()
+        .forward_automation
+        .connections
+        .acquire(app, &entry, &target, request)
+        .await?;
+    prepare_on(app, entry, target, connection, owner).await
+}
+pub(crate) async fn start_managed(
+    app: &AppHandle,
+    id: &str,
+    expected: Option<&str>,
+    request: Option<crate::ssh::SshConnectRequest>,
+    review: Option<crate::ssh::session::review::Review>,
+) -> AppResult<crate::ssh::SessionInfo> {
+    let attempt = super::automation::Attempt::begin(app, id, expected)?;
+    let result = tokio::select! { biased;
+        _=attempt.cancelled()=>Err(AppError::validation("forward.startCancelled")),
+        result=prepare_managed(app,id,Some(attempt.revision()),None,request,review)=>result,
+    };
+    let session = result
+        .as_ref()
+        .map(|pending| pending.session())
+        .unwrap_or_default();
+    let result = result.and_then(|pending| attempt.commit(|| pending.commit()));
+    attempt.finish(&result, &session);
+    result?;
+    let state = app.state::<AppState>();
+    state.ssh.publish(&session)?;
+    crate::ssh::session::announce_connection(app);
+    state
+        .ssh
+        .list()
+        .into_iter()
+        .find(|item| item.id == session)
+        .ok_or_else(|| AppError::validation("ssh.sessionMissing"))
+}
+
 pub async fn start_checked(
     app: &AppHandle,
     id: &str,

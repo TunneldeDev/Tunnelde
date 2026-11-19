@@ -1,7 +1,7 @@
 //! Native provider bridge for forwarding; historical plugin RPCs stay independent.
 mod access;
 mod actions;
-pub(crate) use actions::{remove, save, start, stop};
+pub(crate) use actions::{remove, save, start, start_managed, stop};
 pub mod connection;
 mod scope;
 use crate::{

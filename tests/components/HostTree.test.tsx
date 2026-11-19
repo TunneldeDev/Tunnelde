@@ -250,7 +250,7 @@ describe("HostTree keyboard navigation", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "@tag:production" } });
     expect(document.querySelectorAll("[data-host-id]")).toHaveLength(1);
     act(() => useHosts.setState({ hosts: [] }));
-    expect(screen.getAllByRole("button", { name: "New host" }).length).toBeGreaterThan(1);
+    expect(screen.getAllByRole("button", { name: "New host" }).length).toBeGreaterThan(0);
   });
   it("adds attributed plugin actions to both pointer and more menus and removes them on uninstall", () => {
     const contribution = {
@@ -415,7 +415,11 @@ describe("HostTree keyboard navigation", () => {
     const { container } = render(<HostTree />);
     const toolbar = screen.getByRole("toolbar", { name: "Hosts" });
     expect(toolbar.contains(screen.getByRole("combobox"))).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "New host" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add host" }));
+    expect(useDialogs.getState().openHost).not.toHaveBeenCalled();
+    expect(screen.getByRole("menuitem", { name: "Import SSH config" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Import Tunnelde hosts" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "New host" }));
     expect(useDialogs.getState().openHost).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "New group" }));
     expect(useDialogs.getState().openGroup).toHaveBeenCalledTimes(1);
@@ -560,12 +564,12 @@ describe("HostTree keyboard navigation", () => {
     render(<HostTree />);
     fireEvent.contextMenu(screen.getAllByRole("treeitem")[0]!, { clientX: 20, clientY: 30 });
     const items = useContextMenu.getState().menu!.items;
-    expect(items).toHaveLength(10);
+    expect(items).toHaveLength(11);
     expect(items.flatMap((item, index) => (item.separatorBefore ? [index] : []))).toEqual([
-      3, 6, 9,
+      3, 7, 10,
     ]);
     fireEvent.click(screen.getAllByRole("button", { name: "More" })[0]!);
-    expect(screen.getAllByRole("menuitem")).toHaveLength(10);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(11);
     expect(screen.getAllByRole("separator")).toHaveLength(3);
     fireEvent.keyDown(screen.getAllByRole("menuitem")[0]!, { key: "Escape" });
     expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();

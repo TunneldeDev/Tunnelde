@@ -43,9 +43,23 @@ passwords. Exported metadata includes proxy usernames and addresses. Importing o
 another computer requires entering its proxy passwords again. Deleting a proxy or
 resetting Network preferences forgets the removed profiles' stored passwords.
 
+## Import and export host configuration
+
+The **+** menu in the host panel offers **New host**, **Import SSH config** and
+**Import Tunnelde hosts**. **Export hosts** beside it opens a searchable selection
+for one or multiple hosts; each saved host's menu also offers export. Files include
+selected hosts, required jump hosts, proxies, folders, forwarding groups/rules and
+mount groups/rules. Passwords, private keys, tokens, live sessions and custom plugin
+storage are excluded. Import previews skip matching names or address/port/username
+by default. Explicitly choose to import conflicting entries and dependencies as copies;
+all relationships receive fresh IDs. Reconfigure credentials and key files, and review
+mount points for the destination device. Imports do not connect or start rules.
+Forwarding startup preferences take effect on the next application launch. System proxy selection
+uses the destination device's environment.
+
 ## Import SSH config
 
-Choose **Import SSH config** on the welcome page to preview this computer's
+Choose **Import SSH config** on the welcome page or from the host panel’s **+** menu to preview this computer's
 `~/.ssh/config`, then import the selected named hosts and required jump hosts.
 Existing entries are preserved. Keys remain references to their original paths;
 unsupported options appear beside the affected host for manual configuration.
@@ -64,7 +78,7 @@ authenticated SSH `direct-tcpip` channels. Every hop retains its own password/ke
 authentication and host-key check. The connection dialog names the machine whose
 key is being reviewed, asks for any missing jump credentials, and verifies the
 destination before enabling Connect. Changing a route does not bypass key trust.
-SFTP, port forwards and SSHFS reuse the resulting authenticated connection.
+SFTP, port forwards and SSHFS use the same route and authentication checks.
 
 Each connection attempt captures the complete ordered route and its effective TCP
 proxy before opening a socket. Editing an address, username, authentication method,
@@ -484,8 +498,12 @@ select **Access a remote service** or **Share a local service**. The editor sepa
 the listening and service endpoints and names the computer that resolves each address.
 Names are optional and default to the service address and port. Choose **Save and
 start**, or **Save** to keep an inactive rule. Starting creates a dedicated background
-SSH connection when needed, using normal credential and host-key verification. All
-ports under that host share this connection; **Start all** starts its inactive ports
+SSH connection when needed, using normal credential and host-key verification.
+Create or rename groups under a host and select the group when editing a rule. Rules
+in one group share one dedicated session; each other group and each ungrouped rule
+uses a separate session. Existing rules are initially ungrouped. Stop a rule before
+moving it, and move all rules out before deleting a group. The last listener releases
+its dedicated connection when stopped; **Start all** starts its inactive ports
 and **Disconnect** stops all of that host’s forwarding connections and ports. Existing terminal connections
 remain independent, and no SSH session selector is required. The forwarding panel
 can be dragged into any workspace group, collapsed and restored with its layout intact.

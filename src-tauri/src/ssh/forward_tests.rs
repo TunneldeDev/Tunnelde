@@ -137,7 +137,7 @@ impl server::Handler for TestServer {
         }
     }
 }
-async fn fixture() -> (
+pub(crate) async fn fixture() -> (
     Arc<client::Handle<ClientHandler>>,
     Arc<RemoteRoutes>,
     JoinHandle<()>,
