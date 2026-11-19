@@ -150,3 +150,61 @@ it("notifies checkpoint observers after committed React state, and releases them
   controller.changed();
   expect(() => controller.subscribe(() => {})).toThrow("disposed");
 });
+
+it("aggregates long repeating rows into one field and restores every draft under StrictMode", async () => {
+  const { PanelViewStateGroup } = await import("@/lib/panels/viewState");
+  const renderRows = (controller: ReturnType<typeof createPanelViewState>) => (
+    <StrictMode>
+      <PanelViewStateScope controller={controller}>
+        <PanelViewStateGroup name="rows">
+          {Array.from({ length: 450 }, (_, i) => (
+            <Draft key={i} name={`row-${i}`} />
+          ))}
+        </PanelViewStateGroup>
+      </PanelViewStateScope>
+    </StrictMode>
+  );
+  const source = createPanelViewState();
+  const view = render(renderRows(source));
+  fireEvent.change(screen.getByRole("textbox", { name: "row-0" }), {
+    target: { value: "first private draft" },
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "row-449" }), {
+    target: { value: "last private draft" },
+  });
+  const snapshot = source.capture();
+  expect(Object.keys(snapshot.fields)).toEqual(["rows"]);
+  view.unmount();
+  const destination = createPanelViewState(parsePanelViewCapsule(snapshot));
+  render(renderRows(destination));
+  expect(screen.getByRole("textbox", { name: "row-0" })).toHaveProperty(
+    "value",
+    "first private draft",
+  );
+  expect(screen.getByRole("textbox", { name: "row-449" })).toHaveProperty(
+    "value",
+    "last private draft",
+  );
+  expect(destination.capture()).toEqual(snapshot);
+});
+it("rejects oversized capture rather than crashing rendering or truncating live fields", () => {
+  const controller = createPanelViewState();
+  const view = render(
+    <PanelViewStateScope controller={controller}>
+      {Array.from({ length: 300 }, (_, i) => (
+        <Draft key={i} name={`draft-${i}`} />
+      ))}
+    </PanelViewStateScope>,
+  );
+  expect(screen.getAllByRole("textbox")).toHaveLength(300);
+  fireEvent.change(screen.getByRole("textbox", { name: "draft-299" }), {
+    target: { value: "still editable" },
+  });
+  expect(() => controller.capture()).toThrow("tooManyFields");
+  expect(screen.getByRole("textbox", { name: "draft-299" })).toHaveProperty(
+    "value",
+    "still editable",
+  );
+  view.unmount();
+  expect(controller.capture().fields).toEqual({});
+});

@@ -1,5 +1,5 @@
 import { useTaskPanelModel } from "@/lib/panels/taskModel";
-import { usePanelViewState } from "@/lib/panels/viewState";
+import { PanelViewStateGroup, usePanelViewState } from "@/lib/panels/viewState";
 import { ListTodo, CheckCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -217,56 +217,58 @@ export function DockedBackgroundTasks() {
     }
   };
   return (
-    <div className="background-panel is-embedded">
-      <PanelHeader view="tasks" />
-      <div className="background-panel__toolbar">
-        <Button
-          size="sm"
-          variant="ghost"
-          leading={<CheckCheck size={13} />}
-          disabled={clearing || !clearable}
-          aria-label={t("tasks.clearFinished")}
-          aria-busy={clearing}
-          title={t("tasks.clearHint")}
-          onClick={() => void clearFinished()}
-        >
-          {t(clearing ? "tasks.clearing" : "tasks.clearFinished")}
-          {clearable > 0 ? (
-            <span className="background-panel__clear-count" aria-hidden="true">
-              {clearable}
-            </span>
-          ) : null}
-        </Button>
-      </div>
-      <BackgroundTasksSurface entries={allItems} embedded={embedded} visible={visible}>
-        <div className="background-panel__body" data-panel-scroll="tasks.body">
-          {!items.length ? (
-            <p className="background-panel__empty">{t("tasks.empty")}</p>
-          ) : (
-            <>
-              <TaskGroup
-                stateKey="tasks.active"
-                name={t("tasks.inProgress")}
-                items={active}
-                now={now}
-              />
-              <TaskGroup
-                stateKey="tasks.attention"
-                name={t("tasks.attention")}
-                items={attention}
-                now={now}
-              />
-              <TaskGroup
-                stateKey="tasks.finished"
-                name={t("tasks.finished")}
-                items={finished}
-                now={now}
-                defaultOpen={false}
-              />
-            </>
-          )}
+    <PanelViewStateGroup name="tasks.rows">
+      <div className="background-panel is-embedded">
+        <PanelHeader view="tasks" />
+        <div className="background-panel__toolbar">
+          <Button
+            size="sm"
+            variant="ghost"
+            leading={<CheckCheck size={13} />}
+            disabled={clearing || !clearable}
+            aria-label={t("tasks.clearFinished")}
+            aria-busy={clearing}
+            title={t("tasks.clearHint")}
+            onClick={() => void clearFinished()}
+          >
+            {t(clearing ? "tasks.clearing" : "tasks.clearFinished")}
+            {clearable > 0 ? (
+              <span className="background-panel__clear-count" aria-hidden="true">
+                {clearable}
+              </span>
+            ) : null}
+          </Button>
         </div>
-      </BackgroundTasksSurface>
-    </div>
+        <BackgroundTasksSurface entries={allItems} embedded={embedded} visible={visible}>
+          <div className="background-panel__body" data-panel-scroll="tasks.body">
+            {!items.length ? (
+              <p className="background-panel__empty">{t("tasks.empty")}</p>
+            ) : (
+              <>
+                <TaskGroup
+                  stateKey="tasks.active"
+                  name={t("tasks.inProgress")}
+                  items={active}
+                  now={now}
+                />
+                <TaskGroup
+                  stateKey="tasks.attention"
+                  name={t("tasks.attention")}
+                  items={attention}
+                  now={now}
+                />
+                <TaskGroup
+                  stateKey="tasks.finished"
+                  name={t("tasks.finished")}
+                  items={finished}
+                  now={now}
+                  defaultOpen={false}
+                />
+              </>
+            )}
+          </div>
+        </BackgroundTasksSurface>
+      </div>
+    </PanelViewStateGroup>
   );
 }

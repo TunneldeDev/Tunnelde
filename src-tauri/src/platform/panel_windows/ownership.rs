@@ -89,6 +89,9 @@ pub(super) struct TransferInfo {
 pub(super) struct Ownership {
     generation: u64,
     pub(super) actions: HashMap<String, super::actions::PendingAction>,
+    // Unknown outcomes after coordinator document loss. These are not released
+    // by result TTL, source retirement, auth unblock, or a reused panel ID.
+    pub(super) interrupted: HashMap<String, String>,
     windows: HashMap<String, Document>,
     destroying: HashSet<String>,
     pub(super) panels: HashMap<String, Panel>,
@@ -268,6 +271,9 @@ impl Ownership {
     }
     pub fn action(&self, window: &str, document: &str, lease: &Lease) -> Result<()> {
         self.owned(window, document, lease)?;
+        if self.panel_interrupted(&lease.panel_id) {
+            return Err("panels.actionInterrupted");
+        }
         if !self.windows[window].ready
             || self.destroying.contains(window)
             || self.windows[window].closing
@@ -373,7 +379,10 @@ impl Ownership {
     ) -> Result<Offer> {
         self.expire(now);
         let panel = self.owned(window, document, lease)?;
-        if panel.blocked || !panel.native_actions.is_empty() {
+        if panel.blocked
+            || !panel.native_actions.is_empty()
+            || self.panel_interrupted(&lease.panel_id)
+        {
             return Err("panel interaction in progress");
         }
         Self::validate_state(&state)?;
@@ -526,6 +535,7 @@ impl Ownership {
         now: Instant,
     ) -> Result<String> {
         self.expire(now);
+        self.action(window, document, lease)?;
         let panel = self.owned(window, document, lease)?;
         if self.windows[window].closing
             || panel.blocked
@@ -586,10 +596,11 @@ impl Ownership {
             .values()
             .filter(|panel| panel.lease.window_id == window)
             .collect();
-        if owned
-            .iter()
-            .any(|panel| panel.blocked || !panel.native_actions.is_empty())
-        {
+        if owned.iter().any(|panel| {
+            panel.blocked
+                || !panel.native_actions.is_empty()
+                || self.panel_interrupted(&panel.lease.panel_id)
+        }) {
             return Err("panel interaction in progress");
         }
         let leases = owned.into_iter().map(|panel| panel.lease.clone()).collect();

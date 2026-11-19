@@ -1,5 +1,5 @@
 import "@/i18n/i18n";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { useEffect, useState } from "react";
 import { PanelWorkspace } from "@/components/layout/PanelWorkspace";
@@ -59,4 +59,83 @@ it("supports tab keyboard navigation and retires only removed native memberships
   view.rerender(<PanelWorkspace entries={entries.slice(1)} />);
   expect(screen.getByRole("textbox", { name: "connections" }).isConnected).toBe(true);
   expect(unmounts).toBe(1);
+});
+
+it("drags tabs to split edges, merges in the center and discards cancelled hover previews without remounting content", async () => {
+  const { endLocalPanelDrag } = await import("@/lib/panels/localPanelDrag");
+  const { act } = await import("@testing-library/react");
+  const view = render(<PanelWorkspace entries={entries} />);
+  const transfer = () => {
+    const data = new Map<string, string>();
+    return {
+      setData: (key: string, value: string) => data.set(key, value),
+      getData: (key: string) => data.get(key) ?? "",
+    };
+  };
+  const point = (element: Element) =>
+    Object.defineProperty(element, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 600,
+        bottom: 400,
+        width: 600,
+        height: 400,
+      }),
+    });
+  const send = (
+    element: Element,
+    kind: "dragOver" | "drop",
+    dataTransfer: unknown,
+    x: number,
+    y: number,
+  ) => {
+    const event = createEvent[kind](element, { dataTransfer });
+    Object.defineProperties(event, { clientX: { value: x }, clientY: { value: y } });
+    fireEvent(element, event);
+  };
+  const input = screen.getByRole("textbox", { name: "connections" });
+  fireEvent.change(input, { target: { value: "keep draft" } });
+  let body = view.container.querySelector(".panel-workspace__group-body")!;
+  point(body);
+  let dataTransfer = transfer();
+  fireEvent.dragStart(view.container.querySelector('[data-local-tab="connections"]')!, {
+    dataTransfer,
+  });
+  send(input, "dragOver", dataTransfer, 590, 200);
+  expect(view.container.querySelector(".panel-workspace__drop.is-right")).toBeTruthy();
+  expect(workspace.store.getState().groups).toHaveLength(1); // Hover has no effects.
+  send(input, "drop", dataTransfer, 590, 200);
+  expect(workspace.store.getState().groups).toHaveLength(2);
+  expect(screen.getByRole("textbox", { name: "connections" })).toBe(input);
+  const target = [...view.container.querySelectorAll("[data-local-group]")].find((group) =>
+    group.querySelector('[data-local-tab="tasks"]'),
+  )!;
+  body = target.querySelector(".panel-workspace__group-body")!;
+  point(body);
+  dataTransfer = transfer();
+  fireEvent.dragStart(view.container.querySelector('[data-local-tab="connections"]')!, {
+    dataTransfer,
+  });
+  send(body, "dragOver", dataTransfer, 300, 200);
+  expect(view.container.querySelector(".panel-workspace__drop.is-merge")).toBeTruthy();
+  await act(() => {
+    endLocalPanelDrag();
+    fireEvent.dragEnd(document.documentElement);
+  });
+  expect(view.container.querySelector(".panel-workspace__drop")).toBeNull();
+  expect(workspace.store.getState().groups).toHaveLength(2);
+  dataTransfer = transfer();
+  fireEvent.dragStart(view.container.querySelector('[data-local-tab="connections"]')!, {
+    dataTransfer,
+  });
+  send(body, "drop", dataTransfer, 300, 200);
+  expect(workspace.store.getState().groups).toHaveLength(1);
+  expect(screen.getByRole("textbox", { name: "connections" })).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("keep draft");
+  expect(mounts).toBe(2);
+  expect(unmounts).toBe(0);
 });

@@ -23,3 +23,27 @@
 .panel-workspace .workbench-floating-slot .panel-workspace__content {
   overflow: visible;
 }
+
+.panel-workspace__group-body {
+  position: relative;
+}
+.panel-workspace__drop {
+  position: absolute;
+  inset: 3px;
+  z-index: 10;
+  pointer-events: none;
+  border: 1px solid var(--td-accent);
+  background: color-mix(in srgb, var(--td-accent) 12%, transparent);
+}
+.panel-workspace__drop.is-left {
+  right: 50%;
+}
+.panel-workspace__drop.is-right {
+  left: 50%;
+}
+.panel-workspace__drop.is-top {
+  bottom: 50%;
+}
+.panel-workspace__drop.is-bottom {
+  top: 50%;
+}

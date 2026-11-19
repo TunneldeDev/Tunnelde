@@ -86,3 +86,14 @@ it("keeps every panel exactly once and prunes empty split branches under repeate
   w.reconcile([]);
   expect(w.store.getState()).toEqual({ layout: null, groups: [], floating: [] });
 });
+it("does not move an entire existing split group when its only tab is dropped back onto itself", () => {
+  const w = createLocalPanelWorkspace();
+  w.reconcile(["a", "b"]);
+  w.split("b", "row");
+  const own = w.store.getState().groups.find((g) => g.panels.includes("b"))!;
+  const state = w.store.getState();
+  w.split("b", "column", "before", own.id);
+  expect(w.store.getState()).toBe(state);
+  w.dock("b", own.id);
+  expect(w.store.getState()).toBe(state);
+});

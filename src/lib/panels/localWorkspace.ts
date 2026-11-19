@@ -56,6 +56,15 @@ export function createLocalPanelWorkspace() {
   const group = (panel: string): LocalPanelGroup => ({ id: id(), panels: [panel], active: panel });
   const dock = (panel: string, target?: string, before?: string) => {
     if (!known().has(panel)) return;
+    if (
+      target &&
+      store
+        .getState()
+        .groups.some(
+          (group) => group.id === target && group.panels.length === 1 && group.panels[0] === panel,
+        )
+    )
+      return;
     const state = without(panel);
     const destination = state.groups.find((g) => g.id === target) ?? state.groups[0];
     if (!destination) {
@@ -112,6 +121,16 @@ export function createLocalPanelWorkspace() {
       target?: string,
     ) {
       if (!known().has(panel)) return;
+      if (
+        target &&
+        store
+          .getState()
+          .groups.some(
+            (group) =>
+              group.id === target && group.panels.length === 1 && group.panels[0] === panel,
+          )
+      )
+        return;
       const state = without(panel);
       const destination = state.groups.find((g) => g.id === target) ?? state.groups[0];
       if (!destination || !state.layout) {

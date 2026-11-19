@@ -152,3 +152,24 @@ their adapters and platform acceptance. Transfer-specific reconnect/consent UI a
 plugin task presentation providers still require window-aware adapters. Do not
 advertise those capabilities or widen gateway permissions to hide an incomplete adapter.
 The public plugin workspace v1 contract remains unchanged.
+
+### Interrupted coordinator and bounded view state
+
+A coordinator document reload cannot prove that an already-claimed arbitrary
+callback's native effects have stopped. Mark its outcome unknown, never replay
+it, and keep a per-panel native quarantine independent of result TTL, source
+retirement, auth unblock or panel-ID reuse. Show an alert and keep that view inert;
+the user must inspect the resource and restart the application to clear this
+process-local protection. Do not add an unsafe automatic retry/unlock button.
+
+Use `PanelViewStateGroup` for repeating rows: one parent field aggregates row
+states, retaining strict JSON plus the aggregate byte/node/depth limits. A long
+list must not throw while rendering. Oversized captures fail before handoff,
+leaving the source interactive with all drafts intact; never truncate to fit.
+
+Document-local pointer dragging supports tab reordering, edge splits and center
+docking, including the floating panel's docking grip. Retained portals follow
+React ancestry rather than their physical DOM placement, so drop surfaces use
+native capture listeners for the opaque document-local token. Exclude the dragged
+floating surface from hit testing for that gesture and restore its original
+style on release, Escape, cancellation, blur and teardown.

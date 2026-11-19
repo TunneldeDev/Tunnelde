@@ -1,3 +1,4 @@
+import { startLocalPanelDrag, endLocalPanelDrag } from "@/lib/panels/localPanelDrag";
 import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
 import { localPanelMoveActions } from "@/lib/panels/localWorkspaceActions";
 import { nativePanelMoveActions } from "@/lib/panels/windowMoves";
@@ -79,10 +80,15 @@ export function SidebarTitle({ view, children }: { view: SidebarView; children: 
       draggable
       title={t("docking.dragHint")}
       onDragStart={(event) => {
+        if (local) {
+          startLocalPanelDrag(local.workspace, view, event.dataTransfer);
+          return;
+        }
         event.dataTransfer.setData(TAB_MIME, sidebarTabId(view));
         event.dataTransfer.setData(SIDEBAR_MIME, view);
         event.dataTransfer.effectAllowed = "move";
       }}
+      onDragEnd={endLocalPanelDrag}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();

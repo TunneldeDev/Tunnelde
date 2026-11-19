@@ -73,7 +73,7 @@ function capsule(fields: Record<string, unknown>): PanelViewCapsule {
     throw new Error("panel.viewState.tooLarge");
   return JSON.parse(json) as PanelViewCapsule;
 }
-export function parsePanelViewCapsule(value: unknown): PanelViewCapsule {
+function parseCapsule(value: unknown, maxFields: number): PanelViewCapsule {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("panel.viewState.invalid");
   const candidate = value as Partial<PanelViewCapsule>;
@@ -85,14 +85,20 @@ export function parsePanelViewCapsule(value: unknown): PanelViewCapsule {
   )
     throw new Error("panel.viewState.invalid");
   const entries = Object.entries(candidate.fields);
-  if (entries.length > MAX_FIELDS || entries.some(([key]) => !validKey(key)))
+  if (entries.length > maxFields || entries.some(([key]) => !validKey(key)))
     throw new Error("panel.viewState.invalid");
   return capsule(Object.fromEntries(entries));
 }
 
+export function parsePanelViewCapsule(value: unknown): PanelViewCapsule {
+  return parseCapsule(value, MAX_FIELDS);
+}
 /** One controller per owned panel, not per native SSH/plugin resource. */
 export function createPanelViewState(initial?: unknown) {
-  const incoming = initial === undefined ? {} : parsePanelViewCapsule(initial).fields;
+  return createController(initial, MAX_FIELDS);
+}
+function createController(initial: unknown, maxFields: number) {
+  const incoming = initial === undefined ? {} : parseCapsule(initial, maxFields).fields;
   const fields = new Map<string, { token: symbol; capture: () => unknown }>();
   let disposed = false;
   const listeners = new Set<() => void>();
@@ -117,7 +123,6 @@ export function createPanelViewState(initial?: unknown) {
       if (disposed) throw new Error("panel.viewState.disposed");
       if (!validKey(key)) throw new Error("panel.viewState.invalidKey");
       if (fields.has(key)) throw new Error("panel.viewState.duplicateKey");
-      if (fields.size >= MAX_FIELDS) throw new Error("panel.viewState.tooManyFields");
       const token = Symbol(key);
       fields.set(key, { token, capture });
       return () => {
@@ -129,6 +134,9 @@ export function createPanelViewState(initial?: unknown) {
     },
     capture(): PanelViewCapsule {
       if (disposed) throw new Error("panel.viewState.disposed");
+      // Rendering a long list must not crash. Reject an oversized handoff at
+      // capture instead, keeping the interactive source and every draft intact.
+      if (fields.size > maxFields) throw new Error("panel.viewState.tooManyFields");
       return capsule(Object.fromEntries([...fields].map(([key, field]) => [key, field.capture()])));
     },
     dispose() {
@@ -149,6 +157,38 @@ export function PanelViewStateScope({
   children: ReactNode;
 }) {
   return <Context.Provider value={controller}>{children}</Context.Provider>;
+}
+
+/** Repeating rows share one parent capsule field rather than consuming a
+ * top-level slot each. Nested state remains strict JSON and subject to the same
+ * aggregate byte/node/depth bounds; nothing is truncated to make a move fit. */
+export function PanelViewStateGroup({ name, children }: { name: string; children: ReactNode }) {
+  const parent = useContext(Context);
+  const [identity] = useState(() => ({ name, parent }));
+  if (identity.name !== name || identity.parent !== parent)
+    throw new Error("panel.viewState.identityChanged");
+  const [controller] = useState(() => {
+    if (!parent) return null;
+    const initial = parent.read(name, (value): value is PanelViewCapsule => {
+      try {
+        parseCapsule(value, Infinity);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    return createController(initial, Infinity);
+  });
+  useLayoutEffect(() => {
+    if (!parent || !controller) return;
+    const unregister = parent.register(name, controller.capture);
+    const stop = controller.subscribe(parent.changed);
+    return () => {
+      stop();
+      unregister();
+    };
+  }, [parent, controller, name]);
+  return controller ? <Context.Provider value={controller}>{children}</Context.Provider> : children;
 }
 
 /** Explicitly opt local UI state into a cross-WebView handoff. No provider means

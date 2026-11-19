@@ -1,7 +1,13 @@
+import {
+  endLocalPanelDrag,
+  readLocalPanelDrag,
+  startLocalPanelDrag,
+} from "@/lib/panels/localPanelDrag";
+import { panelDropZone, type PanelDropZone } from "@/lib/layout/dropZone";
 import { createPortal } from "react-dom";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PanelLayout } from "@/components/ui/layout/PanelLayout";
@@ -74,6 +80,59 @@ function Group({
   const { t } = useTranslation();
   const group = useStore(workspace.store, (state) => state.groups.find((group) => group.id === id));
   const strip = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const [hint, setHint] = useState<PanelDropZone | "merge" | null>(null);
+  const [before, setBefore] = useState<string | null>(null);
+  useEffect(() => {
+    const clear = () => {
+      setBefore(null);
+      setHint(null);
+    };
+    document.addEventListener("dragend", clear);
+    return () => document.removeEventListener("dragend", clear);
+  }, []);
+  useEffect(() => {
+    const element = body.current;
+    if (!element) return;
+    // Portals retain their React ancestry when their DOM slot moves. React's
+    // synthetic bubbling therefore skips this physical drop surface; native
+    // capture listeners also handle drops onto the retained portal's children.
+    const over = (event: DragEvent) => {
+      if (!readLocalPanelDrag(workspace, event.dataTransfer)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer!.dropEffect = "move";
+      setHint(panelDropZone(element, event) ?? "merge");
+    };
+    const leave = (event: DragEvent) => {
+      if (!element.contains(event.relatedTarget as Node | null)) setHint(null);
+    };
+    const drop = (event: DragEvent) => {
+      const panel = readLocalPanelDrag(workspace, event.dataTransfer);
+      if (!panel) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const zone = panelDropZone(element, event);
+      if (!zone) workspace.dock(panel, id);
+      else
+        workspace.split(
+          panel,
+          zone === "left" || zone === "right" ? "row" : "column",
+          zone === "left" || zone === "top" ? "before" : "after",
+          id,
+        );
+      setHint(null);
+      endLocalPanelDrag();
+    };
+    element.addEventListener("dragover", over, true);
+    element.addEventListener("dragleave", leave, true);
+    element.addEventListener("drop", drop, true);
+    return () => {
+      element.removeEventListener("dragover", over, true);
+      element.removeEventListener("dragleave", leave, true);
+      element.removeEventListener("drop", drop, true);
+    };
+  }, [workspace, id]);
   if (!group) return null;
   const select = (panel: string) => {
     workspace.activate(panel);
@@ -84,13 +143,54 @@ function Group({
   return (
     <section className="panel-workspace__group" data-local-group={id}>
       <div className="pane__header">
-        <div className="pane__tabs" role="tablist" ref={strip}>
+        <div
+          className="pane__tabs"
+          role="tablist"
+          ref={strip}
+          onDragOver={(event) => {
+            if (!readLocalPanelDrag(workspace, event.dataTransfer)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "move";
+            const tabs = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-local-tab]")];
+            setBefore(
+              tabs.find(
+                (tab) =>
+                  event.clientX <
+                  tab.getBoundingClientRect().left + tab.getBoundingClientRect().width / 2,
+              )?.dataset.localTab ?? null,
+            );
+            const bounds = event.currentTarget.getBoundingClientRect();
+            if (event.clientX < bounds.left + 36) event.currentTarget.scrollLeft -= 18;
+            if (event.clientX > bounds.right - 36) event.currentTarget.scrollLeft += 18;
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBefore(null);
+          }}
+          onDrop={(event) => {
+            const panel = readLocalPanelDrag(workspace, event.dataTransfer);
+            if (!panel) return;
+            event.preventDefault();
+            event.stopPropagation();
+            // Dropping before itself is a no-op, not an implicit move to end.
+            if (panel !== before) workspace.dock(panel, group.id, before ?? undefined);
+            setBefore(null);
+            endLocalPanelDrag();
+          }}
+        >
           {group.panels.map((panel) => (
             <div
               key={panel}
               role="tab"
               data-local-tab={panel}
-              className={`td-tab${group.active === panel ? " is-active" : ""}`}
+              className={`td-tab${group.active === panel ? " is-active" : ""}${before === panel ? " is-drop-before" : ""}`}
+              draggable
+              onDragStart={(event) => startLocalPanelDrag(workspace, panel, event.dataTransfer)}
+              onDragEnd={() => {
+                setBefore(null);
+                setHint(null);
+                endLocalPanelDrag();
+              }}
               tabIndex={group.active === panel ? 0 : -1}
               aria-selected={group.active === panel}
               aria-controls={`local-panel-${panel}`}
@@ -143,7 +243,8 @@ function Group({
           />
         </div>
       </div>
-      <div className="panel-workspace__group-body">
+      <div className="panel-workspace__group-body" ref={body}>
+        {hint ? <div className={`panel-workspace__drop is-${hint}`} aria-hidden="true" /> : null}
         {group.panels.map((panel) => {
           const slot = slots.get(panel);
           return slot ? (

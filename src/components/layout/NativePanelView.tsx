@@ -12,9 +12,14 @@ import {
 import { usePanelWindows } from "@/store/panelWindows";
 
 function OwnedNativeView({ record, children }: { record: WindowViewRecord; children: ReactNode }) {
+  const { t } = useTranslation();
+  const interrupted = usePanelWindows(
+    (s) => s.snapshot.interruptions?.some((item) => item.panelId === record.panelId) ?? false,
+  );
   const root = useRef<HTMLDivElement>(null);
   const frozen = usePanelWindows(
     (s) =>
+      interrupted ||
       record.staged ||
       !!record.moving ||
       s.snapshot.transfers.some(({ offer }) => offer.lease.panelId === record.panelId),
@@ -76,14 +81,21 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
     };
   }, [frozen, record.panelId, record.lease, record.controller]);
   return (
-    <div
-      ref={root}
-      className="native-panel-view"
-      data-panel-staged={record.staged || undefined}
-      inert={frozen || undefined}
-      aria-busy={frozen || undefined}
-    >
-      <PanelViewStateScope controller={record.controller}>{children}</PanelViewStateScope>
+    <div className="native-panel-frame">
+      {interrupted ? (
+        <p className="native-panel-interruption" role="alert">
+          {t("panels.actionInterrupted")}
+        </p>
+      ) : null}
+      <div
+        ref={root}
+        className="native-panel-view"
+        data-panel-staged={record.staged || undefined}
+        inert={frozen || undefined}
+        aria-busy={frozen || undefined}
+      >
+        <PanelViewStateScope controller={record.controller}>{children}</PanelViewStateScope>
+      </div>
     </div>
   );
 }

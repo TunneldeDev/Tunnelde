@@ -16,6 +16,8 @@ export interface PanelTransferOffer {
   targetWindow: string;
 }
 export interface NativePanelSnapshot {
+  /** Unknown effects after coordinator document loss; counts only, no requests. */
+  interruptions?: ReadonlyArray<{ panelId: string; count: number }>;
   windows: NativePanelWindow[];
   panels: PanelLease[];
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;

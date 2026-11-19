@@ -10,6 +10,7 @@ interface PointerDrag {
   transfer: DataTransfer | null;
   target: Element | null;
   preview: HTMLElement | null;
+  excludedSurface: { element: HTMLElement; pointerEvents: string } | null;
   accepted: boolean;
   userSelect: string;
   cursor: string;
@@ -63,6 +64,8 @@ export function installInternalDrag(): () => void {
     if (current.draggable === null) current.source.removeAttribute("draggable");
     else current.source.setAttribute("draggable", current.draggable);
     current.preview?.remove();
+    if (current.excludedSurface)
+      current.excludedSurface.element.style.pointerEvents = current.excludedSurface.pointerEvents;
     if (current.transfer) {
       document.body.style.userSelect = current.userSelect;
       document.body.style.cursor = current.cursor;
@@ -79,9 +82,8 @@ export function installInternalDrag(): () => void {
     const element = event.target instanceof Element ? event.target : null;
     if (
       !element ||
-      element.closest(
-        "input, textarea, select, button, a, [contenteditable='true'], [role='separator']",
-      )
+      element.closest("input, textarea, select, a, [contenteditable='true'], [role='separator']") ||
+      (element.closest("button") && !element.closest("[data-panel-drag-handle]"))
     )
       return;
     const source = element.closest<HTMLElement>("[draggable='true']");
@@ -95,6 +97,7 @@ export function installInternalDrag(): () => void {
       transfer: null,
       target: null,
       preview: null,
+      excludedSurface: null,
       accepted: false,
       userSelect: document.body.style.userSelect,
       cursor: document.body.style.cursor,
@@ -122,6 +125,11 @@ export function installInternalDrag(): () => void {
         return;
       }
       document.body.style.userSelect = "none";
+      const surface = current.source.closest<HTMLElement>("[data-drag-hit-test='exclude']");
+      if (surface) {
+        current.excludedSurface = { element: surface, pointerEvents: surface.style.pointerEvents };
+        surface.style.pointerEvents = "none";
+      }
       const preview = current.source.cloneNode(true) as HTMLElement;
       preview.removeAttribute("id");
       preview.removeAttribute("draggable");

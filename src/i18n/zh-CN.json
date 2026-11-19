@@ -2818,6 +2818,7 @@
     "exportChanged": "导出期间主机配置发生变化，请重新导出。"
   },
   "panels": {
+    "actionInterrupted": "主窗口在操作期间重载，操作结果未知。为避免重复执行，此面板已锁定。请先检查资源状态，再重启 Tunnelde 解除保护。",
     "moveToGroup": "移至分组 {{index}}",
     "inOtherWindow": "此面板已在另一个窗体中打开。",
     "focusWindow": "显示所在窗体",

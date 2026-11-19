@@ -87,7 +87,7 @@ impl Ownership {
         if request.panel() != lease.panel_id {
             return Err("wrong panel action");
         }
-        if self.actions.len() >= 64
+        if self.actions.len() + self.interrupted.len() >= 64
             || self
                 .actions
                 .values()
@@ -220,7 +220,7 @@ impl Ownership {
         }
         // Cancellation cannot uncommit arbitrary resource work already admitted
         // to main. Its completion still releases the native migration fence.
-        if job.claimed && job.result.is_none() {
+        if self.interrupted.contains_key(id) || (job.claimed && job.result.is_none()) {
             return Ok(false);
         }
         self.drop_action(id);
@@ -228,7 +228,9 @@ impl Ownership {
     }
     fn drop_action(&mut self, id: &str) {
         if let Some(job) = self.actions.remove(id) {
-            let _ = self.relay_fence(&job.lease.panel_id, id, false);
+            if !self.interrupted.contains_key(id) {
+                let _ = self.relay_fence(&job.lease.panel_id, id, false);
+            }
         }
     }
     pub(super) fn expire_actions(&mut self, now: Instant) {
@@ -243,11 +245,27 @@ impl Ownership {
         }
     }
     pub(super) fn retire_document_actions(&mut self, window: &str) {
+        if window == MAIN {
+            // Losing the JS coordinator does not prove its submitted native
+            // effects have stopped. Never replay them or silently unlock the
+            // panel. Return a bounded unknown-outcome failure to live callers;
+            // keep the native safety quarantine independently of reply lifetime.
+            for (id, job) in &mut self.actions {
+                if job.claimed && job.result.is_none() {
+                    self.interrupted
+                        .insert(id.clone(), job.lease.panel_id.clone());
+                    job.result = Some(ActionResult::Failed {
+                        message: "panels.actionInterrupted".into(),
+                    });
+                    job.deadline = Instant::now() + RESULT_TTL;
+                }
+            }
+        }
         let retired: Vec<_> = self
             .actions
             .iter()
             .filter(|(_, job)| {
-                window == MAIN
+                (window == MAIN && !job.claimed)
                     || (job.lease.window_id == window && (!job.claimed || job.result.is_some()))
             })
             .map(|(id, _)| id.clone())
@@ -255,6 +273,19 @@ impl Ownership {
         for id in retired {
             self.drop_action(&id);
         }
+    }
+    pub(super) fn panel_interrupted(&self, panel_id: &str) -> bool {
+        self.interrupted.values().any(|id| id == panel_id)
+    }
+    pub(super) fn interruptions(&self) -> Vec<serde_json::Value> {
+        let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+        for panel in self.interrupted.values() {
+            *counts.entry(panel).or_default() += 1;
+        }
+        counts
+            .into_iter()
+            .map(|(panel_id, count)| serde_json::json!({ "panelId": panel_id, "count": count }))
+            .collect()
     }
     pub(super) fn retire_panel_actions(&mut self, panel_id: &str) {
         let retired: Vec<_> = self
@@ -506,7 +537,7 @@ mod tests {
             .unwrap();
     }
     #[test]
-    fn coordinator_reload_fences_old_completions_without_replaying_submitted_steps() {
+    fn coordinator_reload_quarantines_unknown_effects_without_replaying_or_reporting_success() {
         let mut f = Fixture::new();
         let id = f.request();
         f.registry.claim_actions(MAIN, &f.main, f.now).unwrap();
@@ -528,7 +559,34 @@ mod tests {
             .claim_actions(MAIN, &f.main, f.now)
             .unwrap()
             .is_empty());
-        assert!(f.can_return());
+        assert!(!f.can_return());
+        assert!(!f.registry.cancel_action("source", &f.source, &id).unwrap());
+        assert!(
+            matches!(f.registry.action_result("source", &f.source, &id, f.now).unwrap(), Some(ActionResult::Failed { message }) if message == "panels.actionInterrupted")
+        );
+        f.registry.expire(f.now + Duration::from_secs(600));
+        f.registry.block(MAIN, &f.main, "tasks", false).unwrap();
+        assert!(!f.can_return());
+        assert!(f
+            .registry
+            .authorize_creation("source", &f.source, Some(&f.lease))
+            .is_err());
+        let metadata = f
+            .registry
+            .dispatch(
+                "other",
+                &f.other,
+                super::super::protocol::Command::Snapshot {},
+                f.now,
+            )
+            .unwrap();
+        assert_eq!(
+            metadata["interruptions"],
+            json!([{"panelId":"tasks","count":1}])
+        );
+        for private in [id.as_str(), "private-task-identity", "opaque-ticket"] {
+            assert!(!metadata.to_string().contains(private));
+        }
     }
     #[test]
     fn pending_source_retirement_blocking_and_per_panel_limits_are_bounded() {
@@ -606,5 +664,31 @@ mod tests {
             .registry
             .action_result("source", &f.source, &id, f.now)
             .is_err());
+    }
+    #[test]
+    fn coordinator_loss_quarantine_survives_reply_expiry_crash_and_panel_id_reuse() {
+        let mut f = Fixture::new();
+        let _id = f.request();
+        f.registry.claim_actions(MAIN, &f.main, f.now).unwrap();
+        f.main = f.registry.register(MAIN).unwrap();
+        f.registry.ready(MAIN, &f.main).unwrap();
+        f.registry.expire(f.now + Duration::from_secs(600));
+        let recovered = f.registry.destroyed("source").unwrap().remove(0);
+        assert!(f
+            .registry
+            .prepare(MAIN, &f.main, &recovered, "other", Value::Null, f.now)
+            .is_err());
+        f.registry.remove_panel(MAIN, &f.main, "tasks").unwrap();
+        let replacement = f.registry.add_panel(MAIN, &f.main, "tasks").unwrap();
+        assert!(f
+            .registry
+            .prepare(MAIN, &f.main, &replacement, "other", Value::Null, f.now)
+            .is_err());
+        // An unrelated adapter is not globally blocked by this unknown outcome.
+        let connection = f.registry.add_panel(MAIN, &f.main, "connections").unwrap();
+        assert!(f
+            .registry
+            .prepare(MAIN, &f.main, &connection, "other", Value::Null, f.now)
+            .is_ok());
     }
 }

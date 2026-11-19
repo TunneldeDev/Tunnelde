@@ -107,7 +107,7 @@ impl Ownership {
         self.expire(now);
         match command {
             Command::Snapshot {} => Ok(
-                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?}),
+                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions()}),
             ),
             Command::RequestAction { lease, request } => Ok(json!(
                 self.request_action(window, document, &lease, request, now)?

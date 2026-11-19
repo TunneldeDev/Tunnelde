@@ -1,3 +1,4 @@
+import { useInternalDrag } from "@/lib/session/useInternalDrag";
 import { PanelWorkspace } from "@/components/layout/PanelWorkspace";
 import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
 import type { SidebarView } from "@/store/navigation";
@@ -185,6 +186,7 @@ function TaskView(props: NativeViewProps) {
 /** Separate document entry: never run main resource bootstrap, persistence,
  * plugin background activation, task aggregation or autoconnect in a satellite. */
 export function SatelliteApp() {
+  useInternalDrag();
   const { t } = useTranslation();
   const [client, setClient] = useState<PanelWindowClient | null>(null);
   const [failed, setFailed] = useState(false);

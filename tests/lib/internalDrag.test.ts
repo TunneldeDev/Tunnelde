@@ -215,3 +215,37 @@ describe("internal pointer drag", () => {
     expect(ended).toHaveBeenCalledOnce();
   });
 });
+
+it("allows the explicit floating-panel docking grip inside a move button without making ordinary buttons draggable", () => {
+  document.body.innerHTML = '<button id="move"><span id="grip" draggable="true" data-panel-drag-handle>Dock</span><span id="label">Move</span></button><div id="target"></div>';
+  const grip = document.getElementById("grip")!, target = document.getElementById("target")!;
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => target });
+  const start = vi.fn((event: Event) => (event as DragEvent).dataTransfer!.setData("application/x-panel", "opaque"));
+  grip.addEventListener("dragstart", start);
+  target.addEventListener("dragover", event => event.preventDefault());
+  const drop = vi.fn(); target.addEventListener("drop", drop);
+  pointer(grip, "pointerdown", 10);
+  pointer(document, "pointermove", 50);
+  pointer(document, "pointerup", 50);
+  expect(start).toHaveBeenCalledOnce(); expect(drop).toHaveBeenCalledOnce();
+  pointer(document.getElementById("label")!, "pointerdown", 10);
+  pointer(document, "pointermove", 60); pointer(document, "pointerup", 60);
+  expect(start).toHaveBeenCalledOnce();
+});
+
+it("excludes a dragged overlay from hit testing and restores its original style on drop or cancel", () => {
+  const surface = document.createElement("section");
+  surface.dataset.dragHitTest = "exclude";
+  surface.style.pointerEvents = "auto";
+  source.before(surface);
+  surface.append(source);
+  target.addEventListener("dragover", (event) => event.preventDefault());
+  for (const cancel of [false, true]) {
+    pointer(source, "pointerdown", 10);
+    pointer(document, "pointermove", 30);
+    expect(surface.style.pointerEvents).toBe("none");
+    if (cancel) document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    else pointer(document, "pointerup", 30);
+    expect(surface.style.pointerEvents).toBe("auto");
+  }
+});

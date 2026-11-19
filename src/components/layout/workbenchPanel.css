@@ -186,3 +186,21 @@
   color: var(--td-text-muted);
   font-size: 12px;
 }
+
+.native-panel-frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.native-panel-interruption {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--td-warning, var(--td-text));
+  background: var(--td-panel);
+  border-bottom: 1px solid var(--td-border-strong);
+  font-size: 12px;
+  line-height: 1.5;
+}

@@ -1,3 +1,4 @@
+import { startLocalPanelDrag, endLocalPanelDrag } from "@/lib/panels/localPanelDrag";
 import { useStore } from "zustand";
 import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
 import { usePanelWindows } from "@/store/panelWindows";
@@ -146,6 +147,7 @@ export function WorkbenchPanel({
           ref={panel}
           className={`workbench-panel is-${location}${location === "floating" ? " workbench-panel--floating" : ""}`}
           data-workbench-panel={view}
+          data-drag-hit-test={location === "floating" ? "exclude" : undefined}
           role={location === "floating" ? "dialog" : "region"}
           aria-modal={location === "floating" ? "false" : undefined}
           aria-label={sidebarLabel(view, t)}
@@ -182,10 +184,16 @@ export function WorkbenchPanel({
               >
                 <span
                   draggable
+                  data-panel-drag-handle
                   className="workbench-panel__dock-grip"
                   title={t("docking.dragHint")}
                   onPointerDown={(event) => event.stopPropagation()}
+                  onDragEnd={endLocalPanelDrag}
                   onDragStart={(event) => {
+                    if (local) {
+                      startLocalPanelDrag(local.workspace, view, event.dataTransfer);
+                      return;
+                    }
                     event.dataTransfer.setData(TAB_MIME, sidebarTabId(view));
                     event.dataTransfer.setData(SIDEBAR_MIME, view);
                     event.dataTransfer.effectAllowed = "move";
