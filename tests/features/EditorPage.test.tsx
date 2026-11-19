@@ -158,6 +158,25 @@ describe("text encoding controls", () => {
   });
 });
 
+it.each([null, "s1"])(
+  "retries a failed open in the same tab with automatic encoding detection: %s",
+  async (sessionId) => {
+    const read = vi
+      .spyOn(api, sessionId === null ? "localReadText" : "sftpReadText")
+      .mockRejectedValueOnce(new Error("Unavailable"))
+      .mockResolvedValue({ content: "loaded", size: 6, encoding: "gb18030", bom: false });
+    await useEditors.getState().open("editor", sessionId, "/draft.txt");
+    render(<EditorPage tabId="editor" active />);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(editorText(await editorBox())).toBe("loaded");
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenLastCalledWith(
+      ...(sessionId === null ? ["/draft.txt", undefined] : [sessionId, "/draft.txt", undefined]),
+    );
+    expect(useEditors.getState().isDirty("editor")).toBe(false);
+  },
+);
+
 describe("native file-save setup", () => {
   it("derives installation from the open remote document, keeps content intact and permits cancelling", async () => {
     let finish!: (value: boolean) => void;
