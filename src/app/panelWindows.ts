@@ -1,3 +1,6 @@
+import { installPanelWindowDrag } from "@/lib/panels/windowDrag";
+import { toast } from "@/store/toasts";
+import { translateError } from "@/lib/api/errors";
 import { initializePanelWindow, type PanelWindowClient } from "@/lib/panels/windowClient";
 import { startPanelWindowCoordinator } from "@/lib/panels/windowCoordinator";
 import { usePanelWindows } from "@/store/panelWindows";
@@ -42,6 +45,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     failure,
   });
   const stop = [
+    installPanelWindowDrag(current, (error) => toast(translateError(error), "error")),
     usePlugins.subscribe(coordinator.refresh),
     useFilePreview.subscribe(coordinator.refresh),
   ];

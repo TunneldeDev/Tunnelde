@@ -173,3 +173,26 @@ React ancestry rather than their physical DOM placement, so drop surfaces use
 native capture listeners for the opaque document-local token. Exclude the dragged
 floating surface from hit testing for that gesture and restore its original
 style on release, Escape, cancellation, blur and teardown.
+
+### Native drag bridge (in development)
+
+The common pointer driver reports a genuine release separately from Escape,
+lost capture, blur and teardown. An accepted local drop cancels its native grant.
+For an unaccepted release, a host-issued, short-lived, single-use grant must be
+ready already: do not wait for a delayed grant and then sample a later cursor.
+The exact originating document and interactive lease are checked again at native
+release. The handoff must still match that lease incarnation; never substitute a
+newer owner found by panel ID. No grant or document token goes into drag readiness
+metadata or plugin messages.
+
+Native hit testing selects an existing registered window, the source (no-op), or
+outside all visible application windows (create a destination). Geometry/query
+errors are failures, never evidence of an outside drop. macOS cursor coordinates
+use the primary monitor's backing scale while window bounds use each window's
+scale; normalize both to Cocoa desktop points before comparing. Windows/Linux
+retain their native physical desktop coordinates. Never trust browser screenX/Y.
+
+Synthetic pointer tests in real WebViews validate the gateway and staged handoff,
+not actual OS pointer capture, all platform input paths, mixed-monitor hardware,
+SSH transport continuity or complete built-in/plugin support. Those acceptance
+requirements remain before exposing the complete capability or releasing it.

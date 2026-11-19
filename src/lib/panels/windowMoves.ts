@@ -1,3 +1,4 @@
+import type { PanelLease } from "./windowProtocol";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
 import type { TFunction } from "i18next";
 import { windowViews, transferablePanel } from "./windowViews";
@@ -6,7 +7,7 @@ import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 
 const moving = new Set<string>();
-export async function movePanelToWindow(panelId: string, target?: string) {
+export async function movePanelToWindow(panelId: string, target?: string, expected?: PanelLease) {
   const views = windowViews();
   if (!views || !transferablePanel(panelId)) throw new Error("panel.window.unsupportedView");
   const client = views.client;
@@ -20,7 +21,14 @@ export async function movePanelToWindow(panelId: string, target?: string) {
     const lease = snapshot.panels.find(
       (panel) => panel.panelId === panelId && panel.windowId === client.windowId,
     );
-    if (!lease) throw new Error("panel.window.staleOwner");
+    if (
+      !lease ||
+      (expected &&
+        (expected.panelId !== lease.panelId ||
+          expected.windowId !== lease.windowId ||
+          expected.generation !== lease.generation))
+    )
+      throw new Error("panel.window.staleOwner");
     if (!target) {
       // Native checks this exact document/lease before AND after platform window
       // construction. Satellites cannot create arbitrary unowned windows.

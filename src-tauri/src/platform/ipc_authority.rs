@@ -16,6 +16,7 @@ fn allowed(label: &str, command: &str, registered: bool) -> bool {
                     | "panel_window_create"
                     | "panel_window_destroy"
                     | "panel_window_drop_target"
+                    | "panel_window_release_drag"
                     | "panel_window_disconnect"
                     | "panel_window_focus"
             ))
@@ -67,6 +68,7 @@ mod tests {
             "panel_window_create",
             "panel_window_destroy",
             "panel_window_drop_target",
+            "panel_window_release_drag",
             "panel_window_disconnect",
             "panel_window_focus",
         ] {

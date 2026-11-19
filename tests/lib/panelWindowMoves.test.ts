@@ -93,3 +93,16 @@ it("cleans up only the destination it created when handoff preparation fails", a
   await expect(movePanelToWindow("tasks")).rejects.toThrow("blocked");
   expect(destroy).toHaveBeenCalledExactlyOnceWith("abandoned");
 });
+
+it("does not silently move a newer lease incarnation after a native drag release", async () => {
+  fixture();
+  await expect(
+    movePanelToWindow("connections", "target", {
+      panelId: "connections",
+      windowId: "main",
+      generation: 99,
+    }),
+  ).rejects.toThrow("panel.window.staleOwner");
+  expect(mock.views.capture).not.toHaveBeenCalled();
+  expect(mock.views.client.control).not.toHaveBeenCalled();
+});

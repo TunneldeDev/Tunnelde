@@ -47,8 +47,14 @@ export type PanelWindowCommand =
   | { action: "prepare"; lease: PanelLease; targetWindow: string; state: unknown }
   | { action: "staged" | "stagedModel" | "acknowledge" | "commit" | "cancel"; id: string }
   | { action: "block"; panelId: string; blocked: boolean }
-  | { action: "acceptDrag"; token: string };
+  | { action: "acceptDrag" | "cancelDrag"; token: string };
 export interface NativePanelIdentity {
   windowId: string;
   document: string;
+}
+
+export interface NativePanelDragRelease {
+  lease: PanelLease;
+  /** null means outside every visible application window, not a failed query. */
+  targetWindow: string | null;
 }

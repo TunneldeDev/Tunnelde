@@ -546,3 +546,87 @@ fn closing_cancels_inflight_moves_and_grants_and_only_accepts_return_to_coordina
         .is_err());
     assert!(f.registry.action("panel-one", &f.satellite, &lease).is_ok());
 }
+
+#[test]
+fn pointer_drag_release_and_cancel_require_the_exact_source_and_are_single_use() {
+    let mut f = Fixture::new();
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    assert!(f
+        .registry
+        .release_drag("panel-one", &f.satellite, &id, f.now)
+        .is_err());
+    assert!(f
+        .registry
+        .cancel_drag("panel-one", &f.satellite, &id)
+        .is_err());
+    assert!(f.registry.release_drag(MAIN, &f.other, &id, f.now).is_err());
+    assert_eq!(
+        f.registry.release_drag(MAIN, &f.main, &id, f.now).unwrap(),
+        f.lease
+    );
+    assert!(f.registry.release_drag(MAIN, &f.main, &id, f.now).is_err());
+    assert!(f.registry.action(MAIN, &f.main, &f.lease).is_ok()); // No implicit transfer.
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    f.registry.cancel_drag(MAIN, &f.main, &id).unwrap();
+    assert!(f.registry.release_drag(MAIN, &f.main, &id, f.now).is_err());
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    assert!(f
+        .registry
+        .release_drag(MAIN, &f.main, &id, f.now + Duration::from_secs(31))
+        .is_err());
+}
+#[test]
+fn drag_release_rechecks_blocking_actions_reload_and_transfer_incarnations() {
+    let mut f = Fixture::new();
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    let action = f
+        .registry
+        .begin_native_action(MAIN, &f.main, &f.lease)
+        .unwrap();
+    assert!(f.registry.release_drag(MAIN, &f.main, &id, f.now).is_err());
+    f.registry.finish_native_action("connections", &action);
+    f.registry.cancel_drag(MAIN, &f.main, &id).unwrap();
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    f.registry
+        .block(MAIN, &f.main, "connections", true)
+        .unwrap();
+    assert!(f.registry.release_drag(MAIN, &f.main, &id, f.now).is_err());
+    f.registry
+        .block(MAIN, &f.main, "connections", false)
+        .unwrap();
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    let lease = f.move_to_satellite();
+    assert!(f.registry.release_drag(MAIN, &f.main, &id, f.now).is_err());
+    let id = f
+        .registry
+        .issue_drag("panel-one", &f.satellite, &lease, f.now)
+        .unwrap();
+    let next = f.registry.register("panel-one").unwrap();
+    f.registry.ready("panel-one", &next).unwrap();
+    assert!(f
+        .registry
+        .release_drag("panel-one", &f.satellite, &id, f.now)
+        .is_err());
+    assert!(f
+        .registry
+        .release_drag("panel-one", &next, &id, f.now)
+        .is_err());
+}

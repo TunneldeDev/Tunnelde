@@ -581,10 +581,43 @@ impl Ownership {
             .get(id)
             .filter(|grant| grant.deadline > now)
             .ok_or("drag expired")?;
-        self.owned(&grant.lease.window_id, &grant.document, &grant.lease)?;
+        self.authorize_creation(&grant.lease.window_id, &grant.document, Some(&grant.lease))?;
         let lease = grant.lease.clone();
         self.drags.remove(id);
         Ok(lease)
+    }
+    /// Only the exact originating document can resolve/cancel a pointer drag.
+    /// Tokens are single-use and cannot authorize a different lease incarnation.
+    pub fn release_drag(
+        &mut self,
+        window: &str,
+        document: &str,
+        id: &str,
+        now: Instant,
+    ) -> Result<Lease> {
+        self.authorize(window, document)?;
+        let grant = self
+            .drags
+            .get(id)
+            .filter(|grant| grant.deadline > now)
+            .ok_or("drag expired")?;
+        if grant.lease.window_id != window || grant.document != document {
+            return Err("invalid drag source");
+        }
+        self.authorize_creation(window, document, Some(&grant.lease))?;
+        let lease = grant.lease.clone();
+        self.drags.remove(id);
+        Ok(lease)
+    }
+    pub fn cancel_drag(&mut self, window: &str, document: &str, id: &str) -> Result<()> {
+        self.authorize(window, document)?;
+        if let Some(grant) = self.drags.get(id) {
+            if grant.lease.window_id != window || grant.document != document {
+                return Err("invalid drag source");
+            }
+            self.drags.remove(id);
+        }
+        Ok(())
     }
     pub fn begin_close(&mut self, window: &str, document: &str) -> Result<Vec<Lease>> {
         self.authorize(window, document)?;

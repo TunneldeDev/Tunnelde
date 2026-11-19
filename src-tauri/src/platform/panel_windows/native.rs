@@ -113,6 +113,7 @@ pub(crate) fn panel_window_control(
             | Command::Checkpoint { .. }
             | Command::IssueDrag { .. }
             | Command::AcceptDrag { .. }
+            | Command::CancelDrag { .. }
     );
     let result = lock(&registry)
         .dispatch(window.label(), &document, request, Instant::now())
@@ -376,12 +377,53 @@ pub(crate) fn panel_window_drop_target(
     window: WebviewWindow,
     document: String,
 ) -> AppResult<Option<String>> {
-    let app = window.app_handle();
-    let registry = app.state::<Registry>();
+    let registry = window.state::<Registry>();
     lock(&registry)
         .authorize(window.label(), &document)
         .map_err(invalid)?;
+    native_drop_target(window.app_handle())
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DragRelease {
+    lease: Lease,
+    target_window: Option<String>,
+}
+#[tauri::command]
+pub(crate) fn panel_window_release_drag(
+    window: WebviewWindow,
+    document: String,
+    token: String,
+) -> AppResult<DragRelease> {
+    let registry = window.state::<Registry>();
+    // Sample on the native side at release. macOS normalizes per-window and
+    // primary-monitor scales into one Cocoa desktop space, never browser CSS.
+    let target_window = native_drop_target(window.app_handle())?;
+    let lease = lock(&registry)
+        .release_drag(window.label(), &document, &token, Instant::now())
+        .map_err(invalid)?;
+    Ok(DragRelease {
+        lease,
+        target_window,
+    })
+}
+fn native_drop_target(app: &AppHandle) -> AppResult<Option<String>> {
+    let registry = app.state::<Registry>();
     let cursor = app.cursor_position()?;
+    #[cfg(target_os = "macos")]
+    let cursor = {
+        let scale = app
+            .primary_monitor()?
+            .ok_or_else(|| invalid("drop monitor unavailable"))?
+            .scale_factor();
+        if !scale.is_finite() || scale <= 0.0 {
+            return Err(invalid("drop monitor unavailable"));
+        }
+        tauri::PhysicalPosition::new(cursor.x / scale, cursor.y / scale)
+    };
+    if !cursor.x.is_finite() || !cursor.y.is_finite() {
+        return Err(invalid("drop cursor unavailable"));
+    }
     let registered = lock(&registry).windows();
     let focus = registry
         .focus
@@ -390,22 +432,25 @@ pub(crate) fn panel_window_drop_target(
         .clone();
     let mut windows: Vec<_> = registered
         .into_iter()
-        .filter_map(|item| {
-            let window = app.get_webview_window(&item.id)?;
-            let position = window.outer_position().ok()?;
-            let size = window.outer_size().ok()?;
-            Some((
-                item.id,
-                geometry::Rect {
-                    x: position.x as f64,
-                    y: position.y as f64,
-                    width: size.width as f64,
-                    height: size.height as f64,
-                },
-                window.is_visible().ok()? && !window.is_minimized().ok()?,
-            ))
+        .map(|item| {
+            let window = app
+                .get_webview_window(&item.id)
+                .ok_or_else(|| invalid("drop geometry unavailable"))?;
+            let visible = window.is_visible()? && !window.is_minimized()?;
+            let position = window.outer_position()?;
+            let size = window.outer_size()?;
+            let rect = geometry::Rect {
+                x: position.x as f64,
+                y: position.y as f64,
+                width: size.width as f64,
+                height: size.height as f64,
+            };
+            #[cfg(target_os = "macos")]
+            let rect = geometry::desktop_points(rect, window.scale_factor()?)
+                .ok_or_else(|| invalid("drop geometry unavailable"))?;
+            Ok((item.id, rect, visible))
         })
-        .collect();
+        .collect::<AppResult<_>>()?;
     windows.sort_by_key(|(id, _, _)| {
         focus
             .iter()

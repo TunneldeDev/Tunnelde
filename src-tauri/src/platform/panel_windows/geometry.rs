@@ -1,5 +1,6 @@
-//! Native screen geometry is physical throughout. Browser screenX/screenY and
-//! CSS pixels are not reliable coordinates across mixed-DPI monitors.
+//! Placement uses physical bounds. Hit testing requires one coherent native
+//! desktop space: physical on Windows/Linux; normalized Cocoa points on macOS.
+//! Browser screenX/screenY and CSS pixels are never accepted as drop authority.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Rect {
     pub x: f64,
@@ -29,6 +30,23 @@ impl Rect {
             ((self.y + self.height).min(other.y + other.height) - self.y.max(other.y)).max(0.0);
         width * height
     }
+}
+/// Tauri's macOS outer bounds are multiplied by each window's backing scale,
+/// while its desktop cursor uses the primary monitor's scale. Normalize both
+/// before hit testing; comparing these nominally "physical" values directly is
+/// incorrect when a window is on a monitor with a different backing scale.
+#[cfg(any(target_os = "macos", test))]
+pub(super) fn desktop_points(rect: Rect, scale: f64) -> Option<Rect> {
+    if !rect.valid() || !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    let result = Rect {
+        x: rect.x / scale,
+        y: rect.y / scale,
+        width: rect.width / scale,
+        height: rect.height / scale,
+    };
+    result.valid().then_some(result)
 }
 #[derive(Clone, Copy)]
 pub(super) struct Monitor {
@@ -210,5 +228,58 @@ mod tests {
             &[]
         )
         .is_none());
+    }
+}
+
+#[cfg(test)]
+mod mixed_scale_tests {
+    use super::*;
+    #[test]
+    fn cocoa_desktop_normalization_uses_each_native_geometrys_own_scale() {
+        let retina = desktop_points(
+            Rect {
+                x: -2400.0,
+                y: -200.0,
+                width: 1800.0,
+                height: 1400.0,
+            },
+            2.0,
+        )
+        .unwrap();
+        let external = desktop_points(
+            Rect {
+                x: 1000.0,
+                y: 0.0,
+                width: 700.0,
+                height: 600.0,
+            },
+            1.0,
+        )
+        .unwrap();
+        let windows = [
+            WindowBounds {
+                id: "retina",
+                rect: retina,
+                visible: true,
+            },
+            WindowBounds {
+                id: "external",
+                rect: external,
+                visible: true,
+            },
+        ];
+        // Desktop cursor is scaled by the primary monitor, not the hovered one.
+        assert_eq!(
+            drop_target(-2000.0 / 2.0, 100.0 / 2.0, &windows),
+            Some("retina")
+        );
+        assert_eq!(
+            drop_target(2200.0 / 2.0, 200.0 / 2.0, &windows),
+            Some("external")
+        );
+        assert_eq!(drop_target(1800.0 / 2.0, 200.0 / 2.0, &windows), None);
+        for scale in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(desktop_points(retina, scale).is_none());
+        }
     }
 }

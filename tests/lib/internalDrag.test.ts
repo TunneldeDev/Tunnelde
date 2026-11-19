@@ -217,19 +217,26 @@ describe("internal pointer drag", () => {
 });
 
 it("allows the explicit floating-panel docking grip inside a move button without making ordinary buttons draggable", () => {
-  document.body.innerHTML = '<button id="move"><span id="grip" draggable="true" data-panel-drag-handle>Dock</span><span id="label">Move</span></button><div id="target"></div>';
-  const grip = document.getElementById("grip")!, target = document.getElementById("target")!;
+  document.body.innerHTML =
+    '<button id="move"><span id="grip" draggable="true" data-panel-drag-handle>Dock</span><span id="label">Move</span></button><div id="target"></div>';
+  const grip = document.getElementById("grip")!,
+    target = document.getElementById("target")!;
   Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => target });
-  const start = vi.fn((event: Event) => (event as DragEvent).dataTransfer!.setData("application/x-panel", "opaque"));
+  const start = vi.fn((event: Event) =>
+    (event as DragEvent).dataTransfer!.setData("application/x-panel", "opaque"),
+  );
   grip.addEventListener("dragstart", start);
-  target.addEventListener("dragover", event => event.preventDefault());
-  const drop = vi.fn(); target.addEventListener("drop", drop);
+  target.addEventListener("dragover", (event) => event.preventDefault());
+  const drop = vi.fn();
+  target.addEventListener("drop", drop);
   pointer(grip, "pointerdown", 10);
   pointer(document, "pointermove", 50);
   pointer(document, "pointerup", 50);
-  expect(start).toHaveBeenCalledOnce(); expect(drop).toHaveBeenCalledOnce();
+  expect(start).toHaveBeenCalledOnce();
+  expect(drop).toHaveBeenCalledOnce();
   pointer(document.getElementById("label")!, "pointerdown", 10);
-  pointer(document, "pointermove", 60); pointer(document, "pointerup", 60);
+  pointer(document, "pointermove", 60);
+  pointer(document, "pointerup", 60);
   expect(start).toHaveBeenCalledOnce();
 });
 
@@ -244,8 +251,36 @@ it("excludes a dragged overlay from hit testing and restores its original style 
     pointer(source, "pointerdown", 10);
     pointer(document, "pointermove", 30);
     expect(surface.style.pointerEvents).toBe("none");
-    if (cancel) document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    if (cancel)
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     else pointer(document, "pointerup", 30);
     expect(surface.style.pointerEvents).toBe("auto");
+  }
+});
+
+it("captures an actual drag, reports release separately from cancellation and releases capture", async () => {
+  const { INTERNAL_DRAG_FINISH } = await import("@/lib/session/internalDragEvents");
+  const capture = vi.fn(),
+    release = vi.fn();
+  source.setPointerCapture = capture;
+  source.hasPointerCapture = () => true;
+  source.releasePointerCapture = release;
+  const finished = vi.fn();
+  document.addEventListener(INTERNAL_DRAG_FINISH, finished);
+  try {
+    pointer(source, "pointerdown", 10);
+    expect(capture).not.toHaveBeenCalled();
+    pointer(document, "pointermove", 30);
+    expect(capture).toHaveBeenCalledExactlyOnceWith(1);
+    pointer(document, "pointerup", 60);
+    expect(finished.mock.calls[0]![0].detail).toMatchObject({ released: true, accepted: false });
+    expect(release).toHaveBeenCalledExactlyOnceWith(1);
+    pointer(source, "pointerdown", 10);
+    pointer(document, "pointermove", 30);
+    source.dispatchEvent(new PointerEvent("lostpointercapture", { bubbles: true, pointerId: 1 }));
+    expect(finished.mock.calls[1]![0].detail).toMatchObject({ released: false });
+    expect(document.querySelector("[data-drag-preview]")).toBeNull();
+  } finally {
+    document.removeEventListener(INTERNAL_DRAG_FINISH, finished);
   }
 });

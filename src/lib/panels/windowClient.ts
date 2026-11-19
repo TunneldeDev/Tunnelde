@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   NativePanelIdentity,
+  NativePanelDragRelease,
   PanelLease,
   PanelViewAction,
   PanelActionResult,
@@ -143,6 +144,15 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       check();
       await invoke("panel_window_disconnect", { document: identity.document, lease, sessionId });
       check();
+    },
+    async releaseDrag(token: string) {
+      check();
+      const result = await invoke<NativePanelDragRelease>("panel_window_release_drag", {
+        document: identity.document,
+        token,
+      });
+      check();
+      return result;
     },
     async dropTarget() {
       check();

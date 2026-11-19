@@ -87,6 +87,9 @@ pub(crate) enum Command {
     IssueDrag {
         lease: Lease,
     },
+    CancelDrag {
+        token: String,
+    },
     AcceptDrag {
         token: String,
     },
@@ -190,6 +193,10 @@ impl Ownership {
             }
             Command::AcceptDrag { token } => {
                 Ok(json!(self.accept_drag(window, document, &token, now)?))
+            }
+            Command::CancelDrag { token } => {
+                self.cancel_drag(window, document, &token)?;
+                Ok(Value::Null)
             }
             Command::BeginClose {} => Ok(json!(self.begin_close(window, document)?)),
             Command::CancelClose {} => {

@@ -30,3 +30,8 @@ export function readLocalPanelDrag(
 export function endLocalPanelDrag() {
   drag = null;
 }
+
+/** For the private native-drag bridge only; still requires a host-issued lease. */
+export function localPanelDragId(transfer: Pick<DataTransfer, "getData">) {
+  return drag && readLocalPanelDrag(drag.workspace, transfer);
+}

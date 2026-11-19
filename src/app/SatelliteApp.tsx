@@ -1,3 +1,4 @@
+import { installPanelWindowDrag } from "@/lib/panels/windowDrag";
 import { useInternalDrag } from "@/lib/session/useInternalDrag";
 import { PanelWorkspace } from "@/components/layout/PanelWorkspace";
 import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
@@ -242,7 +243,11 @@ export function SatelliteApp() {
           },
         });
         views.close = session.close;
+        const stopDrag = installPanelWindowDrag(current, (error) =>
+          toast(translateError(error), "error"),
+        );
         cleanup = () => {
+          stopDrag();
           session.dispose();
           uninstall();
           current.dispose();
