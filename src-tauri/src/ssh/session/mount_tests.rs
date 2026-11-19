@@ -182,7 +182,11 @@ async fn exercise(
     mounts.stop_generation("owner-a", 6).await;
     assert_eq!(mounts.list(Some("owner-a")).await.len(), 1);
     mounts.stop_generation("owner-a", 7).await;
-    assert!(mounts.list(Some("owner-a")).await.is_empty());
+    let remaining = mounts.list(Some("owner-a")).await;
+    assert!(
+        remaining.is_empty(),
+        "revocation cleanup incomplete: {remaining:?}"
+    );
     assert_eq!(
         tokio::fs::read(root.join("mount-b/file.txt"))
             .await
