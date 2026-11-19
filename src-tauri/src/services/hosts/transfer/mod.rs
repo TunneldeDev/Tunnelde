@@ -414,9 +414,9 @@ pub(crate) fn preview_at(conn: &Connection, document: Document) -> AppResult<Pre
                     || (h
                         .host
                         .trim_end_matches('.')
-                        .eq_ignore_ascii_case(host.host.trim_end_matches('.'))
+                        .eq_ignore_ascii_case(host.host.trim().trim_end_matches('.'))
                         && h.port == host.port
-                        && h.username == host.username)
+                        && h.username == host.username.trim())
             }),
             dependency: !document.roots.contains(&host.id),
             requires: host.route.jump_hosts.clone(),

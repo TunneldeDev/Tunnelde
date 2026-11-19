@@ -103,6 +103,12 @@ fn conflicts_are_skipped_unless_explicitly_copied_and_existing_hosts_never_chang
         let original = host(conn, "Server", "host.example", None);
         let document = export_at(conn, std::slice::from_ref(&original.id))?;
         assert!(preview_at(conn, document.clone())?.entries[0].conflict);
+        let mut normalized = document.clone();
+        normalized.hosts[0].name = "A different display name".into();
+        normalized.hosts[0].host = " HOST.EXAMPLE. ".into();
+        normalized.hosts[0].username = " tester ".into();
+        assert!(preview_at(conn, normalized.clone())?.entries[0].conflict);
+        assert!(apply_at(conn, request(conn, normalized, false)).is_err());
         assert!(apply_at(conn, request(conn, document.clone(), false)).is_err());
         assert_eq!(db::hosts::list_hosts(conn)?.len(), 1);
         let imported = apply_at(conn, request(conn, document, true))?;
