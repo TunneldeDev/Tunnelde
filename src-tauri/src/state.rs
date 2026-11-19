@@ -18,6 +18,7 @@ use crate::update::UpdateService;
 pub struct AppState {
     pub db: Database,
     pub(crate) vault: crate::vault::Vault,
+    pub(crate) host_imports: crate::services::hosts::transfer::runtime::Runtime,
     pub(crate) credentials: crate::services::credentials::Runtime,
     pub settings: RwLock<Settings>,
     /// Serializes read/validate/persist/publish for every settings writer.
@@ -154,6 +155,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     )?;
 
     app.manage(AppState {
+        host_imports: Default::default(),
         db: database,
         vault,
         credentials,

@@ -1,0 +1,9 @@
+.host-transfer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+}
+
+.host-transfer .td-dialog__foot {
+  flex-wrap: wrap;
+}

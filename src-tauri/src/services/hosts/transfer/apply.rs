@@ -2,15 +2,27 @@ use super::*;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ImportRequest {
-    document: Document,
-    revision: String,
-    selected: Vec<String>,
+    pub(super) document: Document,
+    pub(super) revision: String,
+    pub(super) selected: Vec<String>,
     #[serde(default)]
-    copies: bool,
+    pub(super) copies: bool,
     #[serde(default)]
-    mount_points: HashMap<String, String>,
+    pub(super) mount_points: HashMap<String, String>,
 }
 pub(crate) fn apply_at(conn: &Connection, request: ImportRequest) -> AppResult<Vec<Host>> {
+    Ok(apply_mapped(conn, request, &HashMap::new())?.hosts)
+}
+pub(super) struct Applied {
+    pub hosts: Vec<Host>,
+    pub host_ids: HashMap<String, String>,
+    pub proxy_ids: HashMap<String, String>,
+}
+pub(super) fn apply_mapped(
+    conn: &Connection,
+    request: ImportRequest,
+    keys: &HashMap<String, String>,
+) -> AppResult<Applied> {
     validate(&request.document)?;
     if request.selected.is_empty()
         || request.selected.len() > 500
@@ -88,12 +100,13 @@ pub(crate) fn apply_at(conn: &Connection, request: ImportRequest) -> AppResult<V
         }
         let mut imported = Vec::new();
         for host in document.hosts.iter().filter(|h| selected.contains(&h.id)) {
-            let input = host.input(
+            let mut input = host.input(
                 host.group_id
                     .as_ref()
                     .and_then(|id| mapped_folders.get(id))
                     .cloned(),
             );
+            input.key_path = keys.get(&host.id).cloned();
             let mut draft = input.validate()?;
             if preview
                 .entries
@@ -215,6 +228,10 @@ pub(crate) fn apply_at(conn: &Connection, request: ImportRequest) -> AppResult<V
                 },
             )?;
         }
-        Ok(imported)
+        Ok(Applied {
+            hosts: imported,
+            host_ids: mapped_hosts,
+            proxy_ids: mapped_proxies,
+        })
     })
 }

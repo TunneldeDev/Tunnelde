@@ -78,6 +78,7 @@ function preview(conflict = false): HostImportPreview {
 beforeEach(async () => {
   vi.restoreAllMocks();
   await i18n.changeLanguage("en-US");
+  vi.spyOn(hostTransferApi, "release").mockResolvedValue(undefined);
   useHostTransfer.getState().close();
   useHosts.setState({
     hosts: [host("a"), host("b")],
@@ -109,8 +110,17 @@ it("exports only checked saved hosts while preserving selection across filtering
   expect(
     (screen.getByRole("button", { name: "Select all shown" }) as HTMLButtonElement).disabled,
   ).toBe(true);
+  fireEvent.change(screen.getByLabelText("Export password"), {
+    target: { value: "test password" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Export 2 hosts" }));
-  await waitFor(() => expect(exported).toHaveBeenCalledWith(["a", "b"]));
+  await waitFor(() =>
+    expect(exported).toHaveBeenCalledWith(["a", "b"], {
+      includeCredentials: true,
+      encrypt: true,
+      password: "test password",
+    }),
+  );
   await waitFor(() => expect(useHostTransfer.getState().dialog).toBeNull());
 });
 it("skips a host whose jump dependency conflicts until explicitly imported as a copy", async () => {
@@ -118,7 +128,7 @@ it("skips a host whose jump dependency conflicts until explicitly imported as a 
   vi.spyOn(hostTransferApi, "pick").mockResolvedValue(reviewed);
   const apply = vi
     .spyOn(hostTransferApi, "apply")
-    .mockResolvedValue([host("new-a"), host("new-b")]);
+    .mockResolvedValue({ hosts: [host("new-a"), host("new-b")], credentialErrors: [] });
   useHostTransfer.getState().openImport();
   render(<HostTransferDialogs />);
   const target = await screen.findByRole("checkbox", { name: /Host A/ });
@@ -145,7 +155,7 @@ it("retains the import selection on a stale preview and retries with a refreshed
   const apply = vi
     .spyOn(hostTransferApi, "apply")
     .mockRejectedValueOnce({ code: "validation", message: "hostTransfer.changed" })
-    .mockResolvedValue([]);
+    .mockResolvedValue({ hosts: [], credentialErrors: [] });
   useHostTransfer.getState().openImport();
   render(<HostTransferDialogs />);
   fireEvent.click(await screen.findByRole("button", { name: "Import selected (2)" }));
@@ -260,4 +270,115 @@ it("only describes proxies used by the current import selection", async () => {
   await screen.findByText(/Proxies to import: Corporate gateway/);
   fireEvent.click(screen.getByRole("checkbox", { name: /Host A/ }));
   expect(screen.queryByText(/Proxies to import:/)).toBeNull();
+});
+
+it("requires encryption for credentials but allows plain configuration export", async () => {
+  const exported = vi.spyOn(hostTransferApi, "export").mockResolvedValue(null);
+  useHostTransfer.getState().openExport(["a"]);
+  render(<HostTransferDialogs />);
+  const encryption = screen.getByRole<HTMLButtonElement>("switch", { name: "Encrypt export file" });
+  expect(encryption.disabled).toBe(true);
+  expect(encryption.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(screen.getByRole("switch", { name: "Include saved passwords and private keys" }));
+  expect(encryption.disabled).toBe(false);
+  fireEvent.click(encryption);
+  expect(screen.queryByLabelText("Export password")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Export 1 host" }));
+  await waitFor(() =>
+    expect(exported).toHaveBeenCalledWith(["a"], {
+      includeCredentials: false,
+      encrypt: false,
+      password: null,
+    }),
+  );
+});
+
+it("generates a password without exporting until explicitly saved", async () => {
+  vi.spyOn(hostTransferApi, "generatePassword").mockResolvedValue(
+    "secure-generated-test-password123",
+  );
+  const exported = vi.spyOn(hostTransferApi, "export").mockResolvedValue(null);
+  useHostTransfer.getState().openExport(["a"]);
+  render(<HostTransferDialogs />);
+  fireEvent.click(screen.getByRole("button", { name: "Export 1 host" }));
+  await screen.findByText(/Save this generated password before exporting/);
+  expect(exported).not.toHaveBeenCalled();
+  expect(screen.getByLabelText<HTMLInputElement>("Export password").value).toBe(
+    "secure-generated-test-password123",
+  );
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Export 1 host" }).disabled).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole("checkbox", { name: "I have saved the generated password" }));
+  fireEvent.click(screen.getByRole("button", { name: "Export 1 host" }));
+  await waitFor(() =>
+    expect(exported).toHaveBeenCalledWith(["a"], {
+      includeCredentials: true,
+      encrypt: true,
+      password: "secure-generated-test-password123",
+    }),
+  );
+});
+
+it("decrypts before preview and retains the file for wrong-password retries", async () => {
+  const reviewed = { ...preview(), token: "native-token", hasCredentials: true };
+  vi.spyOn(hostTransferApi, "pick").mockResolvedValue({ token: "native-token", locked: true });
+  const unlock = vi
+    .spyOn(hostTransferApi, "unlock")
+    .mockRejectedValueOnce({ code: "validation", message: "hostTransfer.decryptFailed" })
+    .mockResolvedValue(reviewed);
+  const apply = vi
+    .spyOn(hostTransferApi, "apply")
+    .mockResolvedValue({ hosts: [], credentialErrors: [] });
+  useHostTransfer.getState().openImport();
+  render(<HostTransferDialogs />);
+  const password = await screen.findByLabelText("File password");
+  expect(screen.queryByRole("checkbox", { name: /Host A/ })).toBeNull();
+  fireEvent.change(password, { target: { value: "wrong" } });
+  fireEvent.click(screen.getByRole("button", { name: "Decrypt and preview" }));
+  await screen.findByText(/Incorrect password or damaged/);
+  expect(apply).not.toHaveBeenCalled();
+  fireEvent.change(password, { target: { value: "correct" } });
+  fireEvent.keyDown(password, { key: "Enter" });
+  await screen.findByRole("checkbox", { name: /Host A/ });
+  expect(unlock).toHaveBeenLastCalledWith("native-token", "correct");
+  expect(screen.queryByLabelText("File password")).toBeNull();
+  expect(screen.getByText(/Included credentials will be saved/)).toBeTruthy();
+});
+
+it("retries only failed credential saving without importing hosts twice", async () => {
+  const reviewed = { ...preview(), token: "native-token", hasCredentials: true };
+  vi.spyOn(hostTransferApi, "pick").mockResolvedValue(reviewed);
+  const apply = vi
+    .spyOn(hostTransferApi, "apply")
+    .mockResolvedValue({ hosts: [host("new-a")], credentialErrors: ["Host A"] });
+  const retry = vi
+    .spyOn(hostTransferApi, "retryCredentials")
+    .mockResolvedValue({ hosts: [host("new-a")], credentialErrors: [] });
+  useHostTransfer.getState().openImport();
+  render(<HostTransferDialogs />);
+  fireEvent.click(await screen.findByRole("button", { name: "Import selected (2)" }));
+  await screen.findByText(/Hosts were imported, but some credentials/);
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Import selected (2)" }).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Retry saving credentials" }));
+  await waitFor(() => expect(retry).toHaveBeenCalledWith("native-token"));
+  expect(apply).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(useHostTransfer.getState().dialog).toBeNull());
+});
+
+it("releases native secret context on unmount, but not during StrictMode replay", async () => {
+  vi.spyOn(hostTransferApi, "pick").mockResolvedValue({ ...preview(), token: "native-token" });
+  const release = vi.spyOn(hostTransferApi, "release");
+  useHostTransfer.getState().openImport();
+  const view = render(
+    <StrictMode>
+      <HostTransferDialogs />
+    </StrictMode>,
+  );
+  await screen.findByRole("checkbox", { name: /Host A/ });
+  expect(release).not.toHaveBeenCalled();
+  view.unmount();
+  await waitFor(() => expect(release).toHaveBeenCalledWith("native-token"));
 });

@@ -49,13 +49,32 @@ The **+** menu in the host panel offers **New host**, **Import SSH config** and
 **Import Tunnelde hosts**. **Export hosts** beside it opens a searchable selection
 for one or multiple hosts; each saved host's menu also offers export. Files include
 selected hosts, required jump hosts, proxies, folders, forwarding groups/rules and
-mount groups/rules. Passwords, private keys, tokens, live sessions and custom plugin
-storage are excluded. Import previews skip matching names or address/port/username
-by default. Explicitly choose to import conflicting entries and dependencies as copies;
-all relationships receive fresh IDs. Reconfigure credentials and key files, and review
-mount points for the destination device. Imports do not connect or start rules.
-Forwarding startup preferences take effect on the next application launch. System proxy selection
-uses the destination device's environment.
+mount groups/rules. Choose whether to include saved passwords and private keys.
+Including credentials **requires encryption**; configuration-only exports can be
+plain or encrypted. Tokens, live sessions and custom plugin storage are excluded.
+
+Enter an export password, or leave it blank to generate a secure random password.
+Save the generated password and confirm before writing the file. The password is
+not stored in the export and cannot be recovered; send it separately from the file.
+Encrypted exports use Argon2id and authenticated XChaCha20-Poly1305 encryption.
+
+On another device, choose **Import Tunnelde hosts**. Encrypted files ask for the
+export password before showing a preview; older plain configuration files remain
+supported. Imported private keys go into managed storage, not source-device paths,
+and retain any original key encryption. Unsaved key passphrases and SSH Agent or
+hardware credentials must still be configured on the destination.
+
+Import previews skip matching names or address/port/username by default. Explicitly
+choose conflicting entries and dependencies as copies; all relationships receive
+fresh IDs. If system credential saving fails after hosts are created, use **Retry
+saving credentials**; do not import again. Closing the dialog discards pending
+secret material; credentials can then be configured manually in host/proxy settings.
+Import contexts expire after ten idle minutes. Files are limited to 64 MiB,
+configuration to 4 MiB, and individual private keys to 1 MiB.
+
+Review destination mount points. Imports do not connect or start rules. Forwarding
+startup preferences take effect on the next launch; system proxy selection uses
+the destination device's environment.
 
 ## Import SSH config
 
