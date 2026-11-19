@@ -13,7 +13,8 @@ pub(in crate::plugins::api) async fn dispatch(
         | "workspace.windows.observe"
         | "workspace.windows.create"
         | "workspace.windows.close"
-        | "workspace.panels.ownership" => windows::dispatch(context, method, params).await,
+        | "workspace.panels.ownership"
+        | "workspace.panels.moveToWindow" => windows::dispatch(context, method, params).await,
         "statusBar.set" | "statusBar.remove" => {
             crate::plugins::status_bar::call(context, method, params)
         }

@@ -7,6 +7,7 @@ import type {
   PanelViewAction,
   PanelActionResult,
   PanelActionJob,
+  PanelMoveJob,
   NativePanelSnapshot,
   PanelWindowCommand,
 } from "./windowProtocol";
@@ -115,6 +116,21 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
             request: { action: "cancelAction", id },
           }).catch(() => {});
       }
+    },
+    async claimPanelMoves() {
+      check();
+      // Preserve a late claim so disposal can explicitly release it.
+      return invoke<PanelMoveJob[]>("panel_window_control", {
+        document: identity.document,
+        request: { action: "claimPanelMoves" },
+      });
+    },
+    failPanelMove(id: string) {
+      // Cleanup-only after local disposal; native still checks exact source.
+      return invoke("panel_window_control", {
+        document: identity.document,
+        request: { action: "failPanelMove", id },
+      });
     },
     // Unlike ordinary reads, keep late claim replies: native has admitted these
     // jobs and the executor must finalize them even if local disposal won the IPC.

@@ -15,6 +15,14 @@ use std::time::Instant;
 )]
 pub(crate) enum Command {
     Snapshot {},
+    ClaimPanelMoves {},
+    PreparePanelMove {
+        id: String,
+        state: Value,
+    },
+    FailPanelMove {
+        id: String,
+    },
     RequestAction {
         lease: Lease,
         request: ViewAction,
@@ -116,6 +124,9 @@ impl Ownership {
         // revive a timed-out offer just because its timeout callback ran late.
         self.expire(now);
         match command {
+            Command::ClaimPanelMoves {}
+            | Command::PreparePanelMove { .. }
+            | Command::FailPanelMove { .. } => Err("native move policy required"),
             Command::Snapshot {} => Ok(
                 json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions()}),
             ),

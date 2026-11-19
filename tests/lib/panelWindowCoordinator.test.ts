@@ -236,3 +236,34 @@ it("does not block unrelated changes while staging and aborts a timed-out or dis
   expect(f.receive).toHaveBeenCalledTimes(2);
   c.dispose();
 });
+
+it("reconciles a cancelled acknowledged offer without a false error or a lost queued refresh", async () => {
+  const f = fixture();
+  const lease = { panelId: "tasks", windowId: "satellite", generation: 4 };
+  f.setSnapshot({
+    ...f.snapshot(),
+    panels: [lease],
+    transfers: [
+      { offer: { id: "cancelled-after-ready", lease, targetWindow: "main" }, ready: true },
+    ],
+  });
+  const original = f.control.getMockImplementation()!;
+  f.control.mockImplementation(async (request) => {
+    if (request.action === "commit") {
+      f.setSnapshot({ ...f.snapshot(), transfers: [] });
+      throw new Error("transfer expired");
+    }
+    return original(request);
+  });
+  const coordinator = startPanelWindowCoordinator(f.client, {
+    panelIds: () => ["tasks"],
+    receive: f.receive,
+    failure: f.failure,
+  });
+  await coordinator.ready;
+  await settle();
+  expect(f.failure).not.toHaveBeenCalled();
+  expect(f.receive.mock.lastCall?.[0].transfers).toEqual([]);
+  expect(f.control.mock.calls.filter(([r]) => r.action === "commit")).toHaveLength(1);
+  coordinator.dispose();
+});

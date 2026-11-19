@@ -106,3 +106,14 @@ it("does not silently move a newer lease incarnation after a native drag release
   expect(mock.views.capture).not.toHaveBeenCalled();
   expect(mock.views.client.control).not.toHaveBeenCalled();
 });
+
+it("uses the host-bound source job instead of accepting a plugin supplied lease or destination in prepare", async () => {
+  fixture();
+  const lease = { panelId: "connections", windowId: "main", generation: 1 };
+  await movePanelToWindow("connections", "target", lease, "native-operation");
+  expect(mock.views.client.control).toHaveBeenCalledExactlyOnceWith({
+    action: "preparePanelMove",
+    id: "native-operation",
+    state: { version: 1 },
+  });
+});

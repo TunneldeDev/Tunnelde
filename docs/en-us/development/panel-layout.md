@@ -338,3 +338,36 @@ Platform construction/setup errors use the same atomic empty-window reservation
 as cancellation and timeout cleanup. A newly ready destination can already hold
 an unrelated user handoff before its creator finishes; never force-destroy it
 merely because that creator reloads or loses authorization.
+
+### Public moves execute in the source document
+
+`workspace.panels.moveToWindow` requires `workspace.write`, a supported panel and
+an existing ready native destination. Its optional `expectedOwner` window and
+generation reject stale automation rather than retarget a newer incarnation.
+The native request records both document identities, reserves that panel, then
+lets only the exact source claim a closed, opaque capture job. Never capture a
+satellite's state from coordinator stores or relay arbitrary UI commands.
+
+Only native prepare/ready/commit transfers authority; the RPC completes with the
+new owner generation after commit, not after queueing or source capture. Recheck
+plugin policy at claim, prepare and commit. The final bounded metadata mutation
+holds policy authorization through commit, linearized with revocation. Lock order
+is native ownership -> policy -> invocation; retirement releases policy before
+native cleanup. The invocation fence synchronously rechecks transport cancellation
+and deadline while holding its entry lock through the bounded commit. A cancel
+that already returned cannot be bypassed just because the async caller has not
+been polled again. Never do resource work, await, or acquire request registries
+inside this fence.
+Cancellation/revocation before commit removes the queued reservation or staged
+offer and keeps the source authoritative. Cancellation after commit does not undo
+an accepted move. Reload, crash, timeout, unavailable view and panel removal must
+retire only the matching request; effects/resources never become request assets.
+
+Bound pending moves to 32 total and eight per plugin, with a 25-second request
+lifetime in addition to the normal handoff deadline. The source executor releases
+late claims and in-flight reservations on disposal. A coordinator that finds an
+acknowledged offer already retired after a failed commit should reconcile the
+current native snapshot, not report a false failure for expected cancellation.
+The caller owns request error presentation; satellites do not show unsolicited
+error toasts for a plugin's cancelled operation. Transferability remains explicit
+adapter opt-in; this API does not grant unsupported providers native parity.

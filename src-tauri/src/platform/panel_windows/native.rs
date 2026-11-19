@@ -103,7 +103,8 @@ pub(crate) fn panel_window_control(
     let registry = app.state::<Registry>();
     let notify = !matches!(
         &request,
-        Command::ClaimActions {}
+        Command::ClaimPanelMoves {}
+            | Command::ClaimActions {}
             | Command::ActionResult { .. }
             | Command::Snapshot {}
             | Command::Authorize { .. }
@@ -117,10 +118,22 @@ pub(crate) fn panel_window_control(
             | Command::AcceptDrag { .. }
             | Command::CancelDrag { .. }
     );
-    let result = lock(&registry)
-        .dispatch(window.label(), &document, request, Instant::now())
-        .map_err(invalid);
-    if notify && result.is_ok() {
+    let notify_failure = matches!(
+        &request,
+        Command::ClaimPanelMoves {}
+            | Command::PreparePanelMove { .. }
+            | Command::FailPanelMove { .. }
+            | Command::Commit { .. }
+    );
+    let result = super::public_moves::control(
+        app,
+        &mut lock(&registry),
+        window.label(),
+        &document,
+        request,
+        Instant::now(),
+    );
+    if (notify && result.is_ok()) || (notify_failure && result.is_err()) {
         changed(app);
     } else {
         // Even read/failed dispatches can expire a handoff before the timer.

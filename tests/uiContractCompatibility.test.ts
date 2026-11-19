@@ -160,6 +160,8 @@ describe("public UI contract boundaries", () => {
       "MountRule",
       "MountRuleStatus",
       "MountSnapshot",
+      "NativePanelMoveRequest",
+      "NativePanelMoveResult",
       "NativePanelOwnership",
       "NativeWindowCloseRequest",
       "NativeWindowCloseResult",

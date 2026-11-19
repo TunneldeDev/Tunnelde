@@ -22,6 +22,7 @@ import {
   useWindowViews,
   type WindowViewRecord,
 } from "@/lib/panels/windowViews";
+import { startPanelMoveRequests } from "@/lib/panels/windowMoveRequests";
 import { startSatelliteViews } from "@/lib/panels/windowSatellite";
 import { usePanelWindows } from "@/store/panelWindows";
 import { NativePanelView } from "@/components/layout/NativePanelView";
@@ -43,6 +44,7 @@ import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 import { ToastHost } from "@/components/ui/overlay/Toast";
 import { translateError } from "@/lib/api/errors";
+import { reportError } from "@/lib/diagnostics";
 import { loadStartupFonts } from "./startupFonts";
 import "./satellite.css";
 
@@ -318,10 +320,14 @@ export function SatelliteApp() {
           },
         });
         views.close = session.close;
+        const stopMoves = startPanelMoveRequests(current, (error) =>
+          reportError("panels.windows", "pluginMove", error),
+        );
         const stopDrag = installPanelWindowDrag(current, (error) =>
           toast(translateError(error), "error"),
         );
         cleanup = () => {
+          stopMoves();
           stopDrag();
           session.dispose();
           uninstall();

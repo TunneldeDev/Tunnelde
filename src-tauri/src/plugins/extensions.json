@@ -597,7 +597,8 @@
       "workspace.windows.observe",
       "workspace.windows.create",
       "workspace.windows.close",
-      "workspace.panels.ownership"
+      "workspace.panels.ownership",
+      "workspace.panels.moveToWindow"
     ],
     "readPermission": "workspace.read",
     "writePermission": "workspace.write",
@@ -605,6 +606,15 @@
     "eventPayload": "revision-only-invalidation",
     "ownership": "host-native; singleton coordinator retained",
     "maximumWindows": 16,
+    "panelMoves": {
+      "routing": "current-source-document",
+      "completion": "native-ownership-commit",
+      "destination": "existing-ready-window",
+      "cancellation": "rollback-before-commit",
+      "expectedOwner": "optional-window-and-generation",
+      "maximumPending": 32,
+      "maximumPerPlugin": 8
+    },
     "placeholder": {
       "visible": false,
       "emptyTimeoutSeconds": 20,

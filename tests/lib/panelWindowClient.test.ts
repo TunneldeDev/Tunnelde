@@ -196,3 +196,31 @@ it("includes the exact owning lease when requesting a native destination from a 
     lease,
   });
 });
+
+it("retains late move claims for cleanup, but never starts more work after local disposal", async () => {
+  let resolve!: (value: unknown) => void;
+  native.invoke.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const client = createPanelWindowClient({ windowId: "satellite", document: "doc" });
+  const late = client.claimPanelMoves();
+  client.dispose();
+  const jobs = [
+    {
+      id: "native-job",
+      lease: { panelId: "tasks", windowId: "satellite", generation: 4 },
+      targetWindow: "main",
+    },
+  ];
+  resolve(jobs);
+  expect(await late).toEqual(jobs);
+  await client.failPanelMove("native-job");
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_control", {
+    document: "doc",
+    request: { action: "failPanelMove", id: "native-job" },
+  });
+  await expect(client.claimPanelMoves()).rejects.toThrow("disposed");
+});

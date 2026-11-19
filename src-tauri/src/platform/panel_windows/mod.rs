@@ -2,10 +2,12 @@
 mod actions;
 mod geometry;
 mod lifecycle;
+mod moves;
 pub(crate) mod native;
 mod ownership;
 mod protocol;
 pub(crate) mod public;
+pub(crate) mod public_moves;
 mod read_models;
 #[cfg(test)]
 mod tests;

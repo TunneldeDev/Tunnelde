@@ -29,6 +29,22 @@ pub(super) async fn dispatch(
             }
             Ok(public::observe(&context.app, revision).await)
         }
+        "workspace.panels.moveToWindow" => {
+            authorize(context, &["workspace.write"])?;
+            let request = serde_json::from_value(params)
+                .map_err(|_| AppError::validation("plugin.api.invalid:move"))?;
+            public::move_panel(
+                &context.app,
+                Lease {
+                    id: context.id.clone(),
+                    fingerprint: context.fingerprint.clone(),
+                    permissions: context.permissions.clone(),
+                    generation: context.generation,
+                },
+                request,
+            )
+            .await
+        }
         "workspace.windows.create" => {
             authorize(context, &["workspace.write"])?;
             public::create(

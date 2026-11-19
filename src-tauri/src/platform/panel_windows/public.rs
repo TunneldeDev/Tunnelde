@@ -309,3 +309,11 @@ pub(crate) fn retire(app: &AppHandle, owner: &str, before: u64) {
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) async fn move_panel(
+    app: &AppHandle,
+    owner: PluginLease,
+    request: super::public_moves::MoveRequest,
+) -> AppResult<Value> {
+    super::public_moves::request(app, owner, request).await
+}

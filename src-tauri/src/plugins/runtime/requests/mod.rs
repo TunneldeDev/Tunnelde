@@ -27,6 +27,31 @@ pub(in crate::plugins) struct Request {
     cancelled: watch::Receiver<bool>,
     deadline: Instant,
 }
+/// A synchronous admission fence for native metadata commits. Unlike dropping
+/// the async caller, this observes cancellation immediately, even before its
+/// future gets polled again. No resource work or await belongs in this gate.
+#[derive(Clone)]
+pub(crate) struct InvocationFence {
+    entry: Arc<Mutex<Entry>>,
+}
+tokio::task_local! {
+    static CURRENT_INVOCATION: InvocationFence;
+}
+pub(crate) fn current_invocation_fence() -> Option<InvocationFence> {
+    CURRENT_INVOCATION.try_with(Clone::clone).ok()
+}
+impl InvocationFence {
+    pub(crate) fn with_live<T>(&self, commit: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        let entry = self.entry.lock().unwrap_or_else(|error| error.into_inner());
+        if entry.deadline <= Instant::now() || *entry.signal.borrow() {
+            return Err(AppError::validation("plugin.api.cancelled"));
+        }
+        let result = commit();
+        drop(entry);
+        result
+    }
+}
+
 fn expired() -> AppError {
     AppError::validation("plugin.api.requestExpired")
 }
@@ -117,12 +142,17 @@ impl Requests {
 }
 impl Request {
     pub async fn run<T>(&mut self, work: impl Future<Output = AppResult<T>>) -> AppResult<T> {
-        tokio::select! {
-            biased;
-            _=self.cancelled.wait_for(|value|*value)=>Err(AppError::validation("plugin.api.cancelled")),
-            _=tokio::time::sleep_until(self.deadline.into())=>Err(AppError::validation("plugin.timeout")),
-            result=work=>result,
-        }
+        let fence = InvocationFence {
+            entry: self.entry.clone(),
+        };
+        CURRENT_INVOCATION.scope(fence, async {
+            tokio::select! {
+                biased;
+                _=self.cancelled.wait_for(|value|*value)=>Err(AppError::validation("plugin.api.cancelled")),
+                _=tokio::time::sleep_until(self.deadline.into())=>Err(AppError::validation("plugin.timeout")),
+                result=work=>result,
+            }
+        }).await
     }
 }
 impl Drop for Request {
@@ -136,6 +166,11 @@ impl Drop for Request {
             .get(&self.key)
             .is_some_and(|entry| Arc::ptr_eq(entry, &self.entry))
         {
+            self.entry
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .signal
+                .send_replace(true);
             entries.remove(&self.key);
         }
     }

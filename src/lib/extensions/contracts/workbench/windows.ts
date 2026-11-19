@@ -33,3 +33,16 @@ export interface NativeWindowCloseResult {
   /** Acceptance only; observe metadata to learn the eventual outcome. */
   requested: true;
 }
+
+/** The target must already exist and be ready. Use windows.create separately. */
+export interface NativePanelMoveRequest {
+  panelId: string;
+  windowId: string;
+  expectedOwner?: { windowId: string; generation: number };
+}
+/** Returned only after destination readiness and native handoff commit. */
+export interface NativePanelMoveResult {
+  panelId: string;
+  windowId: string;
+  generation: number;
+}

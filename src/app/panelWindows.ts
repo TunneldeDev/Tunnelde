@@ -11,6 +11,7 @@ import { pluginSidebars } from "@/lib/plugins/sidebars";
 import { reportError } from "@/lib/diagnostics";
 
 import { createWindowViews, installWindowViews } from "@/lib/panels/windowViews";
+import { startPanelMoveRequests } from "@/lib/panels/windowMoveRequests";
 import { startPanelActions } from "./panelActions";
 import { startPanelReadModels } from "./panelReadModels";
 
@@ -45,6 +46,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     failure,
   });
   const stop = [
+    startPanelMoveRequests(current, failure),
     installPanelWindowDrag(current, (error) => toast(translateError(error), "error")),
     usePlugins.subscribe(coordinator.refresh),
     useFilePreview.subscribe(coordinator.refresh),

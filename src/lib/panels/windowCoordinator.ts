@@ -49,7 +49,16 @@ export function startPanelWindowCoordinator(
     for (const { offer, ready } of snapshot.transfers) {
       if (disposed) return;
       if (ready) {
-        await client.control({ action: "commit", id: offer.id });
+        try {
+          await client.control({ action: "commit", id: offer.id });
+        } catch (error) {
+          // A plugin/user cancellation can retire an acknowledged offer while
+          // this IPC is in flight. Native absence is authoritative rollback (or
+          // an already committed reply), not a new user-facing move failure.
+          const current = await client.snapshot();
+          if (current.transfers.some(({ offer: pending }) => pending.id === offer.id)) throw error;
+          queued = true;
+        }
         continue;
       }
       if (!stage || offer.targetWindow !== client.windowId || staging.has(offer.id)) continue;

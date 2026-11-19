@@ -94,6 +94,7 @@ pub(super) struct TransferInfo {
 #[derive(Default)]
 pub(super) struct Ownership {
     generation: u64,
+    pub(super) moves: HashMap<String, super::moves::PendingMove>,
     pub(super) actions: HashMap<String, super::actions::PendingAction>,
     // Unknown outcomes after coordinator document loss. These are not released
     // by result TTL, source retirement, auth unblock, or a reused panel ID.
@@ -240,6 +241,23 @@ impl Ownership {
         }
         Ok(())
     }
+    pub(super) fn authorize_move_fence(
+        &self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+        id: &str,
+    ) -> Result<()> {
+        let panel = self.owned(window, document, lease)?;
+        if panel.blocked
+            || !panel.interactions.is_empty()
+            || panel.native_actions.len() != 1
+            || !panel.native_actions.contains(id)
+        {
+            return Err("panel interaction in progress");
+        }
+        Ok(())
+    }
     pub fn add_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<Lease> {
         self.main(window, document)?;
         if panel_id.is_empty() || panel_id.len() > 256 || self.panels.len() >= MAX_PANELS {
@@ -298,6 +316,7 @@ impl Ownership {
     pub fn remove_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<()> {
         self.main(window, document)?;
         self.retire_panel_actions(panel_id);
+        self.retire_panel_moves(panel_id);
         self.panels.remove(panel_id).ok_or("panel not found")?;
         self.transfers
             .retain(|_, pending| pending.lease.panel_id != panel_id);
@@ -426,6 +445,7 @@ impl Ownership {
         let panel = self.panels.get_mut(panel_id).ok_or("panel not found")?;
         panel.blocked = blocked;
         if blocked {
+            self.retire_panel_moves(panel_id);
             self.transfers
                 .retain(|_, transfer| transfer.lease.panel_id != panel_id);
             self.drags
@@ -497,6 +517,12 @@ impl Ownership {
         self.drags
             .retain(|_, grant| grant.lease.panel_id != lease.panel_id);
         Ok(offer)
+    }
+    pub(super) fn discard_move_offer(&mut self, id: &str) {
+        self.transfers.remove(id);
+    }
+    pub(super) fn move_offer_exists(&self, id: &str, now: Instant) -> bool {
+        self.pending(id, now).is_ok()
     }
     fn pending(&self, id: &str, now: Instant) -> Result<&Transfer> {
         let pending = self
@@ -570,7 +596,9 @@ impl Ownership {
         panel.lease.generation = self.generation;
         panel.checkpoint_revision = 0;
         panel.checkpoint = pending.state;
-        Ok(panel.lease.clone())
+        let lease = panel.lease.clone();
+        self.finish_move(&pending.id, &lease);
+        Ok(lease)
     }
     pub fn cancel(&mut self, window: &str, document: &str, id: &str) -> Result<()> {
         self.authorize(window, document)?;
@@ -579,11 +607,14 @@ impl Ownership {
             return Err("not transfer participant");
         }
         self.transfers.remove(id);
+        self.cancel_move_offer(id);
         Ok(())
     }
     pub fn expire(&mut self, now: Instant) -> Vec<String> {
         self.expire_actions(now);
-        let expired: Vec<_> = self
+        let move_ids: Vec<_> = self.moves.keys().cloned().collect();
+        self.expire_moves(now);
+        let mut expired: Vec<_> = self
             .transfers
             .iter()
             .filter(|(_, pending)| pending.deadline <= now)
@@ -593,6 +624,11 @@ impl Ownership {
             self.transfers.remove(id);
         }
         self.drags.retain(|_, grant| grant.deadline > now);
+        expired.extend(
+            move_ids
+                .into_iter()
+                .filter(|id| !self.moves.contains_key(id)),
+        );
         expired
     }
     pub fn issue_drag(
@@ -761,6 +797,7 @@ impl Ownership {
         }
     }
     fn cancel_window_transfers(&mut self, window: &str) {
+        self.retire_window_moves(window);
         self.transfers.retain(|_, pending| {
             pending.target_window != window && pending.lease.window_id != window
         });

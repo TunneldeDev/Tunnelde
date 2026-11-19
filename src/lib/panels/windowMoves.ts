@@ -7,7 +7,12 @@ import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 
 const moving = new Set<string>();
-export async function movePanelToWindow(panelId: string, target?: string, expected?: PanelLease) {
+export async function movePanelToWindow(
+  panelId: string,
+  target?: string,
+  expected?: PanelLease,
+  operationId?: string,
+) {
   const views = windowViews();
   if (!views || !transferablePanel(panelId)) throw new Error("panel.window.unsupportedView");
   const client = views.client;
@@ -46,12 +51,11 @@ export async function movePanelToWindow(panelId: string, target?: string, expect
       }
     }
     const state = views.capture(panelId);
-    const offer = await client.control<{ id: string }>({
-      action: "prepare",
-      lease,
-      targetWindow: target,
-      state,
-    });
+    const offer = await client.control<{ id: string }>(
+      operationId
+        ? { action: "preparePanelMove", id: operationId, state }
+        : { action: "prepare", lease, targetWindow: target, state },
+    );
     const deadline = Date.now() + 17_000;
     while (Date.now() < deadline) {
       const current = await client.snapshot();

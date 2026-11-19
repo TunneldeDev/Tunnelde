@@ -40,9 +40,16 @@ export interface PanelActionJob {
   lease: PanelLease;
   request: PanelViewAction;
 }
+export interface PanelMoveJob {
+  id: string;
+  lease: PanelLease;
+  targetWindow: string;
+}
 export type PanelWindowCommand =
   | { action: "requestAction"; lease: PanelLease; request: PanelViewAction }
-  | { action: "claimActions" }
+  | { action: "claimActions" | "claimPanelMoves" }
+  | { action: "preparePanelMove"; id: string; state: unknown }
+  | { action: "failPanelMove"; id: string }
   | { action: "completeAction"; id: string; result: PanelActionResult }
   | { action: "actionResult" | "cancelAction"; id: string }
   | { action: "snapshot" | "ready" | "beginClose" | "cancelClose" }
