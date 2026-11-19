@@ -1,5 +1,5 @@
 import { withPluginInvocation, isPluginInvocationCancelled } from "@/lib/plugins/commands/runtime";
-import { Copy, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,8 +16,9 @@ import {
   viewTitle,
   type PluginBlock,
   type PluginFormBlock,
+  type PluginField,
 } from "@/lib/plugins/pluginView";
-import { copyText } from "@/lib/session/clipboard";
+import { PluginCommandResult } from "./PluginCommandResult";
 import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/pluginSecurity";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginChat } from "./PluginChat";
@@ -300,11 +301,19 @@ function PluginToolForm({
     [],
   );
 
+  const fieldValue = (field: PluginField) => {
+    const value = draft[field.id];
+    if (
+      value === undefined ||
+      (field.type === "select" && !field.options.some((option) => option.value === value))
+    )
+      return field.value;
+    return value;
+  };
+
   const run = async (action: PluginFormBlock["actions"][number]) => {
     if (pending.current) return;
-    const input = Object.fromEntries(
-      block.fields.map((field) => [field.id, draft[field.id] ?? field.value]),
-    );
+    const input = Object.fromEntries(block.fields.map((field) => [field.id, fieldValue(field)]));
     input._locale = i18n.resolvedLanguage ?? i18n.language;
     if (new TextEncoder().encode(JSON.stringify(input)).length > PLUGIN_INPUT_MAX_BYTES) {
       setError(t("pluginView.inputTooLarge"));
@@ -365,7 +374,7 @@ function PluginToolForm({
         <div className="plugin-tool__fields">
           {block.fields.map((field) => {
             const fieldId = `${id}-${field.id}`;
-            const value = draft[field.id] ?? field.value;
+            const value = fieldValue(field);
             const change = (value: string) =>
               setDraft((previous) => ({ ...previous, [field.id]: value }));
             return (
@@ -427,36 +436,7 @@ function PluginToolForm({
         </div>
       ) : null}
       {result !== null ? (
-        <div className={`plugin-tool__result${result.error ? " is-error" : ""}`}>
-          <div className="plugin-tool__result-head">
-            <label htmlFor={`${id}-result`}>{result.title || t("pluginView.result")}</label>
-            <Button
-              variant="ghost"
-              size="sm"
-              leading={<Copy size={13} />}
-              onClick={() => copyText(result.text)}
-            >
-              {t("pluginView.copyResult")}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setResult(null)}>
-              {t("pluginView.clearResult")}
-            </Button>
-          </div>
-          <Textarea
-            id={`${id}-result`}
-            className="td-code-editor"
-            readOnly
-            value={result.text}
-            rows={10}
-            spellCheck={false}
-            aria-invalid={result.error || undefined}
-          />
-          {result.error ? (
-            <span role="alert" className="plugin-tool__announcement">
-              {result.text}
-            </span>
-          ) : null}
-        </div>
+        <PluginCommandResult result={result} onClear={() => setResult(null)} />
       ) : null}
     </section>
   );

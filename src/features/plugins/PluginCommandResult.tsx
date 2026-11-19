@@ -24,6 +24,7 @@ export function PluginCommandResult({
           variant="ghost"
           size="sm"
           leading={<Copy size={13} />}
+          disabled={!result.text}
           onClick={() => void copyText(result.text)}
         >
           {t("pluginView.copyResult")}
