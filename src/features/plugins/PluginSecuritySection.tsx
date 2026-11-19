@@ -11,6 +11,7 @@ import { PluginPermissionList } from "./PluginPermissionGate";
 import { PluginError } from "./PluginError";
 
 const PERMISSION_GROUPS = {
+  communication: ["bus"],
   execution: ["process", "network", "secrets"],
   remote: ["hosts", "sessions", "ssh", "sftp", "monitor", "history", "mounts", "forwards"],
   files: ["fs"],

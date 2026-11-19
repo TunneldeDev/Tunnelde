@@ -136,6 +136,11 @@ async fn call(
             Ok(Value::Null)
         }
         "bus.discover" => book.discover(&peer, &name(&params, "capability")?),
+        "bus.snapshot" => book.snapshot(&peer),
+        "bus.decline" => {
+            book.decline(&peer, &name(&params, "invitationId")?)?;
+            Ok(Value::Null)
+        }
         "bus.create" => book.create(&peer).map(Value::String),
         "bus.invite" => book
             .invite(&peer, &name(&params, "busId")?, &name(&params, "pluginId")?)

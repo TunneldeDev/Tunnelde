@@ -74,10 +74,15 @@ describe.each(["en-US", "zh-CN"])("plugin startup errors in %s", (language) => {
       "node.incompatible",
       "plugin.api.invalidStorage",
       "plugin.api.busy",
+      "plugin.bus.invalid",
+      "plugin.bus.unavailable",
+      "plugin.bus.limit",
+      "plugin.bus.receiveBusy",
       "plugin.activation.failed",
       "plugin.activation.cleanupFailed",
       "plugin.activation.closed",
     ] as const) {
+      expect(i18n.exists(message)).toBe(true);
       expect(pluginFailure(new Error(message))).toBe(i18n.t(message));
       expect(pluginFailure({ code: "validation", message })).toBe(i18n.t(message));
       expect(pluginFailure(new Error(`plugin.error: ${message}`))).toBe(i18n.t(message));

@@ -1324,6 +1324,12 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "bus": {
+      "invalid": "The plugin sent an invalid bus request. Check the topic, capability name and protocol version.",
+      "unavailable": "This channel or invitation is unavailable to the plugin. Refresh its bus state before retrying.",
+      "limit": "The plugin bus reached a size, capacity or rate limit.",
+      "receiveBusy": "This plugin already has a bus receive request in progress. Use a single reader."
+    },
     "runners": {
       "busy": "This runner is handling another request. Try again shortly; saved stop requests continue in the background.",
       "stopPending": "A stop request is pending confirmation from the remote runner. New messages are blocked until it settles.",
@@ -1632,10 +1638,11 @@
       "filePreviewRead": "Read current file-preview metadata and renderer choices, without file contents",
       "filePreviewWrite": "Close, retry or change file previews; opening a target also requires its file read permission",
       "mountsHostDetails": "Display an interactive mount section in host details",
-      "busCommunicate": "Exchange messages with other approved plugins"
+      "busCommunicate": "Discover other approved plugins and exchange messages on public topics or invitation-only channels."
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
+      "communication": "Plugin communication",
       "execution": "Execution and network",
       "remote": "Remote machines",
       "files": "Local files",

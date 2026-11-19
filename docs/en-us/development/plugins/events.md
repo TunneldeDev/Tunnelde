@@ -59,3 +59,13 @@ Never publish passwords, tokens or private keys.
 CI validates real host-generated events and results, then replays requests/responses
 through a frozen historical SDK. The API protocol remains version 1; this contract
 does not change the stability of other experimental methods.
+
+## Inter-plugin bus
+
+With `bus.communicate`, a runtime can advertise a versioned capability (`bus.advertise`) and find online providers (`bus.discover`). Subscribe to the public `bus.discovery` topic before querying so you don't miss changes. Use public topics for discovery, not secrets.
+
+For private traffic, call `bus.create` and `bus.invite({busId,pluginId})`. The recipient must already be registered on the bus; only that runtime can `bus.join({invitationId})` or `bus.decline({invitationId})` before the 60-second expiry. Invitation messages are notifications, not proof that an invitation is still pending; `bus.invitations` lists current offers. Leaving discards private subscriptions and queued traffic; stopping the owner closes the channel. Membership never grants other host permissions.
+
+`bus.snapshot({})` returns `{publicTopics,channels:[{busId,ownerPluginId,members,topics}]}`. Only joined private channels are visible; `members` lists plugin IDs and `topics` lists **your** subscriptions, not those of other members. Subscribe to `bus.membersChanged` **on the private bus** before reading the snapshot. A join, departure or member shutdown invalidates that snapshot; a closed channel instead sends `bus.closed` directly to its members. There is no need to poll the public bus for membership.
+
+Use one `bus.receive` reader per runtime (up to 32 messages per batch). If `lost > 0`, refresh `bus.snapshot`, `bus.invitations`, and any relevant domain state; snapshots don't replay application messages. Queues hold 128 messages; payloads are limited to 16 KiB. Feature-detect new methods in `api.describe().methods` before using them with older hosts.

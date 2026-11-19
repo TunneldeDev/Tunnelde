@@ -1324,6 +1324,12 @@
     "consentRequired": "使用本机 Node 前需要你的授权。"
   },
   "plugin": {
+    "bus": {
+      "invalid": "插件的 Bus 请求无效，请检查主题、能力名称和协议版本。",
+      "unavailable": "此插件无法使用该频道或邀请，请刷新 Bus 状态后再试。",
+      "limit": "插件 Bus 已达到大小、容量或频率限制。",
+      "receiveBusy": "此插件已有一个接收请求正在等待，请共用同一个接收器。"
+    },
     "runners": {
       "busy": "此远端任务正在处理其他请求，请稍后重试；已保存的停止请求会在后台继续处理。",
       "stopPending": "停止请求尚未得到远端确认；确认完成前无法发送新消息。",
@@ -1632,10 +1638,11 @@
       "filePreviewRead": "读取当前文件预览元数据和渲染器选项，不含文件内容",
       "filePreviewWrite": "关闭、重试或切换文件预览；打开目标还需对应文件读取权限",
       "mountsHostDetails": "在主机详情中显示可交互的挂载板块",
-      "busCommunicate": "与其他已获授权的插件交换消息"
+      "busCommunicate": "发现其他已授权的插件，通过公开主题或仅限受邀成员的频道交换消息。"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
+      "communication": "插件间通信",
       "execution": "进程与网络",
       "remote": "远端机器",
       "files": "本地文件",
