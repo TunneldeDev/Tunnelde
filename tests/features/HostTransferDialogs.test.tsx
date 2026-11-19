@@ -1,7 +1,13 @@
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { HostTransferDialogs } from "@/features/hosts/HostTransferDialogs";
-import { hostTransferApi, useHostTransfer, type HostImportPreview } from "@/lib/hosts/transfer";
+import {
+  indexHostPreview,
+  hostTransferApi,
+  useHostTransfer,
+  type HostImportPreview,
+} from "@/lib/hosts/transfer";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import type { Host } from "@/lib/api/types";
@@ -90,9 +96,19 @@ it("exports only checked saved hosts while preserving selection across filtering
     false,
   );
   fireEvent.change(screen.getByRole("textbox", { name: "Search hosts" }), {
-    target: { value: "b.example" },
+    target: { value: " B.Example " },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Select / deselect all" }));
+  fireEvent.click(screen.getByRole("button", { name: "Select all shown" }));
+  fireEvent.click(screen.getByRole("button", { name: "Deselect all shown" }));
+  expect(screen.getByRole("button", { name: "Export 1 host" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Select all shown" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Search hosts" }), {
+    target: { value: "missing" },
+  });
+  expect(screen.getByRole("status").textContent).toBe("No matches");
+  expect(
+    (screen.getByRole("button", { name: "Select all shown" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Export 2 hosts" }));
   await waitFor(() => expect(exported).toHaveBeenCalledWith(["a", "b"]));
   await waitFor(() => expect(useHostTransfer.getState().dialog).toBeNull());
@@ -113,6 +129,7 @@ it("skips a host whose jump dependency conflicts until explicitly imported as a 
   expect(dependency.disabled).toBe(true);
   const submit = screen.getByRole("button", { name: "Import selected (2)" }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
+  expect(screen.getByRole("status").textContent).toMatch(/selected host or jump host conflicts/i);
   fireEvent.click(
     screen.getByRole("checkbox", { name: "Import selected conflicting hosts as copies" }),
   );
@@ -151,12 +168,76 @@ it("retains the import selection on a stale preview and retries with a refreshed
   );
 });
 it("cancelling the native picker closes without applying configuration", async () => {
-  vi.spyOn(hostTransferApi, "pick").mockResolvedValue(null);
+  const pick = vi.spyOn(hostTransferApi, "pick").mockResolvedValue(null);
   const apply = vi.spyOn(hostTransferApi, "apply");
   useHostTransfer.getState().openImport();
   await act(async () => {
-    render(<HostTransferDialogs />);
+    render(
+      <StrictMode>
+        <HostTransferDialogs />
+      </StrictMode>,
+    );
   });
   expect(useHostTransfer.getState().dialog).toBeNull();
+  expect(pick).toHaveBeenCalledTimes(1);
   expect(apply).not.toHaveBeenCalled();
+});
+
+it("explains when there are no saved hosts to export", () => {
+  useHosts.setState({ hosts: [] });
+  useHostTransfer.getState().openExport();
+  render(<HostTransferDialogs />);
+  expect(screen.getByRole("status").textContent).toBe("No saved hosts to export.");
+  expect(
+    (screen.getByRole("button", { name: "Export 0 hosts" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+});
+it("fills a partial selection without including hosts blocked by a conflicting jump", async () => {
+  const reviewed = preview(true);
+  for (const id of ["c", "d"]) {
+    reviewed.entries.push({ ...reviewed.entries[0]!, id, name: `Host ${id}`, requires: [] });
+    reviewed.document.roots.push(id);
+  }
+  vi.spyOn(hostTransferApi, "pick").mockResolvedValue(reviewed);
+  useHostTransfer.getState().openImport();
+  render(<HostTransferDialogs />);
+  const c = await screen.findByRole<HTMLInputElement>("checkbox", { name: /Host c/ });
+  const d = screen.getByRole<HTMLInputElement>("checkbox", { name: /Host d/ });
+  fireEvent.click(c);
+  fireEvent.click(screen.getByRole("button", { name: "Select all eligible hosts" }));
+  expect(c.checked && d.checked).toBe(true);
+  expect(screen.getByRole<HTMLInputElement>("checkbox", { name: /Host A/ }).checked).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(c.checked || d.checked).toBe(false);
+});
+it("propagates conflicts across cyclic and shared jumps without blocking unrelated hosts", () => {
+  const reviewed = preview(true);
+  reviewed.entries[1]!.requires = ["a"];
+  reviewed.entries.push(
+    { ...reviewed.entries[0]!, id: "c", requires: ["a", "b"] },
+    { ...reviewed.entries[0]!, id: "d", requires: [] },
+  );
+  const index = indexHostPreview(reviewed);
+  expect(index.blocked).toEqual(new Set(["a", "b", "c"]));
+  expect(index.expand(["c", "d"])).toEqual(new Set(["a", "b", "c", "d"]));
+  expect(index.expand(["b"])).toEqual(new Set(["a", "b"]));
+});
+
+it("only describes proxies used by the current import selection", async () => {
+  const reviewed = preview();
+  reviewed.document.hosts[0]!.route.proxy = "proxy-a";
+  reviewed.document.proxies.push({
+    id: "proxy-a",
+    name: "Corporate gateway",
+    protocol: "http",
+    host: "proxy.example",
+    port: 3128,
+    username: "",
+  });
+  vi.spyOn(hostTransferApi, "pick").mockResolvedValue(reviewed);
+  useHostTransfer.getState().openImport();
+  render(<HostTransferDialogs />);
+  await screen.findByText(/Proxies to import: Corporate gateway/);
+  fireEvent.click(screen.getByRole("checkbox", { name: /Host A/ }));
+  expect(screen.queryByText(/Proxies to import:/)).toBeNull();
 });
