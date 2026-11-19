@@ -61,6 +61,11 @@ export function ShortcutAdvancedDialog({
     <Dialog
       open
       title={t("shortcuts.advanced.title")}
+      help={
+        <>
+          {t("shortcuts.advanced.hint")} {t("shortcuts.advanced.acceptance")}
+        </>
+      }
       closeLabel={t("common.close")}
       onClose={onClose}
       width={520}
@@ -83,7 +88,6 @@ export function ShortcutAdvancedDialog({
           <strong>{label}</strong>
           <code>{command.id}</code>
         </div>
-        <p className="shortcuts__hint">{t("shortcuts.advanced.hint")}</p>
         {bindings.map((key, index) => (
           <fieldset key={key} disabled={saving} className="shortcuts-advanced__binding">
             <legend>
@@ -92,6 +96,7 @@ export function ShortcutAdvancedDialog({
             <Field
               htmlFor={`shortcut-priority-${index}`}
               label={t("shortcuts.advanced.priority")}
+              hint={t("shortcuts.advanced.priorityHint")}
               error={
                 !/^-?\d+$/.test(draft[key]!.priority) ||
                 Math.abs(Number(draft[key]!.priority)) > 1000
@@ -130,15 +135,11 @@ export function ShortcutAdvancedDialog({
                 }
               />
             </Field>
-            <p className="shortcuts-advanced__priority-hint">
-              {t("shortcuts.advanced.priorityHint")}
-            </p>
           </fieldset>
         ))}
         {!bindings.length && (
           <p className="shortcuts__hint">{t("shortcuts.advanced.unassigned")}</p>
         )}
-        <p className="shortcuts__hint">{t("shortcuts.advanced.acceptance")}</p>
       </div>
     </Dialog>
   );

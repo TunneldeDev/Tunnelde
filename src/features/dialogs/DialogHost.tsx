@@ -327,6 +327,7 @@ function HostDialog({
           <Field
             label={t("connect.password")}
             htmlFor="host-password"
+            hintPresentation={removePassword ? "inline" : undefined}
             hint={
               removePassword
                 ? t("host.passwordRemoveHint")

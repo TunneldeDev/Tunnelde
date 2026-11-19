@@ -78,6 +78,11 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
     <Dialog
       open
       title={t("sshImport.title")}
+      help={
+        <>
+          {t("sshImport.description")} {t("sshImport.dependencies")}
+        </>
+      }
       closeLabel={t("common.close")}
       onClose={onClose}
       dismissible={!saving}
@@ -103,7 +108,6 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="ssh-import" aria-busy={loading || saving}>
-        <p className="td-field__hint">{t("sshImport.description")}</p>
         {preview ? <p className="ssh-import__path">{preview.path}</p> : null}
         {loading ? <p role="status">{t("sshImport.loading")}</p> : null}
         {error ? <p role="alert">{error}</p> : null}
@@ -155,9 +159,6 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
               );
             })}
           </div>
-        ) : null}
-        {preview?.entries.some((entry) => entry.jumpAliases.length > 0) ? (
-          <p className="td-field__hint">{t("sshImport.dependencies")}</p>
         ) : null}
       </div>
     </Dialog>
