@@ -152,7 +152,7 @@ pub fn run() {
             );
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(platform::ipc_authority::guard(tauri::generate_handler![
             services::editor::recovery::commands::editor_drafts_read,
             services::editor::recovery::commands::editor_drafts_save,
             window::close::main_window_close_guard_claim,
@@ -383,7 +383,7 @@ pub fn run() {
             commands::history_clear,
             commands::known_hosts_list,
             commands::known_hosts_forget,
-        ])
+        ]))
         .build(tauri::generate_context!())
         .expect("error while building Tunnelde")
         .run(|app, event| {

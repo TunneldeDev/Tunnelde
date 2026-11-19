@@ -5,6 +5,7 @@ pub mod file_identity;
 pub mod file_ops;
 #[cfg(windows)]
 pub mod guarded_file;
+pub(crate) mod ipc_authority;
 pub mod locale;
 pub mod logging;
 pub mod menu;
