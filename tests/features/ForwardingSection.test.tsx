@@ -752,6 +752,11 @@ it("saves a rule into the selected group and shows it under that group", async (
     ),
   );
   const group = await screen.findByRole("region", { name: "Services" });
-  expect(within(group).getByText("Database")).toBeTruthy();
+  expect(within(group).getByRole("heading", { name: "Services", level: 3 }).className).toBe(
+    "forward-group__title",
+  );
+  const rule = within(group).getByText("Database");
+  expect(rule.closest(".forward-rules")?.parentElement).toBe(group);
+  expect(rule.closest("h3")).toBeNull();
   expect(screen.queryByRole("region", { name: "Ungrouped" })).toBeNull();
 });

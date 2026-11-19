@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Disclosure } from "@/components/ui/layout/Disclosure";
+import { ConnectionSession } from "./ConnectionSession";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { useSsh } from "@/store/ssh";
 import "./connectionStatus.css";
 
 export function ConnectionStatus() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const sessions = useSsh((state) => state.sessions);
+  const history = useSsh((state) => state.history);
+  const recent = history.filter(
+    (entry) =>
+      entry.endedAt !== null && !sessions.some((session) => session.id === entry.session.id),
+  );
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -35,36 +42,28 @@ export function ConnectionStatus() {
         ) : (
           <ul className="connection-list">
             {sessions.map((session) => (
-              <li key={session.id} className="connection-list__item">
-                <div className="connection-list__heading">
-                  <strong>{session.title}</strong>
-                  <span>
-                    {t(
-                      session.purpose === "forwarding"
-                        ? "connections.forwarding"
-                        : session.purpose === "mounts"
-                          ? "connections.mounts"
-                          : session.terminal === false
-                            ? "connections.background"
-                            : "connections.terminal",
-                    )}
-                  </span>
-                </div>
-                <dl>
-                  <dt>{t("connections.address")}</dt>
-                  <dd>
-                    <code>{session.address}</code>
-                  </dd>
-                  <dt>{t("connections.connectedAt")}</dt>
-                  <dd>{new Date(session.connectedAt).toLocaleString(i18n.language)}</dd>
-                  <dt>{t("connections.sessionId")}</dt>
-                  <dd>
-                    <code>{session.id}</code>
-                  </dd>
-                </dl>
-              </li>
+              <ConnectionSession
+                key={session.id}
+                session={session}
+                history={history.find((entry) => entry.session.id === session.id)}
+              />
             ))}
           </ul>
+        )}
+        <p className="connection-list__summary">{t("connections.historyHint")}</p>
+        {!!recent.length && (
+          <Disclosure heading={t("connections.recent")} summary={String(recent.length)}>
+            <ul className="connection-list">
+              {recent.map((entry) => (
+                <ConnectionSession
+                  key={entry.session.id}
+                  session={entry.session}
+                  history={entry}
+                  ended
+                />
+              ))}
+            </ul>
+          </Disclosure>
         )}
       </Dialog>
     </>

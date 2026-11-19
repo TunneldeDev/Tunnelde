@@ -7,6 +7,8 @@ import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 import { useMonitor } from "@/store/monitor";
 
+import { recordSessionEvent, type SessionHistory } from "./sshHistory";
+
 const connections = new Map<string, Promise<SshSession | null>>();
 const disconnections = new Map<string, Promise<void>>();
 let sessionVersion = 0;
@@ -14,6 +16,7 @@ let snapshotVersion = 0;
 
 interface SshStore {
   sessions: SshSession[];
+  history: SessionHistory[];
   connectingHostId: string | null;
   connectingHostIds: string[];
   disconnectingSessionIds: string[];
@@ -26,12 +29,13 @@ interface SshStore {
     acquisition?: { key: string; connect: (request: SshConnectRequest) => Promise<SshSession> },
   ) => Promise<SshSession | null>;
   disconnect: (sessionId: string) => Promise<void>;
-  forget: (sessionId: string) => void;
+  forget: (sessionId: string, reason?: string) => void;
   renameHost: (hostId: string, title: string) => void;
 }
 
 export const useSsh = create<SshStore>((set, get) => ({
   sessions: [],
+  history: [],
   connectingHostId: null,
   connectingHostIds: [],
   disconnectingSessionIds: [],
@@ -40,6 +44,7 @@ export const useSsh = create<SshStore>((set, get) => ({
     sessionVersion += 1;
     set((state) => ({
       sessions: [...state.sessions.filter((item) => item.id !== session.id), session],
+      history: recordSessionEvent(state.history, session, "connected"),
     }));
   },
 
@@ -60,7 +65,10 @@ export const useSsh = create<SshStore>((set, get) => ({
       if (sessionVersion === version && snapshotVersion === request) {
         const alive = new Set(sessions.map((session) => session.id));
         const ended = get().sessions.filter((session) => !alive.has(session.id));
-        set({ sessions });
+        let history = get().history;
+        for (const session of sessions) history = recordSessionEvent(history, session, "connected");
+        for (const session of ended) history = recordSessionEvent(history, session, "ended");
+        set({ sessions, history });
         for (const session of ended) {
           useMonitor.getState().forget(session.id);
           useWorkspace.getState().closeSession(session.id);
@@ -113,13 +121,28 @@ export const useSsh = create<SshStore>((set, get) => ({
     if (existing) {
       return existing;
     }
-    set((state) => ({ disconnectingSessionIds: [...state.disconnectingSessionIds, sessionId] }));
+    const session = get().sessions.find((item) => item.id === sessionId);
+    if (!session) return Promise.resolve();
+    set((state) => ({
+      disconnectingSessionIds: [...state.disconnectingSessionIds, sessionId],
+      history: recordSessionEvent(state.history, session, "disconnecting"),
+    }));
     const operation = (async () => {
       try {
         await api.sshDisconnect(sessionId);
         get().forget(sessionId);
         useWorkspace.getState().closeSession(sessionId);
       } catch (error) {
+        if (get().sessions.some((item) => item.id === sessionId)) {
+          set((state) => ({
+            history: recordSessionEvent(
+              state.history,
+              session,
+              "disconnectFailed",
+              translateError(error),
+            ),
+          }));
+        }
         toast(translateError(error), "error");
       } finally {
         disconnections.delete(sessionId);
@@ -132,9 +155,17 @@ export const useSsh = create<SshStore>((set, get) => ({
     return operation;
   },
 
-  forget: (sessionId) => {
+  forget: (sessionId, reason) => {
     sessionVersion += 1;
     useMonitor.getState().forget(sessionId);
-    set((state) => ({ sessions: state.sessions.filter((item) => item.id !== sessionId) }));
+    set((state) => {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      return {
+        sessions: state.sessions.filter((item) => item.id !== sessionId),
+        history: session
+          ? recordSessionEvent(state.history, session, "ended", reason)
+          : state.history,
+      };
+    });
   },
 }));

@@ -543,7 +543,8 @@ pub fn ssh_resize(app: AppHandle, session_id: String, cols: u32, rows: u32) -> A
 }
 
 #[tauri::command]
-pub fn ssh_disconnect(app: AppHandle, session_id: String) -> AppResult<()> {
+pub async fn ssh_disconnect(app: AppHandle, session_id: String) -> AppResult<()> {
+    crate::services::mounts::runtime::disconnect_session(&app, &session_id).await?;
     crate::services::forwarding::automation::pause_session(&app, &session_id);
     ssh::disconnect(&app, &session_id)?;
     crate::logs::record(&app.state::<AppState>().db, "ssh.disconnect", None);

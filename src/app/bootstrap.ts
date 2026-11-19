@@ -275,7 +275,7 @@ async function wireEvents(): Promise<void> {
           const session = useSsh
             .getState()
             .sessions.find((session) => session.id === payload.sessionId);
-          useSsh.getState().forget(payload.sessionId);
+          useSsh.getState().forget(payload.sessionId, payload.reason);
           useMonitor.getState().forget(payload.sessionId);
           useWorkspace.getState().closeSession(payload.sessionId);
           if (session && session.terminal !== false) toast(i18n.t("ssh.sessionEnded"), "info");

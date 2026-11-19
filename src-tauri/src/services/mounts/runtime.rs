@@ -168,6 +168,13 @@ impl Coordinator {
             .map(|(status, _)| status.clone())
             .collect()
     }
+    fn group_for_session(&self, session: &str) -> Option<String> {
+        self.lock()
+            .connections
+            .iter()
+            .find(|(_, (status, _))| status.session_id.as_deref() == Some(session))
+            .map(|(id, _)| id.clone())
+    }
     pub(crate) fn inactive(&self, id: &str) -> AppResult<()> {
         if self
             .lock()
@@ -574,6 +581,26 @@ pub(crate) async fn stop(
     }
     Ok(())
 }
+/// A user closing a published mount transport must stop the owning group first,
+/// not simulate an outage that the recovery supervisor would immediately heal.
+pub(crate) async fn disconnect_session(app: &AppHandle, session: &str) -> AppResult<()> {
+    let state = app.state::<AppState>();
+    let Some(group_id) = state.mount_runtime.group_for_session(session) else {
+        return Ok(());
+    };
+    let _gate = state.mount_runtime.gate(&group_id)?;
+    // The group may have reconnected before we acquired its gate. Never close
+    // the replacement connection when the user selected an older session.
+    if state.mount_runtime.group_for_session(session).as_deref() != Some(&group_id) {
+        return Ok(());
+    }
+    let group = state
+        .db
+        .with(|conn| repository::get::<Group>(conn, &group_id))?
+        .ok_or_else(repository::changed)?;
+    disconnect(app, &group, &Authority(None)).await
+}
+
 pub(crate) async fn disconnect(
     app: &AppHandle,
     group: &Entry<Group>,
@@ -612,6 +639,32 @@ pub(crate) async fn disconnect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn session_close_targets_only_the_current_owning_mount_group() {
+        let runtime = Coordinator::default();
+        runtime.lock().connections.insert(
+            "group".into(),
+            (
+                ConnectionStatus {
+                    group_id: "group".into(),
+                    session_id: Some("old".into()),
+                    ..Default::default()
+                },
+                None,
+            ),
+        );
+        assert_eq!(runtime.group_for_session("old").as_deref(), Some("group"));
+        assert!(runtime.group_for_session("other").is_none());
+        runtime
+            .lock()
+            .connections
+            .get_mut("group")
+            .unwrap()
+            .0
+            .session_id = Some("new".into());
+        assert!(runtime.group_for_session("old").is_none());
+        assert_eq!(runtime.group_for_session("new").as_deref(), Some("group"));
+    }
     #[test]
     fn cleanup_reservations_block_edits_and_dropping_groups_releases_history() {
         let runtime = Coordinator::default();
