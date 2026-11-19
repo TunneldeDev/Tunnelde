@@ -4,8 +4,15 @@ import { toast } from "@/store/toasts";
 
 /** Writes text to the system clipboard and reports the outcome. */
 export function copyText(value: string): void {
-  void (isTauri() ? api.clipboardWriteText(value) : navigator.clipboard.writeText(value)).then(
-    () => toast(i18n.t("menu.copied"), "success"),
-    () => toast(i18n.t("menu.copyFailed"), "error"),
-  );
+  void writeText(value);
+}
+
+async function writeText(value: string) {
+  try {
+    if (isTauri()) await api.clipboardWriteText(value);
+    else await navigator.clipboard.writeText(value);
+    toast(i18n.t("menu.copied"), "success");
+  } catch {
+    toast(i18n.t("menu.copyFailed"), "error");
+  }
 }

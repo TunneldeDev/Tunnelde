@@ -369,6 +369,31 @@ describe("PluginViewPage", () => {
     expect(copyMock).toHaveBeenCalledWith('{\n  "a": 1\n}');
   });
 
+  it("shows and submits the refreshed selection instead of a removed option", async () => {
+    apiMock.pluginRenderView.mockResolvedValueOnce(interactive);
+    render(<PluginViewPage pluginId="json-formatter" viewId="main" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Indent" }));
+    fireEvent.click(screen.getByRole("option", { name: "4 spaces" }));
+    const next = structuredClone(interactive);
+    next.blocks[0]!.fields[1]!.options = [{ value: "tabs", label: "Tabs" }];
+    apiMock.pluginRenderView.mockResolvedValue(next);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByText("Tabs");
+    apiMock.pluginRun.mockClear().mockResolvedValue({ text: "" });
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
+    await waitFor(() =>
+      expect(apiMock.pluginRun).toHaveBeenCalledWith(
+        "json-formatter",
+        "pretty",
+        expect.objectContaining({ indent: "tabs" }),
+        "boot:1",
+      ),
+    );
+    expect(
+      ((await screen.findByRole("button", { name: "Copy result" })) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it("does not execute a command if its view closes while permission approval is pending", async () => {
     let approve!: (value: boolean) => void;
     nativeMock.mockReturnValue(true);
