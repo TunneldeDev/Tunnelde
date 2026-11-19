@@ -95,8 +95,18 @@ async fn native_bus_exchanges_messages_between_live_sdk_processes() {
         let channel = left.request(&bus, &security, &a, "bus.create", json!({})).await;
         let denied = right.request(&bus, &security, &b, "bus.subscribe", json!({"busId":channel,"topic":"progress"})).await;
         assert_eq!(denied["error"], "plugin.bus.unavailable");
+        let forged = left.request(&bus, &security, &a, "bus.publish", json!({"busId":channel,"topic":"bus.membersChanged"})).await;
+        assert_eq!(forged["error"], "plugin.bus.invalid");
         let invite = left.request(&bus, &security, &a, "bus.invite", json!({"busId":channel,"pluginId":"node-b"})).await;
+        assert_eq!(right.request(&bus, &security, &b, "bus.snapshot", json!({})).await["channels"], json!([]));
+        assert!(right.request(&bus, &security, &b, "bus.decline", json!({"invitationId":invite})).await.is_null());
+        // The control message is a hint; a declined invitation is no longer actionable.
+        assert_eq!(right.request(&bus, &security, &b, "bus.receive", json!({})).await["messages"][0]["topic"], "bus.invitation");
+        let invite = left.request(&bus, &security, &a, "bus.invite", json!({"busId":channel,"pluginId":"node-b"})).await;
+        left.request(&bus, &security, &a, "bus.subscribe", json!({"busId":channel,"topic":"bus.membersChanged"})).await;
         assert_eq!(right.request(&bus, &security, &b, "bus.join", json!({"invitationId":invite})).await, channel);
+        assert_eq!(left.request(&bus, &security, &a, "bus.receive", json!({})).await["messages"][0]["topic"], "bus.membersChanged");
+        assert_eq!(right.request(&bus, &security, &b, "bus.snapshot", json!({})).await["channels"][0]["members"], json!(["node-a","node-b"]));
         right.request(&bus, &security, &b, "bus.subscribe", json!({"busId":channel,"topic":"progress"})).await;
         assert_eq!(left.request(&bus, &security, &a, "bus.publish", json!({"busId":channel,"topic":"progress","payload":{"done":3}})).await, json!({"recipients":1}));
         let batch = right.request(&bus, &security, &b, "bus.receive", json!({})).await;
@@ -108,6 +118,7 @@ async fn native_bus_exchanges_messages_between_live_sdk_processes() {
         bus.retire_before(&a.id, a.generation + 1);
         let batch = right.request(&bus, &security, &b, "bus.receive", json!({})).await;
         assert_eq!(batch["messages"][0]["topic"], "bus.closed");
+        assert_eq!(right.request(&bus, &security, &b, "bus.snapshot", json!({})).await["channels"], json!([]));
         let stale = left.request(&bus, &security, &a, "bus.advertise", json!({"capability":"mounts","version":1})).await;
         assert_eq!(stale["error"], "pluginSecurity.changed");
     }).await.unwrap();

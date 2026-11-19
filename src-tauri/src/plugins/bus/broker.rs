@@ -11,6 +11,7 @@ use tokio::sync::{Notify, Semaphore};
 const PUBLIC: &str = "public";
 const DISCOVERY: &str = "bus.discovery";
 const INVITATION: &str = "bus.invitation";
+const MEMBERS_CHANGED: &str = "bus.membersChanged";
 const CLOSED: &str = "bus.closed";
 const QUEUE: usize = 128;
 
@@ -244,10 +245,11 @@ impl Book {
             return Ok(id.clone());
         }
         if self.invitations.len() >= 256
+            || self.invitations.values().filter(|i| i.peer == peer).count() >= 16
             || self
                 .invitations
                 .values()
-                .filter(|i| i.peer == peer || i.bus_id == bus_id)
+                .filter(|i| i.bus_id == bus_id)
                 .count()
                 >= 16
         {
@@ -304,7 +306,21 @@ impl Book {
         channel.members.insert(peer.clone());
         let id = invitation.bus_id.clone();
         self.invitations.remove(invitation_id);
+        self.members_changed(&id);
         Ok(id)
+    }
+
+    pub(super) fn decline(&mut self, peer: &Peer, invitation_id: &str) -> AppResult<()> {
+        self.prune_invitations();
+        if self
+            .invitations
+            .get(invitation_id)
+            .is_none_or(|i| &i.peer != peer)
+        {
+            return Err(denied());
+        }
+        self.invitations.remove(invitation_id);
+        Ok(())
     }
 
     fn remove_private(inbox: &mut Inbox, id: &str) {
@@ -339,6 +355,7 @@ impl Book {
             if let Some(inbox) = self.peers.get_mut(peer) {
                 Self::remove_private(inbox, id);
             }
+            self.members_changed(id);
         }
         Ok(())
     }
@@ -426,9 +443,17 @@ impl Book {
         for id in closed {
             self.close(&id);
         }
-        self.channels
-            .values_mut()
-            .for_each(|c| c.members.retain(|p| !retired(p)));
+        let mut changed = Vec::new();
+        for (id, channel) in &mut self.channels {
+            let before = channel.members.len();
+            channel.members.retain(|p| !retired(p));
+            if before != channel.members.len() {
+                changed.push(id.clone());
+            }
+        }
+        for id in changed {
+            self.members_changed(&id);
+        }
         self.invitations.retain(|_, i| !retired(&i.peer));
         for inbox in self.peers.values_mut() {
             inbox
@@ -437,6 +462,8 @@ impl Book {
         }
     }
 }
+
+mod membership;
 
 #[cfg(test)]
 mod tests;

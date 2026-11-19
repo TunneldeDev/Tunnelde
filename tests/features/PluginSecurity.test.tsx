@@ -152,7 +152,16 @@ describe("plugin security interactions", () => {
         cliLocked: false,
         recoverySuggested: false,
         reason: null,
-        grants: { formatter: ["fs.read", "ssh.exec", "process.exec", "secrets", "future.unknown"] },
+        grants: {
+          formatter: [
+            "fs.read",
+            "ssh.exec",
+            "process.exec",
+            "secrets",
+            "bus.communicate",
+            "future.unknown",
+          ],
+        },
       },
     });
     const { container } = render(<PluginSecuritySection />);
@@ -166,6 +175,9 @@ describe("plugin security interactions", () => {
     expect(screen.getByText("Local files")).toBeTruthy();
     expect(screen.getByText("Remote machines")).toBeTruthy();
     expect(screen.getByText("Execution and network")).toBeTruthy();
+    const communication = screen.getByText("Plugin communication").closest("details")!;
+    expect(communication.textContent).toContain("bus.communicate");
+    expect(communication.textContent).toContain("invitation-only channels");
     expect(screen.getByText("Other capabilities")).toBeTruthy();
     expect(screen.getByText("future.unknown")).toBeTruthy();
     expect(screen.getByText("Launch and control executable processes.")).toBeTruthy();

@@ -93,3 +93,116 @@ async fn wake_is_buffered_and_queue_reports_overflow() {
     assert_eq!(batch["messages"].as_array().unwrap().len(), 32);
     assert_eq!(book.drain(&b).unwrap()["lost"], 0);
 }
+
+#[test]
+fn snapshots_and_membership_hints_are_private_and_follow_runtime_lifetime() {
+    let mut book = Book::default();
+    let owner = peer("owner", 1);
+    let member = peer("guest", 1);
+    let outsider = peer("other", 1);
+    let channel = book.create(&owner).unwrap();
+    let hidden = book.create(&outsider).unwrap();
+    book.subscribe(&outsider, None, MEMBERS_CHANGED.into(), true)
+        .unwrap();
+    book.subscribe(&owner, Some(&channel), MEMBERS_CHANGED.into(), true)
+        .unwrap();
+    book.subscribe(&member, None, "hello".into(), true).unwrap();
+    let invitation = book.invite(&owner, &channel, &member.id).unwrap();
+    assert_eq!(
+        book.snapshot(&member).unwrap(),
+        json!({"publicTopics":["hello"],"channels":[]})
+    );
+    book.join(&member, &invitation).unwrap();
+    let hint = json!({"topic":MEMBERS_CHANGED,"busId":channel,"sender":null,"payload":null});
+    assert_eq!(book.drain(&owner).unwrap()["messages"], json!([hint]));
+    let snapshot = book.snapshot(&member).unwrap();
+    assert_eq!(
+        snapshot["channels"],
+        json!([{ "busId":channel, "ownerPluginId":"owner", "members":["guest","owner"], "topics":[] }])
+    );
+    assert_eq!(
+        book.snapshot(&outsider).unwrap()["channels"][0]["busId"],
+        hidden
+    );
+    assert_eq!(book.drain(&outsider).unwrap()["messages"], json!([]));
+    book.leave(&member, &channel, false).unwrap();
+    assert_eq!(book.drain(&owner).unwrap()["messages"], json!([hint]));
+    assert_eq!(book.snapshot(&member).unwrap()["channels"], json!([]));
+    let invite = book.invite(&owner, &channel, &member.id).unwrap();
+    book.join(&member, &invite).unwrap();
+    book.retire_before(&member.id, 2);
+    assert_eq!(book.drain(&owner).unwrap()["messages"], json!([hint, hint]));
+    assert_eq!(
+        book.snapshot(&owner).unwrap()["channels"][0]["members"],
+        json!(["owner"])
+    );
+    assert_eq!(
+        book.snapshot(&peer("guest", 2)).unwrap(),
+        json!({"publicTopics":[],"channels":[]})
+    );
+    book.leave(&owner, &channel, true).unwrap();
+    assert_eq!(book.snapshot(&owner).unwrap()["channels"], json!([]));
+}
+
+#[test]
+fn invitation_caps_are_independent_and_decline_releases_only_the_recipients_offer() {
+    let mut book = Book::default();
+    let owner = peer("owner", 1);
+    let guest = peer("guest", 1);
+    let outsider = peer("outsider", 1);
+    let id = book.create(&owner).unwrap();
+    book.signal(&guest).unwrap();
+    // Fill all but one slot on the channel. Offers to this guest from other
+    // channels must not consume that last slot.
+    for n in 0..15 {
+        let p = peer(&format!("peer-{n}"), 1);
+        book.signal(&p).unwrap();
+        book.invite(&owner, &id, &p.id).unwrap();
+        let other = book.create(&p).unwrap();
+        book.invite(&p, &other, &guest.id).unwrap();
+    }
+    let invite = book.invite(&owner, &id, &guest.id).unwrap();
+    let other_id = book.create(&outsider).unwrap();
+    assert!(book.invite(&outsider, &other_id, &guest.id).is_err());
+    assert!(book.invite(&owner, &id, &outsider.id).is_err());
+    assert!(book.decline(&outsider, &invite).is_err());
+    assert!(book.decline(&peer("guest", 2), &invite).is_err());
+    book.decline(&guest, &invite).unwrap();
+    assert!(book.join(&guest, &invite).is_err());
+    assert!(book.decline(&guest, &invite).is_err());
+    assert_eq!(
+        book.invitations(&guest).unwrap().as_array().unwrap().len(),
+        15
+    );
+    book.invite(&owner, &id, &outsider.id).unwrap();
+    book.invite(&outsider, &other_id, &guest.id).unwrap();
+}
+
+#[test]
+fn lost_membership_hint_can_be_reconciled_without_consuming_messages() {
+    let mut book = Book::default();
+    let owner = peer("owner", 1);
+    let guest = peer("guest", 1);
+    let id = book.create(&owner).unwrap();
+    book.subscribe(&owner, Some(&id), MEMBERS_CHANGED.into(), true)
+        .unwrap();
+    book.subscribe(&owner, Some(&id), "activity".into(), true)
+        .unwrap();
+    book.signal(&guest).unwrap();
+    let invite = book.invite(&owner, &id, &guest.id).unwrap();
+    book.join(&guest, &invite).unwrap();
+    // Simulate a chatty private channel pushing the membership notification out.
+    for i in 0..QUEUE {
+        book.publish(&guest, Some(&id), "activity".into(), json!(i))
+            .unwrap();
+    }
+    let snapshot = book.snapshot(&owner).unwrap();
+    assert_eq!(
+        snapshot["channels"],
+        json!([{"busId":id,"ownerPluginId":"owner","members":["guest","owner"],"topics":["activity",MEMBERS_CHANGED]}])
+    );
+    let batch = book.drain(&owner).unwrap();
+    assert_eq!(batch["lost"], 1);
+    assert_eq!(batch["messages"][0]["topic"], "activity");
+    assert_eq!(book.snapshot(&owner).unwrap(), snapshot);
+}

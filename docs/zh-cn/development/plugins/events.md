@@ -65,3 +65,9 @@ Bus 的运行实例。受邀者会收到 `bus.invitation` 控制通知，也可�
 时重新读取领域快照。队列最多 128 条，单条负载最多 16 KiB，不做持久化、重放或确认。
 `bus.invitation` 和 `bus.closed` 直接投递给相关实例，不向公共订阅者广播。不要在名称或
 消息里放凭据；私有权限不是对成员隐藏内容，也不会扩大成员的其他权限。
+
+`bus.snapshot({})` 返回 `{publicTopics,channels:[{busId,ownerPluginId,members,topics}]}`。
+仅可见自己已加入的私有 Bus；`members` 是成员插件 ID，`topics` 是**调用方自己**的订阅。
+先在**私有 Bus 上**订阅 `bus.membersChanged`，再读快照。成员加入、离开或停止时重读快照，无需轮询公共 Bus；频道关闭时，成员直接收到 `bus.closed`。
+
+受邀实例也可用 `bus.decline({invitationId})` 拒绝尚未到期的邀请。队列里的邀请通知不代表邀请仍然有效；以 `bus.invitations` 为准。若 `lost > 0`，重读成员快照、邀请列表及相关领域状态，快照不会补发业务消息。兼容旧宿主时，先从 `api.describe().methods` 确认新方法存在。

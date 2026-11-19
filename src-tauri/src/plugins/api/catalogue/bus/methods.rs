@@ -6,6 +6,8 @@ pub const METHODS: &[ApiMethod] = &[
     method!("bus.create", ["bus.communicate"], "{}", "Create a runtime-owned private bus and return its opaque ID."),
     method!("bus.invite", ["bus.communicate"], "{busId:string,pluginId:string}", "Invite a currently registered runtime to an owner-controlled bus for sixty seconds. Return an invitation ID."),
     method!("bus.invitations", ["bus.communicate"], "{}", "List pending {invitationId,fromPluginId} entries for the caller's runtime."),
+    method!("bus.snapshot", ["bus.communicate"], "{}", "Read the calling runtime's {publicTopics,channels:[{busId,ownerPluginId,members,topics}]} snapshot. Members are plugin IDs; topics are the caller's subscriptions."),
+    method!("bus.decline", ["bus.communicate"], "{invitationId:string}", "Consume a pending invitation for the calling runtime without joining its channel."),
     method!("bus.join", ["bus.communicate"], "{invitationId:string}", "Accept and consume an invitation bound to the caller's runtime. Return the private bus ID."),
     method!("bus.leave", ["bus.communicate"], "{busId:string}", "Leave a private bus and discard its pending messages for the caller. Owner departure closes the bus."),
     method!("bus.close", ["bus.communicate"], "{busId:string}", "Close an owned private bus and discard pending private traffic."),
