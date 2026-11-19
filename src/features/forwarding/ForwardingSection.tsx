@@ -5,9 +5,8 @@ import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { useDialogs } from "@/store/dialogs";
 import type { Host } from "@/lib/api/types";
 import { ForwardRuleEditor } from "./components/ForwardRuleEditor";
-import { ForwardingEntries } from "./components/ForwardingEntries";
 import { ForwardingSurface } from "./components/ForwardingSurface";
-import { connectForwardingProvider } from "@/lib/extensions/forwarding/authority";
+import { ForwardGroups } from "./components/ForwardGroups";
 import { useForwardingController } from "./runtime/useForwardingController";
 import "./forwarding.css";
 
@@ -100,6 +99,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
       {form ? (
         <ForwardRuleEditor
           rule={form}
+          groups={controller.groups}
           hostName={host.name}
           busy={busy}
           error={failure?.target === "editor" ? failure.message : undefined}
@@ -112,12 +112,8 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           <p className="forwarding__empty" role="status">
             {t("common.loading")}
           </p>
-        ) : !rules.length && failure?.target !== "list" ? (
-          <div className="forwarding__empty">
-            <strong>{t("forward.noRules")}</strong>
-          </div>
         ) : (
-          <ForwardingEntries {...controller} />
+          <ForwardGroups controller={controller} hostId={host.id} />
         )}
       </ForwardingSurface>
       {failure?.target === "list" ? (
@@ -131,11 +127,8 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           after="background"
           purpose="forwarding"
           onClose={controller.closeConnection}
-          connectSession={
-            connectingRules.authority
-              ? (request, review) =>
-                  connectForwardingProvider(connectingRules.authority!, request, review)
-              : undefined
+          connectSession={(request, review) =>
+            controller.connectAndStart(connectingRules, request, review)
           }
           onConnected={(connected) => controller.connected(connectingRules, connected)}
         />

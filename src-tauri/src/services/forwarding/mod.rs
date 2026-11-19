@@ -3,14 +3,16 @@
 use crate::{db::Database, error::AppResult, ssh::forward::ForwardRegistry, state::AppState};
 use tauri::{AppHandle, Emitter, Manager};
 pub(crate) mod automation;
+pub(crate) mod connections;
 pub mod contract;
+pub(crate) mod groups;
 pub(crate) mod interaction;
 pub(crate) mod query;
-mod repository;
+pub(crate) mod repository;
 mod runtime;
 pub(crate) mod start;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
-pub(crate) use runtime::{prepare_checked, take_checked};
+pub(crate) use runtime::{prepare_checked, prepare_managed, start_managed, take_checked};
 pub use runtime::{start_checked, stop};
 
 pub(crate) fn registry(app: &AppHandle) -> ForwardRegistry {
@@ -156,3 +158,23 @@ pub fn remove_checked(app: &AppHandle, id: &str, expected: Option<&str>) -> AppR
 }
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn save_grouped(
+    app: &AppHandle,
+    mut rule: ForwardRule,
+    expected: Option<&str>,
+    options: automation::Options,
+    group: Option<&str>,
+) -> AppResult<RevisionedRule> {
+    if rule.id.is_empty() {
+        if expected.is_some() {
+            return Err(crate::error::AppError::validation("forward.changed"));
+        }
+        rule.id = uuid::Uuid::new_v4().to_string();
+    }
+    validate(&rule)?;
+    let state = app.state::<AppState>();
+    state.forwards.edit(&rule.id, || {
+        repository::save_grouped(&state.db, &rule, expected, options, group)
+    })
+}

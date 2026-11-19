@@ -2141,7 +2141,20 @@
     "autoRetry": "失败后自动重试",
     "autoRetryHint": "启动失败或连接中断后逐步重试；手动停止后暂停，认证或主机密钥问题需处理后再启动。",
     "retrying": "等待重试",
-    "needsAttention": "需要处理"
+    "needsAttention": "需要处理",
+    "groupLabel": "转发组",
+    "groupHint": "同组规则共用一条专用 SSH 会话；不同组各用独立会话，未分组规则每条独占一条会话。",
+    "ungrouped": "未分组",
+    "addGroup": "新建转发组",
+    "renameGroup": "重命名转发组",
+    "groupName": "组名称",
+    "groupMissing": "转发组不存在或不属于当前主机。",
+    "groupInvalid": "请输入不超过 80 个字符的转发组名称。",
+    "groupConnectionChanged": "连接配置已更改。请停止此组的全部规则后重新启动。",
+    "groupNotEmpty": "请先将组内规则移出，再删除此组。运行中的规则需先停止。",
+    "groupLimit": "转发组数量已达上限。",
+    "sessionScope": "此 SSH 会话不属于该规则的专用连接。插件请使用 forwards.startManaged 或 forwards.startManyManaged。",
+    "startGroup": "启动「{{name}}」组"
   },
   "mounts": {
     "shared": {
@@ -2714,5 +2727,29 @@
     "sessionId": "会话 ID",
     "sessions_one": "当前 {{count}} 条会话",
     "sessions_other": "当前 {{count}} 条会话"
+  },
+  "hostTransfer": {
+    "addMenu": "添加主机",
+    "exportTitle": "导出主机",
+    "importTitle": "导入 Tunnelde 主机文件",
+    "exportHint": "可导出单台或多台主机。包含目录、跳板与代理依赖、转发和挂载配置；不包含密码、私钥内容、令牌或活动会话。",
+    "importHint": "默认跳过同名或同地址（地址、端口、用户名相同）的主机。选择主机时会同时导入所需跳板；所有配置均另建，不覆盖已有配置。导入后不会立即连接或启动规则。",
+    "credentialsHint": "请在新设备上重新配置密码、密钥文件与代理密码，并核对本地挂载点。系统代理采用新设备环境；插件自定义数据不在此文件中。",
+    "exported": "主机配置已导出",
+    "exportSelected": "导出 {{count}} 台主机",
+    "search": "搜索主机",
+    "toggleAll": "全选 / 取消全选",
+    "copies": "将选中的冲突主机另存为副本",
+    "conflictLabel": "与已有主机重名或地址相同，默认跳过",
+    "dependency": "依赖主机",
+    "ruleCounts": "{{forwards}} 条转发 · {{mounts}} 条挂载",
+    "proxies": "将导入代理：{{names}}（密码需重新配置）",
+    "mountPoint": "挂载「{{name}}」在本机的位置",
+    "invalid": "主机文件无效、版本不支持或超出大小限制。",
+    "changed": "导入预览已过期，请刷新后重试。",
+    "conflict": "选中的主机或跳板依赖存在冲突，请跳过或明确选择另存为副本。",
+    "tooLarge": "主机文件不能超过 4 MB。",
+    "notRegularFile": "请选择普通主机文件；不支持目录、特殊文件或导出到符号链接。",
+    "readOnlyFile": "目标文件为只读，请选择其他位置。"
   }
 }

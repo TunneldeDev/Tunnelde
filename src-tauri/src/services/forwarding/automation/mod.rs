@@ -1,6 +1,6 @@
 //! Application-owned opt-in startup/recovery. UI visibility does not own these jobs.
 mod book;
-pub(super) mod settings;
+pub(crate) mod settings;
 mod transport;
 
 use super::contract::{ForwardRule, RevisionedInfo, RevisionedRule};
@@ -11,8 +11,7 @@ use crate::{
 use book::{Book, Snapshot, Ticket};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager};
@@ -56,19 +55,18 @@ pub struct ConfiguredRule {
     pub entry: RevisionedRule,
     pub automation: Options,
 }
-type ConnectionSlot = Arc<tokio::sync::Mutex<Weak<transport::Connection>>>;
 #[derive(Default)]
 pub(crate) struct Coordinator {
     book: Mutex<Book>,
     wake: Notify,
-    connections: Mutex<HashMap<String, ConnectionSlot>>,
+    pub(in crate::services::forwarding) connections: super::connections::Pool,
 }
 impl Coordinator {
     fn lock(&self) -> std::sync::MutexGuard<'_, Book> {
         self.book.lock().unwrap_or_else(|error| error.into_inner())
     }
 }
-pub(super) fn changed(app: &AppHandle) {
+pub(crate) fn changed(app: &AppHandle) {
     let _ = app.emit(
         "plugin://domain-changed",
         serde_json::json!({"domain":"forwards"}),

@@ -2,10 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { translateError } from "@/lib/api/errors";
-import type { Host } from "@/lib/api/types";
+import { isIpcError, type Host, type SshConnectRequest } from "@/lib/api/types";
+import type { ConnectionReview } from "@/lib/api/connections/review";
 import { useSsh } from "@/store/ssh";
 import { useDialogs } from "@/store/dialogs";
-import type { ForwardInfo, ForwardRule, RevisionedRule } from "../model/contract";
+import type { ForwardInfo, ForwardRule, ForwardGroup, RevisionedRule } from "../model/contract";
 import { forwardingSavePayload, initialForwardRule } from "../model/payload";
 import { forwardingStore, useForwardingSnapshot } from "../data/store";
 import type { ForwardingAuthority } from "@/lib/extensions/forwarding/authority";
@@ -31,6 +32,24 @@ export function useForwardingController(host: Host) {
     () => (snapshot.entries ?? []).filter((rule) => rule.hostId === host.id),
     [snapshot.entries, host.id],
   );
+  const [groups, setGroups] = useState<ForwardGroup[]>([]);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void invoke<ForwardGroup[]>("forwarding_groups_list", { hostId: host.id })
+      .then((value) => {
+        if (active) {
+          setGroups(value ?? []);
+          setGroupError(null);
+        }
+      })
+      .catch((cause) => {
+        if (active) setGroupError(translateError(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [host.id, snapshot.entries]);
   const loading = snapshot.entries === null && snapshot.busy;
   const load = forwardingStore.refresh;
   const isActive = (rule: ForwardInfo) =>
@@ -49,6 +68,7 @@ export function useForwardingController(host: Host) {
   const confirm = useDialogs((state) => state.confirm);
   const failure =
     operationFailure ??
+    (groupError ? { target: "list", message: groupError } : null) ??
     (snapshot.error ? { target: "list", message: translateError(snapshot.error) } : null);
   useEffect(() => {
     live.current = true;
@@ -79,41 +99,51 @@ export function useForwardingController(host: Host) {
       if (live.current) setPending(null);
     }
   };
-  const startOnConnection = (
-    targets: readonly RevisionedRule[],
-    sessionId: string,
+  const rememberSession = (session: SshSession) => {
+    useSsh.setState((state) => ({
+      sessions: [...state.sessions.filter((item) => item.id !== session.id), session],
+    }));
+  };
+  const startOne = async (
+    rule: RevisionedRule,
     authority?: ForwardingAuthority,
+    request?: SshConnectRequest,
+    review?: ConnectionReview,
   ) => {
-    void run(targets.length === 1 ? (targets[0]?.id ?? "group") : "group", async () => {
+    const connected = await invoke<SshSession>("forwarding_start_managed", {
+      id: rule.id,
+      expectedRevision: rule.revision,
+      ...(request ? { request, review } : {}),
+      ...(await authorizedArgs(authority)),
+    });
+    rememberSession(connected);
+    return connected;
+  };
+  const startTargets = (targets: readonly RevisionedRule[], authority?: ForwardingAuthority) => {
+    if (!targets.length || mutation.current || !live.current) return;
+    authority?.authorize();
+    void run(targets.length === 1 ? targets[0]!.id : "group", async () => {
       const failures: string[] = [];
-      for (const rule of targets) {
+      for (let index = 0; index < targets.length; index++) {
+        if (!live.current) return;
+        const rule = targets[index]!;
         try {
-          if (!live.current) return;
-          await invoke("forwarding_start", {
-            id: rule.id,
-            sessionId,
-            expectedRevision: rule.revision,
-            ...(await authorizedArgs(authority)),
-          });
+          await startOne(rule, authority);
         } catch (cause) {
-          if (targets.length === 1) throw cause;
+          const message = isIpcError(cause) ? cause.message : String(cause);
+          if (
+            /ssh\.(passwordRequired|passphraseRequired|authFailed|authenticationFailed|hostKeyUntrusted|hostKeyChanged|keyPassphraseRequired|keyAuthFailed|keyLoad|agentUnavailable)/.test(
+              message,
+            )
+          ) {
+            setConnectingRules({ rules: targets.slice(index), authority });
+            break;
+          }
           failures.push(`${rule.name}: ${translateError(cause)}`);
         }
       }
       if (failures.length) throw new Error(failures.join("; "));
     });
-  };
-  const startTargets = (targets: readonly RevisionedRule[], authority?: ForwardingAuthority) => {
-    if (!targets.length || mutation.current || !live.current) return;
-    authority?.authorize();
-    const connected = useSsh
-      .getState()
-      .sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
-    if (!connected) {
-      setConnectingRules({ rules: targets, authority });
-      return;
-    }
-    startOnConnection(targets, connected.id, authority);
   };
   const start = (ids: string[]) => startTargets(rules.filter((rule) => ids.includes(rule.id)));
   const save = (rule: ForwardRule, start: boolean) => {
@@ -129,6 +159,8 @@ export function useForwardingController(host: Host) {
           const saved = await invoke<RevisionedRule>("forwarding_save", {
             ...(await authorizedArgs(draftAuthority)),
             rule: forwardingSavePayload(rule),
+            groupId: rule.groupId ?? null,
+            assignGroup: true,
             ...(rule.automation ? { automation: rule.automation } : {}),
             ...(draft.id ? { expectedRevision: draft.revision } : {}),
           });
@@ -138,21 +170,18 @@ export function useForwardingController(host: Host) {
           if (start) {
             setPending(saved.id);
             setPendingKind("start");
-            const connected = useSsh
-              .getState()
-              .sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
-            if (!connected) setConnectingRules({ rules: [saved], authority: draftAuthority });
-            else {
-              try {
-                await invoke("forwarding_start", {
-                  id: saved.id,
-                  sessionId: connected.id,
-                  expectedRevision: saved.revision,
-                  ...(await authorizedArgs(draftAuthority)),
-                });
-              } catch (cause) {
-                if (live.current) setFailure({ target: saved.id, message: translateError(cause) });
-              }
+            try {
+              await startOne(saved, draftAuthority);
+            } catch (cause) {
+              const message = isIpcError(cause) ? cause.message : String(cause);
+              if (
+                /ssh\.(passwordRequired|passphraseRequired|authFailed|authenticationFailed|hostKeyUntrusted|hostKeyChanged|keyPassphraseRequired|keyAuthFailed|keyLoad|agentUnavailable)/.test(
+                  message,
+                )
+              )
+                setConnectingRules({ rules: [saved], authority: draftAuthority });
+              else if (live.current)
+                setFailure({ target: saved.id, message: translateError(cause) });
             }
           }
         },
@@ -175,7 +204,11 @@ export function useForwardingController(host: Host) {
     setFailure(null);
     setDraftAuthority(authority);
     const native = rules.find((entry) => entry.id === rule.id && entry.revision === rule.revision);
-    setForm({ ...rule, ...(native?.automation ? { automation: native.automation } : {}) });
+    setForm({
+      ...rule,
+      groupId: native?.groupId ?? null,
+      ...(native?.automation ? { automation: native.automation } : {}),
+    });
   };
   const requestRemove = (rule: RevisionedRule, authority?: ForwardingAuthority) => {
     authority?.authorize();
@@ -242,6 +275,7 @@ export function useForwardingController(host: Host) {
   const busy = pending !== null;
   return {
     rules,
+    groups,
     sessions,
     validate: () =>
       forwardingStore.getSnapshot() === snapshot && useSsh.getState().sessions === sessions,
@@ -256,7 +290,6 @@ export function useForwardingController(host: Host) {
     connectingRules,
     start,
     save,
-    startOnConnection,
     closeConnection: () => setConnectingRules(null),
     refresh: () => {
       setFailure(null);
@@ -277,25 +310,31 @@ export function useForwardingController(host: Host) {
     requestRemove,
     requestDisconnect,
     startTargets,
-    /** Accept after authorization and before starting; undelivered sessions stay scope-owned. */
-    connected: async (request: ConnectionRequest, connected: SshSession) => {
-      if (!live.current) return;
-      const authority = request.authority;
-      if (authority) {
-        const accepted = await run("group", async () => {
-          await invoke("forwarding_provider_accept_connection", {
-            sessionId: connected.id,
-            ...(await authorizedArgs(authority)),
-          });
-          authority.authorize();
-          useSsh.setState((state) => ({
-            sessions: [...state.sessions.filter((item) => item.id !== connected.id), connected],
-          }));
-        });
-        // Failed acceptance may have reported an error and must not start any rule.
-        if (!accepted) return;
+    connectAndStart: async (
+      connection: ConnectionRequest,
+      request: SshConnectRequest,
+      review?: ConnectionReview,
+    ) => {
+      const first = connection.rules[0];
+      if (!first) throw new Error("forward.missing");
+      const connected = await startOne(first, connection.authority, request, review);
+      const failures: string[] = [];
+      for (const rule of connection.rules.slice(1)) {
+        if (!live.current) break;
+        try {
+          await startOne(rule, connection.authority, request, review);
+        } catch (cause) {
+          failures.push(`${rule.name}: ${translateError(cause)}`);
+        }
       }
-      startOnConnection(request.rules, connected.id, authority);
+      if (failures.length && live.current)
+        setFailure({ target: "group", message: failures.join("; ") });
+      void load();
+      return connected;
+    },
+    connected: async (_request: ConnectionRequest, connected: SshSession) => {
+      rememberSession(connected);
+      void load();
     },
   };
 }

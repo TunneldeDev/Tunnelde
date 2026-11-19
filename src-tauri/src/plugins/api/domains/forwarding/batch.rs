@@ -93,5 +93,28 @@ pub(super) async fn start(context: &HostContext, params: Value) -> AppResult<Val
     )
 }
 
+pub(super) async fn start_managed(context: &HostContext, params: Value) -> AppResult<Value> {
+    let items: Vec<Target> = field(&params, "items")?;
+    validate("managed", &items)?;
+    let deadline = Instant::now() + BUDGET;
+    encode(
+        run(
+            items,
+            deadline,
+            || authorize(context, &["forwards.write"]),
+            |target| async move {
+                super::start_managed(
+                    context,
+                    &target.id,
+                    &target.expected_revision,
+                    Some(deadline),
+                )
+                .await
+            },
+        )
+        .await?,
+    )
+}
+
 #[cfg(test)]
 mod tests;

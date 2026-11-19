@@ -1,5 +1,7 @@
 # 插件
 
+主机迁移、转发分组及专用连接：[API](forwarding-groups.md)。
+
 可交互主机详情板块与挂载贡献者选择，详见[主机详情扩展](host-details.md)。
 
 现有文件浏览器的发现、分页和宿主操作：[实时浏览器数据](file-browser-data.md)。
@@ -300,7 +302,7 @@ schema 允许新增字段和未知稳定性值，不代表其余方法均已有�
 | `app.read`、`app.openExternal`      | 应用/平台元数据、经验证 HTTP(S) 浏览器链接                        |
 | `settings.read`、`settings.write`   | 读取偏好、合并并校验补丁                                          |
 | `hosts.read`、`hosts.write`         | 主机/分组元数据及增删改、顺序和使用记录                           |
-| `hosts.sshConfig.read`              | 预览本机 OpenSSH 配置中的主机别名、连接设置和私钥路径              |
+| `hosts.sshConfig.read`              | 预览本机 OpenSSH 配置中的主机别名、连接设置和私钥路径             |
 | `sessions.read`、`ssh.exec`         | 连接列表、正常密钥验证后的连接、断开、独立通道命令、终端输入/尺寸 |
 | `fs.read`、`fs.write`               | 本地目录、UTF-8 读写、创建、重命名、复制、删除                    |
 | `sftp.read`、`sftp.write`           | 通过现有 SSH 连接进行对应远端文件操作                             |

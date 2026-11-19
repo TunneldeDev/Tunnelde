@@ -1,4 +1,5 @@
 import {
+  Download,
   ChevronRight,
   FolderClosed,
   FolderPlus,
@@ -50,6 +51,10 @@ import {
   HostDecorationIcon,
   NO_HOST_DECORATIONS,
 } from "./HostDecorations";
+
+import { HostTransferDialogs } from "@/features/hosts/HostTransferDialogs";
+import { SshConfigImportDialog } from "@/features/welcome/SshConfigImportDialog";
+import { useHostTransfer } from "@/lib/hosts/transfer";
 
 const HOST_MIME = "application/x-tunnelde-host";
 
@@ -160,6 +165,11 @@ function HostRow({
       separatorBefore: true,
       icon: <Pencil size={13} />,
       onSelect: () => openHostDialog(host),
+    },
+    {
+      label: t("hostTransfer.exportTitle"),
+      icon: <Download size={13} />,
+      onSelect: () => useHostTransfer.getState().openExport([host.id]),
     },
     { label: t("menu.copySsh"), onSelect: () => copyText(command) },
     { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
@@ -577,6 +587,7 @@ export function HostTree() {
     });
   };
 
+  const [sshImport, setSshImport] = useState(false);
   const isEmpty = hosts.length === 0;
 
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -718,10 +729,29 @@ export function HostTree() {
 
   return (
     <div className="sidebar hosts-sidebar">
+      <HostTransferDialogs />
+      {sshImport && <SshConfigImportDialog onClose={() => setSshImport(false)} />}
       <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
         <SidebarTitle view="hosts">{t("sidebar.hosts")}</SidebarTitle>
-        <IconButton size="sm" label={t("sidebar.newHost")} onClick={() => openHostDialog()}>
-          <Plus size={15} />
+        <Menu
+          label={t("hostTransfer.addMenu")}
+          trigger={<Plus size={15} />}
+          items={[
+            { label: t("sidebar.newHost"), onSelect: () => openHostDialog() },
+            { label: t("sshImport.title"), onSelect: () => setSshImport(true) },
+            {
+              label: t("hostTransfer.importTitle"),
+              onSelect: () => useHostTransfer.getState().openImport(),
+            },
+          ]}
+        />
+        <IconButton
+          size="sm"
+          label={t("hostTransfer.exportTitle")}
+          disabled={!hosts.some((host) => !host.source)}
+          onClick={() => useHostTransfer.getState().openExport()}
+        >
+          <Download size={15} />
         </IconButton>
         <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
           <FolderPlus size={15} />

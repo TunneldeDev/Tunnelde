@@ -16,6 +16,7 @@ pub(crate) fn save(
     rule: ForwardRule,
     expected: Option<&str>,
     options: forwarding::automation::Options,
+    grouping: Option<Option<&str>>,
 ) -> AppResult<RevisionedRule> {
     let scope = access::resolve(app, origin)?;
     access::with_authorized(app, &scope, true, |_| {
@@ -25,7 +26,11 @@ pub(crate) fn save(
         if let Some(revision) = expected {
             access::check_rule(app, &scope, &rule.id, revision)?;
         }
-        forwarding::save_configured(app, rule, expected, options)
+        if let Some(group) = grouping {
+            forwarding::save_grouped(app, rule, expected, options, group)
+        } else {
+            forwarding::save_configured(app, rule, expected, options)
+        }
     })
 }
 pub(crate) fn remove(
@@ -94,4 +99,41 @@ pub(crate) async fn stop(
         )
     })?;
     stopping.finish().await
+}
+
+pub(crate) async fn start_managed(
+    app: &AppHandle,
+    origin: &Origin,
+    id: &str,
+    revision: &str,
+    request: Option<crate::ssh::SshConnectRequest>,
+    review: Option<crate::ssh::session::review::Review>,
+) -> AppResult<crate::ssh::SessionInfo> {
+    let scope = access::resolve(app, origin)?;
+    access::with_authorized(app, &scope, true, |_| {
+        access::check_rule(app, &scope, id, revision)
+    })?;
+    let state = app.state::<AppState>();
+    let prepared = scope
+        .guard(state.plugins.security.guard(
+            &scope.lease,
+            forwarding::prepare_managed(
+                app,
+                id,
+                Some(revision),
+                Some((scope.lease.id.clone(), scope.lease.generation)),
+                request,
+                review,
+            ),
+        ))
+        .await?;
+    let session = prepared.session();
+    access::with_authorized(app, &scope, true, |_| prepared.commit())?;
+    crate::ssh::session::announce_connection(app);
+    state
+        .ssh
+        .list()
+        .into_iter()
+        .find(|item| item.id == session)
+        .ok_or_else(|| AppError::validation("ssh.sessionMissing"))
 }

@@ -37,7 +37,19 @@ fn domain_catalogue_preserves_existing_method_contracts() {
     let actual = keyed(&current);
     let historical = keyed(&previous);
     for (name, contract) in &historical {
-        assert_eq!(actual.get(name), Some(contract), "changed contract: {name}");
+        if name == "forwards.start" {
+            // Isolation is an intentional product change: parameter and grant
+            // contracts stay fixed, while discovery explains the tighter scope.
+            let mut expected = contract.clone();
+            expected["description"] = actual[name]["description"].clone();
+            assert_eq!(
+                actual.get(name),
+                Some(&expected),
+                "changed contract: {name}"
+            );
+        } else {
+            assert_eq!(actual.get(name), Some(contract), "changed contract: {name}");
+        }
     }
     // New methods are explicit additions; keep every historical contract frozen.
     let added: Vec<_> = actual
@@ -86,12 +98,21 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "files.content.read",
             "forwards.automation.list",
             "forwards.automation.save",
+            "forwards.groups.list",
+            "forwards.groups.remove",
+            "forwards.groups.save",
+            "forwards.move",
+            "forwards.startManaged",
             "forwards.startMany",
+            "forwards.startManyManaged",
             "hosts.routes.get",
             "hosts.routes.observe",
             "hosts.routes.save",
             "hosts.sshConfig.import",
             "hosts.sshConfig.preview",
+            "hosts.transfer.apply",
+            "hosts.transfer.export",
+            "hosts.transfer.preview",
             "logs.read",
             "mounts.connections.get",
             "mounts.connections.list",

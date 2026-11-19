@@ -446,6 +446,7 @@ impl StoppedForward {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn prepare(
     registry: &ForwardRegistry,
     rule: &ForwardRule,
@@ -474,6 +475,27 @@ pub(crate) async fn prepare_owned(
         handle,
         routes,
         None,
+        Some(lifetime),
+    )
+    .await
+}
+
+pub(crate) async fn prepare_scoped(
+    registry: &ForwardRegistry,
+    rule: &ForwardRule,
+    session_id: &str,
+    handle: Arc<client::Handle<ClientHandler>>,
+    routes: Arc<RemoteRoutes>,
+    owner: Option<(String, u64)>,
+    lifetime: Arc<dyn Send + Sync>,
+) -> AppResult<PendingForward> {
+    prepare_inner(
+        registry,
+        rule,
+        session_id,
+        handle,
+        routes,
+        owner,
         Some(lifetime),
     )
     .await
@@ -701,7 +723,7 @@ async fn open_uncommitted_forward(
 }
 #[cfg(test)]
 #[path = "forward_tests.rs"]
-mod protocol_tests;
+pub(crate) mod protocol_tests;
 
 #[cfg(test)]
 #[path = "forward_registry_tests.rs"]

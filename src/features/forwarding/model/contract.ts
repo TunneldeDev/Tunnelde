@@ -2,7 +2,14 @@ export interface ForwardAutomation {
   autoStart: boolean;
   autoRetry: boolean;
 }
+export interface ForwardGroup {
+  id: string;
+  hostId: string;
+  name: string;
+  revision: string;
+}
 export interface ForwardRule {
+  groupId?: string | null;
   id: string;
   hostId: string;
   name: string;

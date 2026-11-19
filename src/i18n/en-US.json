@@ -2141,7 +2141,20 @@
     "autoRetry": "Retry automatically",
     "autoRetryHint": "Retry failed starts or interrupted connections with backoff. Manual stops pause recovery; authentication or host key problems require attention.",
     "retrying": "Waiting to retry",
-    "needsAttention": "Needs attention"
+    "needsAttention": "Needs attention",
+    "groupLabel": "Forwarding group",
+    "groupHint": "Rules in a group share one dedicated SSH session. Each other group and each ungrouped rule uses a separate session.",
+    "ungrouped": "Ungrouped",
+    "addGroup": "New forwarding group",
+    "renameGroup": "Rename forwarding group",
+    "groupName": "Group name",
+    "groupMissing": "The group is missing or belongs to another host.",
+    "groupInvalid": "Enter a group name of up to 80 characters.",
+    "groupConnectionChanged": "Connection settings changed. Stop all rules in this group before starting them again.",
+    "groupNotEmpty": "Move the rules out before deleting this group. Stop running rules before moving them.",
+    "groupLimit": "The forwarding group limit has been reached.",
+    "sessionScope": "This SSH session does not belong to the rule’s dedicated connection. Plugins should use forwards.startManaged or forwards.startManyManaged.",
+    "startGroup": "Start group {{name}}"
   },
   "mounts": {
     "shared": {
@@ -2714,5 +2727,29 @@
     "sessionId": "Session ID",
     "sessions_one": "{{count}} active session",
     "sessions_other": "{{count}} active sessions"
+  },
+  "hostTransfer": {
+    "addMenu": "Add host",
+    "exportTitle": "Export hosts",
+    "importTitle": "Import Tunnelde hosts",
+    "exportHint": "Export one or more hosts with folders, jump hosts, proxies, forwards and mounts. Passwords, private keys, tokens and live sessions are excluded.",
+    "importHint": "Hosts with the same name or address, port and username are skipped by default. Required jump hosts are included. All imported configuration uses new identities and does not overwrite existing entries. Importing does not connect or start rules.",
+    "credentialsHint": "Configure passwords, key files and proxy passwords on this device, and review local mount points. System proxy uses this device’s environment. Custom plugin data is not included.",
+    "exported": "Host configuration exported",
+    "exportSelected": "Export {{count}} hosts",
+    "search": "Search hosts",
+    "toggleAll": "Select / deselect all",
+    "copies": "Import selected conflicting hosts as copies",
+    "conflictLabel": "Name or address conflicts with an existing host; skipped by default",
+    "dependency": "Dependency host",
+    "ruleCounts": "{{forwards}} forwards · {{mounts}} mounts",
+    "proxies": "Proxies to import: {{names}} (configure passwords separately)",
+    "mountPoint": "Local mount point for “{{name}}”",
+    "invalid": "Invalid host file, unsupported version or size limit exceeded.",
+    "changed": "The import preview is stale. Refresh and try again.",
+    "conflict": "A selected host or jump host conflicts. Skip it or explicitly import it as a copy.",
+    "tooLarge": "Host files must be no larger than 4 MB.",
+    "notRegularFile": "Choose a regular host file. Directories, special files and exporting to symbolic links are not supported.",
+    "readOnlyFile": "The destination is read-only. Choose another location."
   }
 }

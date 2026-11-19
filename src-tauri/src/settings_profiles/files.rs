@@ -7,6 +7,12 @@ use super::{parse_document, SettingsDocument, MAX_FILE_BYTES};
 use crate::error::{AppError, AppResult};
 
 pub(super) fn read(path: &Path) -> AppResult<SettingsDocument> {
+    let bytes = read_bytes(path, MAX_FILE_BYTES)?;
+    let text =
+        std::str::from_utf8(&bytes).map_err(|_| AppError::validation("profiles.invalidFile"))?;
+    parse_document(text.strip_prefix('\u{feff}').unwrap_or(text))
+}
+pub(crate) fn read_bytes(path: &Path, max: usize) -> AppResult<Vec<u8>> {
     // Windows cannot open directories with ordinary File options. Check first
     // for a useful error, then check the opened handle again before reading.
     if !std::fs::metadata(path)?.is_file() {
@@ -25,22 +31,22 @@ pub(super) fn read(path: &Path) -> AppResult<SettingsDocument> {
     if !metadata.is_file() {
         return Err(AppError::validation("profiles.notRegularFile"));
     }
-    if metadata.len() > MAX_FILE_BYTES as u64 {
+    if metadata.len() > max as u64 {
         return Err(AppError::validation("profiles.tooLarge"));
     }
     let mut bytes = Vec::new();
-    file.take((MAX_FILE_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > MAX_FILE_BYTES {
+    file.take((max + 1) as u64).read_to_end(&mut bytes)?;
+    if bytes.len() > max {
         return Err(AppError::validation("profiles.tooLarge"));
     }
-    let text =
-        std::str::from_utf8(&bytes).map_err(|_| AppError::validation("profiles.invalidFile"))?;
-    parse_document(text.strip_prefix('\u{feff}').unwrap_or(text))
+    Ok(bytes)
 }
 
-pub(super) fn write(target: &Path, bytes: &[u8]) -> AppResult<()> {
-    if bytes.len() > MAX_FILE_BYTES {
+pub(crate) fn write(target: &Path, bytes: &[u8]) -> AppResult<()> {
+    write_bytes(target, bytes, MAX_FILE_BYTES)
+}
+pub(crate) fn write_bytes(target: &Path, bytes: &[u8], max: usize) -> AppResult<()> {
+    if bytes.len() > max {
         return Err(AppError::validation("profiles.tooLarge"));
     }
     write_with(target, |file| file.write_all(bytes))

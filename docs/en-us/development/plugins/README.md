@@ -1,5 +1,7 @@
 # Plugins
 
+Host migration and isolated forwarding groups: [API](forwarding-groups.md).
+
 Interactive host-detail sections and mount contributor selection: [Host details](host-details.md).
 
 [简体中文](../../../zh-cn/development/plugins/README.md)
@@ -392,7 +394,7 @@ old cancellation cleanup affect a newer request. Completed remote effects are no
 | `app.read`, `app.openExternal`      | App/platform metadata; validated HTTP(S) browser links                                                                         |
 | `settings.read`, `settings.write`   | Read preferences; merge and validate preference patches                                                                        |
 | `hosts.read`, `hosts.write`         | Saved-host/group metadata, create/update/delete, order and usage                                                               |
-| `hosts.sshConfig.read`              | Preview host aliases, connection settings and identity paths from the local OpenSSH configuration                               |
+| `hosts.sshConfig.read`              | Preview host aliases, connection settings and identity paths from the local OpenSSH configuration                              |
 | `sessions.read`, `ssh.exec`         | Connected sessions; connect with normal host-key checks, disconnect, separate-channel command execution, terminal input/resize |
 | `fs.read`, `fs.write`               | Local directory listing, UTF-8 text reads/writes, file/folder creation, rename, copy and deletion                              |
 | `sftp.read`, `sftp.write`           | Corresponding remote file operations through existing SSH sessions                                                             |

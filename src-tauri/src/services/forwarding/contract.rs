@@ -26,6 +26,7 @@ pub struct ForwardInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RevisionedRule {
+    pub group_id: Option<String>,
     #[serde(flatten)]
     pub rule: ForwardRule,
     /// Opaque persisted token; changes even when values return to an earlier state.
@@ -34,6 +35,7 @@ pub struct RevisionedRule {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RevisionedInfo {
+    pub group_id: Option<String>,
     pub runtime_id: Option<String>,
     #[serde(flatten)]
     pub info: ForwardInfo,
