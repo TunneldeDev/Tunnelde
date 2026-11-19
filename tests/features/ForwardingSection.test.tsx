@@ -702,7 +702,7 @@ it("shows startup only on the current rule and leaves automatic retries alone in
   ).toEqual(["one", "two"]);
 });
 
-it("disconnects every forwarding connection for the host while preserving terminal sessions", async () => {
+it("disconnects only the confirmed forwarding connections, preserving newer and terminal sessions", async () => {
   const connection = {
     hostId: "host",
     title: "server",
@@ -721,8 +721,14 @@ it("disconnects every forwarding connection for the host while preserving termin
   render(<ForwardingSection host={host} />);
   fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
   const confirmMock = useDialogs.getState().confirm as ReturnType<typeof vi.fn>;
+  expect(confirmMock.mock.calls[0]![0].body).toContain("2 forwarding connections on server");
+  act(() =>
+    useSsh.setState((state) => ({
+      sessions: [...state.sessions, { ...connection, id: "later", purpose: "forwarding" }],
+    })),
+  );
   await act(async () => confirmMock.mock.calls[0]![0].onConfirm());
-  expect(useSsh.getState().sessions.map((session) => session.id)).toEqual(["terminal"]);
+  expect(useSsh.getState().sessions.map((session) => session.id)).toEqual(["terminal", "later"]);
 });
 
 it("saves a rule into the selected group and shows it under that group", async () => {

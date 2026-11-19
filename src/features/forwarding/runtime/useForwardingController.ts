@@ -248,21 +248,21 @@ export function useForwardingController(host: Host) {
       "stop",
     );
   const requestDisconnect = (authority?: ForwardingAuthority) => {
-    if (!session) return;
     authority?.authorize();
+    const targets = useSsh
+      .getState()
+      .sessions.filter((item) => item.hostId === host.id && item.purpose === "forwarding");
+    if (!targets.length) return;
     confirm({
       title: t("forward.disconnectTitle"),
-      body: t("forward.disconnectBody"),
+      body: t("forward.disconnectBody", { count: targets.length, host: host.name }),
       confirmLabel: t("terminal.disconnect"),
       onConfirm: async () => {
         await run(
           "group",
           async () => {
-            const connected = useSsh
-              .getState()
-              .sessions.filter((item) => item.hostId === host.id && item.purpose === "forwarding");
-            if (!connected.length) throw new Error("ssh.sessionMissing");
-            for (const item of connected) {
+            for (const item of targets) {
+              if (!useSsh.getState().sessions.some((current) => current.id === item.id)) continue;
               if (authority) {
                 await invoke("forwarding_provider_disconnect", {
                   sessionId: item.id,
