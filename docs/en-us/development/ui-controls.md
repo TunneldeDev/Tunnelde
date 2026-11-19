@@ -30,3 +30,26 @@ Colors fall back to the existing theme tokens. Keep layout constraints in the
 shared component, feature-specific arrangement in feature CSS, and preserve
 native keyboard, focus, disabled and label behavior. Host file import/export use
 `FileInput`/`FileOutput`; download arrows are reserved for download actions.
+
+## Help and passwords in compact surfaces
+
+`overlay/Tooltip` provides delayed hover, focus and touch/click help, Escape-first
+dismissal, hoverable content, viewport clamping and unmount cleanup. Its portal
+avoids scroll-container clipping. Associate the trigger with the description ID
+passed to its render callback. `form/HelpHint` supplies the circled question mark
+beside a label; keep it outside `<label>` so help never toggles the control.
+Native `title` alone is not adequate for keyboard or touch users.
+
+`Field` and `SwitchRow` inherit `HelpPresentationProvider`: full pages default to
+`inline`, `Dialog` defaults to `tooltip`, and compact panels should provide the
+same context. Override with `hintPresentation` where needed. Dialog's `help`
+appears beside its title, not in a separate body row. Only static explanations
+belong in help: errors, results, security warnings, consent and generated-password
+acknowledgments remain visible (`inline` when necessary). Never infer which text
+to hide from its wording or CSS class.
+
+`PasswordInput` embeds reveal/hide and optional explicit copy actions on the
+right. It supports controlled visibility; revealing never changes the password or
+submits its form. Copy requires an explicit callback and never reads the clipboard.
+Host export selection actions sit before Cancel in the footer and affect only
+shown hosts when filtering.

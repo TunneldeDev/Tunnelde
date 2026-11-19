@@ -383,3 +383,31 @@ it("releases native secret context on unmount, but not during StrictMode replay"
   view.unmount();
   await waitFor(() => expect(release).toHaveBeenCalledWith("native-token"));
 });
+
+it("groups selection with footer actions and embeds reveal/copy in the password field", () => {
+  useHostTransfer.getState().openExport(["a"]);
+  render(<HostTransferDialogs />);
+  const select = screen.getByRole("button", { name: "Select all shown" });
+  const footer = select.closest("footer")!;
+  expect(footer).not.toBeNull();
+  const buttons = Array.from(footer.querySelectorAll("button"));
+  expect(buttons.map((button) => button.textContent)).toEqual([
+    "Select all shown",
+    "Cancel",
+    "Export 1 host",
+  ]);
+  const password = screen.getByLabelText<HTMLInputElement>("Export password");
+  fireEvent.change(password, { target: { value: "secret" } });
+  const reveal = screen.getByRole("button", { name: "Show password" });
+  expect(reveal.closest(".td-password-input")).toBe(password.parentElement);
+  expect(screen.getByRole("button", { name: "Copy password" }).closest(".td-password-input")).toBe(
+    password.parentElement,
+  );
+  fireEvent.click(reveal);
+  expect(password.type).toBe("text");
+  expect(password.value).toBe("secret");
+  expect(screen.getByRole("button", { name: "Help: Export password" })).toBeTruthy();
+  expect(
+    document.querySelector(".host-transfer .td-dialog__body > .ssh-import > p.td-field__hint"),
+  ).toBeNull();
+});

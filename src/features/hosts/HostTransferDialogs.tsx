@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
+import { PasswordInput } from "@/components/ui/form/PasswordInput";
 import { SwitchRow } from "@/components/ui/form/Switch";
 import { copyText } from "@/lib/session/clipboard";
 import { Dialog } from "@/components/ui/overlay/Dialog";
@@ -60,6 +61,23 @@ function ExportHosts({ ids }: { ids?: string[] }) {
       width={560}
       footer={
         <>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="host-transfer__select-all"
+            disabled={busy || !visible.length}
+            onClick={() =>
+              setSelected((current) =>
+                updateSelection(
+                  current,
+                  visible.map((host) => host.id),
+                  !allVisible,
+                ),
+              )
+            }
+          >
+            {t(allVisible ? "hostTransfer.deselectVisible" : "hostTransfer.selectVisible")}
+          </Button>
           <Button variant="ghost" disabled={busy} onClick={close}>
             {t("common.cancel")}
           </Button>
@@ -104,9 +122,13 @@ function ExportHosts({ ids }: { ids?: string[] }) {
       }
     >
       <div className="ssh-import" aria-busy={busy}>
-        <p className="td-field__hint">{t("hostTransfer.exportHint")}</p>
         <SwitchRow
           label={t("hostTransfer.includeCredentials")}
+          hint={
+            <>
+              {t("hostTransfer.exportHint")} {t("hostTransfer.portabilityHint")}
+            </>
+          }
           checked={includeCredentials}
           disabled={busy}
           onChange={(value) => {
@@ -114,7 +136,6 @@ function ExportHosts({ ids }: { ids?: string[] }) {
             if (value) setEncrypt(true);
           }}
         />
-        <p className="td-field__hint">{t("hostTransfer.portabilityHint")}</p>
         <SwitchRow
           label={t("hostTransfer.encrypt")}
           hint={includeCredentials ? t("hostTransfer.encryptionRequiredHint") : undefined}
@@ -129,9 +150,12 @@ function ExportHosts({ ids }: { ids?: string[] }) {
               htmlFor="hosts-export-password"
               hint={t("hostTransfer.passwordHint")}
             >
-              <Input
+              <PasswordInput
                 id="hosts-export-password"
-                type={showPassword ? "text" : "password"}
+                revealed={showPassword}
+                onRevealedChange={setShowPassword}
+                onCopy={password ? () => void copyText(password) : undefined}
+                copyLabel={t("hostTransfer.copyPassword")}
                 autoComplete="new-password"
                 spellCheck={false}
                 maxLength={4096}
@@ -144,16 +168,6 @@ function ExportHosts({ ids }: { ids?: string[] }) {
                 }}
               />
             </Field>
-            <div className="host-transfer__actions">
-              <Button size="sm" disabled={busy} onClick={() => setShowPassword(!showPassword)}>
-                {t(showPassword ? "hostTransfer.hidePassword" : "hostTransfer.showPassword")}
-              </Button>
-              {password && (
-                <Button size="sm" disabled={busy} onClick={() => copyText(password)}>
-                  {t("hostTransfer.copyPassword")}
-                </Button>
-              )}
-            </div>
             {generated && (
               <>
                 <p role="status" className="td-field__hint">
@@ -180,21 +194,6 @@ function ExportHosts({ ids }: { ids?: string[] }) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <Button
-          size="sm"
-          disabled={busy || !visible.length}
-          onClick={() =>
-            setSelected((current) =>
-              updateSelection(
-                current,
-                visible.map((host) => host.id),
-                !allVisible,
-              ),
-            )
-          }
-        >
-          {t(allVisible ? "hostTransfer.deselectVisible" : "hostTransfer.selectVisible")}
-        </Button>
         {!visible.length ? (
           <p className="td-field__hint" role="status">
             {t(hosts.length ? "common.noResults" : "hostTransfer.noSavedHosts")}
@@ -326,6 +325,7 @@ function ImportHosts() {
       className="host-transfer"
       open
       title={t("hostTransfer.importTitle")}
+      help={t("hostTransfer.importHint")}
       closeLabel={t("common.close")}
       onClose={close}
       dismissible={!busy}
@@ -388,7 +388,6 @@ function ImportHosts() {
       }
     >
       <div className="ssh-import" aria-busy={busy}>
-        <p className="td-field__hint">{t("hostTransfer.importHint")}</p>
         {preview && (
           <p className="td-field__hint">
             {t(
@@ -405,9 +404,8 @@ function ImportHosts() {
               htmlFor="hosts-import-password"
               hint={t("hostTransfer.encryptedFileHint")}
             >
-              <Input
+              <PasswordInput
                 id="hosts-import-password"
-                type="password"
                 autoComplete="off"
                 maxLength={4096}
                 disabled={busy}

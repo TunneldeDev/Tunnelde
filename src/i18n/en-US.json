@@ -159,7 +159,10 @@
     "error": "Error",
     "browse": "Browse…",
     "refresh": "Refresh",
-    "noResults": "No matches"
+    "noResults": "No matches",
+    "helpFor": "Help: {{label}}",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "nav": {
     "welcome": "Welcome",

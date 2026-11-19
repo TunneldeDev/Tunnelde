@@ -1,6 +1,7 @@
 import { useId, type ButtonHTMLAttributes, type ReactNode, type Ref } from "react";
 import { cn } from "@/lib/text/format";
 import "./switch.css";
+import { HelpHint, useHelpPresentation, type HelpPresentation } from "./HelpHint";
 
 export interface SwitchProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
@@ -42,21 +43,33 @@ export function Switch({
 
 export interface SwitchRowProps extends SwitchProps {
   hint?: ReactNode;
+  hintPresentation?: HelpPresentation;
   rowClassName?: string;
 }
 
 /** Text takes the available space and wraps; the control never competes for its width. */
-export function SwitchRow({ hint, rowClassName, id, descriptionId, ...props }: SwitchRowProps) {
+export function SwitchRow({
+  hint,
+  hintPresentation,
+  rowClassName,
+  id,
+  descriptionId,
+  ...props
+}: SwitchRowProps) {
+  const compact = useHelpPresentation(hintPresentation) === "tooltip";
   const generatedId = useId();
   const controlId = id ?? generatedId;
-  const hintId = hint ? `${generatedId}-hint` : undefined;
+  const hintId = hint && !compact ? `${generatedId}-hint` : undefined;
   return (
     <div className={cn("td-switch-row", rowClassName)}>
       <div className="td-switch-row__text">
-        <label className="td-switch-row__label" htmlFor={controlId}>
-          {props.label}
-        </label>
-        {hint ? (
+        <div className="td-switch-row__heading">
+          <label className="td-switch-row__label" htmlFor={controlId}>
+            {props.label}
+          </label>
+          {hint && compact ? <HelpHint label={props.label}>{hint}</HelpHint> : null}
+        </div>
+        {hint && !compact ? (
           <p id={hintId} className="td-switch-row__hint">
             {hint}
           </p>
