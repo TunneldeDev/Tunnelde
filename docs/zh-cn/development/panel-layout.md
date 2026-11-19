@@ -57,3 +57,21 @@
 回复前的运行时代次检查保持不变。`workspace://panels-changed` 仅是包含 `{windowId}` 的
 UI 失效通知；RPC 插件应使用 `observe` 并重新读取，不可从事件交付推断当前状态。
 冻结的 `workspace.snapshot` v1 不变。
+
+## 分隔线交点
+
+`SplitGeometryScope` 不增加布局包裹节点，可连接由 React portal 保留的不同正文。
+应用在工作台外统一接入；独立使用 `SplitPanels` 时会自动提供局部作用域。不同 DOM
+根分别处理，因此小窗不会调整无关工作区边界。一个作用域内的 split ID 必须唯一。
+
+宿主按真实分隔线段寻找 T 型或十字交点。交点可同时调整两轴，相接的同轴线段共同
+移动，无关线段不参与。各参与者使用自己的容器尺寸和上下限，按最严格的公共位移
+限制保持对齐。预览复用帧级指针控制，不重渲染正文或逐次持久化；Escape、指针取消、
+失焦和卸载恢复最新受控比例。方向键调整单轴，Shift 精细调整，Home 或双击重置。
+
+为 `PanelLayout` 提供 `onResizeMany` 以原子更新一个所有者的布局。工作台通过
+`workspace.resizeSplits` 一次发布两轴变更。独立控件保留 `onRatioChange`；跨不同
+业务所有者的手势按所有者各提交一次，不声称独立持久化适配器属于同一数据库事务。
+插件可通过实验性的 `workspace.resizeSplits({ratios:{splitId:ratio,...}})` 操作，
+需要 `workspace.write`；一至三十二个已知 ID 和有限的 0.1–0.9 比例全部通过校验后
+才执行一次变更，既有工作区尺寸限制仍会钳制比例。冻结的 workspace v1 不变。

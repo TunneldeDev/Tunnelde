@@ -75,3 +75,29 @@ Normal request authorization, cancellation and final runtime-generation checks
 remain in place. `workspace://panels-changed` is an advisory UI invalidation with
 only `{windowId}`; RPC plugins should use `observe` and reread the snapshot, not
 infer state from a delivered event. Frozen `workspace.snapshot` v1 is unchanged.
+
+## Intersecting separators
+
+`SplitGeometryScope` joins layouts across retained React portals without adding a
+layout wrapper. The application installs one scope around its workbench; an
+isolated `SplitPanels` consumer gets a local scope automatically. Connected DOM
+roots are handled separately, so a floating panel cannot resize an unrelated
+workspace boundary. Split IDs must be unique within a scope.
+
+The host measures actual separator segments to find T/cross junctions. A junction
+handle moves both axes; touching collinear segments move together, while unrelated
+segments are excluded. Bounds are calculated in each participant's own container,
+and the tightest common displacement preserves alignment at minimum sizes.
+Previews use the same frame-bound pointer primitive and never rerender pane
+contents or persist each movement. Escape, cancellation, focus loss and teardown
+restore current controlled ratios. Arrow keys adjust one axis, Shift reduces the
+step, and Home/double-click resets the participating splits.
+
+Provide `PanelLayout.onResizeMany` for an atomic owner update. The workbench uses
+`workspace.resizeSplits` to publish both axes once. Standalone controls retain
+`onRatioChange`; a gesture spanning different feature owners commits once per
+owner, without pretending independent persistence adapters are one database
+transaction. Plugin callers can use experimental
+`workspace.resizeSplits({ratios:{splitId:ratio,...}})` with `workspace.write`:
+1–32 known IDs and finite 0.1–0.9 ratios are fully validated before one mutation;
+existing workspace size limits still clamp values. Frozen workspace v1 is unchanged.

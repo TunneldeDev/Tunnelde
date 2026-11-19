@@ -1,0 +1,65 @@
+# Development and UX conventions
+
+These conventions apply to built-in features and plugin contributions. Keep this
+page durable; put temporary plans, screenshots and handoff notes in `.tmp/`.
+
+## Product and presentation
+
+- Refine the existing design incrementally. Avoid broad visual redesigns when a
+  small hierarchy, spacing or alignment fix resolves the problem.
+- Reuse the shared control wrappers and theme tokens. Controls must not shrink
+  their switches/icons under long labels. Use continuous-corner surfaces where
+  supported and the existing platform fallback; do not invent unrelated radii.
+- The default panel is the integrated workbench container, internally composed
+  from reusable primitives. Business features supply one content implementation,
+  not independent floating and docked variants. Special-purpose surfaces may use
+  primitives directly, but this is not the default integration burden.
+- Related actions belong together: creation beside creation; refresh and overflow
+  follow. Distinguish headings, group labels, content rows and their actions.
+- In space-constrained dialogs, place ordinary explanation behind a nearby help
+  icon/tooltip. Spacious settings pages may show inline secondary text. Never hide
+  security consent, destructive consequences, validation errors or recovery steps
+  solely in a tooltip. Keep keyboard/focus access and Escape ordering intact.
+- Password visibility belongs inside the input as an eye action. Keep selection
+  tools near the footer actions rather than adding an unnecessary full row.
+- Native scrolling, text cursors, editor selection/undo, line numbers, consistent
+  CJK/Latin monospace metrics and responsive input are core UX, not decorations.
+
+## Ownership, resources and API coverage
+
+- A presentation change moves a view; it must not reconnect SSH, restart plugin
+  runtimes, duplicate background work or discard user drafts. Keep one resource
+  owner. Hiding and stopping/disconnecting are distinct operations.
+- Reuse the shared layout/pointer primitives. Preview geometry at most once per
+  frame, persist on release, and roll back interrupted gestures. Batch related
+  split changes in one owner transaction; do not remount content to resize it.
+- Built-in capabilities should have discoverable, permission-checked plugin APIs
+  rather than ad-hoc private integrations. Discovery does not grant authority;
+  freeze published contracts and add versioned/experimental surfaces separately.
+- Host-managed connections and shared configuration belong to the host, not a
+  single plugin's UI lifetime. Plugin messaging never grants another plugin's
+  permissions or makes untrusted messages authoritative.
+- Native window and runtime generations are security boundaries. Do not remove
+  main-window checks or duplicate bootstrap just to make an extra WebView work.
+  Cross-WebView moves need explicit ownership, cancellation and rollback.
+- Do not persist or log plaintext passwords, private keys or secret view drafts in
+  layouts. Retain explicit user confirmation for credential-bearing operations.
+
+## Delivery and collaboration
+
+- Use isolated branches/worktrees and reviewable PRs. Never overwrite a dirty
+  sibling repository or unrelated user edits. Clean obsolete branches/worktrees
+  only after the work is merged and no longer needed.
+- Merge PRs individually after complete CI on their exact head, preserving a PR
+  record and the linear development history. Update/retest remaining PRs against
+  the new base. Resolve P0–P2 findings before merging; do not bypass failed checks.
+- Publish a beta after roughly one to three coherent features and a final
+  acceptance beta after the requested scope is complete. Use the automated
+  immutable release snapshot workflow; verify platform builds, release assets,
+  signatures and updater metadata. A beta is not a claim of stable acceptance.
+- Keep English and Chinese development guidance and UI translations aligned.
+  Document real limitations instead of marking partially implemented work done.
+- Coding subagents may use only `deepseek-ai/DeepSeek-V4.1-Flash` unless the
+  maintainer explicitly changes the allowlist. If unavailable, work directly;
+  do not silently substitute another model. Contributors implement and revise;
+  the coordinating reviewer remains responsible for review, merge and release.

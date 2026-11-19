@@ -1,3 +1,4 @@
+import { SplitGeometryScope } from "@/components/ui/layout/SplitGeometry";
 import { subscribePanels } from "@/lib/panels/observation";
 import { ShortcutConflictDialog } from "@/features/settings/ShortcutConflictDialog";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -220,121 +221,127 @@ export function AppShell() {
   } as CSSProperties;
 
   return (
-    <div
-      ref={app}
-      className={cn(
-        "app",
-        isTauri() && settings.titleBarStyle === "compact" && "is-compact-chrome",
-        os === "macos" && "is-macos",
-        sidebarVisible && "has-sidebar",
-        settings.rightPanel && "has-panel",
-        !settings.showStatusBar && "is-statusbar-hidden",
-      )}
-      style={style}
-    >
-      <WindowTitleBar />
-      <ProviderSurface
-        target="workbench"
-        slots={surfaces.slots}
-        validate={surfaces.hasWorkspace}
-        subscribe={surfaces.subscribe}
+    <SplitGeometryScope>
+      <div
+        ref={app}
+        className={cn(
+          "app",
+          isTauri() && settings.titleBarStyle === "compact" && "is-compact-chrome",
+          os === "macos" && "is-macos",
+          sidebarVisible && "has-sidebar",
+          settings.rightPanel && "has-panel",
+          !settings.showStatusBar && "is-statusbar-hidden",
+        )}
+        style={style}
       >
-        <div className="app__body">
-          <surfaces.slots.Navigation />
-          <surfaces.slots.Workspace />
-          <surfaces.slots.Inspector />
-        </div>
-        <surfaces.slots.StatusBar />
-      </ProviderSurface>
-      <SidebarContents />
-      <WorkspaceContents />
-      {createPortal(
-        <>
-          <ActivityBar />
-          <SidebarArea />
-          {sidebarVisible ? (
-            <Resizer
-              value={sidebarWidth}
-              min={220}
-              max={420}
-              edge="right"
-              label="Sidebar width"
-              onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
-              onCommit={(value) => {
-                void updateSettings({ sidebarWidth: Math.round(value) });
-              }}
+        <WindowTitleBar />
+        <ProviderSurface
+          target="workbench"
+          slots={surfaces.slots}
+          validate={surfaces.hasWorkspace}
+          subscribe={surfaces.subscribe}
+        >
+          <div className="app__body">
+            <surfaces.slots.Navigation />
+            <surfaces.slots.Workspace />
+            <surfaces.slots.Inspector />
+          </div>
+          <surfaces.slots.StatusBar />
+        </ProviderSurface>
+        <SidebarContents />
+        <WorkspaceContents />
+        {createPortal(
+          <>
+            <ActivityBar />
+            <SidebarArea />
+            {sidebarVisible ? (
+              <Resizer
+                value={sidebarWidth}
+                min={220}
+                max={420}
+                edge="right"
+                label="Sidebar width"
+                onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
+                onCommit={(value) => {
+                  void updateSettings({ sidebarWidth: Math.round(value) });
+                }}
+              />
+            ) : null}
+          </>,
+          surfaces.container("navigation"),
+        )}
+        {createPortal(
+          <main className="workspace" ref={workspace}>
+            <PaneLayout />
+            {tabDrag ? (
+              <div className="pane-edges">
+                {EDGES.map((item) => (
+                  <div
+                    key={item.edge}
+                    className={cn(
+                      "pane-edge",
+                      `is-${item.edge}`,
+                      edge === item.edge && "is-active",
+                    )}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </main>,
+          surfaces.container("workspace"),
+        )}
+        {createPortal(
+          <>
+            {settings.rightPanel ? (
+              <Resizer
+                value={panelWidth}
+                min={240}
+                max={460}
+                edge="left"
+                label="Panel width"
+                onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
+                onCommit={(value) => {
+                  void updateSettings({ rightPanelWidth: Math.round(value) });
+                }}
+              />
+            ) : null}
+            {activeSession ? (
+              <RemotePanel
+                sessionId={activeSession.id}
+                width={panelWidth}
+                hidden={!settings.rightPanel}
+                onHide={() => void updateSettings({ rightPanel: false })}
+              />
+            ) : (
+              <SystemPanel
+                width={panelWidth}
+                hidden={!settings.rightPanel}
+                onHide={() => void updateSettings({ rightPanel: false })}
+              />
+            )}
+          </>,
+          surfaces.container("inspector"),
+        )}
+        {createPortal(
+          settings.showStatusBar ? (
+            <StatusBar
+              panelOpen={settings.rightPanel}
+              onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
             />
-          ) : null}
-        </>,
-        surfaces.container("navigation"),
-      )}
-      {createPortal(
-        <main className="workspace" ref={workspace}>
-          <PaneLayout />
-          {tabDrag ? (
-            <div className="pane-edges">
-              {EDGES.map((item) => (
-                <div
-                  key={item.edge}
-                  className={cn("pane-edge", `is-${item.edge}`, edge === item.edge && "is-active")}
-                />
-              ))}
-            </div>
-          ) : null}
-        </main>,
-        surfaces.container("workspace"),
-      )}
-      {createPortal(
-        <>
-          {settings.rightPanel ? (
-            <Resizer
-              value={panelWidth}
-              min={240}
-              max={460}
-              edge="left"
-              label="Panel width"
-              onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
-              onCommit={(value) => {
-                void updateSettings({ rightPanelWidth: Math.round(value) });
-              }}
-            />
-          ) : null}
-          {activeSession ? (
-            <RemotePanel
-              sessionId={activeSession.id}
-              width={panelWidth}
-              hidden={!settings.rightPanel}
-              onHide={() => void updateSettings({ rightPanel: false })}
-            />
-          ) : (
-            <SystemPanel
-              width={panelWidth}
-              hidden={!settings.rightPanel}
-              onHide={() => void updateSettings({ rightPanel: false })}
-            />
-          )}
-        </>,
-        surfaces.container("inspector"),
-      )}
-      {createPortal(
-        settings.showStatusBar ? (
-          <StatusBar
-            panelOpen={settings.rightPanel}
-            onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
-          />
-        ) : null,
-        surfaces.container("statusbar"),
-      )}
-      <ToastHost />
-      <DialogHost />
-      <ShortcutConflictDialog />
-      <ContextMenuHost />
-      <CommandPalette />
-      <RestartPrompt />
-      <FormatterPicker />
-      <FilePreview />
-      <FloatingPanelLayer />
-      {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
-    </div>
+          ) : null,
+          surfaces.container("statusbar"),
+        )}
+        <ToastHost />
+        <DialogHost />
+        <ShortcutConflictDialog />
+        <ContextMenuHost />
+        <CommandPalette />
+        <RestartPrompt />
+        <FormatterPicker />
+        <FilePreview />
+        <FloatingPanelLayer />
+        {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
+      </div>
+    </SplitGeometryScope>
   );
 }

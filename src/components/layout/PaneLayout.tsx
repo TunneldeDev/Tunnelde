@@ -18,6 +18,7 @@ export function PaneLayout() {
   const layout = useWorkspace((state) => state.layout);
   const panes = useWorkspace((state) => state.panes);
   const tabs = useWorkspace((state) => state.tabs);
+  const resizeMany = useWorkspace((state) => state.resizeSplits);
   const resize = useWorkspace((state) => state.resizeSplit);
   const onResize = useCallback((id: string, ratio: number) => resize(id, ratio), [resize]);
   return (
@@ -25,6 +26,7 @@ export function PaneLayout() {
       layout={visibleWorkspaceLayout(layout, panes, tabs)}
       renderPane={renderPane}
       onResize={onResize}
+      onResizeMany={resizeMany}
       resizeLabel={t("tab.resizeGroup")}
       className="pane-layout"
       childClassName="pane-layout__child"

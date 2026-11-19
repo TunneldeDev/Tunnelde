@@ -6,6 +6,7 @@ export interface PanelLayoutProps {
   layout: PanelLayoutNode;
   renderPane: (paneId: string) => ReactNode;
   onResize: (splitId: string, ratio: number) => void;
+  onResizeMany?: (ratios: Record<string, number>) => void;
   resizeLabel: string;
   className?: string;
   childClassName?: string;
@@ -16,15 +17,18 @@ export const PanelLayout = memo(function PanelLayout({
   layout,
   renderPane,
   onResize,
+  onResizeMany,
   resizeLabel,
   className,
   childClassName,
 }: PanelLayoutProps) {
   if (layout.kind === "pane") return renderPane(layout.paneId);
-  const props = { renderPane, onResize, resizeLabel, className, childClassName };
+  const props = { renderPane, onResize, onResizeMany, resizeLabel, className, childClassName };
   return (
     <SplitPanels
       key={`${layout.id}:${layout.direction}`}
+      splitId={layout.id}
+      onResizeBatch={onResizeMany}
       direction={layout.direction}
       ratio={layout.ratio}
       onRatioChange={(ratio) => onResize(layout.id, ratio)}
