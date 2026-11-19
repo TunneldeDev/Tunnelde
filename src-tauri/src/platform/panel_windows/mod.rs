@@ -1,6 +1,6 @@
-//! Native multiwindow control plane. UI adapter integration is developed here
-//! before enabling the production command surface.
+//! Native multiwindow control plane and generation-fenced view ownership.
 mod geometry;
+pub(crate) mod native;
 mod ownership;
 mod protocol;
 #[cfg(test)]

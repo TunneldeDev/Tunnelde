@@ -16,5 +16,4 @@ pub mod window;
 
 pub mod restart;
 
-#[cfg(test)]
-mod panel_windows;
+pub(crate) mod panel_windows;

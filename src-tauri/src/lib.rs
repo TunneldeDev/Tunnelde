@@ -25,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(automation::transport::Lifecycle::default())
         .manage(window::StartupWindow::default())
+        .manage(platform::panel_windows::native::Registry::default())
         .manage(window::close::Registry::default())
         .manage(platform::application_actions::Registry::default())
         .manage(platform::background::BackgroundWindow::default())
@@ -90,6 +91,12 @@ pub fn run() {
         }))
         .on_page_load(|webview, payload| {
             use tauri::Manager;
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                platform::panel_windows::native::navigation_started(
+                    webview.app_handle(),
+                    webview.label(),
+                );
+            }
             if webview.label() == "main"
                 && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
             {
@@ -98,8 +105,15 @@ pub fn run() {
             }
         })
         .on_window_event(|window, event| {
+            use tauri::Manager;
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Focused(_)) {
+                platform::panel_windows::native::native_event(
+                    window.app_handle(),
+                    window.label(),
+                    event,
+                );
+            }
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
-                use tauri::Manager;
                 platform::application_actions::reset(window.app_handle());
                 window.state::<preview::Registry>().clear();
                 window
@@ -117,12 +131,14 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(window::SAVED_STATE_FLAGS)
                 .skip_initial_state("main")
+                .with_filter(|label| label == "main")
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
+            platform::panel_windows::native::start(&handle);
             services::forwarding::automation::start(&handle);
             services::mounts::runtime::launch(&handle);
             automation::transport::start(&handle);
@@ -165,6 +181,12 @@ pub fn run() {
             services::forwarding::start::commands::forwarding_start_cancel,
             services::forwarding::start::commands::forwarding_start_release_ui,
             window::main_window_ready,
+            platform::panel_windows::native::panel_window_initialize,
+            platform::panel_windows::native::panel_window_control,
+            platform::panel_windows::native::panel_window_create,
+            platform::panel_windows::native::panel_window_show,
+            platform::panel_windows::native::panel_window_destroy,
+            platform::panel_windows::native::panel_window_drop_target,
             platform::restart::app_restart,
             platform::application_actions::application_action_claim,
             platform::application_actions::application_action_release,

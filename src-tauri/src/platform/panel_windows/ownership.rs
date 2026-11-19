@@ -21,14 +21,14 @@ fn token() -> String {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct Lease {
+pub(crate) struct Lease {
     pub panel_id: String,
     pub window_id: String,
     pub generation: u64,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct WindowInfo {
+pub(crate) struct WindowInfo {
     pub id: String,
     pub ready: bool,
     pub closing: bool,
@@ -121,6 +121,11 @@ impl Ownership {
             panel.checkpoint_revision = 0;
         }
         Ok(document)
+    }
+    pub fn document(&self, window: &str) -> Option<&str> {
+        self.windows
+            .get(window)
+            .map(|document| document.id.as_str())
     }
     pub fn authorize(&self, window: &str, document: &str) -> Result<()> {
         if self

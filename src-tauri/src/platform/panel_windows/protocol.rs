@@ -12,8 +12,11 @@ use std::time::Instant;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-pub(super) enum Command {
+pub(crate) enum Command {
     Snapshot {},
+    Authorize {
+        lease: Lease,
+    },
     Ready {},
     AddPanel {
         panel_id: String,
@@ -75,6 +78,10 @@ impl Ownership {
             Command::Snapshot {} => Ok(
                 json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?}),
             ),
+            Command::Authorize { lease } => {
+                self.action(window, document, &lease)?;
+                Ok(Value::Null)
+            }
             Command::Ready {} => {
                 self.ready(window, document)?;
                 Ok(Value::Null)

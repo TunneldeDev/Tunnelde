@@ -21,6 +21,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "@/App";
+import { SatelliteApp } from "@/app/SatelliteApp";
 import "@/i18n/i18n";
 
 const container = document.getElementById("root");
@@ -30,6 +31,10 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    {new URLSearchParams(window.location.search).get("panelWindow") === "1" ? (
+      <SatelliteApp />
+    ) : (
+      <App />
+    )}
   </StrictMode>,
 );

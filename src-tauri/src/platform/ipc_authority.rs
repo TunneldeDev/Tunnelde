@@ -3,15 +3,32 @@
 //! separate; giving a satellite native window controls must not implicitly give
 //! it every host/SSH/credential/application command in generate_handler!.
 
-fn coordinator(label: &str) -> bool {
+use tauri::Manager;
+
+fn allowed(label: &str, command: &str, registered: bool) -> bool {
     label == "main"
+        || (registered
+            && matches!(
+                command,
+                "panel_window_initialize"
+                    | "panel_window_control"
+                    | "panel_window_show"
+                    | "panel_window_destroy"
+                    | "panel_window_drop_target"
+            ))
 }
 
-pub(crate) fn guard<R: tauri::Runtime>(
-    handler: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
-) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+pub(crate) fn guard(
+    handler: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     move |invoke| {
-        if !coordinator(invoke.message.webview_ref().label()) {
+        let webview = invoke.message.webview_ref();
+        let command = invoke.message.command();
+        if !allowed(
+            webview.label(),
+            command,
+            super::panel_windows::native::registered(webview.app_handle(), webview.label()),
+        ) {
             invoke
                 .resolver
                 .reject(crate::error::AppError::validation("invalid window"));
@@ -25,19 +42,42 @@ pub(crate) fn guard<R: tauri::Runtime>(
 mod tests {
     use super::*;
     #[test]
-    fn similar_unregistered_and_future_panel_labels_have_no_application_authority() {
-        assert!(coordinator("main"));
+    fn window_control_permissions_cannot_be_used_to_escalate_application_authority() {
+        for command in [
+            "hosts_snapshot",
+            "host_create",
+            "ssh_connect",
+            "ssh_disconnect",
+            "clipboard_read_text",
+            "plugin_frontend_open",
+            "settings_update",
+            "main_window_suspend",
+            "panel_window_create",
+        ] {
+            assert!(allowed("main", command, false));
+            assert!(!allowed("panel-one", command, true));
+            assert!(!allowed("panel-one", command, false));
+        }
+        for command in [
+            "panel_window_initialize",
+            "panel_window_control",
+            "panel_window_show",
+            "panel_window_destroy",
+            "panel_window_drop_target",
+        ] {
+            assert!(allowed("panel-one", command, true));
+            assert!(!allowed("panel-one", command, false));
+        }
         for label in [
             "",
             "Main",
             "main/subview",
             "main-window",
             "panel-one",
-            "panel-main",
             "plugin-main",
             "main\0",
         ] {
-            assert!(!coordinator(label));
+            assert!(!allowed(label, "ssh_connect", true));
         }
     }
 }

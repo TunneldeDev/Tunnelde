@@ -2818,6 +2818,7 @@
     "exportChanged": "导出期间主机配置发生变化，请重新导出。"
   },
   "panels": {
+    "windowInitializationFailed": "无法初始化面板窗体。",
     "moveHint": "移动面板 · 方向键移动 · Shift 精细调整 · Escape 取消",
     "resizeHint": "调整面板大小 · 方向键缩放 · Shift 精细调整",
     "resetLayout": "重置面板布局",

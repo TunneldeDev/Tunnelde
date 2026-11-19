@@ -2818,6 +2818,7 @@
     "exportChanged": "Host configuration changed during export. Try exporting again."
   },
   "panels": {
+    "windowInitializationFailed": "Could not initialize the panel window.",
     "moveHint": "Move panel · arrow keys move · Shift for fine adjustment · Escape cancels",
     "resizeHint": "Resize panel · arrow keys resize · Shift for fine adjustment",
     "resetLayout": "Reset panel layout",
