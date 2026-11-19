@@ -2818,6 +2818,12 @@
     "exportChanged": "Host configuration changed during export. Try exporting again."
   },
   "panels": {
+    "inOtherWindow": "This panel is open in another window.",
+    "focusWindow": "Show window",
+    "newWindow": "Move to a new window",
+    "moveToWindow": "Move to window {{index}}",
+    "returnToMainWindow": "Return to main window",
+    "transferFailed": "Could not move the panel.",
     "windowInitializationFailed": "Could not initialize the panel window.",
     "moveHint": "Move panel · arrow keys move · Shift for fine adjustment · Escape cancels",
     "resizeHint": "Resize panel · arrow keys resize · Shift for fine adjustment",

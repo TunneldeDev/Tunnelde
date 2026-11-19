@@ -103,3 +103,34 @@ transaction. Plugin callers can use experimental
 `workspace.resizeSplits({ratios:{splitId:ratio,...}})` with `workspace.write`:
 1–32 known IDs and finite 0.1–0.9 ratios are fully validated before one mutation;
 existing workspace size limits still clamp values. Frozen workspace v1 is unchanged.
+
+## Native view handoff (in development)
+
+Native windows are not a second application bootstrap. `panel_windows` registers
+host-issued document identities and generation-fenced panel leases; a move is
+prepare → inert destination render → acknowledgement → singleton-main commit.
+A timed-out, cancelled, reloaded or retired destination never acquires authority.
+Closing a satellite returns its views before native destruction. Recovery uses
+bounded in-memory checkpoints, not persisted drafts or feature-store clones.
+
+An adapter must explicitly opt into `windowViews.transferablePanel`. The first
+adapter is connection details: main publishes a credential-free projection;
+`ConnectionModelScope` renders the same content in a satellite without hydrating
+writable application stores. `usePanelViewState` opts local React fields into a
+capsule; stable DOM markers preserve scroll/caret separately. A staged tree stays
+inert and is promoted without remounting. Committed state changes and DOM events
+schedule bounded native checkpoints. Never acknowledge a spinner/empty shell.
+
+The private native control grammar is closed. Model publication is coordinator-
+only; reads require an exact current lease or an active staged-destination offer.
+Metadata/events contain no model, credential draft or document token. Satellite
+application IPC is default-deny. Connection actions use a dedicated lease-checked
+native gateway, not an arbitrary command proxy; moving/closing is fenced until
+native cleanup completes, including during document reload. Status entry points
+focus the actual owner instead of creating a second main-window content owner.
+
+This is incremental implementation, not a claim of complete multiwindow support.
+Other built-ins/plugin views, multi-panel satellite docking and native cross-window
+drag-and-drop still need their adapters and platform acceptance. Do not advertise
+those capabilities or widen gateway permissions to hide an incomplete adapter.
+The public plugin workspace v1 contract remains unchanged.

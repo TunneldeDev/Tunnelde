@@ -1,3 +1,5 @@
+import { usePanelWindows } from "@/store/panelWindows";
+import { windowViews } from "@/lib/panels/windowViews";
 import {
   createContext,
   useContext,
@@ -59,14 +61,23 @@ export function WorkbenchPanel({
   view,
   location,
   visible,
+  showTitle = false,
   children,
 }: {
   view: SidebarView;
   location: PanelPresentation;
   visible: boolean;
+  showTitle?: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const windowId = usePanelWindows((state) => state.windowId);
+  const close = () => {
+    if (windowId === "main") closePanel(view);
+    else {
+      void windowViews()?.close?.();
+    }
+  };
   const store = panelPresentation(view);
   const pinned = store((state) => state.pinned);
   const bounds = store((state) => state.bounds);
@@ -142,7 +153,7 @@ export function WorkbenchPanel({
             )
               return;
             event.stopPropagation();
-            closePanel(view);
+            close();
           }}
         >
           <header
@@ -173,7 +184,7 @@ export function WorkbenchPanel({
                 </span>
                 <strong>{sidebarLabel(view, t)}</strong>
               </button>
-            ) : location === "sidebar" ? (
+            ) : location === "sidebar" || showTitle ? (
               <SidebarTitle view={view}>{sidebarLabel(view, t)}</SidebarTitle>
             ) : (
               <span className="workbench-panel__spacer" />
@@ -195,12 +206,7 @@ export function WorkbenchPanel({
                 </IconButton>
               </>
             ) : null}
-            <IconButton
-              size="sm"
-              ref={closeButton}
-              label={t("common.close")}
-              onClick={() => closePanel(view)}
-            >
+            <IconButton size="sm" ref={closeButton} label={t("common.close")} onClick={close}>
               <X size={14} />
             </IconButton>
           </header>

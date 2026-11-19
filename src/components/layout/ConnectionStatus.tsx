@@ -3,9 +3,9 @@ import { useWorkspace } from "@/store/workspace";
 import { panelPresentation } from "@/store/panelPresentation";
 import { togglePanel } from "@/lib/panels/controller";
 import { PanelHeader } from "./WorkbenchPanel";
-import { useHosts } from "@/store/hosts";
+import { useConnectionPanelModel } from "@/lib/panels/connectionModel";
 import { useTranslation } from "react-i18next";
-import { Disclosure } from "@/components/ui/layout/Disclosure";
+import { ConnectionDisclosure } from "./ConnectionDisclosure";
 import { ConnectionSession } from "./ConnectionSession";
 import { useSsh } from "@/store/ssh";
 import "./connectionStatus.css";
@@ -41,9 +41,7 @@ export function ConnectionStatus() {
 
 export function ConnectionDetails() {
   const { t } = useTranslation();
-  const sessions = useSsh((state) => state.sessions);
-  const history = useSsh((state) => state.history);
-  const hosts = useHosts((state) => state.hosts);
+  const { sessions, history, hosts } = useConnectionPanelModel();
   const recent = history.filter(
     (entry) =>
       entry.endedAt !== null && !sessions.some((session) => session.id === entry.session.id),
@@ -52,7 +50,7 @@ export function ConnectionDetails() {
   return (
     <div className="connection-panel">
       <PanelHeader view="connections" />
-      <div className="connection-panel__body">
+      <div className="connection-panel__body" data-panel-scroll="connections.body">
         <div className="connection-panel__overview" role="status">
           <strong>{t("status.connections", { count: sessions.length })}</strong>
           <span>{t("connections.sessions", { count: sessions.length })}</span>
@@ -84,7 +82,11 @@ export function ConnectionDetails() {
         )}
         <p className="connection-list__summary">{t("connections.historyHint")}</p>
         {!!recent.length && (
-          <Disclosure heading={t("connections.recent")} summary={String(recent.length)}>
+          <ConnectionDisclosure
+            stateKey="connections.recent"
+            heading={t("connections.recent")}
+            summary={String(recent.length)}
+          >
             <ul className="connection-list">
               {recent.map((entry) => (
                 <ConnectionSession
@@ -95,7 +97,7 @@ export function ConnectionDetails() {
                 />
               ))}
             </ul>
-          </Disclosure>
+          </ConnectionDisclosure>
         )}
       </div>
     </div>

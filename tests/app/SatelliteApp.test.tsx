@@ -10,17 +10,23 @@ beforeEach(() => {
   mock.bootstrap.mockReset();
 });
 afterEach(cleanup);
-it("does not start resource bootstrap or acknowledge a view before its adapter is attached", async () => {
+it("readies a view-only document but never starts main bootstrap or acknowledges nonexistent content", async () => {
   const client = {
+    windowId: "panel-one",
+    snapshot: vi.fn().mockResolvedValue({ windows: [], panels: [], transfers: [] }),
+    subscribe: vi.fn().mockResolvedValue(() => {}),
+    show: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn(),
     onClose: vi.fn().mockResolvedValue(() => {}),
-    control: vi.fn(),
+    control: vi.fn().mockResolvedValue(null),
   };
   mock.initialize.mockResolvedValue(client);
   const view = render(<SatelliteApp />);
   await waitFor(() => expect(client.onClose).toHaveBeenCalledTimes(1));
   expect(mock.bootstrap).not.toHaveBeenCalled();
-  expect(client.control).not.toHaveBeenCalled();
+  // Empty windows remain hidden until real content and matching chrome exist.
+  expect(client.show).not.toHaveBeenCalled();
+  expect(client.control.mock.calls.map(([request]) => request)).toEqual([{ action: "ready" }]);
   view.unmount();
   expect(client.dispose).toHaveBeenCalledTimes(1);
 });

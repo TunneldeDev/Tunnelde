@@ -2,7 +2,7 @@
 //! native caller, not a label or token claimed by JavaScript.
 use super::{
     geometry,
-    ownership::{Ownership, MAIN},
+    ownership::{Lease, Ownership, MAIN},
     protocol::Command,
 };
 use crate::error::{AppError, AppResult};
@@ -99,6 +99,9 @@ pub(crate) fn panel_window_control(
             | Command::Authorize { .. }
             | Command::View { .. }
             | Command::Staged { .. }
+            | Command::ReadModel { .. }
+            | Command::BeginModel { .. }
+            | Command::StagedModel { .. }
             | Command::Checkpoint { .. }
             | Command::IssueDrag { .. }
             | Command::AcceptDrag { .. }
@@ -383,4 +386,80 @@ pub(crate) fn start(app: &AppHandle) {
             }
         }
     });
+}
+
+// The closed gateway does not accept an arbitrary command, host, credentials,
+// or target window. Native identity + current lease authorize every action.
+#[tauri::command]
+pub(crate) async fn panel_window_disconnect(
+    app: AppHandle,
+    window: WebviewWindow,
+    document: String,
+    lease: Lease,
+    session_id: String,
+) -> AppResult<()> {
+    if session_id.is_empty() || session_id.len() > 128 {
+        return Err(invalid("invalid session"));
+    }
+    let registry = app.state::<Registry>();
+    let id = lock(&registry)
+        .begin_native_action(window.label(), &document, &lease)
+        .map_err(invalid)?;
+    struct ActionGuard {
+        app: AppHandle,
+        panel: String,
+        id: String,
+    }
+    impl Drop for ActionGuard {
+        fn drop(&mut self) {
+            lock(&self.app.state::<Registry>()).finish_native_action(&self.panel, &self.id);
+            changed(&self.app);
+        }
+    }
+    let _guard = ActionGuard {
+        app: app.clone(),
+        panel: lease.panel_id,
+        id,
+    };
+    crate::commands::ssh_disconnect(app.clone(), session_id).await
+}
+
+#[tauri::command]
+pub(crate) fn panel_window_focus(
+    window: WebviewWindow,
+    document: String,
+    panel_id: String,
+) -> AppResult<()> {
+    let app = window.app_handle();
+    let registry = app.state::<Registry>();
+    let ownership = lock(&registry);
+    ownership
+        .authorize(window.label(), &document)
+        .map_err(invalid)?;
+    let target = ownership
+        .leases()
+        .into_iter()
+        .find(|lease| lease.panel_id == panel_id)
+        .ok_or_else(|| invalid("panel not found"))?
+        .window_id;
+    if !ownership
+        .windows()
+        .iter()
+        .any(|item| item.id == target && item.ready && !item.closing)
+    {
+        return Err(invalid("window not ready"));
+    }
+    drop(ownership);
+    if target == MAIN {
+        super::super::window::show_main(app);
+    } else {
+        let target = app
+            .get_webview_window(&target)
+            .ok_or_else(|| invalid("invalid window"))?;
+        target.show()?;
+        target.unminimize()?;
+        target.set_focus()?;
+        super::super::window::apply_background_dock_preference(app);
+    }
+    Ok(())
 }

@@ -32,6 +32,21 @@ pub(crate) enum Command {
     View {
         lease: Lease,
     },
+    BeginModel {
+        panel_id: String,
+    },
+    PublishModel {
+        publisher: String,
+        panel_id: String,
+        revision: u64,
+        model: Value,
+    },
+    ReadModel {
+        lease: Lease,
+    },
+    StagedModel {
+        id: String,
+    },
     Prepare {
         lease: Lease,
         target_window: String,
@@ -102,6 +117,20 @@ impl Ownership {
                 Ok(Value::Null)
             }
             Command::View { lease } => self.view(window, document, &lease),
+            Command::BeginModel { panel_id } => {
+                Ok(json!(self.begin_model(window, document, &panel_id)?))
+            }
+            Command::PublishModel {
+                publisher,
+                panel_id,
+                revision,
+                model,
+            } => {
+                self.publish_model(window, document, &panel_id, &publisher, revision, model)?;
+                Ok(Value::Null)
+            }
+            Command::ReadModel { lease } => self.read_model(window, document, &lease),
+            Command::StagedModel { id } => self.staged_model(window, document, &id, now),
             Command::Prepare {
                 lease,
                 target_window,

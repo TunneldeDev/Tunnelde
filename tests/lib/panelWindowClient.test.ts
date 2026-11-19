@@ -87,3 +87,22 @@ it("makes explicit unsubscribe and document disposal share one idempotent releas
   release();
   expect(stop).toHaveBeenCalledTimes(1);
 });
+it("binds the closed resource/focus gateways to native document identity and the exact lease", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "connections", windowId: identity.windowId, generation: 5 };
+  native.invoke.mockResolvedValue(null);
+  await client.disconnect(lease, "session-1");
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_disconnect", {
+    document: identity.document,
+    lease,
+    sessionId: "session-1",
+  });
+  await client.focus("connections");
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_focus", {
+    document: identity.document,
+    panelId: "connections",
+  });
+  client.dispose();
+  await expect(client.focus("connections")).rejects.toThrow("disposed");
+  await expect(client.disconnect(lease, "session-1")).rejects.toThrow("disposed");
+});

@@ -1,3 +1,4 @@
+import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import { beforeEach, expect, it, vi } from "vitest";
 import { useNavigation } from "@/store/navigation";
 import { useWorkspace } from "@/store/workspace";
@@ -100,4 +101,38 @@ it("rejects nonexistent contributions and unavailable previews", () => {
   expect(() => requirePanel("not-a-panel")).toThrow("invalid:panelId");
   expect(() => requirePanel("plugin:missing:view")).toThrow("panel.notFound");
   expect(() => requirePanel("filePreview")).toThrow("panel.unavailable");
+});
+it("focuses a detached owner from status/navigation without opening duplicate local content", async () => {
+  const { createWindowViews, installWindowViews } = await import("@/lib/panels/windowViews");
+  const { usePanelWindows } = await import("@/store/panelWindows");
+  const { togglePanel } = await import("@/lib/panels/controller");
+  const focus = vi.fn().mockResolvedValue(null);
+  const { windowId, available, snapshot } = usePanelWindows.getState();
+  const uninstall = installWindowViews(
+    createWindowViews({
+      windowId: "main",
+      focus,
+    } as unknown as PanelWindowClient),
+  );
+  try {
+    usePanelWindows.setState({
+      windowId: "main",
+      available: true,
+      snapshot: {
+        windows: [],
+        panels: [{ panelId: "connections", windowId: "panel-one", generation: 7 }],
+        transfers: [],
+      },
+    });
+    revealPanel("connections");
+    togglePanel("connections");
+    expect(focus).toHaveBeenCalledTimes(2);
+    expect(focus).toHaveBeenCalledWith("connections");
+    expect(useNavigation.getState().activeSidebar).toBe("hosts");
+    expect(panelPresentation("connections").getState().open).toBe(false);
+    expect(useWorkspace.getState().tabs).toEqual([]);
+  } finally {
+    uninstall();
+    usePanelWindows.setState({ windowId, available, snapshot });
+  }
 });

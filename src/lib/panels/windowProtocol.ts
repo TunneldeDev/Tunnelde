@@ -23,10 +23,12 @@ export interface NativePanelSnapshot {
 export type PanelWindowCommand =
   | { action: "snapshot" | "ready" | "beginClose" | "cancelClose" }
   | { action: "addPanel" | "removePanel"; panelId: string }
-  | { action: "authorize" | "view" | "issueDrag"; lease: PanelLease }
+  | { action: "authorize" | "view" | "readModel" | "issueDrag"; lease: PanelLease }
+  | { action: "beginModel"; panelId: string }
+  | { action: "publishModel"; publisher: string; panelId: string; revision: number; model: unknown }
   | { action: "checkpoint"; lease: PanelLease; revision: number; state: unknown }
   | { action: "prepare"; lease: PanelLease; targetWindow: string; state: unknown }
-  | { action: "staged" | "acknowledge" | "commit" | "cancel"; id: string }
+  | { action: "staged" | "stagedModel" | "acknowledge" | "commit" | "cancel"; id: string }
   | { action: "block"; panelId: string; blocked: boolean }
   | { action: "acceptDrag"; token: string };
 export interface NativePanelIdentity {

@@ -1,0 +1,129 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { createWindowViews, useWindowViews } from "@/lib/panels/windowViews";
+import type { PanelWindowClient } from "@/lib/panels/windowClient";
+import type { NativePanelSnapshot, PanelLease } from "@/lib/panels/windowProtocol";
+
+const dom = { version: 1 as const, scroll: { body: { top: 73, left: 0 } }, focus: null };
+const state = { version: 1, view: { version: 1, fields: { search: "private draft" } }, dom };
+const lease: PanelLease = { panelId: "connections", windowId: "main", generation: 3 };
+const snapshot = (
+  panels: PanelLease[] = [],
+  transfers: NativePanelSnapshot["transfers"] = [],
+): NativePanelSnapshot => ({ windows: [], panels, transfers });
+const fixtures: ReturnType<typeof createWindowViews>[] = [];
+afterEach(() => {
+  for (const views of fixtures.splice(0)) views.dispose();
+});
+function fixture() {
+  const client = {
+    windowId: "main",
+    control: vi.fn(async () => state),
+  } as unknown as PanelWindowClient;
+  const views = createWindowViews(client);
+  fixtures.push(views);
+  return { client, views };
+}
+it("captures explicit fields and DOM only; checkpoint revisions are generation scoped", async () => {
+  const { client, views } = fixture();
+  await views.reconcile(snapshot([lease]));
+  const record = useWindowViews.getState().entries.get("connections")!;
+  record.controller.register("search", () => "updated draft");
+  views.registerRoot("connections", () => dom);
+  expect(views.capture("connections")).toEqual({
+    ...state,
+    view: { version: 1, fields: { search: "updated draft" } },
+  });
+  await views.checkpoint("connections");
+  await views.checkpoint("connections");
+  expect(
+    vi
+      .mocked(client.control)
+      .mock.calls.slice(-2)
+      .map(([request]) => request),
+  ).toEqual([
+    expect.objectContaining({ action: "checkpoint", lease, revision: 1 }),
+    expect.objectContaining({ action: "checkpoint", lease, revision: 2 }),
+  ]);
+  await views.reconcile(snapshot([{ ...lease, generation: 4 }]));
+  views.registerRoot("connections", () => dom);
+  await views.checkpoint("connections");
+  expect(client.control).toHaveBeenLastCalledWith(expect.objectContaining({ revision: 1 }));
+});
+it("ack readiness waits for the real rendered tree and commit promotes its existing controller/key", async () => {
+  const { views } = fixture();
+  const offer = { id: "offer1", lease: { ...lease, windowId: "satellite" }, targetWindow: "main" };
+  const controller = new AbortController(),
+    done = vi.fn();
+  const stage = views.stage(offer, state, controller.signal).then(done);
+  const record = useWindowViews.getState().entries.get("connections")!;
+  expect(record.staged).toBe(true);
+  expect(done).not.toHaveBeenCalled();
+  views.rendered(offer.id);
+  await stage;
+  expect(done).toHaveBeenCalledOnce();
+  await views.reconcile(snapshot([{ ...lease, generation: 9 }]));
+  const promoted = useWindowViews.getState().entries.get("connections")!;
+  expect(promoted.staged).toBe(false);
+  expect(promoted.key).toBe(offer.id);
+  expect(promoted.controller).toBe(record.controller);
+  expect(promoted.controller.read("search", (v): v is string => typeof v === "string")).toBe(
+    "private draft",
+  );
+});
+it("cancelled staging erases capsules and does not authorize or capture unfinished views", async () => {
+  const { views } = fixture();
+  const controller = new AbortController();
+  const stage = views.stage(
+    { id: "cancelled", lease, targetWindow: "main" },
+    state,
+    controller.signal,
+  );
+  const rejected = expect(stage).rejects.toThrow("cancelled");
+  const record = useWindowViews.getState().entries.get("connections")!;
+  expect(() => views.capture("connections")).toThrow("viewNotReady");
+  controller.abort();
+  await rejected;
+  expect(useWindowViews.getState().entries.size).toBe(0);
+  expect(() => record.controller.capture()).toThrow("disposed");
+});
+it("stale reads cannot resurrect an owner after a newer snapshot/revocation", async () => {
+  const { client, views } = fixture();
+  let resolve!: (value: unknown) => void;
+  vi.mocked(client.control).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const old = views.reconcile(snapshot([lease]));
+  await views.reconcile(snapshot());
+  resolve(state);
+  await old;
+  expect(useWindowViews.getState().entries.size).toBe(0);
+});
+it("rejects unknown adapters or malformed capsules instead of acknowledging an empty shell", async () => {
+  const { views } = fixture();
+  const signal = new AbortController().signal;
+  await expect(
+    views.stage(
+      { id: "unknown", lease: { ...lease, panelId: "plugin:x:y" }, targetWindow: "main" },
+      state,
+      signal,
+    ),
+  ).rejects.toThrow("unsupportedView");
+  expect(() =>
+    views.stage({ id: "bad", lease, targetWindow: "main" }, { version: 100 }, signal),
+  ).toThrow("invalid");
+  expect(useWindowViews.getState().entries.size).toBe(0);
+});
+it("local move freezing does not replace or erase the source view state", async () => {
+  const { views } = fixture();
+  await views.reconcile(snapshot([lease]));
+  const before = useWindowViews.getState().entries.get("connections")!;
+  views.setMoving("connections", true);
+  const frozen = useWindowViews.getState().entries.get("connections")!;
+  expect(frozen.moving).toBe(true);
+  expect(frozen.controller).toBe(before.controller);
+  views.setMoving("connections", false);
+  expect(useWindowViews.getState().entries.get("connections")!.moving).toBe(false);
+});

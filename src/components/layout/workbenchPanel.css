@@ -168,3 +168,21 @@
   border-right: 1px solid var(--td-muted);
   border-bottom: 1px solid var(--td-muted);
 }
+
+.native-panel-view {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+}
+.native-panel-view[data-panel-staged] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.native-panel-placeholder {
+  padding: 16px;
+  color: var(--td-text-muted);
+  font-size: 12px;
+}

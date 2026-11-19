@@ -1,3 +1,5 @@
+import { nativePanelMoveActions } from "@/lib/panels/windowMoves";
+import { usePanelWindows } from "@/store/panelWindows";
 import { panelLocation, setPanelLocation } from "@/lib/panels/controller";
 import { GripVertical } from "lucide-react";
 import type { TFunction } from "i18next";
@@ -10,10 +12,12 @@ import type { SidebarView } from "@/store/navigation";
 import { SIDEBAR_MIME, sidebarTabId, TAB_MIME } from "@/lib/session/sidebarDock";
 
 export function sidebarMoveActions(view: SidebarView, t: TFunction): MenuAction[] {
+  if (usePanelWindows.getState().windowId !== "main") return nativePanelMoveActions(view, t);
   const workspace = useWorkspace.getState();
   const id = sidebarTabId(view);
   const docked = workspace.tabs.some((tab) => tab.id === id);
   return [
+    ...nativePanelMoveActions(view, t),
     { label: t("panels.floatWindow"), onSelect: () => setPanelLocation(view, "floating") },
     ...(panelLocation(view) === "floating" && !docked
       ? [{ label: t("docking.returnToSidebar"), onSelect: () => setPanelLocation(view, "sidebar") }]
@@ -47,6 +51,7 @@ export function sidebarMoveActions(view: SidebarView, t: TFunction): MenuAction[
 
 export function SidebarDockControls({ view }: { view: SidebarView }) {
   const { t } = useTranslation();
+  usePanelWindows((state) => state.snapshot);
   const docked = useWorkspace((state) => state.tabs.some((tab) => tab.id === sidebarTabId(view)));
   return (
     <Menu

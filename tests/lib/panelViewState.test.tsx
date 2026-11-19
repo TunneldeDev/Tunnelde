@@ -131,3 +131,22 @@ it("bounds nested data and rejects getters without calling them", () => {
   for (let n = 0; n < 100; n++) deep = { next: deep };
   expect(() => parsePanelViewCapsule({ version: 1, fields: { deep } })).toThrow("tooLarge");
 });
+it("notifies checkpoint observers after committed React state, and releases them on disposal", () => {
+  const controller = createPanelViewState();
+  const view = render(
+    <PanelViewStateScope controller={controller}>
+      <Draft />
+    </PanelViewStateScope>,
+  );
+  const snapshots: unknown[] = [];
+  const stop = controller.subscribe(() => snapshots.push(controller.capture()));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "new private draft" } });
+  expect(snapshots).toEqual([{ version: 1, fields: { password: "new private draft" } }]);
+  stop();
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "not observed" } });
+  expect(snapshots).toHaveLength(1);
+  view.unmount();
+  controller.dispose();
+  controller.changed();
+  expect(() => controller.subscribe(() => {})).toThrow("disposed");
+});

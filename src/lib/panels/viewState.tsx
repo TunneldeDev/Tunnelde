@@ -95,7 +95,18 @@ export function createPanelViewState(initial?: unknown) {
   const incoming = initial === undefined ? {} : parsePanelViewCapsule(initial).fields;
   const fields = new Map<string, { token: symbol; capture: () => unknown }>();
   let disposed = false;
+  const listeners = new Set<() => void>();
   return {
+    subscribe(changed: () => void) {
+      if (disposed) throw new Error("panel.viewState.disposed");
+      listeners.add(changed);
+      return () => {
+        listeners.delete(changed);
+      };
+    },
+    changed() {
+      if (!disposed) for (const notify of listeners) notify();
+    },
     read<T>(key: string, validate: (value: unknown) => value is T): T | undefined {
       if (disposed) throw new Error("panel.viewState.disposed");
       if (!validKey(key)) throw new Error("panel.viewState.invalidKey");
@@ -122,6 +133,7 @@ export function createPanelViewState(initial?: unknown) {
     },
     dispose() {
       fields.clear();
+      listeners.clear();
       for (const key of Object.keys(incoming)) delete incoming[key];
       disposed = true;
     },
@@ -162,7 +174,8 @@ export function usePanelViewState<T>(
   const current = useRef(value);
   useLayoutEffect(() => {
     current.current = value;
-  }, [value]);
+    controller?.changed();
+  }, [controller, value]);
   useLayoutEffect(() => controller?.register(key, () => current.current), [controller, key]);
   return [value, setValue];
 }

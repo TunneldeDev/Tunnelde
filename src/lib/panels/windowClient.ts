@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   NativePanelIdentity,
+  PanelLease,
   NativePanelSnapshot,
   PanelWindowCommand,
 } from "./windowProtocol";
@@ -73,6 +74,16 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
     async destroy(target: string) {
       check();
       await invoke("panel_window_destroy", { document: identity.document, target });
+    },
+    async focus(panelId: string) {
+      check();
+      await invoke("panel_window_focus", { document: identity.document, panelId });
+      check();
+    },
+    async disconnect(lease: PanelLease, sessionId: string) {
+      check();
+      await invoke("panel_window_disconnect", { document: identity.document, lease, sessionId });
+      check();
     },
     async dropTarget() {
       check();

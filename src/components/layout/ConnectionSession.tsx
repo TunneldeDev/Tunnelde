@@ -1,9 +1,9 @@
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import { Disclosure } from "@/components/ui/layout/Disclosure";
+import { ConnectionDisclosure } from "./ConnectionDisclosure";
+import { usePanelViewState } from "@/lib/panels/viewState";
 import type { SshSession } from "@/lib/api/types";
-import { useSsh } from "@/store/ssh";
+import { useConnectionPanelModel } from "@/lib/panels/connectionModel";
 import type { SessionHistory } from "@/store/sshHistory";
 
 export function ConnectionSession({
@@ -18,8 +18,13 @@ export function ConnectionSession({
   grouped?: boolean;
 }) {
   const { t, i18n } = useTranslation();
-  const [confirming, setConfirming] = useState(false);
-  const pending = useSsh((state) => state.disconnectingSessionIds.includes(session.id));
+  const [confirming, setConfirming] = usePanelViewState(
+    `session:${session.id}:confirm`,
+    false,
+    (value): value is boolean => typeof value === "boolean",
+  );
+  const model = useConnectionPanelModel();
+  const pending = model.disconnectingSessionIds.includes(session.id);
   const purpose = t(
     session.purpose === "forwarding"
       ? "connections.forwarding"
@@ -65,7 +70,7 @@ export function ConnectionSession({
               variant="danger"
               disabled={pending}
               onClick={async () => {
-                await useSsh.getState().disconnect(session.id);
+                await model.disconnect(session.id);
                 setConfirming(false);
               }}
             >
@@ -74,7 +79,8 @@ export function ConnectionSession({
           </div>
         </div>
       )}
-      <Disclosure
+      <ConnectionDisclosure
+        stateKey={`session:${session.id}:details`}
         heading={t("connections.details")}
         summary={`${grouped ? "" : `${purpose} · `}${t(ended ? "connections.ended" : pending ? "connections.disconnecting" : "connections.connected")}`}
       >
@@ -114,7 +120,7 @@ export function ConnectionSession({
             ))}
           </ol>
         </div>
-      </Disclosure>
+      </ConnectionDisclosure>
     </li>
   );
 }

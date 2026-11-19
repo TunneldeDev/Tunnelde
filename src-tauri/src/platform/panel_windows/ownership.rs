@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -38,13 +38,18 @@ struct Document {
     ready: bool,
     closing: bool,
 }
-struct Panel {
+pub(super) struct Panel {
     lease: Lease,
     blocked: bool,
     // Contains user drafts. Deliberately no Debug/Serialize on internal records;
     // never persist or include snapshots in public events/discovery/list replies.
     checkpoint: Value,
     checkpoint_revision: u64,
+    pub(super) model: Value,
+    pub(super) model_document: String,
+    pub(super) model_publisher: String,
+    pub(super) model_revision: u64,
+    pub(super) native_actions: HashSet<String>,
 }
 struct Transfer {
     id: String,
@@ -84,7 +89,7 @@ pub(super) struct TransferInfo {
 pub(super) struct Ownership {
     generation: u64,
     windows: HashMap<String, Document>,
-    panels: HashMap<String, Panel>,
+    pub(super) panels: HashMap<String, Panel>,
     transfers: HashMap<String, Transfer>,
     drags: HashMap<String, DragGrant>,
 }
@@ -190,7 +195,7 @@ impl Ownership {
     pub fn has_satellites(&self) -> bool {
         self.windows.keys().any(|id| id != MAIN)
     }
-    fn main(&self, window: &str, document: &str) -> Result<()> {
+    pub(super) fn main(&self, window: &str, document: &str) -> Result<()> {
         self.authorize(window, document)?;
         if window != MAIN {
             return Err("coordinator required");
@@ -218,11 +223,16 @@ impl Ownership {
                 blocked: false,
                 checkpoint: Value::Null,
                 checkpoint_revision: 0,
+                model: Value::Null,
+                model_document: String::new(),
+                model_publisher: String::new(),
+                model_revision: 0,
+                native_actions: HashSet::new(),
             },
         );
         Ok(lease)
     }
-    fn owned(&self, window: &str, document: &str, lease: &Lease) -> Result<&Panel> {
+    pub(super) fn owned(&self, window: &str, document: &str, lease: &Lease) -> Result<&Panel> {
         self.authorize(window, document)?;
         self.panels
             .get(&lease.panel_id)
@@ -251,7 +261,7 @@ impl Ownership {
             .retain(|_, grant| grant.lease.panel_id != panel_id);
         Ok(())
     }
-    fn validate_state(state: &Value) -> Result<()> {
+    pub(super) fn validate_state(state: &Value) -> Result<()> {
         if serde_json::to_vec(state)
             .map_err(|_| "invalid view state")?
             .len()
@@ -320,7 +330,7 @@ impl Ownership {
     ) -> Result<Offer> {
         self.expire(now);
         let panel = self.owned(window, document, lease)?;
-        if panel.blocked {
+        if panel.blocked || !panel.native_actions.is_empty() {
             return Err("panel interaction in progress");
         }
         Self::validate_state(&state)?;
@@ -472,6 +482,7 @@ impl Ownership {
         let panel = self.owned(window, document, lease)?;
         if self.windows[window].closing
             || panel.blocked
+            || !panel.native_actions.is_empty()
             || self
                 .transfers
                 .values()
@@ -528,7 +539,10 @@ impl Ownership {
             .values()
             .filter(|panel| panel.lease.window_id == window)
             .collect();
-        if owned.iter().any(|panel| panel.blocked) {
+        if owned
+            .iter()
+            .any(|panel| panel.blocked || !panel.native_actions.is_empty())
+        {
             return Err("panel interaction in progress");
         }
         let leases = owned.into_iter().map(|panel| panel.lease.clone()).collect();

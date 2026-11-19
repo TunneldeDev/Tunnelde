@@ -78,12 +78,13 @@ export function startPanelWindowCoordinator(
       })();
     }
   };
+  let refreshTask = Promise.resolve();
   const refresh = () => {
     if (disposed) return;
     queued = true;
-    if (running) return;
+    if (running) return refreshTask;
     running = true;
-    void (async () => {
+    refreshTask = (async () => {
       try {
         while (queued && !disposed) {
           queued = false;
@@ -95,6 +96,7 @@ export function startPanelWindowCoordinator(
         running = false;
       }
     })();
+    return refreshTask;
   };
   const ready = (async () => {
     // Subscribe before reading the first snapshot: no gap in invalidations.
@@ -104,7 +106,7 @@ export function startPanelWindowCoordinator(
       return;
     }
     await client.control({ action: "ready" });
-    if (!disposed) refresh();
+    if (!disposed) await refresh();
   })().catch((error) => {
     if (!disposed) failure(error);
   });

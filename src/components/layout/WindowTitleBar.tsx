@@ -3,16 +3,22 @@ import { Copy, GripVertical, Minus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { TitleBarStyle } from "@/lib/api/types";
 import { isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
 
 /** Compact window chrome replaces the OS title bar; it contains no app menu. */
-export function WindowTitleBar() {
+export function WindowTitleBar({
+  style: viewStyle,
+  os: viewOs,
+}: { style?: TitleBarStyle; os?: string } = {}) {
   const { t } = useTranslation();
-  const style = useSettings((state) => state.settings.titleBarStyle);
-  const os = useSettings((state) => state.info?.os);
+  const storedStyle = useSettings((state) => state.settings.titleBarStyle);
+  const storedOs = useSettings((state) => state.info?.os);
+  const style = viewStyle ?? storedStyle;
+  const os = viewOs ?? storedOs;
   const [maximized, setMaximized] = useState(false);
   const enabled = isTauri() && style === "compact";
   const mac = os === "macos";
