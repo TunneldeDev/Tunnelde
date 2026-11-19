@@ -222,3 +222,22 @@ it("propagates conflicts across cyclic and shared jumps without blocking unrelat
   expect(index.expand(["c", "d"])).toEqual(new Set(["a", "b", "c", "d"]));
   expect(index.expand(["b"])).toEqual(new Set(["a", "b"]));
 });
+
+it("only describes proxies used by the current import selection", async () => {
+  const reviewed = preview();
+  reviewed.document.hosts[0]!.route.proxy = "proxy-a";
+  reviewed.document.proxies.push({
+    id: "proxy-a",
+    name: "Corporate gateway",
+    protocol: "http",
+    host: "proxy.example",
+    port: 3128,
+    username: "",
+  });
+  vi.spyOn(hostTransferApi, "pick").mockResolvedValue(reviewed);
+  useHostTransfer.getState().openImport();
+  render(<HostTransferDialogs />);
+  await screen.findByText(/Proxies to import: Corporate gateway/);
+  fireEvent.click(screen.getByRole("checkbox", { name: /Host A/ }));
+  expect(screen.queryByText(/Proxies to import:/)).toBeNull();
+});
