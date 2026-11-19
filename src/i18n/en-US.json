@@ -317,6 +317,7 @@
     "knownHosts": "Trusted hosts",
     "knownHostsEmpty": "No trusted hosts",
     "knownHostsForget": "Forget",
+    "knownHostsChanged": "This trusted key changed while confirmation was open. Refresh the list and review the current fingerprint before trying again.",
     "knownHostsForgetTitle": "Forget host key",
     "knownHostsForgetBody": "Remove the saved key for {{host}}:{{port}}? The next connection will ask again.",
     "openLogs": "Open logs",

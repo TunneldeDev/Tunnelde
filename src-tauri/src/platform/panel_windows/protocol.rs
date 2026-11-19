@@ -80,6 +80,13 @@ pub(crate) enum Command {
     Cancel {
         id: String,
     },
+    BeginInteraction {
+        lease: Lease,
+    },
+    EndInteraction {
+        lease: Lease,
+        id: String,
+    },
     Block {
         panel_id: String,
         blocked: bool,
@@ -182,6 +189,13 @@ impl Ownership {
             Command::Commit { id } => Ok(json!(self.commit(window, document, &id, now)?)),
             Command::Cancel { id } => {
                 self.cancel(window, document, &id)?;
+                Ok(Value::Null)
+            }
+            Command::BeginInteraction { lease } => {
+                Ok(json!(self.begin_interaction(window, document, &lease)?))
+            }
+            Command::EndInteraction { lease, id } => {
+                self.end_interaction(window, document, &lease, &id)?;
                 Ok(Value::Null)
             }
             Command::Block { panel_id, blocked } => {

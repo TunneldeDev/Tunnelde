@@ -1,3 +1,4 @@
+import { PanelInteractionScope } from "@/lib/panels/interaction";
 import { Button } from "@/components/ui/form/Button";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -94,7 +95,13 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
         inert={frozen || undefined}
         aria-busy={frozen || undefined}
       >
-        <PanelViewStateScope controller={record.controller}>{children}</PanelViewStateScope>
+        <PanelViewStateScope controller={record.controller}>
+          <PanelInteractionScope
+            value={{ client: windowViews()?.client, lease: record.lease, staged: record.staged }}
+          >
+            {children}
+          </PanelInteractionScope>
+        </PanelViewStateScope>
       </div>
     </div>
   );

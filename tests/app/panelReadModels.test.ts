@@ -1,3 +1,4 @@
+import { useKnownHostsSource } from "@/features/settings/knownHosts/source";
 import { afterEach, expect, it, vi } from "vitest";
 import { startPanelReadModels } from "@/app/panelReadModels";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
@@ -147,4 +148,30 @@ it("projects output runtime metadata without settings, filesystem paths or front
   );
   stop();
   expect(useOutputSource.getState().source).toBeNull();
+});
+
+it("projects shared known-host state only to its own model and disposes the coordinator source", async () => {
+  const control = vi.fn(async (request) => (request.action === "beginModel" ? "publisher" : null));
+  const stop = startPanelReadModels({ control } as unknown as PanelWindowClient, vi.fn());
+  cleanups.push(stop);
+  const source = useKnownHostsSource.getState().source!;
+  const entry = {
+    host: "trusted.example",
+    port: 22,
+    algorithm: "ed25519",
+    fingerprint: "SHA256:key",
+    updatedAt: 1,
+  };
+  source.store.setState({ entries: [entry], loading: false });
+  await settle();
+  const models = control.mock.calls.map(([r]) => r).filter((r) => r.action === "publishModel");
+  const known = models.filter((r) => r.panelId === "knownHosts").at(-1)!;
+  expect(known.model.knownHosts).toEqual({ entries: [entry], loading: false, error: "" });
+  expect(
+    models
+      .filter((r) => r.panelId !== "knownHosts")
+      .every((r) => !JSON.stringify(r).includes("trusted.example")),
+  ).toBe(true);
+  stop();
+  expect(useKnownHostsSource.getState().source).toBeNull();
 });

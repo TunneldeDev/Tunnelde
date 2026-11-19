@@ -1,5 +1,5 @@
 use super::ownership::*;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
 struct Fixture {
@@ -737,4 +737,89 @@ fn output_projection_has_a_separate_byte_bound_without_relaxing_draft_capsules()
         .registry
         .publish_model(MAIN, &f.main, "connections", &other, 1, large)
         .is_err());
+}
+
+#[test]
+fn known_host_action_grammar_is_bounded_and_only_admitted_for_its_own_panel() {
+    use super::actions::{ActionResult, ViewAction};
+    let mut f = Fixture::new();
+    let lease = f.registry.add_panel(MAIN, &f.main, "knownHosts").unwrap();
+    let entry = json!({"host":"private.example","port":22,"algorithm":"ed25519","fingerprint":"SHA256:confirmed","updatedAt":1});
+    let request = json!({"kind":"forgetKnownHost","entry":entry});
+    assert!(f
+        .registry
+        .request_action(
+            MAIN,
+            &f.main,
+            &f.lease,
+            serde_json::from_value(request.clone()).unwrap(),
+            f.now
+        )
+        .is_err());
+    for invalid in [
+        json!({"kind":"refreshKnownHosts","command":"invoke"}),
+        json!({"kind":"forgetKnownHost","entry":{"host":"x"}}),
+        json!({"kind":"forgetKnownHost","entry": {"host":"x","port":22,"algorithm":"a","fingerprint":"f","updatedAt":1,"secret":"forbidden"}}),
+    ] {
+        assert!(serde_json::from_value::<ViewAction>(invalid).is_err());
+    }
+    for bad in [
+        json!({"port":0}),
+        json!({"host":"x".repeat(4097)}),
+        json!({"fingerprint":"f".repeat(1025)}),
+        json!({"updatedAt":-1}),
+    ] {
+        let mut invalid = request.clone();
+        for (k, v) in bad.as_object().unwrap() {
+            invalid["entry"][k] = v.clone();
+        }
+        assert!(f
+            .registry
+            .request_action(
+                MAIN,
+                &f.main,
+                &lease,
+                serde_json::from_value(invalid).unwrap(),
+                f.now
+            )
+            .is_err());
+    }
+    let id = f
+        .registry
+        .request_action(
+            MAIN,
+            &f.main,
+            &lease,
+            serde_json::from_value(request).unwrap(),
+            f.now,
+        )
+        .unwrap();
+    let metadata = f
+        .registry
+        .dispatch(MAIN, &f.main, super::protocol::Command::Snapshot {}, f.now)
+        .unwrap();
+    assert!(!metadata.to_string().contains("private.example"));
+    assert!(f
+        .registry
+        .prepare(MAIN, &f.main, &lease, "panel-one", json!({}), f.now)
+        .is_err());
+    let jobs = f.registry.claim_actions(MAIN, &f.main, f.now).unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&jobs[0].request).unwrap()["entry"],
+        entry
+    );
+    f.registry
+        .complete_action(
+            MAIN,
+            &f.main,
+            &id,
+            ActionResult::Done { value: Value::Null },
+            f.now,
+        )
+        .unwrap();
+    assert!(f
+        .registry
+        .prepare(MAIN, &f.main, &lease, "panel-one", json!({}), f.now)
+        .is_ok());
 }

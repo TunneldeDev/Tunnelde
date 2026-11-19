@@ -217,3 +217,27 @@ Bound output by the complete UTF-8 JSON rows, not UTF-16 message length. Output'
 private read model has a separate 2 MiB envelope for bounded lines plus display
 metadata; other read models and draft capsules retain their 1 MiB limit. No output
 or copy text is sent through public metadata or invalidation events.
+
+### Trusted-key adapter and document-local consent
+
+Known-host views share a coordinator source and reuse `KnownHostsList` in either
+window. Satellites receive only the trusted-key display projection, never raw
+application IPC access. Search and explicitly marked scroll/focus transfer through
+the normal ephemeral capsule. Refresh/forget use closed exact-lease actions.
+
+Obtain `beginInteraction` before opening consent UI. Its opaque document/lease
+scoped token blocks transfer, window creation, drag grants and close-return while
+allowing the confirmed action to be submitted. Each overlapping dialog releases
+only its own token. Pending acquisitions release on unmount too. These guards
+retire with their document on reload/crash; they are not resource-effect fences.
+An admitted action keeps its independent native fence until completion (or the
+existing unknown-outcome quarantine after coordinator loss).
+
+The originating window renders the shared controlled `ConfirmDialog`; do not
+relay callbacks or open a second coordinator dialog. Show the confirmed key's
+algorithm and fingerprint. Compare host, port, algorithm, fingerprint and update
+identity atomically when deleting; a stale confirmation must not remove a new
+trusted key. Preserve trust-lifecycle rollback and leave failures visible/retryable.
+The legacy unconditional plugin operation remains compatible; built-in UI always
+sends the expected key identity. Never serialize dialogs, tokens or callbacks into
+view capsules, metadata events or persistent layouts.

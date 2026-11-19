@@ -1,3 +1,4 @@
+import { useKnownHostsSource } from "@/features/settings/knownHosts/source";
 import { useOutputSource } from "@/features/output/source";
 import { api } from "@/lib/api/ipc";
 import { startWindowActions } from "@/lib/panels/windowActions";
@@ -13,6 +14,18 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request }) => {
       switch (request.kind) {
+        case "refreshKnownHosts":
+        case "forgetKnownHost": {
+          const source = useKnownHostsSource.getState().source;
+          if (!source) throw new Error("panel.window.disposed");
+          try {
+            if (request.kind === "refreshKnownHosts") await source.refresh();
+            else await source.forget(request.entry);
+          } catch (error) {
+            throw new Error(translateError(error));
+          }
+          return null;
+        }
         case "output": {
           const source = useOutputSource.getState().source;
           if (!source) throw new Error("panel.window.disposed");

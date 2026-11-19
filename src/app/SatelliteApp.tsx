@@ -1,3 +1,5 @@
+import { KnownHostsList } from "@/features/settings/KnownHostsList";
+import { KnownHostsModelScope } from "@/lib/panels/knownHostsModel";
 import type { PanelViewAction } from "@/lib/panels/windowProtocol";
 import { OutputPanel } from "@/features/output/OutputPanel";
 import { OutputModelScope } from "@/lib/panels/outputModel";
@@ -28,6 +30,7 @@ import type {
   ConnectionWindowModel,
   TaskWindowModel,
   OutputWindowModel,
+  KnownHostsWindowModel,
   WindowModelAppearance,
 } from "./panelReadModels";
 import { TaskModelScope, type ClearTasksResult } from "@/lib/panels/taskModel";
@@ -216,6 +219,31 @@ function OutputView(props: NativeViewProps) {
   );
 }
 
+function KnownHostsView(props: NativeViewProps) {
+  const { client, record } = props;
+  const model = useNativeReadModel<KnownHostsWindowModel>(props);
+  if (!model) return null;
+  const action = (request: PanelViewAction) => {
+    if (!record.lease || record.staged) return Promise.reject(new Error("panel.window.staleOwner"));
+    return client.action(record.lease, request);
+  };
+  return (
+    <NativePanelView panelId={record.panelId}>
+      <WorkbenchPanel view="knownHosts" location="workspace" visible={!record.staged} showTitle>
+        <KnownHostsModelScope
+          value={{
+            ...model.knownHosts,
+            refresh: () => action({ kind: "refreshKnownHosts" }),
+            forget: (entry) => action({ kind: "forgetKnownHost", entry }),
+          }}
+        >
+          <KnownHostsList active={!record.staged} variant="sidebar" />
+        </KnownHostsModelScope>
+      </WorkbenchPanel>
+    </NativePanelView>
+  );
+}
+
 /** Separate document entry: never run main resource bootstrap, persistence,
  * plugin background activation, task aggregation or autoconnect in a satellite. */
 export function SatelliteApp() {
@@ -326,7 +354,9 @@ export function SatelliteApp() {
             id: record.panelId as SidebarView,
             key: record.key,
             content:
-              record.panelId === "tasks" ? (
+              record.panelId === "knownHosts" ? (
+                <KnownHostsView client={client} record={record} presented={presented} />
+              ) : record.panelId === "tasks" ? (
                 <TaskView client={client} record={record} presented={presented} />
               ) : record.panelId === "output" ? (
                 <OutputView client={client} record={record} presented={presented} />

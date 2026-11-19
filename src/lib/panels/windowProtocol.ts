@@ -1,3 +1,4 @@
+import type { KnownHostEntry } from "@/lib/api/types";
 /** This is the private native UI transport, not the public plugin API. Caller
  * window identity is derived by the host and never accepted as a JS argument. */
 export interface PanelLease {
@@ -27,7 +28,9 @@ export type PanelViewAction =
   | { kind: "clearTasks" }
   | { kind: "disconnect"; sessionId: string }
   | { kind: "output"; operation: "refresh" | "clear" | "openLatest" | "openDirectory" }
-  | { kind: "copyOutput"; text: string };
+  | { kind: "copyOutput"; text: string }
+  | { kind: "refreshKnownHosts" }
+  | { kind: "forgetKnownHost"; entry: KnownHostEntry };
 export type PanelActionResult =
   { status: "done"; value: unknown } | { status: "failed"; message: string };
 export interface PanelActionJob {
@@ -48,6 +51,8 @@ export type PanelWindowCommand =
   | { action: "checkpoint"; lease: PanelLease; revision: number; state: unknown }
   | { action: "prepare"; lease: PanelLease; targetWindow: string; state: unknown }
   | { action: "staged" | "stagedModel" | "acknowledge" | "commit" | "cancel"; id: string }
+  | { action: "beginInteraction"; lease: PanelLease }
+  | { action: "endInteraction"; lease: PanelLease; id: string }
   | { action: "block"; panelId: string; blocked: boolean }
   | { action: "acceptDrag" | "cancelDrag"; token: string };
 export interface NativePanelIdentity {

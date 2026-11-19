@@ -41,6 +41,8 @@ struct Document {
 pub(super) struct Panel {
     lease: Lease,
     blocked: bool,
+    // Document-local consent only; unlike admitted effects, retires on reload.
+    interactions: HashMap<String, String>,
     // Contains user drafts. Deliberately no Debug/Serialize on internal records;
     // never persist or include snapshots in public events/discovery/list replies.
     checkpoint: Value,
@@ -130,6 +132,7 @@ impl Ownership {
             self.generation += 1;
             panel.lease.generation = self.generation;
             panel.checkpoint_revision = 0;
+            panel.interactions.clear();
         }
         Ok(document)
     }
@@ -221,8 +224,11 @@ impl Ownership {
         if let Some(lease) = lease {
             self.action(window, document, lease)?;
             let panel = self.owned(window, document, lease)?;
-            if !matches!(lease.panel_id.as_str(), "connections" | "tasks" | "output")
-                || panel.blocked
+            if !matches!(
+                lease.panel_id.as_str(),
+                "connections" | "tasks" | "output" | "knownHosts"
+            ) || panel.blocked
+                || !panel.interactions.is_empty()
                 || !panel.native_actions.is_empty()
             {
                 return Err("panel interaction in progress");
@@ -251,6 +257,7 @@ impl Ownership {
             Panel {
                 lease: lease.clone(),
                 blocked: false,
+                interactions: HashMap::new(),
                 checkpoint: Value::Null,
                 checkpoint_revision: 0,
                 model: Value::Null,
@@ -350,6 +357,45 @@ impl Ownership {
         }
         Ok(())
     }
+    /// Obtain before mounting consent UI or starting any credential effects.
+    /// Opaque, independently released guards prevent overlapping dialogs from
+    /// accidentally unblocking each other. They never enter public snapshots.
+    pub fn begin_interaction(
+        &mut self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+    ) -> Result<String> {
+        self.action(window, document, lease)?;
+        let panel = self.panels.get_mut(&lease.panel_id).unwrap();
+        if panel.blocked || panel.interactions.len() >= 16 {
+            return Err("panel interaction in progress");
+        }
+        let id = token();
+        panel.interactions.insert(id.clone(), document.into());
+        self.drags
+            .retain(|_, grant| grant.lease.panel_id != lease.panel_id);
+        Ok(id)
+    }
+    pub fn end_interaction(
+        &mut self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+        id: &str,
+    ) -> Result<()> {
+        self.owned(window, document, lease)?;
+        let panel = self.panels.get_mut(&lease.panel_id).unwrap();
+        if panel
+            .interactions
+            .get(id)
+            .is_some_and(|owner| owner != document)
+        {
+            return Err("invalid interaction owner");
+        }
+        panel.interactions.remove(id);
+        Ok(())
+    }
     pub fn block(
         &mut self,
         window: &str,
@@ -380,6 +426,7 @@ impl Ownership {
         self.expire(now);
         let panel = self.owned(window, document, lease)?;
         if panel.blocked
+            || !panel.interactions.is_empty()
             || !panel.native_actions.is_empty()
             || self.panel_interrupted(&lease.panel_id)
         {
@@ -492,7 +539,9 @@ impl Ownership {
         if !pending.ready {
             return Err("destination not ready");
         }
-        if self.panels[&pending.lease.panel_id].blocked {
+        if self.panels[&pending.lease.panel_id].blocked
+            || !self.panels[&pending.lease.panel_id].interactions.is_empty()
+        {
             return Err("panel interaction in progress");
         }
         let pending = self.transfers.remove(id).unwrap();
@@ -539,6 +588,7 @@ impl Ownership {
         let panel = self.owned(window, document, lease)?;
         if self.windows[window].closing
             || panel.blocked
+            || !panel.interactions.is_empty()
             || !panel.native_actions.is_empty()
             || self
                 .transfers
@@ -631,6 +681,7 @@ impl Ownership {
             .collect();
         if owned.iter().any(|panel| {
             panel.blocked
+                || !panel.interactions.is_empty()
                 || !panel.native_actions.is_empty()
                 || self.panel_interrupted(&panel.lease.panel_id)
         }) {
@@ -721,6 +772,7 @@ impl Ownership {
             self.generation += 1;
             panel.lease.generation = self.generation;
             panel.checkpoint_revision = 0;
+            panel.interactions.clear();
             recovered.push(panel.lease.clone());
         }
         Ok(recovered)

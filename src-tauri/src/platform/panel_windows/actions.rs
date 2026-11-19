@@ -15,6 +15,10 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    RefreshKnownHosts {},
+    ForgetKnownHost {
+        entry: crate::db::known_hosts::KnownHostEntry,
+    },
     Output {
         operation: OutputOperation,
     },
@@ -42,6 +46,7 @@ pub(crate) enum OutputOperation {
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
+            Self::RefreshKnownHosts {} | Self::ForgetKnownHost { .. } => "knownHosts",
             Self::Task { .. } | Self::ClearTasks {} => "tasks",
             Self::Disconnect { .. } => "connections",
             Self::Output { .. } | Self::CopyOutput { .. } => "output",
@@ -56,6 +61,14 @@ impl ViewAction {
                 action_id,
             } => bounded(key, 1024) && bounded(ticket, 128) && bounded(action_id, 128),
             Self::Disconnect { session_id } => bounded(session_id, 128),
+            Self::RefreshKnownHosts {} => true,
+            Self::ForgetKnownHost { entry } => {
+                bounded(&entry.host, 4096)
+                    && (1..=65535).contains(&entry.port)
+                    && bounded(&entry.algorithm, 256)
+                    && bounded(&entry.fingerprint, 1024)
+                    && entry.updated_at >= 0
+            }
             Self::ClearTasks {} | Self::Output { .. } => true,
             Self::CopyOutput { text } => bounded(text, 2 * 1024 * 1024),
         };

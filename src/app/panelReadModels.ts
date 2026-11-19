@@ -1,3 +1,8 @@
+import {
+  createKnownHostsSource,
+  installKnownHostsSource,
+  type KnownHostsData,
+} from "@/features/settings/knownHosts/source";
 import { createOutputSource, installOutputSource } from "@/features/output/source";
 import { usePanelWindows } from "@/store/panelWindows";
 import { usePlugins } from "@/store/plugins";
@@ -35,6 +40,9 @@ export interface WindowModelAppearance {
 export interface TaskWindowModel extends WindowModelAppearance {
   tasks: readonly TaskViewEntry[];
 }
+export interface KnownHostsWindowModel extends WindowModelAppearance {
+  knownHosts: KnownHostsData;
+}
 export interface OutputWindowModel extends WindowModelAppearance {
   output: OutputPanelData;
 }
@@ -43,6 +51,20 @@ export interface ConnectionWindowModel extends WindowModelAppearance {
 }
 export function startPanelReadModels(client: PanelWindowClient, failure: (error: unknown) => void) {
   let disposed = false;
+  const knownHosts = createKnownHostsSource();
+  const uninstallKnownHosts = installKnownHostsSource(knownHosts);
+  let stopRemoteKnownHosts: (() => void) | undefined;
+  const remoteKnownHosts = () => {
+    const snapshot = usePanelWindows.getState().snapshot;
+    const needed =
+      snapshot.panels.some((p) => p.panelId === "knownHosts" && p.windowId !== "main") ||
+      snapshot.transfers.some(({ offer }) => offer.lease.panelId === "knownHosts");
+    if (needed && !stopRemoteKnownHosts) stopRemoteKnownHosts = knownHosts.retain();
+    else if (!needed && stopRemoteKnownHosts) {
+      stopRemoteKnownHosts();
+      stopRemoteKnownHosts = undefined;
+    }
+  };
   const output = createOutputSource();
   const uninstallOutput = installOutputSource(output);
   let stopRemoteOutput: (() => void) | undefined;
@@ -71,7 +93,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       ) as WindowAppearance,
     };
   };
-  const publish = (panelId: "connections" | "tasks" | "output") => {
+  const publish = (panelId: "connections" | "tasks" | "output" | "knownHosts") => {
     if (disposed) return;
     let state = publishers.get(panelId);
     if (!state) {
@@ -88,39 +110,41 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
         while (current.queued && !disposed) {
           current.queued = false;
           const model =
-            panelId === "connections"
-              ? { ...appearance(), connection: connectionPanelModel() }
-              : panelId === "tasks"
-                ? { ...appearance(), tasks: useTaskProjection.getState().items }
-                : {
-                    ...appearance(),
-                    output: {
-                      ...output.store.getState(),
-                      info: (() => {
-                        const info = useSettings.getState().info;
-                        return info
-                          ? {
-                              name: info.name,
-                              version: info.version,
-                              os: info.os,
-                              arch: info.arch,
-                              tauriVersion: info.tauriVersion,
-                              debug: info.debug,
-                            }
-                          : null;
-                      })(),
-                      plugins: usePlugins
-                        .getState()
-                        .items.map(({ id, name, version, status, error }) => ({
-                          id,
-                          name,
-                          version,
-                          status,
-                          error,
-                        })),
-                      sessionCount: useSsh.getState().sessions.length,
-                    },
-                  };
+            panelId === "knownHosts"
+              ? { ...appearance(), knownHosts: knownHosts.store.getState() }
+              : panelId === "connections"
+                ? { ...appearance(), connection: connectionPanelModel() }
+                : panelId === "tasks"
+                  ? { ...appearance(), tasks: useTaskProjection.getState().items }
+                  : {
+                      ...appearance(),
+                      output: {
+                        ...output.store.getState(),
+                        info: (() => {
+                          const info = useSettings.getState().info;
+                          return info
+                            ? {
+                                name: info.name,
+                                version: info.version,
+                                os: info.os,
+                                arch: info.arch,
+                                tauriVersion: info.tauriVersion,
+                                debug: info.debug,
+                              }
+                            : null;
+                        })(),
+                        plugins: usePlugins
+                          .getState()
+                          .items.map(({ id, name, version, status, error }) => ({
+                            id,
+                            name,
+                            version,
+                            status,
+                            error,
+                          })),
+                        sessionCount: useSsh.getState().sessions.length,
+                      },
+                    };
           await client.control({
             action: "publishModel",
             publisher: current.publisher,
@@ -142,6 +166,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       connections();
       tasks();
       publish("output");
+      publish("knownHosts");
     };
   const cleanups = [
     useSsh.subscribe(() => {
@@ -154,9 +179,12 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
     usePlugins.subscribe(() => publish("output")),
     output.store.subscribe(() => publish("output")),
     usePanelWindows.subscribe(remoteOutput),
+    usePanelWindows.subscribe(remoteKnownHosts),
+    knownHosts.store.subscribe(() => publish("knownHosts")),
   ];
   i18n.on("languageChanged", both);
   remoteOutput();
+  remoteKnownHosts();
   both();
   return () => {
     disposed = true;
@@ -165,5 +193,8 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
     stopRemoteOutput?.();
     uninstallOutput();
     output.dispose();
+    stopRemoteKnownHosts?.();
+    uninstallKnownHosts();
+    knownHosts.dispose();
   };
 }

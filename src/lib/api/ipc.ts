@@ -211,8 +211,8 @@ export const api = {
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
   knownHostsList: () => invoke<KnownHostEntry[]>("known_hosts_list"),
-  knownHostsForget: (host: string, port: number) =>
-    invoke<boolean>("known_hosts_forget", { host, port }),
+  knownHostsForget: (host: string, port: number, expected?: KnownHostEntry) =>
+    invoke<boolean>("known_hosts_forget", { host, port, ...(expected ? { expected } : {}) }),
 
   historyRecord: (hostId: string, command: string) =>
     invoke<HistoryEntry | null>("history_record", { hostId, command }),

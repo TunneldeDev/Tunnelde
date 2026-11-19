@@ -317,6 +317,7 @@
     "knownHosts": "已信任主机",
     "knownHostsEmpty": "暂无已信任主机",
     "knownHostsForget": "移除",
+    "knownHostsChanged": "确认期间此主机的可信密钥已变更。请刷新列表，核对当前指纹后再操作。",
     "knownHostsForgetTitle": "移除主机密钥",
     "knownHostsForgetBody": "移除 {{host}}:{{port}} 的已保存密钥？下次连接会重新确认。",
     "openLogs": "打开日志",
