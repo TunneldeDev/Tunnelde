@@ -41,27 +41,5 @@ export function Textarea({
   return <textarea className={cn("td-input", "td-textarea", className)} rows={rows} {...rest} />;
 }
 
-export interface SwitchProps {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label: string;
-  disabled?: boolean;
-  descriptionId?: string;
-}
-
-export function Switch({ checked, onChange, label, disabled, descriptionId }: SwitchProps) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      aria-describedby={descriptionId}
-      disabled={disabled}
-      className={cn("td-switch", checked && "is-on")}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="td-switch__thumb" />
-    </button>
-  );
-}
+// Keep existing imports compatible; new controls live in their own shared module.
+export { Switch, type SwitchProps } from "./Switch";

@@ -419,6 +419,14 @@ describe("HostTree keyboard navigation", () => {
     expect(useDialogs.getState().openHost).not.toHaveBeenCalled();
     expect(screen.getByRole("menuitem", { name: "Import SSH config" })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: "Import Tunnelde hosts" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("menuitem", { name: "Import Tunnelde hosts" })
+        .querySelector(".lucide-file-input"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Export hosts" }).querySelector(".lucide-file-output"),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "New host" }));
     expect(useDialogs.getState().openHost).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "New group" }));

@@ -9,6 +9,7 @@
 - [后台任务](background-tasks.md)
 - [可选原生辅助程序](native-helper.md)
 - [公共面板布局](panel-layout.md)
+- [公共 UI 控件](ui-controls.md)
 - [文件读取与预览生命周期](file-resources.md)
 - [插件依赖与激活](plugins/activation.md)
 - [插件 API 兼容性与安全](plugins/api.md)

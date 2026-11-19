@@ -2479,6 +2479,9 @@
   "providers": {
     "forwarding": "Port forwarding",
     "monitor": "Performance monitor",
+    "allBuiltin": "All built-in",
+    "customCount": "{{count}} customized",
+    "unavailableCount": "{{count}} unavailable",
     "title": "Interface providers",
     "hint": "Choose installed extensions for the host list, file browser, terminal, history or workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
     "hostList": "Host list",

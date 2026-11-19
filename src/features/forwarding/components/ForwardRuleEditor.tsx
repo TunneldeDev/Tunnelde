@@ -2,9 +2,10 @@ import { ArrowRight, Laptop, Server } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import { Field, Input, Switch } from "@/components/ui/form/Field";
+import { Field, Input } from "@/components/ui/form/Field";
 import type { ForwardRule, ForwardGroup } from "../model/contract";
 
+import { SwitchRow } from "@/components/ui/form/Switch";
 import { Select } from "@/components/ui/form/Select";
 
 import { endpointAddress, localConnectionAddress } from "../model/endpoint";
@@ -165,31 +166,24 @@ export function ForwardRuleEditor({
         </Field>
         <div className="forward-automation">
           {(["autoStart", "autoRetry"] as const).map((option) => (
-            <div className="forward-automation__option" key={option}>
-              <div>
-                <strong>{t(`forward.${option}`)}</strong>
-                <p id={`${id}-${option}`} className="forward-help">
-                  {t(`forward.${option}Hint`)}
-                </p>
-              </div>
-              <Switch
-                label={t(`forward.${option}`)}
-                checked={form.automation?.[option] ?? false}
-                descriptionId={`${id}-${option}`}
-                disabled={busy}
-                onChange={(checked) =>
-                  setForm({
-                    ...form,
-                    automation: {
-                      autoStart: false,
-                      autoRetry: false,
-                      ...form.automation,
-                      [option]: checked,
-                    },
-                  })
-                }
-              />
-            </div>
+            <SwitchRow
+              key={option}
+              label={t(`forward.${option}`)}
+              hint={t(`forward.${option}Hint`)}
+              checked={form.automation?.[option] ?? false}
+              disabled={busy}
+              onChange={(checked) =>
+                setForm({
+                  ...form,
+                  automation: {
+                    autoStart: false,
+                    autoRetry: false,
+                    ...form.automation,
+                    [option]: checked,
+                  },
+                })
+              }
+            />
           ))}
         </div>
         {local ? (

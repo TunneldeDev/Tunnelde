@@ -1,5 +1,6 @@
 import {
-  Download,
+  FileInput,
+  FileOutput,
   ChevronRight,
   FolderClosed,
   FolderPlus,
@@ -168,7 +169,7 @@ function HostRow({
     },
     {
       label: t("hostTransfer.exportTitle"),
-      icon: <Download size={13} />,
+      icon: <FileOutput size={13} />,
       onSelect: () => useHostTransfer.getState().openExport([host.id]),
     },
     { label: t("menu.copySsh"), onSelect: () => copyText(command) },
@@ -741,6 +742,7 @@ export function HostTree() {
             { label: t("sshImport.title"), onSelect: () => setSshImport(true) },
             {
               label: t("hostTransfer.importTitle"),
+              icon: <FileInput size={13} />,
               onSelect: () => useHostTransfer.getState().openImport(),
             },
           ]}
@@ -751,7 +753,7 @@ export function HostTree() {
           disabled={!hosts.some((host) => !host.source)}
           onClick={() => useHostTransfer.getState().openExport()}
         >
-          <Download size={15} />
+          <FileOutput size={15} />
         </IconButton>
         <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
           <FolderPlus size={15} />
