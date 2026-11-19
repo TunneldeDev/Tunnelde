@@ -30,7 +30,7 @@ import { useWorkspace } from "@/store/workspace";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import type { Group, Host } from "@/lib/api/types";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import { useHostDecorations } from "@/store/hostDecorations";
 import { usePlugins } from "@/store/plugins";
 import { useHostColumns } from "@/store/hostColumns";
@@ -732,8 +732,7 @@ export function HostTree() {
     <div className="sidebar hosts-sidebar">
       <HostTransferDialogs />
       {sshImport && <SshConfigImportDialog onClose={() => setSshImport(false)} />}
-      <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
-        <SidebarTitle view="hosts">{t("sidebar.hosts")}</SidebarTitle>
+      <PanelHeader view="hosts">
         <Menu
           label={t("hostTransfer.addMenu")}
           trigger={<Plus size={15} />}
@@ -758,9 +757,8 @@ export function HostTree() {
         <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
           <FolderPlus size={15} />
         </IconButton>
-        <SidebarDockControls view="hosts" />
         <HostListViewMenu columns={allColumns} />
-      </div>
+      </PanelHeader>
       <div className="sidebar__search">
         <HostSearch
           query={query}

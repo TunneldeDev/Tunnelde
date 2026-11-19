@@ -1,3 +1,5 @@
+import { panelPresentation } from "@/store/panelPresentation";
+import { SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, it } from "vitest";
 import i18n from "@/i18n/i18n";
@@ -6,6 +8,8 @@ import { useNavigation } from "@/store/navigation";
 import { useWorkspace } from "@/store/workspace";
 
 beforeEach(async () => {
+  for (const view of SIDEBAR_VIEWS)
+    panelPresentation(view).setState({ open: false, preferred: null });
   await i18n.changeLanguage("en-US");
   useNavigation.setState({
     activeSidebar: "hosts",

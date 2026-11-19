@@ -1,3 +1,7 @@
+import { observePanels, panelsSnapshot } from "@/lib/panels/observation";
+import { useFilePreview } from "@/store/filePreview";
+import { panelSnapshot, requirePanel } from "@/lib/panels/snapshot";
+import { setPanelLocation, closePanel } from "@/lib/panels/controller";
 import { invoke } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { domainEvents } from "@/lib/events/domain";
@@ -90,6 +94,23 @@ export async function runPluginWorkspaceRequest(
         signal,
       );
     }
+    case "workspace.panels.list":
+      return panelsSnapshot();
+    case "workspace.panels.observe":
+      return observePanels(optionalText(params, "revision"), signal);
+    case "workspace.panels.setPresentation": {
+      const view = requirePanel(text(params, "panelId"));
+      const presentation = text(params, "presentation");
+      if (presentation !== "sidebar" && presentation !== "workspace" && presentation !== "floating")
+        throw new Error("invalid:presentation");
+      if (view === "filePreview" && useFilePreview.getState().presentation === "quickLook")
+        useFilePreview.getState().dock();
+      setPanelLocation(view, presentation);
+      return panelSnapshot().find((item) => item.id === view);
+    }
+    case "workspace.panels.close":
+      closePanel(requirePanel(text(params, "panelId")));
+      break;
     case "workspace.snapshot":
       return pluginWorkspaceSnapshot();
     case "workspace.showQuickAccess": {

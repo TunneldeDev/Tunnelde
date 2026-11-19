@@ -31,3 +31,47 @@ Behavioral checks live in `tests/components/PanelLayout.test.tsx`,
 `tests/components/PaneLayout.test.tsx`, `tests/features/FileSplitView.test.tsx` and
 the workspace/sidebar docking suites. Add consumers through these shared controls
 rather than implementing another pointer listener or persistence mechanism.
+
+## Integrated workbench panels
+
+`WorkbenchPanel` is the default container for built-in and contributed sidebar
+views. It composes shared chrome, movement controls, a presentation store and the
+floating geometry primitive. Business code supplies content and optional
+`PanelHeader` actions once; the host relocates these actions without duplicating
+titles. Only special-purpose surfaces should compose the lower-level primitives
+directly. Tasks, connections, output, file preview and plugin sidebars share this
+implementation rather than keeping independent floating/docked shells.
+
+`SidebarContents` retains one React owner per visited panel; `SidebarMount` moves
+its existing DOM container among sidebar, workspace and floating slots. Search,
+selection, disclosure and scroll survive a same-document move. Closing a panel
+hides its presentation, not its SSH sessions, tasks or plugin runtime. Workspace
+close retains the hidden slot. Floating placement/pinning uses generic panel
+state; legacy task geometry is migrated. Live-process checkpoints restore open
+floating panels, but cold startup does not open transient windows automatically.
+Removing a plugin contribution drops its presentation; stopping the runtime
+retains the installed view's restart placeholder while runtime scopes dispose.
+
+This same-document mechanism is not a cross-WebView ownership protocol: do not
+promise DOM/state preservation in native windows until an explicit handoff exists.
+
+### Experimental plugin control
+
+`extensions.describe().panelPresentations` discovers supported presentations and
+methods. `workspace.panels.list` returns `{revision,windowId,panels}` metadata:
+identity, availability, presentation, visibility, pinning and geometry. No feature
+contents, drafts, passwords or arbitrary stores are exposed.
+
+- `workspace.panels.observe({revision?})` returns immediately for an unfamiliar
+  revision, otherwise waits for an invalidation or up to ten seconds. Revisions
+  are opaque and process-local; cancellation releases subscriptions.
+- `workspace.panels.setPresentation({panelId,presentation})` moves an existing
+  panel to `sidebar`, `workspace` or `floating`. A file preview must already exist,
+  and plugin panels must still be contributed.
+- `workspace.panels.close({panelId})` hides the panel without stopping resources.
+
+Read/list/observe require `workspace.read`; mutations require `workspace.write`.
+Normal request authorization, cancellation and final runtime-generation checks
+remain in place. `workspace://panels-changed` is an advisory UI invalidation with
+only `{windowId}`; RPC plugins should use `observe` and reread the snapshot, not
+infer state from a delivered event. Frozen `workspace.snapshot` v1 is unchanged.

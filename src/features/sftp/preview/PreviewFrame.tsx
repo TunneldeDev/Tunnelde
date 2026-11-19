@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { PanelRight, SquareArrowOutUpRight, X } from "lucide-react";
+import { PanelRight, SquareArrowOutUpRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SidebarPortal } from "@/components/layout/SidebarDock";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { createPersistentSurface } from "@/lib/extensions/persistentSurface";
@@ -55,19 +55,14 @@ export function PreviewFrame({
       ) : (
         <SidebarPortal view="filePreview">
           <section className="sidebar file-preview-panel" aria-label={title}>
-            <header className="sidebar__head">
-              <SidebarTitle view="filePreview">{t("sftp.preview")}</SidebarTitle>
+            <PanelHeader view="filePreview" managed>
               <div className="sidebar__actions">
                 {actions}
                 <IconButton label={t("preview.undock")} onClick={onUndock}>
                   <SquareArrowOutUpRight size={14} />
                 </IconButton>
-                <SidebarDockControls view="filePreview" />
-                <IconButton label={t("common.close")} onClick={onClose}>
-                  <X size={14} />
-                </IconButton>
               </div>
-            </header>
+            </PanelHeader>
             <div className="file-preview-panel__body">
               <Body />
             </div>

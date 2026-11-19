@@ -1,3 +1,4 @@
+import { panelLocation, setPanelLocation } from "@/lib/panels/controller";
 import { GripVertical } from "lucide-react";
 import type { TFunction } from "i18next";
 import type { ReactNode } from "react";
@@ -13,6 +14,10 @@ export function sidebarMoveActions(view: SidebarView, t: TFunction): MenuAction[
   const id = sidebarTabId(view);
   const docked = workspace.tabs.some((tab) => tab.id === id);
   return [
+    { label: t("panels.floatWindow"), onSelect: () => setPanelLocation(view, "floating") },
+    ...(panelLocation(view) === "floating" && !docked
+      ? [{ label: t("docking.returnToSidebar"), onSelect: () => setPanelLocation(view, "sidebar") }]
+      : []),
     docked
       ? {
           label: t("docking.returnToSidebar"),

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { panelPresentation } from "./panelPresentation";
 
 import { api } from "@/lib/api/ipc";
 import type { Host, SshSession, TabKind, TabRecord, FsSource } from "@/lib/api/types";
@@ -93,6 +94,7 @@ interface WorkspaceStore {
   openSidebar: (view: SidebarView) => void;
   toggleDockedSidebar: (view: SidebarView) => void;
   returnSidebar: (view: SidebarView) => void;
+  forgetSidebar: (view: SidebarView) => void;
   openHost: (host: Host, options?: OpenTabOptions) => void;
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
@@ -400,6 +402,8 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
   const materializeSidebar = (state: WorkspaceStore, id: string): WorkspaceStore => {
     const view = sidebarViewOf(id);
     if (!view) return state;
+    panelPresentation(view).getState().close();
+    panelPresentation(view).getState().setPreferred("workspace");
     const existing = state.tabs.find((tab) => tab.id === id);
     if (existing)
       return existing.hidden
@@ -467,7 +471,8 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       });
     },
 
-    returnSidebar: (view) => {
+    forgetSidebar: (view) => {
+      panelPresentation(view).getState().close();
       const id = sidebarTabId(view);
       set((state) => {
         const tabs = state.tabs.filter((tab) => tab.id !== id);
@@ -476,6 +481,11 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           ...settle(dropTab(state.panes, id), state.activePaneId, state.split, state.layout, tabs),
         };
       });
+    },
+
+    returnSidebar: (view) => {
+      useWorkspace.getState().forgetSidebar(view);
+      panelPresentation(view).getState().setPreferred("sidebar");
       useNavigation.getState().showSidebar(view);
     },
 

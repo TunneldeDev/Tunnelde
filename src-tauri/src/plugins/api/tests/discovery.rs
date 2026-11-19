@@ -192,6 +192,10 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "storage.observe",
             "storage.recovery.observe",
             "storage.recovery.request",
+            "workspace.panels.close",
+            "workspace.panels.list",
+            "workspace.panels.observe",
+            "workspace.panels.setPresentation",
         ]
     );
 }
@@ -269,4 +273,18 @@ fn exposes_only_unique_documented_methods_with_declared_permissions() {
     let describe = method_info("api.describe").unwrap();
     assert_eq!(describe.stability, "stable");
     assert_eq!(describe.since, Some("0.21.0"));
+}
+
+#[test]
+fn panel_methods_are_explicit_experimental_permission_checked_additions() {
+    for (name, permission) in [
+        ("workspace.panels.list", "workspace.read"),
+        ("workspace.panels.observe", "workspace.read"),
+        ("workspace.panels.setPresentation", "workspace.write"),
+        ("workspace.panels.close", "workspace.write"),
+    ] {
+        let entry = method_info(name).unwrap();
+        assert_eq!(entry.permissions, [permission]);
+        assert_eq!(entry.stability, "experimental");
+    }
 }

@@ -1,10 +1,11 @@
+import { subscribePanels } from "@/lib/panels/observation";
 import { ShortcutConflictDialog } from "@/features/settings/ShortcutConflictDialog";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { createWorkbenchSurfaces } from "./WorkbenchSurfaces";
 import { ProviderSurface } from "./ProviderSurface";
 
-import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
+import { SidebarArea, SidebarContents, FloatingPanelLayer } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { FormatterPicker } from "@/features/editor/FormatterPicker";
 import { isWorkspaceDrag, readWorkspaceDrop } from "@/lib/session/workspaceDrag";
@@ -35,7 +36,7 @@ import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { useQuickAccess } from "@/store/quickAccess";
 import { RestartPrompt } from "@/components/layout/RestartPrompt";
 import { FilePreview } from "@/features/sftp/FilePreview";
-import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
+import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundWindow } from "@/app/backgroundWindow";
 import { wireTabBarContributions } from "@/store/tabBar";
 import { wireHostDecorations } from "@/store/hostDecorations";
@@ -55,6 +56,11 @@ export function AppShell() {
   useEffect(() => {
     if (!isTauri()) return;
     const controller = new AbortController();
+    const stopPanels = subscribePanels(() => {
+      void import("@tauri-apps/api/event")
+        .then(({ emit }) => emit("workspace://panels-changed", { windowId: "main" }))
+        .catch(() => {});
+    });
     void wireHostSources(controller.signal).catch((error: unknown) =>
       console.error("Host sources subscription failed", error),
     );
@@ -70,7 +76,10 @@ export function AppShell() {
     void wireFileHighlights(controller.signal).catch((error: unknown) =>
       console.error("File highlights subscription failed", error),
     );
-    return () => controller.abort();
+    return () => {
+      stopPanels();
+      controller.abort();
+    };
   }, []);
   useInternalDrag();
   useWindowCloseGuard();
@@ -324,7 +333,7 @@ export function AppShell() {
       <RestartPrompt />
       <FormatterPicker />
       <FilePreview />
-      <BackgroundTasks />
+      <FloatingPanelLayer />
       {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
     </div>
   );

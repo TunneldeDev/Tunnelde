@@ -8,6 +8,7 @@
   .td-tag,
   .td-search,
   .td-dialog,
+  .workbench-panel--floating,
   .td-palette,
   .td-palette__input,
   .td-palette__item,
@@ -36,6 +37,7 @@
     .td-btn,
     .td-icon-btn,
     .td-dialog,
+    .workbench-panel--floating,
     .td-palette,
     .td-toast,
     .td-segmented,
@@ -57,7 +59,7 @@
     --td-corner-border: url("./corners/border-md.svg");
   }
 
-  :is(.td-dialog, .td-palette) {
+  :is(.td-dialog, .workbench-panel--floating, .td-palette) {
     --td-corner-size: 18;
     --td-corner-border: url("./corners/border-lg.svg");
   }
@@ -79,6 +81,7 @@
     .td-btn,
     .td-icon-btn,
     .td-dialog,
+    .workbench-panel--floating,
     .td-palette,
     .td-toast,
     .td-segmented,
@@ -91,6 +94,7 @@
     .td-btn,
     .td-icon-btn,
     .td-dialog,
+    .workbench-panel--floating,
     .td-palette,
     .td-toast,
     .td-segmented,
@@ -114,6 +118,7 @@
     .td-btn,
     .td-icon-btn,
     .td-dialog,
+    .workbench-panel--floating,
     .td-palette,
     .td-toast,
     .td-segmented,
@@ -130,6 +135,7 @@
     .td-btn,
     .td-icon-btn,
     .td-dialog,
+    .workbench-panel--floating,
     .td-palette,
     .td-toast,
     .td-segmented,

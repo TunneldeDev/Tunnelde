@@ -760,3 +760,46 @@ it("saves a rule into the selected group and shows it under that group", async (
   expect(rule.closest("h3")).toBeNull();
   expect(screen.queryByRole("region", { name: "Ungrouped" })).toBeNull();
 });
+
+it("keeps Add forwarding and New group adjacent and preserves group creation/revision rename", async () => {
+  let groups: { id: string; hostId: string; name: string; revision: string }[] = [];
+  invokeMock.mockImplementation(async (command, args) => {
+    if (command === "forwarding_list") return [];
+    if (command === "forwarding_groups_list") return groups;
+    if (command === "forwarding_group_save") {
+      groups = [{ id: args.id ?? "created", hostId: args.hostId, name: args.name, revision: "g2" }];
+      return groups[0];
+    }
+  });
+  render(<ForwardingSection host={host} />);
+  const add = await screen.findByRole("button", { name: "Add forward" });
+  const create = screen.getByRole("button", { name: "New forwarding group" });
+  expect(create.parentElement).toBe(add.parentElement);
+  expect(add.nextElementSibling).toBe(create);
+  await waitFor(() => expect(create).toHaveProperty("disabled", false));
+  fireEvent.click(create);
+  fireEvent.change(screen.getByRole("textbox", { name: "Group name" }), {
+    target: { value: "Services" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByRole("region", { name: "Services" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_group_save", {
+    hostId: "host",
+    name: "Services",
+  });
+  fireEvent.click(
+    within(screen.getByRole("region", { name: "Services" })).getByRole("button", { name: "More" }),
+  );
+  fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Group name" }), {
+    target: { value: "Databases" },
+  });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Group name" }), { key: "Enter" });
+  await screen.findByRole("region", { name: "Databases" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_group_save", {
+    hostId: "host",
+    id: "created",
+    name: "Databases",
+    expectedRevision: "g2",
+  });
+});

@@ -10,10 +10,12 @@ export function ConnectionSession({
   session,
   history,
   ended = false,
+  grouped = false,
 }: {
   session: SshSession;
   history?: SessionHistory;
   ended?: boolean;
+  grouped?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [confirming, setConfirming] = useState(false);
@@ -33,7 +35,7 @@ export function ConnectionSession({
     <li className="connection-list__item" aria-label={`${session.title} · ${session.id}`}>
       <div className="connection-list__heading">
         <div className="connection-list__identity">
-          <strong>{session.title}</strong>
+          <strong>{grouped ? purpose : session.title}</strong>
           <code>{session.address}</code>
         </div>
         {!ended && (
@@ -74,7 +76,7 @@ export function ConnectionSession({
       )}
       <Disclosure
         heading={t("connections.details")}
-        summary={`${purpose} · ${t(ended ? "connections.ended" : pending ? "connections.disconnecting" : "connections.connected")}`}
+        summary={`${grouped ? "" : `${purpose} · `}${t(ended ? "connections.ended" : pending ? "connections.disconnecting" : "connections.connected")}`}
       >
         <dl>
           <dt>{t("connections.address")}</dt>
