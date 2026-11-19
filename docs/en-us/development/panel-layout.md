@@ -82,7 +82,9 @@ infer state from a delivered event. Frozen `workspace.snapshot` v1 is unchanged.
 layout wrapper. The application installs one scope around its workbench; an
 isolated `SplitPanels` consumer gets a local scope automatically. Connected DOM
 roots are handled separately, so a floating panel cannot resize an unrelated
-workspace boundary. Split IDs must be unique within a scope.
+workspace boundary. Geometry registration uses per-instance IDs; semantic split
+IDs need only be unique within each owner/batch callback, not across independent
+layout roots. A changed owner or topology cancels the old gesture.
 
 The host measures actual separator segments to find T/cross junctions. A junction
 handle moves both axes; touching collinear segments move together, while unrelated
