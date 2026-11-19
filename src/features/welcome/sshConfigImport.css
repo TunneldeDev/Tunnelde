@@ -45,6 +45,7 @@
 }
 
 .ssh-import__details {
+  overflow-wrap: anywhere;
   display: flex;
   flex: 1;
   min-width: 0;

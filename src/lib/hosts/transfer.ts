@@ -53,19 +53,40 @@ export interface HostImportPreview {
     mounts: number;
   }>;
 }
-export function hostImportSelection(
-  preview: HostImportPreview,
-  roots: Iterable<string>,
-): Set<string> {
-  const selected = new Set<string>();
-  const visit = (id: string) => {
-    if (selected.has(id)) return;
-    selected.add(id);
-    for (const dependency of preview.entries.find((entry) => entry.id === id)?.requires ?? [])
-      visit(dependency);
+// Walk in either direction: choosing a host includes its jump hosts, while a
+// conflict prevents default selection of every host that depends on it.
+function reachable(roots: Iterable<string>, neighbors: (id: string) => readonly string[]) {
+  const seen = new Set<string>();
+  const pending = [...roots];
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const next of neighbors(id)) pending.push(next);
+  }
+  return seen;
+}
+
+export function indexHostPreview(preview: HostImportPreview) {
+  const entries = new Map(preview.entries.map((entry) => [entry.id, entry]));
+  const dependents = new Map<string, string[]>();
+  for (const entry of entries.values()) {
+    for (const id of entry.requires) {
+      const list = dependents.get(id);
+      if (list) list.push(entry.id);
+      else dependents.set(id, [entry.id]);
+    }
+  }
+  const blocked = reachable(
+    preview.entries.filter((entry) => entry.conflict).map((entry) => entry.id),
+    (id) => dependents.get(id) ?? [],
+  );
+  return {
+    preview,
+    entries,
+    blocked,
+    expand: (roots: Iterable<string>) => reachable(roots, (id) => entries.get(id)?.requires ?? []),
   };
-  for (const id of roots) visit(id);
-  return selected;
 }
 export const hostTransferApi = {
   pick: () => invoke<HostImportPreview | null>("hosts_file_import"),
