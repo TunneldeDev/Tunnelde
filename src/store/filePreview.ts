@@ -1,3 +1,5 @@
+import { panelPresentation } from "./panelPresentation";
+import { closePanel, setPanelLocation } from "@/lib/panels/controller";
 import { create } from "zustand";
 import { captureFileTarget } from "@/lib/files/resources/target";
 import type { FsSource } from "@/lib/api/types";
@@ -19,6 +21,7 @@ function preferredPresentation(): PreviewPresentation {
 export function previewPanelOpen(): boolean {
   const tab = useWorkspace.getState().tabs.find((item) => item.id === previewPanelId);
   const navigation = useNavigation.getState();
+  if (panelPresentation("filePreview").getState().open) return true;
   return tab
     ? !tab.hidden
     : navigation.sidebarVisible && navigation.activeSidebar === "filePreview";
@@ -26,6 +29,10 @@ export function previewPanelOpen(): boolean {
 
 function openPanel() {
   const workspace = useWorkspace.getState();
+  if (panelPresentation("filePreview").getState().preferred === "floating") {
+    setPanelLocation("filePreview", "floating");
+    return;
+  }
   if (workspace.tabs.some((tab) => tab.id === previewPanelId)) {
     workspace.activate(previewPanelId);
   } else {
@@ -39,7 +46,7 @@ function openPanel() {
 }
 
 function hidePanel() {
-  useWorkspace.getState().close(previewPanelId);
+  closePanel("filePreview");
   const navigation = useNavigation.getState();
   if (
     navigation.sidebarVisible &&

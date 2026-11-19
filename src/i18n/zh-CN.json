@@ -2816,5 +2816,12 @@
     "cancelled": "主机迁移已取消。",
     "failed": "主机迁移失败，请重试。",
     "exportChanged": "导出期间主机配置发生变化，请重新导出。"
+  },
+  "panels": {
+    "moveHint": "移动面板 · 方向键移动 · Shift 精细调整 · Escape 取消",
+    "resizeHint": "调整面板大小 · 方向键缩放 · Shift 精细调整",
+    "resetLayout": "重置面板布局",
+    "floatWindow": "作为小窗打开",
+    "keepOpen": "保持面板打开"
   }
 }

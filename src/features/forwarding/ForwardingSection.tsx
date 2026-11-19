@@ -1,3 +1,7 @@
+import { useState } from "react";
+import { ForwardGroupDialog } from "./components/ForwardGroupDialog";
+import type { ForwardGroup } from "./model/contract";
+import { HelpHint } from "@/components/ui/form/HelpHint";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -30,6 +34,7 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
 function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
   const { t } = useTranslation();
   const controller = useForwardingController(host);
+  const [groupEditor, setGroupEditor] = useState<{ group?: ForwardGroup } | null>(null);
   const { rules, loading, session, canStart, form, busy, failure, connectingRules } = controller;
   return (
     <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
@@ -44,13 +49,6 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
         </div>
         {!form ? (
           <div className="forwarding__tools">
-            <IconButton
-              label={t("forward.refresh")}
-              disabled={busy || loading}
-              onClick={controller.refresh}
-            >
-              <RefreshCw size={14} />
-            </IconButton>
             <Button
               size="sm"
               leading={<Plus size={14} />}
@@ -59,6 +57,22 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
             >
               {t("forward.add")}
             </Button>
+            <Button
+              size="sm"
+              leading={<Plus size={14} />}
+              disabled={busy || loading}
+              onClick={() => setGroupEditor({})}
+            >
+              {t("forward.addGroup")}
+            </Button>
+            <HelpHint label={t("forward.addGroup")}>{t("forward.groupHint")}</HelpHint>
+            <IconButton
+              label={t("forward.refresh")}
+              disabled={busy || loading}
+              onClick={controller.refresh}
+            >
+              <RefreshCw size={14} />
+            </IconButton>
           </div>
         ) : null}
       </header>
@@ -111,7 +125,11 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
             {t("common.loading")}
           </p>
         ) : (
-          <ForwardGroups controller={controller} hostId={host.id} />
+          <ForwardGroups
+            controller={controller}
+            hostId={host.id}
+            onEditGroup={(group) => setGroupEditor({ group })}
+          />
         )}
       </ForwardingSurface>
       {failure?.target === "list" ? (
@@ -119,6 +137,14 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           {failure.message}
         </p>
       ) : null}
+      {groupEditor && (
+        <ForwardGroupDialog
+          key={groupEditor.group?.id ?? "new"}
+          group={groupEditor.group}
+          hostId={host.id}
+          onClose={() => setGroupEditor(null)}
+        />
+      )}
       {connectingRules && (
         <ConnectDialog
           host={host}

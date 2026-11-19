@@ -24,3 +24,36 @@
 行为检查见 `tests/components/PanelLayout.test.tsx`、
 `tests/components/PaneLayout.test.tsx`、`tests/features/FileSplitView.test.tsx`
 及工作区／侧栏停靠测试。新增消费者应复用公共控件，避免重新实现指针监听或持久化。
+
+## 综合工作台面板
+
+`WorkbenchPanel` 是内置面板和插件侧栏的默认综合容器，内部组合公共标题栏、位置菜单、
+展示状态和小窗几何控制。业务只提供一份正文和可选的 `PanelHeader` 操作，宿主将操作
+移入统一标题栏，避免重复标题。只有特殊用途才直接组合底层基础组件；任务、连接详情、
+输出、文件预览和插件侧栏不再分别维护小窗与面板外壳。
+
+`SidebarContents` 为已访问面板保留唯一 React 所有者，`SidebarMount` 在侧栏、工作区和
+小窗之间移动同一个 DOM 容器。同文档切换保留搜索、选择、展开和滚动；关闭只隐藏展示，
+不停止 SSH 会话、任务或插件运行时。工作区关闭保留隐藏槽位。小窗使用通用状态并迁移旧
+任务几何数据；进程内检查点可恢复已打开的小窗，但冷启动不自动弹出临时小窗。插件贡献
+被移除时清理展示；停止运行时保留已安装视图的启动占位，运行时资源仍按作用域释放。
+
+此机制只适用于同文档，不等于跨 WebView 所有权交接；没有明确交接协议前，不得声称
+原生独立窗体能够保留 DOM 或所有临时状态。
+
+### 实验性插件控制
+
+通过 `extensions.describe().panelPresentations` 发现支持的展示方式与方法。
+`workspace.panels.list` 返回 `{revision,windowId,panels}`，仅包含标识、可用性、位置、
+可见性、固定状态和几何数据，不包含业务正文、草稿、密码或任意 store。
+
+- `workspace.panels.observe({revision?})`：revision 不同时立即返回，否则等待变化或最多
+  十秒。revision 是进程内不透明值，不提供持久重放；取消会释放监听。
+- `workspace.panels.setPresentation({panelId,presentation})`：将现有面板移到 `sidebar`、
+  `workspace` 或 `floating`。文件预览必须已存在，插件面板必须仍在贡献列表中。
+- `workspace.panels.close({panelId})`：隐藏面板，不停止业务资源。
+
+读取和观察需要 `workspace.read`，变更需要 `workspace.write`。正常请求授权、取消与
+回复前的运行时代次检查保持不变。`workspace://panels-changed` 仅是包含 `{windowId}` 的
+UI 失效通知；RPC 插件应使用 `observe` 并重新读取，不可从事件交付推断当前状态。
+冻结的 `workspace.snapshot` v1 不变。

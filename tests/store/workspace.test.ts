@@ -1,3 +1,5 @@
+import { panelPresentation } from "@/store/panelPresentation";
+import { SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Host, SshSession, TabRecord } from "@/lib/api/types";
@@ -81,6 +83,8 @@ it("migrates old updates tabs into a single settings tab while preserving pane p
 });
 
 beforeEach(() => {
+  for (const view of SIDEBAR_VIEWS)
+    panelPresentation(view).setState({ open: false, preferred: null });
   useNavigation.setState({
     activeSidebar: "hosts",
     sidebarVisible: true,

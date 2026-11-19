@@ -1,3 +1,5 @@
+import { panelPresentation } from "@/store/panelPresentation";
+import { SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { useWorkspace } from "@/store/workspace";
@@ -70,6 +72,8 @@ it("defers WebView teardown for hidden JavaScript work and suspends once it sett
 
 beforeEach(() => {
   vi.clearAllMocks();
+  for (const view of SIDEBAR_VIEWS)
+    panelPresentation(view).setState({ open: false, preferred: null, pinned: false, bounds: null });
   useRestartPrompt.setState({ open: false, observed: null });
   useTransferPanel.setState({ open: false, pinned: false, bounds: null });
   mocks.snapshot.mockResolvedValue(null);
@@ -281,4 +285,22 @@ it("retains session lifecycle history across in-memory WebView suspension", asyn
   await restoreBackgroundSnapshot();
   expect(useSsh.getState().history).toEqual(history);
   expect(useSsh.getState().sessions).toEqual([]);
+});
+
+it("restores generic panel geometry and presentation only from the live-process checkpoint", async () => {
+  const state = { open: true, pinned: true, bounds: { x: 42, y: 50, width: 500, height: 420 } };
+  panelPresentation("connections").setState(state);
+  await suspendBackgroundWindow(81);
+  const snapshot = mocks.suspend.mock.calls[0]![1] as string;
+  const decoded = decodeViewSnapshot<{ panelPresentations: Record<string, unknown> }>(snapshot);
+  expect(decoded.panelPresentations.connections).toEqual(state);
+  panelPresentation("connections").setState({ open: false, pinned: false, bounds: null });
+  mocks.snapshot.mockResolvedValue(snapshot);
+  await restoreBackgroundSnapshot();
+  expect(panelPresentation("connections").getState()).toMatchObject(state);
+  decoded.panelPresentations.connections = { open: "yes", pinned: true, bounds: { x: 0 } };
+  panelPresentation("connections").setState({ open: false });
+  mocks.snapshot.mockResolvedValue(encodeViewSnapshot(decoded));
+  await restoreBackgroundSnapshot();
+  expect(panelPresentation("connections").getState().open).toBe(false);
 });

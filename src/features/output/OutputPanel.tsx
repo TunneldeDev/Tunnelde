@@ -7,7 +7,7 @@ import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
 import { useTabBarContribution } from "@/store/tabBar";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader, useWorkbenchPanel } from "@/components/layout/WorkbenchPanel";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { usePlugins } from "@/store/plugins";
@@ -39,6 +39,7 @@ const OutputLine = memo(function OutputLine({ entry }: { entry: OutputEntry }) {
 
 export function OutputPanel({ active, docked = false }: { active: boolean; docked?: boolean }) {
   const { t } = useTranslation();
+  const scope = useWorkbenchPanel();
   const output = useOutput(active);
   const [channel, setChannel] = useState("all");
   const [query, setQuery] = useState("");
@@ -186,14 +187,8 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
   });
 
   return (
-    <section className="output-panel" aria-label={t("output.title")}>
-      {!docked ? (
-        <header className="sidebar__head output-panel__header">
-          <SidebarTitle view="output">{t("output.title")}</SidebarTitle>
-          {controls}
-          <SidebarDockControls view="output" />
-        </header>
-      ) : null}
+    <section className="output-panel" aria-label={scope ? undefined : t("output.title")}>
+      <PanelHeader view="output">{controls}</PanelHeader>
       {!docked ? (
         <div className="output-panel__toolbar">
           <Select

@@ -556,5 +556,20 @@
       "activeOperations": 8,
       "retainedOperations": 128
     }
+  },
+  "panelPresentations": {
+    "version": 1,
+    "experimental": true,
+    "presentations": ["sidebar", "workspace", "floating"],
+    "methods": [
+      "workspace.panels.list",
+      "workspace.panels.observe",
+      "workspace.panels.setPresentation",
+      "workspace.panels.close"
+    ],
+    "readPermission": "workspace.read",
+    "writePermission": "workspace.write",
+    "events": ["workspace://panels-changed"],
+    "ownership": "One retained renderer per panel in the main window. Presentation changes do not disconnect resources. Metadata only; drafts and feature contents are excluded."
   }
 }

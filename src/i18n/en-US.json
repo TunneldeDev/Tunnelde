@@ -2816,5 +2816,12 @@
     "cancelled": "Host transfer cancelled.",
     "failed": "Host transfer failed. Please try again.",
     "exportChanged": "Host configuration changed during export. Try exporting again."
+  },
+  "panels": {
+    "moveHint": "Move panel · arrow keys move · Shift for fine adjustment · Escape cancels",
+    "resizeHint": "Resize panel · arrow keys resize · Shift for fine adjustment",
+    "resetLayout": "Reset panel layout",
+    "floatWindow": "Open as a floating window",
+    "keepOpen": "Keep panel open"
   }
 }

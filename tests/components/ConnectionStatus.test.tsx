@@ -1,11 +1,25 @@
+import { SidebarContents, FloatingPanelLayer } from "@/components/layout/SidebarDock";
+import { panelPresentation } from "@/store/panelPresentation";
+import { useNavigation } from "@/store/navigation";
+import { useWorkspace } from "@/store/workspace";
 import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 const { disconnect } = vi.hoisted(() => ({ disconnect: vi.fn() }));
 vi.mock("@/lib/api/ipc", () => ({ api: { sshDisconnect: disconnect } }));
 import i18n from "@/i18n/i18n";
-import { ConnectionStatus } from "@/components/layout/ConnectionStatus";
+import { ConnectionStatus as ConnectionStatusButton } from "@/components/layout/ConnectionStatus";
 import { useSsh } from "@/store/ssh";
 import type { SshSession } from "@/lib/api/types";
+
+function ConnectionStatus() {
+  return (
+    <>
+      <ConnectionStatusButton />
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>
+  );
+}
 
 const session = (id: string, extra: Partial<SshSession> = {}): SshSession => ({
   id,
@@ -20,6 +34,9 @@ const session = (id: string, extra: Partial<SshSession> = {}): SshSession => ({
 });
 beforeEach(async () => {
   await i18n.changeLanguage("en-US");
+  panelPresentation("connections").getState().close();
+  useNavigation.setState({ visitedSidebars: [], sidebarVisible: false, activeSidebar: "hosts" });
+  useWorkspace.setState({ tabs: [] });
   disconnect.mockReset().mockResolvedValue(undefined);
   useSsh.setState({ sessions: [], history: [], disconnectingSessionIds: [] });
 });
@@ -31,7 +48,7 @@ it("opens the empty session list and closes using Escape with focus restored", (
   const dialog = screen.getByRole("dialog", { name: "Connection details" });
   expect(within(dialog).getByText("0 active sessions")).toBeTruthy();
   expect(within(dialog).getByText("No active connections")).toBeTruthy();
-  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.keyDown(dialog, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });
@@ -47,9 +64,9 @@ it("shows real endpoints, identities and purposes, updating while the dialog is 
   fireEvent.click(screen.getByRole("button", { name: "3 connections" }));
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText("3 active sessions")).toBeTruthy();
-  expect(within(dialog).getByText("Terminal · Connected")).toBeTruthy();
-  expect(within(dialog).getByText("Port forwarding · Connected")).toBeTruthy();
-  expect(within(dialog).getByText("Background · Connected")).toBeTruthy();
+  expect(within(dialog).getByText("Terminal")).toBeTruthy();
+  expect(within(dialog).getByText("Port forwarding")).toBeTruthy();
+  expect(within(dialog).getByText("Background")).toBeTruthy();
   for (const summary of dialog.querySelectorAll("summary")) fireEvent.click(summary);
   expect(within(dialog).getAllByText("qa@example.test:2222")).toHaveLength(6);
   expect(within(dialog).getByText("forward")).toBeTruthy();
@@ -129,5 +146,17 @@ it("moves a remotely closed session to recent history while its confirmation is 
     kind: "ended",
     detail: "closed",
   });
+  expect(disconnect).not.toHaveBeenCalled();
+});
+
+it("toggles the same panel from its status entry without stopping sessions", () => {
+  useSsh.setState({ sessions: [session("retained")] });
+  render(<ConnectionStatus />);
+  const trigger = screen.getByRole("button", { name: "1 connection" });
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(useSsh.getState().sessions).toHaveLength(1);
   expect(disconnect).not.toHaveBeenCalled();
 });

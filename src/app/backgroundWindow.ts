@@ -1,3 +1,4 @@
+import { isFloatingRect } from "@/lib/layout/floatingPanel";
 import { useEffect } from "react";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
@@ -28,6 +29,8 @@ import { useFileClipboard } from "@/store/fileClipboard";
 import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useTransferPanel } from "@/store/transferPanel";
+import { usePanelPresentations, panelPresentation } from "@/store/panelPresentation";
+import { sidebarViewOf } from "@/lib/session/sidebarDock";
 import { useRestartPrompt } from "@/store/restartPrompt";
 import {
   backgroundTasksBlockSuspension,
@@ -62,6 +65,10 @@ interface WindowSnapshot {
   views: Record<string, unknown>;
   terminals: Record<string, TerminalCheckpoint>;
   transferPanel?: Pick<ReturnType<typeof useTransferPanel.getState>, "open" | "pinned" | "bounds">;
+  panelPresentations?: Record<
+    string,
+    Pick<ReturnType<typeof useTransferPanel.getState>, "open" | "pinned" | "bounds">
+  >;
   backgroundTaskHistory?: ReturnType<typeof backgroundTaskHistory>;
 }
 
@@ -91,6 +98,23 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   useWorkspace.setState(snapshot.workspace);
   useNavigation.setState(snapshot.navigation);
   if (snapshot.transferPanel) useTransferPanel.setState(snapshot.transferPanel);
+  if (snapshot.panelPresentations)
+    for (const [id, state] of Object.entries(snapshot.panelPresentations)) {
+      const view = sidebarViewOf(`sidebar:${id}`);
+      if (
+        view &&
+        state &&
+        typeof state === "object" &&
+        typeof state.open === "boolean" &&
+        typeof state.pinned === "boolean" &&
+        (state.bounds === null || isFloatingRect(state.bounds))
+      )
+        panelPresentation(view).setState({
+          open: state.open,
+          pinned: state.pinned,
+          bounds: state.bounds,
+        });
+    }
   if (snapshot.backgroundTaskHistory) restoreBackgroundTaskHistory(snapshot.backgroundTaskHistory);
   return true;
 }
@@ -142,6 +166,12 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
     if (cancellation !== revision || busy()) return;
     const snapshot: WindowSnapshot = {
       version: 1,
+      panelPresentations: Object.fromEntries(
+        Object.entries(usePanelPresentations.getState().panels).map(([id, state]) => [
+          id,
+          { open: !!state?.open, pinned: !!state?.pinned, bounds: state?.bounds ?? null },
+        ]),
+      ),
       backgroundTaskHistory: backgroundTaskHistory(),
       transferPanel: {
         open: useTransferPanel.getState().open,

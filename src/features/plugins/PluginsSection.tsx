@@ -31,7 +31,7 @@ import { toast } from "@/store/toasts";
 import { LocalPluginInstall } from "./LocalPluginInstall";
 import { requestMarketInstall } from "./PluginDetailPage";
 import { PluginError } from "./PluginError";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 
 export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
   const { t, i18n } = useTranslation();
@@ -117,8 +117,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
       className={sidebar ? "plugins-sidebar" : "plugins-browser"}
       aria-label={t("settings.plugins")}
     >
-      <header className="sidebar__head plugins-sidebar__head">
-        <SidebarTitle view="plugins">{t("settings.plugins")}</SidebarTitle>
+      <PanelHeader view="plugins">
         <IconButton
           label={t("plugins.installTitle")}
           size="sm"
@@ -140,8 +139,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
         <IconButton label={t("market.manageSources")} size="sm" onClick={openSettings}>
           <Settings2 size={14} />
         </IconButton>
-        <SidebarDockControls view="plugins" />
-      </header>
+      </PanelHeader>
       <div className="sidebar__search">
         <SearchField
           aria-label={t("plugins.search")}

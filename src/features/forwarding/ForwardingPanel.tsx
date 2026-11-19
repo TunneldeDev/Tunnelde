@@ -6,9 +6,7 @@ import { useForwardingSnapshot } from "./data/store";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { translateError } from "@/lib/api/errors";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
-import { sidebarTabId } from "@/lib/session/sidebarDock";
-import { useWorkspace } from "@/store/workspace";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
 import { EmptyState } from "@/components/ui/display/Misc";
@@ -22,9 +20,6 @@ export function ForwardingPanel() {
   const openHost = useDialogs((state) => state.openHost);
   const sessions = useSsh((state) => state.sessions);
   const target = useNavigation((state) => state.forwardingTarget);
-  const docked = useWorkspace((state) =>
-    state.tabs.some((tab) => tab.id === sidebarTabId("forwarding")),
-  );
   const [selection, setSelection] = useState<{
     hostId: string | null;
     targetRevision: number;
@@ -36,12 +31,7 @@ export function ForwardingPanel() {
   const error = snapshot.error ? translateError(snapshot.error) : "";
   return (
     <div className="forwarding-panel">
-      {!docked && (
-        <header className="sidebar__head">
-          <SidebarTitle view="forwarding">{t("forward.title")}</SidebarTitle>
-          <SidebarDockControls view="forwarding" />
-        </header>
-      )}
+      <PanelHeader view="forwarding" />
       <div className="forwarding-panel__content">
         {error && (
           <p className="forwarding-panel__error" role="alert">

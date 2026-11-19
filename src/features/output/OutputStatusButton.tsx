@@ -1,3 +1,4 @@
+import { panelPresentation } from "@/store/panelPresentation";
 import { Logs } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigation } from "@/store/navigation";
@@ -17,7 +18,8 @@ export function OutputStatusButton() {
   const inSidebar = useNavigation(
     (state) => state.sidebarVisible && state.activeSidebar === "output",
   );
-  const expanded = docked ? visible : inSidebar;
+  const floating = panelPresentation("output")((state) => state.open);
+  const expanded = docked ? visible : inSidebar || floating;
   return (
     <button
       type="button"
@@ -26,8 +28,10 @@ export function OutputStatusButton() {
       aria-label={t("output.title")}
       aria-expanded={expanded}
       aria-controls="sidebar-output"
+      data-panel-trigger="output"
       onClick={() => {
-        if (docked) useWorkspace.getState().toggleDockedSidebar("output");
+        if (floating) panelPresentation("output").getState().close();
+        else if (docked) useWorkspace.getState().toggleDockedSidebar("output");
         else if (inSidebar) useNavigation.getState().selectSidebar("output");
         else useNavigation.getState().showOutput();
       }}

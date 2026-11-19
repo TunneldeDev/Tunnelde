@@ -193,9 +193,20 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
     : null;
   const activeSidebarView = activeTab?.kind === "sidebar" ? sidebarViewOf(activeTab.id) : null;
   const focusActiveTab = () => {
+    // A split/close may unmount this strip. Scope the deferred focus to the
+    // surviving workbench root, never a later unrelated document/render tree.
+    let root: HTMLElement | null = strip.current?.closest(".pane")?.parentElement ?? null;
+    for (let parent = strip.current?.parentElement; parent; parent = parent.parentElement) {
+      if (parent.classList.contains("pane-layout")) root = parent.parentElement;
+      if (parent.classList.contains("workspace")) {
+        root = parent;
+        break;
+      }
+    }
+    const activeId = useWorkspace.getState().activeId;
     requestAnimationFrame(() => {
-      const activeId = useWorkspace.getState().activeId;
-      Array.from(document.querySelectorAll<HTMLElement>("[data-tab-id]"))
+      if (!root?.isConnected || useWorkspace.getState().activeId !== activeId) return;
+      Array.from(root.querySelectorAll<HTMLElement>("[data-tab-id]"))
         .find((element) => element.dataset.tabId === activeId)
         ?.focus({ preventScroll: true });
     });
