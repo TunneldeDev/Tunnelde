@@ -2736,6 +2736,7 @@
     "sessions_other": "{{count}} active sessions"
   },
   "hostTransfer": {
+    "chooseFile": "Choose file…",
     "addMenu": "Add host",
     "exportTitle": "Export hosts",
     "importTitle": "Import Tunnelde hosts",

@@ -2736,6 +2736,7 @@
     "sessions_other": "当前 {{count}} 条会话"
   },
   "hostTransfer": {
+    "chooseFile": "选择文件…",
     "addMenu": "添加主机",
     "exportTitle": "导出主机",
     "importTitle": "导入 Tunnelde 主机文件",

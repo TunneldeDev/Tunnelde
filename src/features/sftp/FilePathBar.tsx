@@ -55,7 +55,7 @@ function ChildFolders({
         result.error
           ? [
               { label: result.error, disabled: true, onSelect: () => undefined },
-              { label: t("sftp.refresh"), onSelect: () => void load() },
+              { label: t("sftp.refresh"), keepOpen: true, onSelect: () => void load() },
             ]
           : !result.entries
             ? [{ label: t("sftp.loading"), disabled: true, onSelect: () => undefined }]
@@ -194,7 +194,7 @@ export function FilePathBar({
             spellCheck={false}
             onChange={(event) => onDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
               if (event.key === "Enter") {
                 event.preventDefault();
                 event.stopPropagation();

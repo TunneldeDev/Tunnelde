@@ -127,6 +127,7 @@ export function useForwardingController(host: Host) {
       for (let index = 0; index < targets.length; index++) {
         if (!live.current) return;
         const rule = targets[index]!;
+        setPending(rule.id);
         try {
           await startOne(rule, authority);
         } catch (cause) {
@@ -146,6 +147,10 @@ export function useForwardingController(host: Host) {
     });
   };
   const start = (ids: string[]) => startTargets(rules.filter((rule) => ids.includes(rule.id)));
+  const canStart = (rule: ForwardInfo) =>
+    !isActive(rule) &&
+    rule.automationStatus?.phase !== "starting" &&
+    rule.automationStatus?.phase !== "retrying";
   const save = (rule: ForwardRule, start: boolean) => {
     if (mutation.current) return;
     const draft = form;
@@ -282,6 +287,7 @@ export function useForwardingController(host: Host) {
     loading,
     session,
     isActive,
+    canStart,
     form,
     busy,
     failure,

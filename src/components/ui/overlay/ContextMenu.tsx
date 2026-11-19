@@ -75,7 +75,7 @@ export function ContextMenuHost() {
       <MenuItems
         items={menu.items}
         onSelect={(item) => {
-          close();
+          if (!item.keepOpen) close();
           item.onSelect();
         }}
       />

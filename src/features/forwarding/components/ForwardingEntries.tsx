@@ -45,8 +45,7 @@ export function ForwardingEntries({
               : null;
         const local = rule.mode === "local";
         const active = isActive(rule);
-        const manualStarting =
-          pendingKind === "start" && (pending === rule.id || pending === "group");
+        const manualStarting = pendingKind === "start" && pending === rule.id;
         const starting = manualStarting || automation?.phase === "starting";
         const recovering = automation?.phase === "retrying";
         const stoppable = active || starting || recovering;

@@ -141,6 +141,7 @@ function ImportHosts() {
   const [index, setIndex] = useState<ReturnType<typeof indexHostPreview> | null>(null);
   const preview = index?.preview;
   const picker = useRef<ReturnType<typeof hostTransferApi.pick> | null>(null);
+  const [pickAttempt, setPickAttempt] = useState(0);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [copies, setCopies] = useState(false);
   const [mountPoints, setMountPoints] = useState<Record<string, string>>({});
@@ -172,7 +173,7 @@ function ImportHosts() {
     return () => {
       active = false;
     };
-  }, [close]);
+  }, [close, pickAttempt]);
   const selected = useMemo(() => index?.expand(chosen) ?? new Set<string>(), [index, chosen]);
   const eligible = useMemo(
     () => (index ? [...index.entries.keys()].filter((id) => copies || !index.blocked.has(id)) : []),
@@ -198,11 +199,15 @@ function ImportHosts() {
             {t("common.cancel")}
           </Button>
           <Button
-            disabled={busy || !preview}
+            disabled={busy}
             onClick={() => {
-              if (!preview) return;
               setBusy(true);
               setError(null);
+              if (!preview) {
+                picker.current = null;
+                setPickAttempt((attempt) => attempt + 1);
+                return;
+              }
               void hostTransferApi
                 .preview(preview.document)
                 .then((result) => setIndex(indexHostPreview(result)))
@@ -210,7 +215,7 @@ function ImportHosts() {
                 .finally(() => setBusy(false));
             }}
           >
-            {t("sshImport.refresh")}
+            {t(preview ? "sshImport.refresh" : "hostTransfer.chooseFile")}
           </Button>
           <Button
             variant="primary"
