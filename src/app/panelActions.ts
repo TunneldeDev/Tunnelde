@@ -1,3 +1,4 @@
+import { createTransferWindowActions } from "@/features/sftp/transferWindowActions";
 import { useKnownHostsSource } from "@/features/settings/knownHosts/source";
 import { useOutputSource } from "@/features/output/source";
 import { api } from "@/lib/api/ipc";
@@ -10,10 +11,23 @@ import type { PanelWindowClient } from "@/lib/panels/windowClient";
 
 export function startPanelActions(client: PanelWindowClient, failure: (error: unknown) => void) {
   const tasks = createTaskProjection();
+  const transfers = createTransferWindowActions(tasks, () => client.show());
   const executor = startWindowActions(
     client,
-    async ({ request }) => {
+    async ({ request, lease }) => {
       switch (request.kind) {
+        case "transfer":
+        case "transferResume":
+        case "transferPrompt":
+          try {
+            return await transfers.execute(lease, request);
+          } catch (error) {
+            // Keep review/key identifiers machine-readable for the shared
+            // prompt; translate only at the originating window.
+            if (error && typeof error === "object" && "message" in error)
+              throw new Error(String(error.message));
+            throw new Error(translateError(error));
+          }
         case "refreshKnownHosts":
         case "forgetKnownHost": {
           const source = useKnownHostsSource.getState().source;
@@ -77,6 +91,7 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
   );
   return () => {
     executor.dispose();
+    transfers.dispose();
     tasks.dispose();
   };
 }

@@ -6,16 +6,9 @@ import { useTransfers, type TransferItem } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
 import i18n from "@/i18n/i18n";
 
-export type TransferLocationKind = "from" | "to" | "backup" | "backupDestination" | "artifact";
-export function transferLocation(item: TransferItem, kind: TransferLocationKind) {
-  return kind === "backup"
-    ? item.backupRecovery?.backup
-    : kind === "backupDestination"
-      ? item.backupRecovery?.destination
-      : kind === "artifact"
-        ? item.artifactRecovery
-        : item[`${kind}Path`];
-}
+import type { TransferLocationKind } from "./transferView";
+export { transferLocation } from "./transferView";
+export type { TransferLocationKind } from "./transferView";
 interface LocationAction {
   available: boolean;
   open: () => void | Promise<unknown>;

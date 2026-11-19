@@ -262,9 +262,27 @@ must never reinterpret a disconnected remote as local. Satellite use without an
 explicit controller fails closed. Disclosure, speed-limit editor and unfinished
 draft are opt-in grouped capsule state; pending effects are not drafts.
 
-These reusable boundaries do not by themselves complete the satellite transfer
-adapter. Its controller must still validate current source/task incarnations,
-acquire native consent before mounting a prompt, relay all effects with native
-fences, retain a bounded owner/lease-scoped reviewed target, and clean up tests
-and prompts on close/reload/revocation. Do not advertise reconnect parity until
-that entire path and native acceptance are implemented.
+The native transfer adapter resolves source/task-incarnation tickets before every
+command. It projects only explicit transfer display fields and inspection
+availability, not session handles or writable stores. Closed location kinds are
+resolved from the current task in the coordinator; a missing remote never becomes
+a local path. Inspect explicitly reveals the main file workspace through the
+registered document's native show gateway, without expanding generic window IPC.
+
+Acquire the exact native consent token **before** mounting a reconnect prompt.
+Native verifies that token at action admission and again at claim. Sequential
+missing-endpoint prompts retain one guard; each effect has its own native fence,
+which outlives the dialog. Cancel must not resume a transfer. An expired task or
+prompt must remain dismissible and release its UI guard even if remote close
+fails. Pause/cancel/resume must await backend admission rather than acknowledge a
+fire-and-forget store update.
+
+Reviewed connection handles are private and bound to lease generation, task
+incarnation and consent token. Bound their count and idle lifetime, retire them
+on owner/source loss, and cancel only their own namespaced diagnostic tests.
+Whitelist route hosts for credential/key effects; construct background connection
+requests in the coordinator instead of accepting arbitrary targets. Bulk saved
+credential status comes from one private preparation, not an unbounded fan-out of
+relay jobs. Never return key-installation paths, review tokens or credentials in
+read models, capsules, public metadata or events. Native admission cannot be
+undone by component cleanup; keep its independent fence until effect completion.

@@ -15,6 +15,23 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Transfer {
+        key: String,
+        ticket: String,
+        command: TransferControl,
+    },
+    TransferResume {
+        key: String,
+        ticket: String,
+        interaction: String,
+    },
+    TransferPrompt {
+        key: String,
+        ticket: String,
+        interaction: String,
+        handle: String,
+        command: TransferPrompt,
+    },
     RefreshKnownHosts {},
     ForgetKnownHost {
         entry: crate::db::known_hosts::KnownHostEntry,
@@ -43,11 +60,130 @@ pub(crate) enum OutputOperation {
     OpenLatest,
     OpenDirectory,
 }
+// Feature-specific closed grammar. Secrets exist only in the bounded private
+// action queue, never in model snapshots, drag grants or layout state.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) enum TransferControl {
+    Pause,
+    Cancel,
+    Clear,
+    SpeedLimit { kib: u32 },
+    Inspect { location: TransferLocation },
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum TransferLocation {
+    From,
+    To,
+    Backup,
+    BackupDestination,
+    Artifact,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PromptCredential {
+    password: Option<String>,
+    passphrase: Option<String>,
+}
+type PromptCredentials = std::collections::BTreeMap<String, PromptCredential>;
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(
+    tag = "operation",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum TransferPrompt {
+    Prepare,
+    Close,
+    Probe {
+        credentials: PromptCredentials,
+    },
+    Trust {
+        fingerprint: String,
+        expected_host_id: String,
+        credentials: PromptCredentials,
+    },
+    Connect {
+        password: Option<String>,
+        passphrase: Option<String>,
+        credentials: PromptCredentials,
+    },
+    Test {
+        id: String,
+        credentials: PromptCredentials,
+    },
+    CancelTest {
+        id: String,
+    },
+    Credential {
+        host_id: String,
+        password: Option<String>,
+    },
+    InstallKey {
+        password: Option<String>,
+        credentials: PromptCredentials,
+    },
+}
+fn secret(value: &Option<String>) -> bool {
+    value.as_ref().is_none_or(|s| s.len() <= 8192)
+}
+impl TransferPrompt {
+    fn valid(&self) -> bool {
+        let credentials = match self {
+            Self::Probe { credentials }
+            | Self::Trust { credentials, .. }
+            | Self::Connect { credentials, .. }
+            | Self::Test { credentials, .. }
+            | Self::InstallKey { credentials, .. } => Some(credentials),
+            _ => None,
+        };
+        if credentials.is_some_and(|c| {
+            c.len() > 32
+                || c.iter().any(|(id, c)| {
+                    id.is_empty()
+                        || id.len() > 128
+                        || !secret(&c.password)
+                        || !secret(&c.passphrase)
+                })
+        }) {
+            return false;
+        }
+        match self {
+            Self::Trust {
+                fingerprint,
+                expected_host_id,
+                ..
+            } => {
+                !fingerprint.is_empty()
+                    && fingerprint.len() <= 1024
+                    && !expected_host_id.is_empty()
+                    && expected_host_id.len() <= 128
+            }
+            Self::Connect {
+                password,
+                passphrase,
+                ..
+            } => secret(password) && secret(passphrase),
+            Self::Test { id, .. } | Self::CancelTest { id } => !id.is_empty() && id.len() <= 128,
+            Self::Credential { host_id, password } => {
+                !host_id.is_empty() && host_id.len() <= 128 && secret(password)
+            }
+            Self::InstallKey { password, .. } => secret(password),
+            _ => true,
+        }
+    }
+}
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
             Self::RefreshKnownHosts {} | Self::ForgetKnownHost { .. } => "knownHosts",
-            Self::Task { .. } | Self::ClearTasks {} => "tasks",
+            Self::Task { .. }
+            | Self::ClearTasks {}
+            | Self::Transfer { .. }
+            | Self::TransferResume { .. }
+            | Self::TransferPrompt { .. } => "tasks",
             Self::Disconnect { .. } => "connections",
             Self::Output { .. } | Self::CopyOutput { .. } => "output",
         }
@@ -55,6 +191,36 @@ impl ViewAction {
     fn validate(&self) -> Result<(), &'static str> {
         let bounded = |s: &str, max| !s.is_empty() && s.len() <= max;
         let valid = match self {
+            Self::Transfer {
+                key,
+                ticket,
+                command,
+            } => {
+                bounded(key, 1024)
+                    && bounded(ticket, 128)
+                    && match command {
+                        TransferControl::SpeedLimit { kib } => *kib <= 1_048_576,
+                        _ => true,
+                    }
+            }
+            Self::TransferResume {
+                key,
+                ticket,
+                interaction,
+            } => bounded(key, 1024) && bounded(ticket, 128) && bounded(interaction, 128),
+            Self::TransferPrompt {
+                key,
+                ticket,
+                interaction,
+                handle,
+                command,
+            } => {
+                bounded(key, 1024)
+                    && bounded(ticket, 128)
+                    && bounded(interaction, 128)
+                    && bounded(handle, 128)
+                    && command.valid()
+            }
             Self::Task {
                 key,
                 ticket,
@@ -102,6 +268,21 @@ pub(super) struct PendingAction {
     deadline: Instant,
 }
 impl Ownership {
+    fn authorize_action_interaction(
+        &self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+        request: &ViewAction,
+    ) -> Result<(), &'static str> {
+        match request {
+            ViewAction::TransferResume { interaction, .. }
+            | ViewAction::TransferPrompt { interaction, .. } => {
+                self.require_interaction(window, document, lease, interaction)
+            }
+            _ => Ok(()),
+        }
+    }
     pub fn request_action(
         &mut self,
         window: &str,
@@ -113,6 +294,14 @@ impl Ownership {
         self.expire_actions(now);
         self.action(window, document, lease)?;
         request.validate()?;
+        if serde_json::to_vec(&request)
+            .map_err(|_| "invalid panel action")?
+            .len()
+            > 2 * 1024 * 1024 + 4096
+        {
+            return Err("panel action limit");
+        }
+        self.authorize_action_interaction(window, document, lease, &request)?;
         if request.panel() != lease.panel_id {
             return Err("wrong panel action");
         }
@@ -169,7 +358,15 @@ impl Ownership {
             .collect();
         let mut jobs = Vec::new();
         for (id, lease, source, coordinator) in pending {
-            if coordinator != document
+            if self
+                .authorize_action_interaction(
+                    &lease.window_id,
+                    &source,
+                    &lease,
+                    &self.actions[&id].request,
+                )
+                .is_err()
+                || coordinator != document
                 || self.action(&lease.window_id, &source, &lease).is_err()
                 || self.relay_fence(&lease.panel_id, &id, true).is_err()
             {
@@ -406,6 +603,127 @@ mod tests {
                 )
                 .unwrap();
         }
+    }
+    #[test]
+    fn transfer_grammar_is_closed_bounded_and_cannot_accept_arbitrary_targets() {
+        for value in [
+            json!({"kind":"transfer","key":"k","ticket":"t","command":{"operation":"inspect","location":"to","path":"/arbitrary"}}),
+            json!({"kind":"transferPrompt","key":"k","ticket":"t","interaction":"g","handle":"p","command":{"operation":"connect","hostId":"other","credentials":{}}}),
+            json!({"kind":"transfer","key":"k","ticket":"t","command":{"operation":"speedLimit","kib":-1}}),
+            json!({"kind":"transferPrompt","key":"k","ticket":"t","interaction":"g","handle":"p","command":{"operation":"probe","credentials":{"h":{"password":"secret","keyPath":"/bad"}}}}),
+        ] {
+            assert!(serde_json::from_value::<ViewAction>(value).is_err());
+        }
+        for value in [
+            json!({"kind":"transfer","key":"k","ticket":"t","command":{"operation":"speedLimit","kib":1048577}}),
+            json!({"kind":"transferPrompt","key":"k","ticket":"t","interaction":"g","handle":"p","command":{"operation":"connect","password":"x".repeat(8193),"credentials":{}}}),
+            json!({"kind":"transferResume","key":"k","ticket":"t","interaction":""}),
+        ] {
+            assert!(serde_json::from_value::<ViewAction>(value)
+                .unwrap()
+                .validate()
+                .is_err());
+        }
+    }
+    #[test]
+    fn transfer_consent_is_checked_on_admission_and_claim_not_just_in_react() {
+        let mut f = Fixture::new();
+        let request = |interaction: &str| ViewAction::TransferResume {
+            key: "k".into(),
+            ticket: "t".into(),
+            interaction: interaction.into(),
+        };
+        assert!(f
+            .registry
+            .request_action("source", &f.source, &f.lease, request("fake"), f.now)
+            .is_err());
+        let guard = f
+            .registry
+            .begin_interaction("source", &f.source, &f.lease)
+            .unwrap();
+        let id = f
+            .registry
+            .request_action("source", &f.source, &f.lease, request(&guard), f.now)
+            .unwrap();
+        f.registry
+            .end_interaction("source", &f.source, &f.lease, &guard)
+            .unwrap();
+        assert!(f
+            .registry
+            .claim_actions(MAIN, &f.main, f.now)
+            .unwrap()
+            .is_empty());
+        assert!(f
+            .registry
+            .action_result("source", &f.source, &id, f.now)
+            .is_err());
+        assert!(f.can_return());
+        let mut f = Fixture::new();
+        let guard = f
+            .registry
+            .begin_interaction("source", &f.source, &f.lease)
+            .unwrap();
+        let request = ViewAction::TransferPrompt {
+            key: "private-task".into(),
+            ticket: "private-ticket".into(),
+            interaction: guard.clone(),
+            handle: "private-handle".into(),
+            command: TransferPrompt::Connect {
+                password: Some("private-password".into()),
+                passphrase: None,
+                credentials: Default::default(),
+            },
+        };
+        let id = f
+            .registry
+            .request_action("source", &f.source, &f.lease, request, f.now)
+            .unwrap();
+        let metadata = f
+            .registry
+            .dispatch(
+                "other",
+                &f.other,
+                super::super::protocol::Command::Snapshot {},
+                f.now,
+            )
+            .unwrap()
+            .to_string();
+        for secret in [
+            &guard,
+            "private-password",
+            "private-handle",
+            "private-ticket",
+            "private-task",
+        ] {
+            assert!(!metadata.contains(secret));
+        }
+        assert_eq!(
+            f.registry
+                .claim_actions(MAIN, &f.main, f.now)
+                .unwrap()
+                .len(),
+            1
+        );
+        f.registry
+            .end_interaction("source", &f.source, &f.lease, &guard)
+            .unwrap();
+        assert!(!f.can_return()); // Admitted effect fence outlives the dialog.
+        f.finish(&id);
+        assert!(f.can_return());
+        assert!(f
+            .registry
+            .request_action(
+                "source",
+                &f.source,
+                &f.lease,
+                ViewAction::TransferResume {
+                    key: "k".into(),
+                    ticket: "t".into(),
+                    interaction: guard
+                },
+                f.now
+            )
+            .is_err());
     }
     #[test]
     fn closed_grammar_and_panel_binding_cannot_be_used_as_an_arbitrary_command_proxy() {

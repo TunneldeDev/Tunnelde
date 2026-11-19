@@ -315,15 +315,18 @@ pub(crate) fn panel_window_show(window: WebviewWindow, document: String) -> AppR
     ownership
         .authorize(window.label(), &document)
         .map_err(invalid)?;
-    if window.label() == MAIN
-        || !ownership
-            .windows()
-            .iter()
-            .any(|item| item.id == window.label() && item.ready && !item.closing)
+    if !ownership
+        .windows()
+        .iter()
+        .any(|item| item.id == window.label() && item.ready && !item.closing)
     {
         return Err(invalid("window not ready"));
     }
     drop(ownership);
+    if window.label() == MAIN {
+        super::super::window::show_main(window.app_handle());
+        return Ok(());
+    }
     window.show()?;
     window.set_focus()?;
     super::super::window::apply_background_dock_preference(window.app_handle());

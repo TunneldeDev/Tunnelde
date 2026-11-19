@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, type ReactNo
 import type { PanelWindowClient } from "./windowClient";
 import type { PanelLease, PanelViewAction } from "./windowProtocol";
 
+export type PanelInteractionRelease = (() => Promise<void>) & { id?: string };
+
 interface Gateway {
   client?: PanelWindowClient;
   lease?: PanelLease;
@@ -46,7 +48,7 @@ export function usePanelInteraction() {
       for (const release of current) void release().catch(() => {});
     };
   }, []);
-  return useCallback(async () => {
+  return useCallback(async (): Promise<PanelInteractionRelease> => {
     if (!scope) return async () => {};
     if (!scope.client || !scope.lease || scope.staged) throw new Error("panel.window.staleOwner");
     const { client, lease } = scope;
@@ -70,6 +72,6 @@ export function usePanelInteraction() {
       throw new Error("panel.window.disposed");
     }
     releases.current.add(release);
-    return release;
+    return Object.assign(release, { id });
   }, [scope]);
 }

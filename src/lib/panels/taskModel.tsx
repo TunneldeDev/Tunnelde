@@ -5,12 +5,19 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { BackgroundTaskEntry } from "@/lib/tasks/model";
 import { useBackgroundTasks, runBackgroundTaskAction } from "@/lib/tasks/registry";
 import { clearFinishedBackgroundTasks } from "@/lib/tasks/actions";
+import type { TaskViewEntry } from "./taskProjection";
+import type { TransferWindowAction } from "@/features/sftp/transferWindowProtocol";
 import { useTaskProjection } from "./taskProjection";
 export interface ClearTasksResult {
   count: number;
   first?: string;
 }
+export interface TransferPanelModel {
+  entries: readonly TaskViewEntry[];
+  action: <T>(request: TransferWindowAction) => Promise<T>;
+}
 export interface TaskPanelModel {
+  transfers?: TransferPanelModel;
   items: readonly BackgroundTaskEntry[];
   viewKey: (task: BackgroundTaskEntry) => string;
   run: (task: BackgroundTaskEntry, actionId: string) => Promise<unknown>;
@@ -31,9 +38,20 @@ export function useTaskPanelModel(): TaskPanelModel {
   const remote = useContext(Context);
   const items = useBackgroundTasks((s) => s.items);
   const projected = useTaskProjection((s) => s.items);
+  const available = usePanelWindows((s) => s.available);
+  const transferAction = <T,>(request: TransferWindowAction): Promise<T> => {
+    const state = usePanelWindows.getState(),
+      client = windowViews()?.client;
+    const lease = state.snapshot.panels.find(
+      (p) => p.panelId === "tasks" && p.windowId === state.windowId,
+    );
+    if (!client || !lease) return Promise.reject(new Error("panel.window.staleOwner"));
+    return client.action<T>(lease, request);
+  };
   return (
     remote ?? {
       items,
+      ...(available ? { transfers: { entries: projected, action: transferAction } } : {}),
       viewKey: (task) =>
         projected.find((item) => item.key === task.key)?.ticket ?? `${task.source}:${task.id}`,
       run: (task, actionId) => {

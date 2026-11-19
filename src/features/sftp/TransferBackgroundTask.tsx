@@ -1,3 +1,5 @@
+import { useTaskPanelModel } from "@/lib/panels/taskModel";
+import { WindowTransferTask } from "./WindowTransferTask";
 import { useState } from "react";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import type { TaskViewProps } from "@/features/tasks/presentation";
@@ -7,7 +9,15 @@ import { useTransfers, type TransferItem } from "@/store/transfers";
 import { TransferTask } from "./TransferTask";
 
 /** Transfer-only recovery and detail controls stay owned by the transfer feature. */
-export function TransferBackgroundTask({ task, now }: TaskViewProps) {
+export function TransferBackgroundTask(props: TaskViewProps) {
+  const model = useTaskPanelModel();
+  return model.transfers ? (
+    <WindowTransferTask {...props} model={model.transfers} />
+  ) : (
+    <LocalTransferBackgroundTask {...props} />
+  );
+}
+function LocalTransferBackgroundTask({ task, now }: TaskViewProps) {
   const item = useTransfers((state) => state.items.find((item) => item.id === task.id));
   const hosts = useHosts((state) => state.hosts);
   const [connecting, setConnecting] = useState<string | null>(null);

@@ -1,3 +1,4 @@
+import type { TransferWindowAction } from "@/features/sftp/transferWindowProtocol";
 import type { KnownHostEntry } from "@/lib/api/types";
 /** This is the private native UI transport, not the public plugin API. Caller
  * window identity is derived by the host and never accepted as a JS argument. */
@@ -24,6 +25,7 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | TransferWindowAction
   | { kind: "task"; key: string; ticket: string; actionId: string }
   | { kind: "clearTasks" }
   | { kind: "disconnect"; sessionId: string }

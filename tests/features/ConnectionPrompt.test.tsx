@@ -170,3 +170,19 @@ it("the standalone main adapter refuses satellite execution before native or cre
     consoleError.mockRestore();
   }
 });
+it("does not re-probe or re-read credentials when window appearance refresh repeats the current language", async () => {
+  const i18n = (await import("@/i18n/i18n")).default;
+  const backend = services();
+  render(
+    <ConnectionPrompt host={host} services={backend} onClose={() => {}} onConnected={() => {}} />,
+  );
+  await waitFor(() => expect(backend.probe).toHaveBeenCalledOnce());
+  await act(async () => {
+    await i18n.changeLanguage("en-US");
+  });
+  await act(async () => {
+    await i18n.changeLanguage("en-US");
+  });
+  expect(backend.probe).toHaveBeenCalledOnce();
+  expect(backend.credentialStatus).toHaveBeenCalledOnce();
+});

@@ -377,6 +377,23 @@ impl Ownership {
             .retain(|_, grant| grant.lease.panel_id != lease.panel_id);
         Ok(id)
     }
+    pub(super) fn require_interaction(
+        &self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+        id: &str,
+    ) -> Result<()> {
+        self.owned(window, document, lease)?;
+        if self.panels[&lease.panel_id]
+            .interactions
+            .get(id)
+            .is_none_or(|owner| owner != document)
+        {
+            return Err("invalid interaction owner");
+        }
+        Ok(())
+    }
     pub fn end_interaction(
         &mut self,
         window: &str,

@@ -1,3 +1,4 @@
+import i18n from "@/i18n/i18n";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -72,23 +73,20 @@ export function ConnectionPrompt({
   const [testing, setTesting] = useState(false);
   const [reviewChanged, setReviewChanged] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
-  const reportError = useCallback(
-    (cause: unknown) => {
-      const message = isIpcError(cause) || cause instanceof Error ? cause.message : null;
-      if (message === "ssh.connectionChanged") {
-        setReviewChanged(true);
-        setTrusted(false);
-        setProbe(null);
-        setPassword("");
-        setPassphrase("");
-        setJumpCredentials({});
-        setError(t("connect.reviewChanged"));
-      } else {
-        setError(translateError(cause));
-      }
-    },
-    [t],
-  );
+  const reportError = useCallback((cause: unknown) => {
+    const message = isIpcError(cause) || cause instanceof Error ? cause.message : null;
+    if (message === "ssh.connectionChanged") {
+      setReviewChanged(true);
+      setTrusted(false);
+      setProbe(null);
+      setPassword("");
+      setPassphrase("");
+      setJumpCredentials({});
+      setError(i18n.t("connect.reviewChanged"));
+    } else {
+      setError(translateError(cause));
+    }
+  }, []);
   const alive = useRef(true);
   const pending = useRef(false);
   const probeHost = useCallback(

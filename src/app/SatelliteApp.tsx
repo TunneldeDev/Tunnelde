@@ -1,3 +1,5 @@
+import { registerTaskPresentation } from "@/features/tasks/presentation";
+import { TransferBackgroundTask } from "@/features/sftp/TransferBackgroundTask";
 import { KnownHostsList } from "@/features/settings/KnownHostsList";
 import { KnownHostsModelScope } from "@/lib/panels/knownHostsModel";
 import type { PanelViewAction } from "@/lib/panels/windowProtocol";
@@ -83,7 +85,11 @@ function useNativeReadModel<T extends WindowModelAppearance>({
             // projection. Do not hydrate writable main stores in a satellite.
             settings = { ...createDefaultSettings(), ...next.appearance };
             applyAppearance(settings);
-            await i18n.changeLanguage(next.language);
+            // Native action notifications also refresh models. Re-emitting an
+            // unchanged language replaces react-i18next's t function and can
+            // restart feature effects (e.g. a pending host-key probe) forever.
+            if ((i18n.resolvedLanguage ?? i18n.language) !== next.language)
+              await i18n.changeLanguage(next.language);
             if (!disposed) setModel(next);
           }
         } catch (error) {
@@ -168,6 +174,14 @@ function TaskView(props: NativeViewProps) {
         <TaskModelScope
           value={{
             items,
+            transfers: {
+              entries: model.tasks,
+              action: (request) => {
+                if (!record.lease || record.staged)
+                  return Promise.reject(new Error("panel.window.staleOwner"));
+                return client.action(record.lease, request);
+              },
+            },
             viewKey: (task) => model.tasks.find((entry) => entry.key === task.key)!.ticket,
             run: async (task, actionId) => {
               if (!record.lease || record.staged) throw new Error("panel.window.staleOwner");
@@ -247,6 +261,7 @@ function KnownHostsView(props: NativeViewProps) {
 /** Separate document entry: never run main resource bootstrap, persistence,
  * plugin background activation, task aggregation or autoconnect in a satellite. */
 export function SatelliteApp() {
+  useEffect(() => registerTaskPresentation("transfers", TransferBackgroundTask), []);
   useInternalDrag();
   const { t } = useTranslation();
   const [client, setClient] = useState<PanelWindowClient | null>(null);
