@@ -28,7 +28,20 @@ impl Ownership {
         model: Value,
     ) -> Result<(), &'static str> {
         self.main(window, document)?;
-        Self::validate_state(&model)?;
+        // Output retains bounded UTF-8 entries plus JSON row metadata. View
+        // draft capsules keep their separate stricter 1 MiB limit.
+        let limit = if panel_id == "output" {
+            2 * 1024 * 1024
+        } else {
+            1024 * 1024
+        };
+        if serde_json::to_vec(&model)
+            .map_err(|_| "invalid read model")?
+            .len()
+            > limit
+        {
+            return Err("read model too large");
+        }
         let panel = self.panels.get_mut(panel_id).ok_or("panel not found")?;
         if panel.model_document != document
             || panel.model_publisher != publisher

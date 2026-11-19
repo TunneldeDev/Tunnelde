@@ -5,7 +5,8 @@ import { createPanelViewState, parsePanelViewCapsule, type PanelViewState } from
 import { parsePanelDomState, type PanelDomState } from "./domState";
 
 // Adapters are deliberately opt-in. Never acknowledge a view we cannot render.
-export const transferablePanel = (id: string) => id === "connections" || id === "tasks";
+export const transferablePanel = (id: string) =>
+  id === "connections" || id === "tasks" || id === "output";
 export interface WindowViewRecord {
   key: string;
   panelId: string;

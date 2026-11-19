@@ -114,7 +114,7 @@ Closing a satellite returns its views before native destruction. Recovery uses
 bounded in-memory checkpoints, not persisted drafts or feature-store clones.
 
 An adapter must explicitly opt into `windowViews.transferablePanel`. The current
-adapters are connection details and background tasks: main publishes explicit projections;
+adapters are connection details, background tasks and output: main publishes explicit projections;
 `ConnectionModelScope` renders the same content in a satellite without hydrating
 writable application stores. `usePanelViewState` opts local React fields into a
 capsule; stable DOM markers preserve scroll/caret separately. A staged tree stays
@@ -196,3 +196,24 @@ Synthetic pointer tests in real WebViews validate the gateway and staged handoff
 not actual OS pointer capture, all platform input paths, mixed-monitor hardware,
 SSH transport continuity or complete built-in/plugin support. Those acceptance
 requirements remain before exposing the complete capability or releasing it.
+
+### Output adapter and singleton readers
+
+Output uses one coordinator `OutputSource`, not one log cursor per WebView.
+Document-local consumers retain its reader; an owned or staged satellite adds
+background demand so hiding the coordinator does not stop output. Releasing the
+last consumer stops polling; a hidden local-only view waits until visible again.
+Refreshes coalesce without overlapping reads, and clearing during an in-flight
+read cannot resurrect cleared lines. Late replies after source disposal are ignored.
+
+The satellite reuses `OutputPanel` with `OutputModelScope`. Its filter/channel,
+severity, follow and wrap fields use the ephemeral capsule; scroll uses the shared
+DOM marker. Runtime projection includes only display metadata, never full app
+info, plugin runtime tokens, installation/data paths or settings. Closed output
+refresh/clear/open-log/open-folder/copy requests go through the exact leased action
+relay; the satellite cannot invoke raw log/filesystem/clipboard commands.
+
+Bound output by the complete UTF-8 JSON rows, not UTF-16 message length. Output's
+private read model has a separate 2 MiB envelope for bounded lines plus display
+metadata; other read models and draft capsules retain their 1 MiB limit. No output
+or copy text is sent through public metadata or invalidation events.

@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { startPanelReadModels } from "@/app/panelReadModels";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
+import { useOutputSource } from "@/features/output/source";
+import { usePlugins } from "@/store/plugins";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import type { Host } from "@/lib/api/types";
@@ -79,4 +81,70 @@ it("publishes only explicit credential-free connection/appearance projections, t
     }),
   );
   expect(failure).not.toHaveBeenCalled();
+});
+
+it("projects output runtime metadata without settings, filesystem paths or frontend tokens", async () => {
+  const plugins = usePlugins.getState().items,
+    info = useSettings.getState().info;
+  cleanups.push(() => {
+    usePlugins.setState({ items: plugins });
+    useSettings.setState({ info });
+  });
+  usePlugins.setState({
+    items: [
+      {
+        id: "p",
+        name: "Plugin",
+        version: "1",
+        status: "running",
+        error: null,
+        path: "never-plugin-path",
+        runtimeId: "never-runtime-token",
+        fingerprint: "never-fingerprint",
+        permissions: ["secret"],
+      },
+    ] as unknown as typeof plugins,
+  });
+  useSettings.setState({
+    info: {
+      ...info,
+      name: "Tunnelde",
+      version: "2",
+      os: "macos",
+      arch: "aarch64",
+      debug: true,
+      tauriVersion: "2",
+      dataDir: "never-data-path",
+      logDir: "never-log-path",
+      defaultSettings: { credential: "never-credential" },
+    } as unknown as typeof info,
+  });
+  const control = vi.fn(async (request) => (request.action === "beginModel" ? "publisher" : null));
+  const stop = startPanelReadModels({ control } as unknown as PanelWindowClient, vi.fn());
+  cleanups.push(stop);
+  await settle();
+  const publication = control.mock.calls
+    .map(([r]) => r)
+    .find((r) => r.action === "publishModel" && r.panelId === "output");
+  expect(publication.model.output).toMatchObject({
+    entries: [],
+    plugins: [{ id: "p", name: "Plugin" }],
+    info: { name: "Tunnelde", debug: true },
+  });
+  expect(JSON.stringify(publication)).not.toMatch(/never-/);
+  const source = useOutputSource.getState().source!;
+  source.store.setState({ entries: [{ id: 3, message: "private output" }] as never });
+  await settle();
+  expect(control).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      panelId: "output",
+      model: expect.objectContaining({
+        output: expect.objectContaining({
+          entries: [expect.objectContaining({ message: "private output" })],
+        }),
+      }),
+    }),
+  );
+  stop();
+  expect(useOutputSource.getState().source).toBeNull();
 });

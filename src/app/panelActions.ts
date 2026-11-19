@@ -1,3 +1,5 @@
+import { useOutputSource } from "@/features/output/source";
+import { api } from "@/lib/api/ipc";
 import { startWindowActions } from "@/lib/panels/windowActions";
 import { createTaskProjection } from "@/lib/panels/taskProjection";
 import { clearFinishedBackgroundTasks } from "@/lib/tasks/actions";
@@ -11,6 +13,28 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request }) => {
       switch (request.kind) {
+        case "output": {
+          const source = useOutputSource.getState().source;
+          if (!source) throw new Error("panel.window.disposed");
+          switch (request.operation) {
+            case "refresh":
+              await source.refresh();
+              break;
+            case "clear":
+              source.clear();
+              break;
+            case "openLatest":
+              await api.openLatestLog();
+              break;
+            case "openDirectory":
+              await api.openLogDir();
+              break;
+          }
+          return null;
+        }
+        case "copyOutput":
+          await api.clipboardWriteText(request.text);
+          return null;
         case "task":
           try {
             return await tasks.run(request.key, request.ticket, request.actionId);

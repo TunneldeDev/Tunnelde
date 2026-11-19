@@ -1,3 +1,6 @@
+import type { PanelViewAction } from "@/lib/panels/windowProtocol";
+import { OutputPanel } from "@/features/output/OutputPanel";
+import { OutputModelScope } from "@/lib/panels/outputModel";
 import { installPanelWindowDrag } from "@/lib/panels/windowDrag";
 import { useInternalDrag } from "@/lib/session/useInternalDrag";
 import { PanelWorkspace } from "@/components/layout/PanelWorkspace";
@@ -24,6 +27,7 @@ import { ConnectionModelScope } from "@/lib/panels/connectionModel";
 import type {
   ConnectionWindowModel,
   TaskWindowModel,
+  OutputWindowModel,
   WindowModelAppearance,
 } from "./panelReadModels";
 import { TaskModelScope, type ClearTasksResult } from "@/lib/panels/taskModel";
@@ -184,6 +188,34 @@ function TaskView(props: NativeViewProps) {
   );
 }
 
+function OutputView(props: NativeViewProps) {
+  const { client, record } = props;
+  const model = useNativeReadModel<OutputWindowModel>(props);
+  if (!model) return null;
+  const action = (request: PanelViewAction) => {
+    if (!record.lease || record.staged) return Promise.reject(new Error("panel.window.staleOwner"));
+    return client.action(record.lease, request);
+  };
+  return (
+    <NativePanelView panelId={record.panelId}>
+      <WorkbenchPanel view="output" location="workspace" visible={!record.staged} showTitle>
+        <OutputModelScope
+          value={{
+            ...model.output,
+            refresh: () => action({ kind: "output", operation: "refresh" }),
+            clear: () => action({ kind: "output", operation: "clear" }),
+            copy: (text) => action({ kind: "copyOutput", text }),
+            openLatest: () => action({ kind: "output", operation: "openLatest" }),
+            openDirectory: () => action({ kind: "output", operation: "openDirectory" }),
+          }}
+        >
+          <OutputPanel active={!record.staged} />
+        </OutputModelScope>
+      </WorkbenchPanel>
+    </NativePanelView>
+  );
+}
+
 /** Separate document entry: never run main resource bootstrap, persistence,
  * plugin background activation, task aggregation or autoconnect in a satellite. */
 export function SatelliteApp() {
@@ -296,6 +328,8 @@ export function SatelliteApp() {
             content:
               record.panelId === "tasks" ? (
                 <TaskView client={client} record={record} presented={presented} />
+              ) : record.panelId === "output" ? (
+                <OutputView client={client} record={record} presented={presented} />
               ) : (
                 <ConnectionView client={client} record={record} presented={presented} />
               ),

@@ -1,3 +1,7 @@
+import { createOutputSource, installOutputSource } from "@/features/output/source";
+import { usePanelWindows } from "@/store/panelWindows";
+import { usePlugins } from "@/store/plugins";
+import type { OutputPanelData } from "@/lib/panels/outputModel";
 import { useTaskProjection } from "@/lib/panels/taskProjection";
 import type { TaskViewEntry } from "@/lib/panels/taskProjection";
 import { connectionPanelModel } from "@/lib/panels/connectionModel";
@@ -31,11 +35,28 @@ export interface WindowModelAppearance {
 export interface TaskWindowModel extends WindowModelAppearance {
   tasks: readonly TaskViewEntry[];
 }
+export interface OutputWindowModel extends WindowModelAppearance {
+  output: OutputPanelData;
+}
 export interface ConnectionWindowModel extends WindowModelAppearance {
   connection: ReturnType<typeof connectionPanelModel>;
 }
 export function startPanelReadModels(client: PanelWindowClient, failure: (error: unknown) => void) {
   let disposed = false;
+  const output = createOutputSource();
+  const uninstallOutput = installOutputSource(output);
+  let stopRemoteOutput: (() => void) | undefined;
+  const remoteOutput = () => {
+    const snapshot = usePanelWindows.getState().snapshot;
+    const needed =
+      snapshot.panels.some((p) => p.panelId === "output" && p.windowId !== "main") ||
+      snapshot.transfers.some(({ offer }) => offer.lease.panelId === "output");
+    if (needed && !stopRemoteOutput) stopRemoteOutput = output.retain(true);
+    else if (!needed && stopRemoteOutput) {
+      stopRemoteOutput();
+      stopRemoteOutput = undefined;
+    }
+  };
   const publishers = new Map<
     string,
     { publisher?: string; revision: number; running: boolean; queued: boolean }
@@ -50,7 +71,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       ) as WindowAppearance,
     };
   };
-  const publish = (panelId: "connections" | "tasks") => {
+  const publish = (panelId: "connections" | "tasks" | "output") => {
     if (disposed) return;
     let state = publishers.get(panelId);
     if (!state) {
@@ -69,7 +90,37 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
           const model =
             panelId === "connections"
               ? { ...appearance(), connection: connectionPanelModel() }
-              : { ...appearance(), tasks: useTaskProjection.getState().items };
+              : panelId === "tasks"
+                ? { ...appearance(), tasks: useTaskProjection.getState().items }
+                : {
+                    ...appearance(),
+                    output: {
+                      ...output.store.getState(),
+                      info: (() => {
+                        const info = useSettings.getState().info;
+                        return info
+                          ? {
+                              name: info.name,
+                              version: info.version,
+                              os: info.os,
+                              arch: info.arch,
+                              tauriVersion: info.tauriVersion,
+                              debug: info.debug,
+                            }
+                          : null;
+                      })(),
+                      plugins: usePlugins
+                        .getState()
+                        .items.map(({ id, name, version, status, error }) => ({
+                          id,
+                          name,
+                          version,
+                          status,
+                          error,
+                        })),
+                      sessionCount: useSsh.getState().sessions.length,
+                    },
+                  };
           await client.control({
             action: "publishModel",
             publisher: current.publisher,
@@ -90,18 +141,29 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
     both = () => {
       connections();
       tasks();
+      publish("output");
     };
   const cleanups = [
-    useSsh.subscribe(connections),
+    useSsh.subscribe(() => {
+      connections();
+      publish("output");
+    }),
     useHosts.subscribe(connections),
     useSettings.subscribe(both),
     useTaskProjection.subscribe(tasks),
+    usePlugins.subscribe(() => publish("output")),
+    output.store.subscribe(() => publish("output")),
+    usePanelWindows.subscribe(remoteOutput),
   ];
   i18n.on("languageChanged", both);
+  remoteOutput();
   both();
   return () => {
     disposed = true;
     for (const cleanup of cleanups) cleanup();
     i18n.off("languageChanged", both);
+    stopRemoteOutput?.();
+    uninstallOutput();
+    output.dispose();
   };
 }

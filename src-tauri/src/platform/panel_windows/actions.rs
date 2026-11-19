@@ -15,6 +15,12 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Output {
+        operation: OutputOperation,
+    },
+    CopyOutput {
+        text: String,
+    },
     Task {
         key: String,
         ticket: String,
@@ -25,11 +31,20 @@ pub(crate) enum ViewAction {
         session_id: String,
     },
 }
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum OutputOperation {
+    Refresh,
+    Clear,
+    OpenLatest,
+    OpenDirectory,
+}
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
             Self::Task { .. } | Self::ClearTasks {} => "tasks",
             Self::Disconnect { .. } => "connections",
+            Self::Output { .. } | Self::CopyOutput { .. } => "output",
         }
     }
     fn validate(&self) -> Result<(), &'static str> {
@@ -41,7 +56,8 @@ impl ViewAction {
                 action_id,
             } => bounded(key, 1024) && bounded(ticket, 128) && bounded(action_id, 128),
             Self::Disconnect { session_id } => bounded(session_id, 128),
-            Self::ClearTasks {} => true,
+            Self::ClearTasks {} | Self::Output { .. } => true,
+            Self::CopyOutput { text } => bounded(text, 2 * 1024 * 1024),
         };
         if valid {
             Ok(())

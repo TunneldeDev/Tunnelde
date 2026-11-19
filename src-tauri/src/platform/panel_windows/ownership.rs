@@ -221,7 +221,7 @@ impl Ownership {
         if let Some(lease) = lease {
             self.action(window, document, lease)?;
             let panel = self.owned(window, document, lease)?;
-            if !matches!(lease.panel_id.as_str(), "connections" | "tasks")
+            if !matches!(lease.panel_id.as_str(), "connections" | "tasks" | "output")
                 || panel.blocked
                 || !panel.native_actions.is_empty()
             {

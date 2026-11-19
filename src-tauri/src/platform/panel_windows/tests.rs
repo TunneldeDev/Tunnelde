@@ -630,3 +630,111 @@ fn drag_release_rechecks_blocking_actions_reload_and_transfer_incarnations() {
         .release_drag("panel-one", &next, &id, f.now)
         .is_err());
 }
+
+#[test]
+fn output_actions_are_closed_panel_scoped_and_migration_fenced() {
+    use super::actions::{ActionResult, OutputOperation, ViewAction};
+    let mut f = Fixture::new();
+    let output = f.registry.add_panel(MAIN, &f.main, "output").unwrap();
+    let request = ViewAction::Output {
+        operation: OutputOperation::Clear,
+    };
+    assert!(f
+        .registry
+        .request_action(MAIN, &f.main, &f.lease, request.clone(), f.now)
+        .is_err());
+    let id = f
+        .registry
+        .request_action(MAIN, &f.main, &output, request, f.now)
+        .unwrap();
+    assert!(f
+        .registry
+        .prepare(MAIN, &f.main, &output, "panel-one", json!({}), f.now)
+        .is_err());
+    let claimed = f.registry.claim_actions(MAIN, &f.main, f.now).unwrap();
+    assert_eq!(claimed.len(), 1);
+    assert!(f
+        .registry
+        .claim_actions(MAIN, &f.main, f.now)
+        .unwrap()
+        .is_empty());
+    f.registry
+        .complete_action(
+            MAIN,
+            &f.main,
+            &id,
+            ActionResult::Done { value: json!(null) },
+            f.now,
+        )
+        .unwrap();
+    assert!(f
+        .registry
+        .authorize_creation(MAIN, &f.main, Some(&output))
+        .is_ok());
+    let token = f
+        .registry
+        .issue_drag(MAIN, &f.main, &output, f.now)
+        .unwrap();
+    assert_eq!(
+        f.registry
+            .release_drag(MAIN, &f.main, &token, f.now)
+            .unwrap(),
+        output
+    );
+    for value in [
+        json!({"kind":"output","operation":"invoke"}),
+        json!({"kind":"output","operation":"clear","path":"arbitrary"}),
+        json!({"kind":"copyOutput","text":"copy","command":"arbitrary"}),
+    ] {
+        assert!(serde_json::from_value::<ViewAction>(value).is_err());
+    }
+    assert!(f
+        .registry
+        .request_action(
+            MAIN,
+            &f.main,
+            &output,
+            ViewAction::CopyOutput {
+                text: "x".repeat(2 * 1024 * 1024 + 1)
+            },
+            f.now
+        )
+        .is_err());
+    let metadata = f
+        .registry
+        .dispatch(MAIN, &f.main, super::protocol::Command::Snapshot {}, f.now)
+        .unwrap();
+    assert!(!metadata.to_string().contains("operation"));
+}
+
+#[test]
+fn output_projection_has_a_separate_byte_bound_without_relaxing_draft_capsules() {
+    let mut f = Fixture::new();
+    f.registry.add_panel(MAIN, &f.main, "output").unwrap();
+    let publisher = f.registry.begin_model(MAIN, &f.main, "output").unwrap();
+    let large = json!({"entries":"中".repeat(400_000)});
+    assert!(f
+        .registry
+        .publish_model(MAIN, &f.main, "output", &publisher, 1, large.clone())
+        .is_ok());
+    assert!(Ownership::validate_state(&large).is_err());
+    assert!(f
+        .registry
+        .publish_model(
+            MAIN,
+            &f.main,
+            "output",
+            &publisher,
+            2,
+            json!("x".repeat(2 * 1024 * 1024))
+        )
+        .is_err());
+    let other = f
+        .registry
+        .begin_model(MAIN, &f.main, "connections")
+        .unwrap();
+    assert!(f
+        .registry
+        .publish_model(MAIN, &f.main, "connections", &other, 1, large)
+        .is_err());
+}

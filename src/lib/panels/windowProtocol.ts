@@ -25,7 +25,9 @@ export interface NativePanelSnapshot {
 export type PanelViewAction =
   | { kind: "task"; key: string; ticket: string; actionId: string }
   | { kind: "clearTasks" }
-  | { kind: "disconnect"; sessionId: string };
+  | { kind: "disconnect"; sessionId: string }
+  | { kind: "output"; operation: "refresh" | "clear" | "openLatest" | "openDirectory" }
+  | { kind: "copyOutput"; text: string };
 export type PanelActionResult =
   { status: "done"; value: unknown } | { status: "failed"; message: string };
 export interface PanelActionJob {
