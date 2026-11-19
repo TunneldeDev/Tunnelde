@@ -248,6 +248,14 @@ async fn exercise(
 #[tokio::test]
 #[ignore = "requires Linux, sshfs, OpenSSH sftp-server and a usable FUSE device"]
 async fn real_sshfs_session_bridge_is_owned_readonly_and_disconnects() {
+    // Revocation races the SSHFS worker's EOF/exit path. Exercise fresh mounts
+    // repeatedly: a single successful scheduling must not hide a leaked record.
+    for _ in 0..5 {
+        exercise_owned_session_fixture().await;
+    }
+}
+
+async fn exercise_owned_session_fixture() {
     assert_eq!(
         std::env::consts::OS,
         "linux",
