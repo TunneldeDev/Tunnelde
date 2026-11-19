@@ -54,24 +54,33 @@ export function MountHostDetailsSettings() {
                 if (!current || current.status !== "running") return;
                 if (current.fingerprint !== candidate.plugin.fingerprint)
                   throw new Error("pluginSecurity.changed");
-                await frontendRuntime.ensure(current);
-                if (!frontendRuntime.view(current.id, candidate.contribution.viewId))
+                const view = current.views.find(
+                  (item) => item.id === candidate.contribution.viewId,
+                );
+                if (view?.kind === "component") {
+                  await frontendRuntime.ensure(current);
+                  if (!frontendRuntime.view(current.id, view.id))
+                    throw new Error("plugin.frontend.viewUnavailable");
+                } else if (view?.kind !== "sharedMounts") {
                   throw new Error("plugin.frontend.viewUnavailable");
+                }
                 const latest = usePlugins.getState().items.find((item) => item.id === current.id);
-                if (latest?.status !== "running" || latest.fingerprint !== current.fingerprint)
+                if (
+                  latest?.status !== "running" ||
+                  latest.fingerprint !== current.fingerprint ||
+                  latest.runtimeId !== current.runtimeId
+                )
                   throw new Error("pluginSecurity.changed");
               }
               if (
                 JSON.stringify(useSettings.getState().settings.mountHostDetailsSelection) !== before
               )
                 return;
-              await useSettings
-                .getState()
-                .update({
-                  mountHostDetailsSelection: candidate
-                    ? { pluginId: candidate.plugin.id, contributionId: candidate.contribution.id }
-                    : null,
-                });
+              await useSettings.getState().update({
+                mountHostDetailsSelection: candidate
+                  ? { pluginId: candidate.plugin.id, contributionId: candidate.contribution.id }
+                  : null,
+              });
             } catch (error) {
               toast(translateError(error), "error");
             } finally {
