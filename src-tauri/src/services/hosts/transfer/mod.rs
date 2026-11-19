@@ -110,29 +110,18 @@ fn unique<'a>(ids: impl Iterator<Item = &'a str>) -> AppResult<HashSet<&'a str>>
 }
 fn dependencies(document: &Document, ids: &[String]) -> AppResult<HashSet<String>> {
     let hosts: HashMap<_, _> = document.hosts.iter().map(|h| (h.id.as_str(), h)).collect();
-    fn visit(
-        hosts: &HashMap<&str, &HostRecord>,
-        id: &str,
-        active: &mut HashSet<String>,
-        done: &mut HashSet<String>,
-    ) -> AppResult<()> {
-        if done.contains(id) {
-            return Ok(());
-        }
-        if active.len() >= 32 || !active.insert(id.into()) {
-            return Err(invalid());
+    // A saved route is an explicit hop list: a hop's own route is not expanded
+    // during SSH connection. Mutual references across independent routes are
+    // valid, but migration still includes every referenced host's configuration.
+    let mut selected = HashSet::new();
+    let mut pending: Vec<_> = ids.iter().map(String::as_str).collect();
+    while let Some(id) = pending.pop() {
+        if selected.contains(id) {
+            continue;
         }
         let host = hosts.get(id).ok_or_else(invalid)?;
-        for jump in &host.route.jump_hosts {
-            visit(hosts, jump, active, done)?;
-        }
-        active.remove(id);
-        done.insert(id.into());
-        Ok(())
-    }
-    let mut selected = HashSet::new();
-    for id in ids {
-        visit(&hosts, id, &mut HashSet::new(), &mut selected)?;
+        selected.insert(id.to_owned());
+        pending.extend(host.route.jump_hosts.iter().map(String::as_str));
     }
     Ok(selected)
 }
@@ -183,7 +172,9 @@ fn validate(document: &Document) -> AppResult<()> {
         if host.route.proxy.is_empty() {
             return Err(invalid());
         }
-        if host.route.jump_hosts.iter().collect::<HashSet<_>>().len() != host.route.jump_hosts.len()
+        if host.route.jump_hosts.contains(&host.id)
+            || host.route.jump_hosts.iter().collect::<HashSet<_>>().len()
+                != host.route.jump_hosts.len()
         {
             return Err(invalid());
         }

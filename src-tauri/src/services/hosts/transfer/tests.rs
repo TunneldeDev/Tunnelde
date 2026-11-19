@@ -177,3 +177,45 @@ fn batch_export_includes_only_selected_hosts_and_their_dependency_closure() {
     })
     .unwrap();
 }
+
+#[test]
+fn independent_routes_with_mutual_jump_references_round_trip() {
+    let source = Database::in_memory().unwrap();
+    let destination = Database::in_memory().unwrap();
+    let document = source
+        .with(|conn| {
+            db::atomic(conn, |conn| {
+                let a = host(conn, "A", "a.example", None);
+                let b = host(conn, "B", "b.example", None);
+                for (target, jump) in [(&a, &b), (&b, &a)] {
+                    crate::network::save_route_at(
+                        conn,
+                        &target.id,
+                        &ConnectionRoute {
+                            proxy: "direct".into(),
+                            jump_hosts: vec![jump.id.clone()],
+                        },
+                    )?;
+                }
+                export_at(conn, &[a.id])
+            })
+        })
+        .unwrap();
+    assert_eq!(document.hosts.len(), 2);
+    destination
+        .with(|conn| {
+            let imported = apply_at(conn, request(conn, document, false))?;
+            let a = imported.iter().find(|h| h.name == "A").unwrap();
+            let b = imported.iter().find(|h| h.name == "B").unwrap();
+            assert_eq!(
+                crate::network::route_at(conn, &a.id)?.jump_hosts,
+                std::slice::from_ref(&b.id)
+            );
+            assert_eq!(
+                crate::network::route_at(conn, &b.id)?.jump_hosts,
+                std::slice::from_ref(&a.id)
+            );
+            Ok(())
+        })
+        .unwrap();
+}
