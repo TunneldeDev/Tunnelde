@@ -19,6 +19,7 @@ interface DialogProps {
 
 const FOCUSABLE = [
   "a[href]",
+  "summary",
   "button:not([disabled])",
   "input:not([disabled])",
   "select:not([disabled])",
@@ -34,6 +35,13 @@ function focusableElements(panel: HTMLElement): HTMLElement[] {
       node.closest("[hidden], [aria-hidden='true'], [inert]")
     )
       return false;
+    for (
+      let details = node.parentElement?.closest("details");
+      details;
+      details = details.parentElement?.closest("details") ?? null
+    ) {
+      if (!details.open && !details.querySelector(":scope > summary")?.contains(node)) return false;
+    }
     for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
       const style = window.getComputedStyle(ancestor);
       if (style.display === "none" || style.visibility === "hidden") return false;

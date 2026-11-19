@@ -2738,7 +2738,25 @@
     "connectedAt": "Connected at",
     "sessionId": "Session ID",
     "sessions_one": "{{count}} active session",
-    "sessions_other": "{{count}} active sessions"
+    "sessions_other": "{{count}} active sessions",
+    "disconnect": "Close session",
+    "disconnecting": "Closing…",
+    "confirmDisconnect": "Confirm close",
+    "disconnectWarning": "Closing this SSH session will also stop its terminals, file operations, forwarding rules and mounts. Other sessions are not affected.",
+    "details": "Session details",
+    "connected": "Connected",
+    "ended": "Ended",
+    "hostId": "Host ID",
+    "terminalSize": "Initial terminal size",
+    "history": "Status history",
+    "historyHint": "History is kept only for this app run: up to 30 ended sessions and 20 events per session. No terminal content is recorded.",
+    "recent": "Recently ended",
+    "events": {
+      "connected": "Connection established",
+      "disconnecting": "Close requested",
+      "disconnectFailed": "Close failed",
+      "ended": "Session ended"
+    }
   },
   "hostTransfer": {
     "chooseFile": "Choose file…",

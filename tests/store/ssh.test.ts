@@ -33,6 +33,7 @@ beforeEach(() => {
   apiMock.markHostUsed.mockResolvedValue(undefined);
   useSsh.setState({
     sessions: [session],
+    history: [],
     connectingHostId: null,
     connectingHostIds: [],
     disconnectingSessionIds: [],
@@ -190,4 +191,36 @@ describe("SSH session lifecycle", () => {
     await refresh;
     expect(useSsh.getState().sessions.some((item) => item.id === "new-session")).toBe(true);
   });
+});
+
+it("records native closure once even when disconnect reply and close notification race", async () => {
+  let complete!: () => void;
+  apiMock.sshDisconnect.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  const first = useSsh.getState().disconnect(session.id);
+  expect(useSsh.getState().disconnect(session.id)).toBe(first);
+  useSsh.getState().forget(session.id, "closed");
+  complete();
+  await first;
+  expect(useSsh.getState().history[0]!.events.map((e) => e.kind)).toEqual([
+    "connected",
+    "disconnecting",
+    "ended",
+  ]);
+  await useSsh.getState().disconnect(session.id);
+  expect(apiMock.sshDisconnect).toHaveBeenCalledTimes(1);
+});
+
+it("records sessions removed by a snapshot without making up a disconnect cause", async () => {
+  apiMock.sshSessions.mockResolvedValue([]);
+  await useSsh.getState().refresh();
+  expect(useSsh.getState().history[0]).toMatchObject({
+    session,
+    events: [{ kind: "connected", at: 0 }, { kind: "ended" }],
+  });
+  expect(useSsh.getState().history[0]!.events[1]!.detail).toBeUndefined();
 });

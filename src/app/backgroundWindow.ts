@@ -53,6 +53,7 @@ interface WindowSnapshot {
   editors: ReturnType<typeof useEditors.getState>["entries"];
   editorHistory?: ReturnType<typeof editorHistorySnapshot>;
   sessions: ReturnType<typeof useSsh.getState>["sessions"];
+  sessionHistory?: ReturnType<typeof useSsh.getState>["history"];
   outputs: ReturnType<typeof usePlugins.getState>["outputs"];
   storageDraft: ReturnType<typeof useStorage.getState>["draft"];
   restartPrompt?: Pick<ReturnType<typeof useRestartPrompt.getState>, "observed">;
@@ -81,7 +82,7 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   restoreTerminalCheckpoints(snapshot.terminals);
   useEditors.setState({ entries: snapshot.editors });
   restoreEditorHistory(snapshot.editorHistory);
-  useSsh.setState({ sessions: snapshot.sessions });
+  useSsh.setState({ sessions: snapshot.sessions, history: snapshot.sessionHistory ?? [] });
   usePlugins.setState({ outputs: snapshot.outputs });
   useStorage.setState({ draft: snapshot.storageDraft });
   useRestartPrompt.setState({ observed: snapshot.restartPrompt?.observed ?? null, open: false });
@@ -152,6 +153,7 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
       editors: useEditors.getState().entries,
       editorHistory: editorHistorySnapshot(),
       sessions,
+      sessionHistory: useSsh.getState().history,
       terminals,
       outputs: usePlugins.getState().outputs,
       storageDraft: useStorage.getState().draft,

@@ -85,6 +85,7 @@ beforeEach(() => {
     split: null,
   });
   useSsh.setState({
+    history: [],
     sessions: [
       {
         id: "one",
@@ -265,4 +266,19 @@ describe("background window checkpoint", () => {
       decodeViewSnapshot(encodeViewSnapshot({ set: new Set(["a"]), map: new Map([["x", 3]]) })),
     ).toEqual({ set: new Set(["a"]), map: new Map([["x", 3]]) });
   });
+});
+
+it("retains session lifecycle history across in-memory WebView suspension", async () => {
+  const session = useSsh.getState().sessions[0]!;
+  useSsh.getState().acceptSession(session);
+  useSsh.getState().forget(session.id, "closed");
+  const history = useSsh.getState().history;
+  await suspendBackgroundWindow(99);
+  const snapshot = mocks.suspend.mock.calls[0]![1] as string;
+  expect(decodeViewSnapshot<{ sessionHistory: unknown }>(snapshot).sessionHistory).toEqual(history);
+  useSsh.setState({ sessions: [], history: [] });
+  mocks.snapshot.mockResolvedValue(snapshot);
+  await restoreBackgroundSnapshot();
+  expect(useSsh.getState().history).toEqual(history);
+  expect(useSsh.getState().sessions).toEqual([]);
 });

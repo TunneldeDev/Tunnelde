@@ -198,8 +198,8 @@ describe("workspace startup and persistence", () => {
       await bootstrap();
       const close = vi.spyOn(useWorkspace.getState(), "closeSession");
       const listener = mocks.events.onSshClosed.mock.calls[0]![0];
-      listener({ sessionId: session.id });
-      expect(mocks.sshForget).toHaveBeenCalledWith(session.id);
+      listener({ sessionId: session.id, reason: "closed" });
+      expect(mocks.sshForget).toHaveBeenCalledWith(session.id, "closed");
       expect(mocks.monitorForget).toHaveBeenCalledWith(session.id);
       expect(close).toHaveBeenCalledWith(session.id);
       if (terminal === false) expect(mocks.toast).not.toHaveBeenCalled();
@@ -212,8 +212,8 @@ describe("workspace startup and persistence", () => {
     const { bootstrap } = await fresh();
     await bootstrap();
     const listener = mocks.events.onSshClosed.mock.calls[0]![0];
-    listener({ sessionId: "already-forgotten" });
-    expect(mocks.sshForget).toHaveBeenCalledWith("already-forgotten");
+    listener({ sessionId: "already-forgotten", reason: "closed" });
+    expect(mocks.sshForget).toHaveBeenCalledWith("already-forgotten", "closed");
     expect(mocks.monitorForget).toHaveBeenCalledWith("already-forgotten");
     expect(mocks.toast).not.toHaveBeenCalled();
   });

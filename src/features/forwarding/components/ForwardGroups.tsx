@@ -62,8 +62,8 @@ export function ForwardGroups({
         if (!group.id && !rules.length) return null;
         return (
           <section className="forward-group" key={group.id} aria-label={group.name}>
-            <header className="forwarding__head">
-              <h3 className="forward-editor__title">{group.name}</h3>
+            <header className="forward-group__head">
+              <h3 className="forward-group__title">{group.name}</h3>
               <div className="forwarding__tools">
                 {group.id && (
                   <Button

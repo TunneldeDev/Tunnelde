@@ -2738,7 +2738,25 @@
     "connectedAt": "连接时间",
     "sessionId": "会话 ID",
     "sessions_one": "当前 {{count}} 条会话",
-    "sessions_other": "当前 {{count}} 条会话"
+    "sessions_other": "当前 {{count}} 条会话",
+    "disconnect": "关闭会话",
+    "disconnecting": "正在关闭…",
+    "confirmDisconnect": "确认关闭",
+    "disconnectWarning": "关闭此 SSH 会话也会停止其终端、文件操作、转发规则和挂载。其他会话不受影响。",
+    "details": "会话详情",
+    "connected": "已连接",
+    "ended": "已结束",
+    "hostId": "主机 ID",
+    "terminalSize": "初始终端尺寸",
+    "history": "状态历史",
+    "historyHint": "历史仅保留在本次应用运行中：最近 30 条已结束会话，每条最多 20 条事件。不记录终端内容。",
+    "recent": "最近结束的会话",
+    "events": {
+      "connected": "连接已建立",
+      "disconnecting": "已请求关闭",
+      "disconnectFailed": "关闭失败",
+      "ended": "会话已结束"
+    }
   },
   "hostTransfer": {
     "chooseFile": "选择文件…",
