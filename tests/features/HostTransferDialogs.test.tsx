@@ -183,6 +183,26 @@ it("cancelling the native picker closes without applying configuration", async (
   expect(apply).not.toHaveBeenCalled();
 });
 
+it("can choose a valid file in place after the initial import fails", async () => {
+  const pick = vi
+    .spyOn(hostTransferApi, "pick")
+    .mockRejectedValueOnce(new Error("Invalid host file"))
+    .mockResolvedValue(preview());
+  const apply = vi.spyOn(hostTransferApi, "apply");
+  useHostTransfer.getState().openImport();
+  render(
+    <StrictMode>
+      <HostTransferDialogs />
+    </StrictMode>,
+  );
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "Choose file…" }));
+  await screen.findByRole("button", { name: "Import selected (2)" });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(pick).toHaveBeenCalledTimes(2);
+  expect(apply).not.toHaveBeenCalled();
+});
+
 it("explains when there are no saved hosts to export", () => {
   useHosts.setState({ hosts: [] });
   useHostTransfer.getState().openExport();

@@ -2069,8 +2069,9 @@
   },
   "forward": {
     "noHostsHint": "Add a host to configure and manage port forwarding.",
-    "disconnectTitle": "Disconnect SSH?",
-    "disconnectBody": "Disconnecting stops all forwards using this connection.",
+    "disconnectTitle": "Disconnect forwarding?",
+    "disconnectBody_one": "Disconnect {{count}} forwarding connection on {{host}} and stop its forwards? Terminal and file sessions will stay connected.",
+    "disconnectBody_other": "Disconnect {{count}} forwarding connections on {{host}} and stop their forwards? Terminal and file sessions will stay connected.",
     "title": "Port forwarding",
     "add": "Add forward",
     "startAll": "Start all",
@@ -2736,6 +2737,7 @@
     "sessions_other": "{{count}} active sessions"
   },
   "hostTransfer": {
+    "chooseFile": "Choose file…",
     "addMenu": "Add host",
     "exportTitle": "Export hosts",
     "importTitle": "Import Tunnelde hosts",

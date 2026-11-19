@@ -69,13 +69,9 @@ export function ForwardGroups({
                   <Button
                     size="sm"
                     aria-label={t("forward.startGroup", { name: group.name })}
-                    disabled={
-                      busy || controller.busy || !rules.some((rule) => !controller.isActive(rule))
-                    }
+                    disabled={busy || controller.busy || !rules.some(controller.canStart)}
                     onClick={() =>
-                      controller.start(
-                        rules.filter((rule) => !controller.isActive(rule)).map((rule) => rule.id),
-                      )
+                      controller.start(rules.filter(controller.canStart).map((rule) => rule.id))
                     }
                   >
                     {t("forward.startAll")}
@@ -162,7 +158,12 @@ export function ForwardGroups({
               value={draft.name}
               onChange={(event) => setDraft({ ...draft, name: event.target.value })}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.nativeEvent.isComposing && draft.name.trim()) {
+                if (
+                  event.key === "Enter" &&
+                  !event.nativeEvent.isComposing &&
+                  event.nativeEvent.keyCode !== 229 &&
+                  draft.name.trim()
+                ) {
                   event.preventDefault();
                   void run(() =>
                     invoke("forwarding_group_save", {

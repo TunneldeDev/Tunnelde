@@ -1059,6 +1059,33 @@ describe("SftpPage", () => {
     expect(fsMock.list.mock.calls.length).toBeGreaterThan(before);
   });
 
+  it("retries a failed subfolder listing without closing and reopening the menu", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fsMock.list.mockRejectedValueOnce(new Error("Unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Subfolders of C:\\work" }));
+    const refresh = await screen.findByRole("menuitem", { name: "Refresh" });
+    fireEvent.keyDown(refresh, { key: "Enter" });
+    const folder = await screen.findByRole("menuitem", { name: "src" });
+    expect(document.activeElement).toBe(folder);
+    fireEvent.click(folder);
+    expect(screen.queryByRole("menuitem", { name: "src" })).toBeNull();
+    await waitFor(() => expect(currentPath(0)).toBe("C:\\work\\src"));
+  });
+
+  it("does not navigate on WebKit's IME confirmation Enter", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    fireEvent.change(input, { target: { value: "/srv/项目" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false, keyCode: 229 });
+    expect(input.isConnected).toBe(true);
+    expect(input.value).toBe("/srv/项目");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.isConnected).toBe(false);
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith(expect.anything(), "/srv/项目"));
+  });
+
   it("uses customized file bindings and consumes them before global workbench commands", async () => {
     useSettings.setState({
       settings: {

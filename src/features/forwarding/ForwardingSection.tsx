@@ -30,7 +30,7 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
 function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
   const { t } = useTranslation();
   const controller = useForwardingController(host);
-  const { rules, loading, session, isActive, form, busy, failure, connectingRules } = controller;
+  const { rules, loading, session, canStart, form, busy, failure, connectingRules } = controller;
   return (
     <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
       <header className="forwarding__head">
@@ -68,10 +68,8 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy || rules.every(isActive)}
-              onClick={() =>
-                controller.start(rules.filter((rule) => !isActive(rule)).map((rule) => rule.id))
-              }
+              disabled={busy || !rules.some(canStart)}
+              onClick={() => controller.start(rules.filter(canStart).map((rule) => rule.id))}
             >
               {t("forward.startAll")}
             </Button>

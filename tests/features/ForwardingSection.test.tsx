@@ -654,12 +654,55 @@ it("allows stopping automatic retries even when no SSH connection is active", as
   ];
   render(<ForwardingSection host={host} />);
   expect(await screen.findByText("Waiting to retry")).toBeTruthy();
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start all" }).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", { id: "rule" }));
   expect(screen.queryByRole("button", { name: "Connect forwarding" })).toBeNull();
 });
 
-it("disconnects every forwarding connection for the host while preserving terminal sessions", async () => {
+it("shows startup only on the current rule and leaves automatic retries alone in a group batch", async () => {
+  connect();
+  rows = ["one", "two", "retry", "other"].map((id) => ({
+    ...savedRule(),
+    id,
+    name: id,
+    groupId: id === "other" ? null : "services",
+    ...(id === "retry"
+      ? {
+          automationStatus: { phase: "retrying" as const, retryAt: Date.now() + 2000, error: null },
+        }
+      : {}),
+  }));
+  const implementation = invokeMock.getMockImplementation()!;
+  let release!: () => void;
+  invokeMock.mockImplementation(async (command, args) => {
+    if (command === "forwarding_groups_list")
+      return [{ id: "services", name: "Services", hostId: "host", revision: "g1" }];
+    if (command === "forwarding_start_managed" && args.id === "one")
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    return implementation(command, args);
+  });
+  render(<ForwardingSection host={host} />);
+  const region = await screen.findByRole("region", { name: "Services" });
+  fireEvent.click(within(region).getByRole("button", { name: /start.*services/i }));
+  await within(region).findByText("Starting…");
+  expect(within(region).getByText("Waiting to retry")).toBeTruthy();
+  expect(within(region).getByText("Stopped")).toBeTruthy();
+  expect(
+    within(screen.getByRole("region", { name: "Ungrouped" })).getByText("Stopped"),
+  ).toBeTruthy();
+  await act(async () => release());
+  await waitFor(() => expect(within(region).getAllByText("Running")).toHaveLength(2));
+  expect(
+    invokeMock.mock.calls
+      .filter(([cmd]) => cmd === "forwarding_start_managed")
+      .map(([, args]) => args.id),
+  ).toEqual(["one", "two"]);
+});
+
+it("disconnects only the confirmed forwarding connections, preserving newer and terminal sessions", async () => {
   const connection = {
     hostId: "host",
     title: "server",
@@ -678,8 +721,14 @@ it("disconnects every forwarding connection for the host while preserving termin
   render(<ForwardingSection host={host} />);
   fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
   const confirmMock = useDialogs.getState().confirm as ReturnType<typeof vi.fn>;
+  expect(confirmMock.mock.calls[0]![0].body).toContain("2 forwarding connections on server");
+  act(() =>
+    useSsh.setState((state) => ({
+      sessions: [...state.sessions, { ...connection, id: "later", purpose: "forwarding" }],
+    })),
+  );
   await act(async () => confirmMock.mock.calls[0]![0].onConfirm());
-  expect(useSsh.getState().sessions.map((session) => session.id)).toEqual(["terminal"]);
+  expect(useSsh.getState().sessions.map((session) => session.id)).toEqual(["terminal", "later"]);
 });
 
 it("saves a rule into the selected group and shows it under that group", async () => {

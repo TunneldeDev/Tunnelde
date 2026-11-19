@@ -2069,8 +2069,9 @@
   },
   "forward": {
     "noHostsHint": "添加主机后即可配置和管理端口转发。",
-    "disconnectTitle": "断开 SSH 连接？",
-    "disconnectBody": "断开连接将停止此连接上的所有端口转发。",
+    "disconnectTitle": "断开转发连接？",
+    "disconnectBody_one": "断开「{{host}}」的 {{count}} 条转发连接并停止其转发规则？终端和文件会话会保持连接。",
+    "disconnectBody_other": "断开「{{host}}」的 {{count}} 条转发连接并停止其转发规则？终端和文件会话会保持连接。",
     "title": "端口转发",
     "add": "添加转发",
     "startAll": "全部启动",
@@ -2736,6 +2737,7 @@
     "sessions_other": "当前 {{count}} 条会话"
   },
   "hostTransfer": {
+    "chooseFile": "选择文件…",
     "addMenu": "添加主机",
     "exportTitle": "导出主机",
     "importTitle": "导入 Tunnelde 主机文件",
