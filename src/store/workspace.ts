@@ -135,6 +135,7 @@ interface WorkspaceStore {
     preferredSize?: LayoutSize,
   ) => void;
   resizeSplit: (id: string, ratio: number) => void;
+  resizeSplits: (ratios: Record<string, number>) => void;
   moveTab: (tabId: string, targetPaneId: string, beforeTabId?: string | null) => void;
   reorderTab: (tabId: string, beforeTabId: string | null) => void;
   closePane: (paneId: string) => void;
@@ -955,6 +956,17 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             ? { ...node, ratio: Math.max(0.15, Math.min(0.85, ratio)) }
             : node,
         ),
+      }));
+    },
+    resizeSplits: (ratios) => {
+      set((state) => ({
+        layout: mapLayout(state.layout, (node) => {
+          if (node.kind !== "split") return node;
+          const ratio = ratios[node.id];
+          return typeof ratio === "number" && Number.isFinite(ratio)
+            ? { ...node, ratio: Math.max(0.15, Math.min(0.85, ratio)) }
+            : node;
+        }),
       }));
     },
     moveTab: (tabId, targetPaneId, beforeTabId) => {

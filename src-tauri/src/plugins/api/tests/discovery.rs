@@ -196,6 +196,7 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "workspace.panels.list",
             "workspace.panels.observe",
             "workspace.panels.setPresentation",
+            "workspace.resizeSplits",
         ]
     );
 }
@@ -282,6 +283,7 @@ fn panel_methods_are_explicit_experimental_permission_checked_additions() {
         ("workspace.panels.observe", "workspace.read"),
         ("workspace.panels.setPresentation", "workspace.write"),
         ("workspace.panels.close", "workspace.write"),
+        ("workspace.resizeSplits", "workspace.write"),
     ] {
         let entry = method_info(name).unwrap();
         assert_eq!(entry.permissions, [permission]);

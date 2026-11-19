@@ -731,3 +731,40 @@ describe("generic panel API", () => {
     expect(panelPresentation("connections").getState().open).toBe(false);
   });
 });
+
+it("validates all split IDs before applying one atomic plugin layout resize", async () => {
+  useWorkspace.setState({
+    layout: {
+      kind: "split",
+      id: "x",
+      direction: "row",
+      ratio: 0.5,
+      first: {
+        kind: "split",
+        id: "y",
+        direction: "column",
+        ratio: 0.5,
+        first: { kind: "pane", paneId: "a" },
+        second: { kind: "pane", paneId: "b" },
+      },
+      second: { kind: "pane", paneId: "c" },
+    },
+  });
+  const changed = vi.fn();
+  const stop = useWorkspace.subscribe(changed);
+  await expect(
+    runPluginWorkspaceRequest(
+      request("workspace.resizeSplits", { ratios: { x: 0.6, unknown: 0.7 } }),
+    ),
+  ).rejects.toThrow("split.notFound");
+  await expect(
+    runPluginWorkspaceRequest(request("workspace.resizeSplits", { ratios: { x: 0.6, y: NaN } })),
+  ).rejects.toThrow("invalid:ratio");
+  expect(changed).not.toHaveBeenCalled();
+  await runPluginWorkspaceRequest(
+    request("workspace.resizeSplits", { ratios: { x: 0.6, y: 0.7 } }),
+  );
+  expect(changed).toHaveBeenCalledTimes(1);
+  expect(useWorkspace.getState().layout).toMatchObject({ ratio: 0.6, first: { ratio: 0.7 } });
+  stop();
+});

@@ -2822,6 +2822,8 @@
     "resizeHint": "Resize panel · arrow keys resize · Shift for fine adjustment",
     "resetLayout": "Reset panel layout",
     "floatWindow": "Open as a floating window",
-    "keepOpen": "Keep panel open"
+    "keepOpen": "Keep panel open",
+    "resizeIntersection": "Resize intersecting panels",
+    "resizeIntersectionHint": "Drag in any direction · arrow keys adjust one axis · Shift for precision · Home or double-click resets · Escape cancels"
   }
 }

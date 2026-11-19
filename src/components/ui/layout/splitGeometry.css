@@ -1,0 +1,31 @@
+.td-split-intersections {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.td-split-intersection {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: move;
+  touch-action: none;
+  pointer-events: auto;
+}
+.td-split-intersection::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  background: var(--td-border-strong);
+  border-radius: 2px;
+  opacity: 0;
+}
+.td-split-intersection:hover::after,
+.td-split-intersection:focus-visible::after {
+  opacity: 1;
+  background: var(--td-accent);
+}

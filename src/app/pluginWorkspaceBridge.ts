@@ -128,6 +128,28 @@ export async function runPluginWorkspaceRequest(
       if (!!pane.locked !== params.locked) workspace.togglePaneLock(paneId);
       break;
     }
+    case "workspace.resizeSplits": {
+      const value = params.ratios;
+      if (!value || typeof value !== "object" || Array.isArray(value))
+        throw new Error("invalid:ratios");
+      const entries = Object.entries(value);
+      if (!entries.length || entries.length > 32) throw new Error("invalid:ratios");
+      const ids = new Set<string>();
+      const visit = (node: typeof workspace.layout) => {
+        if (node.kind !== "split") return;
+        ids.add(node.id);
+        visit(node.first);
+        visit(node.second);
+      };
+      visit(workspace.layout);
+      for (const [id, ratio] of entries) {
+        if (!ids.has(id)) throw new Error("split.notFound");
+        if (typeof ratio !== "number" || !Number.isFinite(ratio) || ratio < 0.1 || ratio > 0.9)
+          throw new Error("invalid:ratio");
+      }
+      workspace.resizeSplits(Object.fromEntries(entries));
+      break;
+    }
     case "workspace.resizeSplit": {
       const splitId = text(params, "splitId"),
         ratio = params.ratio;

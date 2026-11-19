@@ -2822,6 +2822,8 @@
     "resizeHint": "调整面板大小 · 方向键缩放 · Shift 精细调整",
     "resetLayout": "重置面板布局",
     "floatWindow": "作为小窗打开",
-    "keepOpen": "保持面板打开"
+    "keepOpen": "保持面板打开",
+    "resizeIntersection": "调整交汇面板大小",
+    "resizeIntersectionHint": "任意方向拖动 · 方向键单轴调整 · Shift 精细调整 · Home 或双击重置 · Escape 取消"
   }
 }

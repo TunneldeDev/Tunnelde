@@ -21,6 +21,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("workspace.move", ["workspace.write"], "{tabId:string,paneId:string,beforeTabId?:string|null}", "Move or reorder an existing tab."),
     method!("workspace.showQuickAccess", ["workspace.write"], "{query?:string}", "Open Quick Access with an optional query. Never execute a command automatically."),
     method!("workspace.setPaneLocked", ["workspace.write"], "{paneId:string,locked:boolean}", "Set the destination lock on an existing pane."),
+    method!("workspace.resizeSplits", ["workspace.write"], "{ratios:Record<splitId,number>}", "Resize 1-32 existing splits in one layout transaction. Every ID and finite ratio between 0.1 and 0.9 must validate before mutation. Normal workspace minimum sizes still clamp each ratio. No partial update on invalid input."),
     method!("workspace.resizeSplit", ["workspace.write"], "{splitId:string,ratio:number}", "Resize an existing split with a ratio between 0.1 and 0.9."),
     method!("workspace.returnSidebar", ["workspace.write"], "{view:hosts|plugins|knownHosts}", "Return a docked list to the sidebar."),
     stable_method!("ui.showMessage", [], "{message:string,kind?:info|success|error}", "Show a bounded plain-text notification prefixed with the installed plugin's identity. Returns null on acceptance, not durable delivery. Nonempty message, no NUL, at most 4000 UTF-16 units. Omitted/null kind defaults to info. No events or actions; notifications may expire or be displaced.", "0.21.0"),

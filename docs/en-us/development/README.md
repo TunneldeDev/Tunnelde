@@ -2,6 +2,7 @@
 
 [Documentation](../README.md)
 
+- [Development and UX conventions](working-agreements.md)
 - [Plugin development and security](plugins/README.md)
 - [Architecture](architecture.md)
 - [Local API and CLI](local-api.md)

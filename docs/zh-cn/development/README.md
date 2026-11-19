@@ -2,6 +2,7 @@
 
 [文档首页](../README.md)
 
+- [开发与交互规范](working-agreements.md)
 - [插件开发与安全](plugins/README.md)
 - [架构](architecture.md)
 - [本地 API 与 CLI](local-api.md)
