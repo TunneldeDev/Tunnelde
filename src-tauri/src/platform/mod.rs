@@ -14,3 +14,6 @@ pub mod tray;
 pub mod window;
 
 pub mod restart;
+
+#[cfg(test)]
+mod panel_windows;
