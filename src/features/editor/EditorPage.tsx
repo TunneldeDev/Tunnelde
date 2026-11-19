@@ -1,4 +1,4 @@
-import { Save, ShieldCheck, WandSparkles } from "lucide-react";
+import { RefreshCw, Save, ShieldCheck, WandSparkles } from "lucide-react";
 import { shortcutCommands } from "@/lib/keyboard/registry";
 import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -301,8 +301,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         useDialogs.getState().confirm({
           title: t("editor.conflictTitle"),
           body: t("editor.conflictBody"),
-          confirmLabel: t("common.apply"),
-          danger: true,
+          confirmLabel: t("editor.reconnect"),
           onConfirm: async () => {
             await reconnect(tabId, candidate.id, true, target);
           },
@@ -497,7 +496,24 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
 
       {entry.error ? (
         <div className="page">
-          <EmptyState title={entry.error} />
+          <EmptyState
+            title={entry.error}
+            action={
+              entry.baselineLoaded === false &&
+              !entry.disconnected &&
+              !dirty &&
+              !entry.loading &&
+              !entry.saving ? (
+                <Button
+                  size="sm"
+                  leading={<RefreshCw size={13} />}
+                  onClick={() => void useEditors.getState().retryOpen(tabId)}
+                >
+                  {t("common.retry")}
+                </Button>
+              ) : undefined
+            }
+          />
         </div>
       ) : entry.loading ? (
         <div className="page">

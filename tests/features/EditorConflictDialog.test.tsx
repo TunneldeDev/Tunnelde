@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { EditorConflictDialog } from "@/features/editor/EditorConflictDialog";
@@ -96,7 +96,10 @@ it("reads the reviewed baseline with its baseline encoding", async () => {
 });
 
 it("keeps replacement disabled when the latest disk version could not be read", async () => {
-  vi.mocked(api.sftpReadText).mockRejectedValue({ code: "ssh", message: "sftp.reconnectRequired" });
+  vi.mocked(api.sftpReadText).mockRejectedValueOnce({
+    code: "ssh",
+    message: "sftp.reconnectRequired",
+  });
   render(<EditorConflictDialog tabId="review" onClose={vi.fn()} />);
   await screen.findByRole("alert");
   expect(screen.getByRole("button", { name: "Replace disk version" })).toHaveProperty(
@@ -105,4 +108,43 @@ it("keeps replacement disabled when the latest disk version could not be read", 
   );
   expect(screen.getByRole("button", { name: "Reload from disk" })).toHaveProperty("disabled", true);
   expect(useEditors.getState().entries.review?.content).toBe("unsaved draft");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh comparison" }));
+  await screen.findByDisplayValue("external update");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button", { name: "Replace disk version" })).toHaveProperty(
+    "disabled",
+    false,
+  );
+  expect(api.sftpWriteText).not.toHaveBeenCalled();
+});
+
+it("requires a fresh comparison when the draft changes and writes only the refreshed pair", async () => {
+  render(<EditorConflictDialog tabId="review" onClose={vi.fn()} />);
+  await screen.findByDisplayValue("external update");
+  act(() => useEditors.getState().change("review", "new draft"));
+  const replace = screen.getByRole("button", { name: "Replace disk version" });
+  expect(replace).toHaveProperty("disabled", true);
+  vi.mocked(api.sftpReadText).mockResolvedValue({
+    content: "new disk",
+    size: 8,
+    encoding: "utf-8",
+    bom: false,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh comparison" }));
+  await screen.findByDisplayValue("new disk");
+  expect(screen.getByDisplayValue("new draft")).toBeTruthy();
+  expect(api.sftpWriteText).not.toHaveBeenCalled();
+  fireEvent.click(replace);
+  await waitFor(() =>
+    expect(api.sftpWriteText).toHaveBeenCalledWith(
+      "session",
+      "/note.txt",
+      "new draft",
+      "new disk",
+      "utf-8",
+      false,
+      "utf-8",
+      false,
+    ),
+  );
 });

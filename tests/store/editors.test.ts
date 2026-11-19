@@ -506,22 +506,52 @@ describe("editor requests", () => {
     expect(await state().save(id)).toBe(false);
   });
 
-  it("treats a reconnect format-only change as a conflict unless accepted", async () => {
+  it.each(["original", "new disk contents"])(
+    "adopts remote changes in a clean tab on reconnect: %s",
+    async (content) => {
+      await state().open(id, "s1", "/a.txt");
+      state().change(id, "previous draft");
+      expect(undoEditorEdit(id)).toBe(true);
+      state().markDisconnected("s1");
+      vi.mocked(api.sftpReadText).mockResolvedValue({
+        content,
+        size: 8,
+        encoding: "utf-8",
+        bom: true,
+      });
+      expect(await state().reconnect(id, "s2")).toBe("ready");
+      expect(state().entries[id]).toMatchObject({
+        content,
+        baseline: content,
+        bom: true,
+        baselineEncoding: "utf-8",
+        baselineBom: true,
+      });
+      expect(state().isDirty(id)).toBe(false);
+      expect(undoEditorEdit(id, true)).toBe(false);
+      expect(api.sftpWriteText).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps an encoding-only draft until the user accepts reconnecting to a changed file", async () => {
     await state().open(id, "s1", "/a.txt");
+    state().changeSaveEncoding(id, "utf-16le");
     state().markDisconnected("s1");
     vi.mocked(api.sftpReadText).mockResolvedValue({
-      content: "original",
-      size: 8,
+      content: "updated",
+      size: 7,
       encoding: "utf-8",
-      bom: true,
+      bom: false,
     });
     expect(await state().reconnect(id, "s2")).toBe("conflict");
     expect(await state().reconnect(id, "s2", true)).toBe("ready");
     expect(state().entries[id]).toMatchObject({
-      baseline: "original",
+      content: "original",
+      baseline: "updated",
+      encoding: "utf-16le",
       baselineEncoding: "utf-8",
-      baselineBom: true,
     });
+    expect(api.sftpWriteText).not.toHaveBeenCalled();
   });
 
   it("keeps a disconnected draft and requires approval for a changed remote file", async () => {

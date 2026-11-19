@@ -52,6 +52,7 @@ interface EditorsStore {
     path: string,
     target?: EditorEntry["recoveryTarget"],
   ) => Promise<void>;
+  retryOpen: (tabId: string) => Promise<void>;
   change: (tabId: string, content: string, selection?: EditorSelectionSnapshot | null) => void;
   changeSaveEncoding: (tabId: string, encoding: TextEncoding) => boolean;
   reopen: (tabId: string, encoding: TextEncoding) => Promise<boolean>;
@@ -715,6 +716,20 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     }
   },
 
+  retryOpen: async (tabId) => {
+    const entry = get().entries[tabId];
+    if (
+      !entry?.error ||
+      entry.baselineLoaded !== false ||
+      entry.disconnected ||
+      entry.loading ||
+      entry.saving ||
+      editorHasPendingChanges(entry)
+    )
+      return;
+    await get().open(tabId, entry.sessionId, entry.path, entry.recoveryTarget);
+  },
+
   change: (tabId, content, selection) => {
     set((state) => {
       const current = state.entries[tabId];
@@ -1132,13 +1147,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       const baselineLoaded = entry.baselineLoaded ?? (!entry.loading && !entry.error);
       const baselineEncoding = entry.baselineEncoding ?? entry.encoding ?? "utf-8";
       const baselineBom = entry.baselineBom ?? entry.bom ?? false;
-      // A first read/retry has no reviewed baseline; preserve its explicit
-      // selection as the save target instead of overwriting it with detection.
+      const keepDraft = editorHasPendingChanges(entry);
       const changed =
         file.content !== entry.baseline ||
         file.encoding !== baselineEncoding ||
         file.bom !== baselineBom;
-      if (baselineLoaded && changed && !acceptChanges) return "conflict";
+      if (keepDraft && baselineLoaded && changed && !acceptChanges) return "conflict";
+      if (!keepDraft && changed) clearEditorHistory(tabId);
       versions.set(tabId, Symbol());
       set((state) => ({
         entries: {
@@ -1148,11 +1163,11 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             sessionId,
             documentId: crypto.randomUUID(),
             version: 0,
-            content:
-              baselineLoaded || entry.content !== entry.baseline ? entry.content : file.content,
+            content: keepDraft ? entry.content : file.content,
             baseline: file.content,
-            encoding: baselineLoaded ? (entry.encoding ?? file.encoding) : file.encoding,
-            bom: baselineLoaded ? (entry.bom ?? file.bom) : file.bom,
+            encoding:
+              keepDraft && baselineLoaded ? (entry.encoding ?? file.encoding) : file.encoding,
+            bom: keepDraft && baselineLoaded ? (entry.bom ?? file.bom) : file.bom,
             // Keep the explicitly selected draft format as the save target;
             // the re-read format is the baseline that must still match.
             baselineEncoding: file.encoding,
