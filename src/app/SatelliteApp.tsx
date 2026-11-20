@@ -1,3 +1,4 @@
+import { NativeFileView, useNativeFileTitles } from "@/features/sftp/NativeFilePage";
 import { useNativeReadModel, type NativeViewProps } from "@/lib/panels/useNativeReadModel";
 import {
   NativeTerminalView,
@@ -348,6 +349,7 @@ export function SatelliteApp() {
     };
   }, [client, chrome]);
   const terminalTitles = useNativeTerminalTitles((state) => state.titles);
+  const fileTitles = useNativeFileTitles((state) => state.titles);
   const entries = useWindowViews((s) => s.entries);
   useEffect(() => {
     let disposed = false;
@@ -439,31 +441,37 @@ export function SatelliteApp() {
           windowId={client.windowId}
           entries={[...entries.values()].map((record) => ({
             id: record.panelId,
-            title: record.panelId.startsWith("terminal:")
-              ? (terminalTitles[record.panelId] ?? "Terminal")
-              : undefined,
+            title:
+              record.panelId.startsWith("files:") || record.panelId.startsWith("sftp:")
+                ? fileTitles[record.panelId]
+                : record.panelId.startsWith("terminal:")
+                  ? (terminalTitles[record.panelId] ?? "Terminal")
+                  : undefined,
             key: record.key,
-            content: record.panelId.startsWith("terminal:") ? (
-              <NativeTerminalView client={client} record={record} presented={presented} />
-            ) : record.panelId === "plugins" ? (
-              <PluginsView client={client} record={record} presented={presented} />
-            ) : record.panelId === "hosts" ? (
-              <HostsView client={client} record={record} presented={presented} />
-            ) : record.panelId === "filePreview" ? (
-              <PreviewView client={client} record={record} presented={presented} />
-            ) : record.panelId === "knownHosts" ? (
-              <KnownHostsView client={client} record={record} presented={presented} />
-            ) : record.panelId === "tasks" ? (
-              <TaskView client={client} record={record} presented={presented} />
-            ) : record.panelId === "output" ? (
-              <OutputView client={client} record={record} presented={presented} />
-            ) : record.panelId === "forwarding" ? (
-              <ForwardingView client={client} record={record} presented={presented} />
-            ) : record.panelId === "connections" ? (
-              <ConnectionView client={client} record={record} presented={presented} />
-            ) : record.plugin ? (
-              <PluginView client={client} record={record} presented={presented} />
-            ) : null,
+            content:
+              record.panelId.startsWith("files:") || record.panelId.startsWith("sftp:") ? (
+                <NativeFileView client={client} record={record} presented={presented} />
+              ) : record.panelId.startsWith("terminal:") ? (
+                <NativeTerminalView client={client} record={record} presented={presented} />
+              ) : record.panelId === "plugins" ? (
+                <PluginsView client={client} record={record} presented={presented} />
+              ) : record.panelId === "hosts" ? (
+                <HostsView client={client} record={record} presented={presented} />
+              ) : record.panelId === "filePreview" ? (
+                <PreviewView client={client} record={record} presented={presented} />
+              ) : record.panelId === "knownHosts" ? (
+                <KnownHostsView client={client} record={record} presented={presented} />
+              ) : record.panelId === "tasks" ? (
+                <TaskView client={client} record={record} presented={presented} />
+              ) : record.panelId === "output" ? (
+                <OutputView client={client} record={record} presented={presented} />
+              ) : record.panelId === "forwarding" ? (
+                <ForwardingView client={client} record={record} presented={presented} />
+              ) : record.panelId === "connections" ? (
+                <ConnectionView client={client} record={record} presented={presented} />
+              ) : record.plugin ? (
+                <PluginView client={client} record={record} presented={presented} />
+              ) : null,
           }))}
         />
       )}

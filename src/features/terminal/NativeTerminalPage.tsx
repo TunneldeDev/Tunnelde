@@ -1,8 +1,8 @@
+import { NativeWorkspaceFrame } from "@/components/layout/NativeWorkspaceFrame";
 import type { TerminalViewServices } from "./terminalViewServices";
-import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
-import { create, useStore } from "zustand";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { create } from "zustand";
 import { useTranslation } from "react-i18next";
-import { GripVertical, RotateCcw, X } from "lucide-react";
 import { TerminalPage, TerminalPageView } from "./TerminalPage";
 import { TerminalSurface } from "./TerminalSurface";
 import { createTerminalViewBinding } from "./terminalViewBinding";
@@ -11,13 +11,8 @@ import { useNativeReadModel, type NativeViewProps } from "@/lib/panels/useNative
 import { useWindowViews, windowViews } from "@/lib/panels/windowViews";
 import { usePanelWindows } from "@/store/panelWindows";
 import { NativePanelView } from "@/components/layout/NativePanelView";
-import { PanelFrame } from "@/components/layout/PanelFrame";
-import { useLocalPanelScope, type LocalPanelScope } from "@/lib/panels/localWorkspaceScope";
-import { localPanelMoveActions } from "@/lib/panels/localWorkspaceActions";
-import { nativePanelMoveActions, movePanelToWindow } from "@/lib/panels/windowMoves";
-import { endLocalPanelDrag, startLocalPanelDrag } from "@/lib/panels/localPanelDrag";
-import { IconButton } from "@/components/ui/form/Button";
-import { Menu } from "@/components/ui/overlay/Menu";
+import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
+import { movePanelToWindow } from "@/lib/panels/windowMoves";
 import { isTauri } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
@@ -57,76 +52,6 @@ export function MainNativeTerminalPage({
       presented={silentPresentation}
       active={active}
     />
-  );
-}
-function LocalFrame({
-  scope,
-  title,
-  children,
-}: {
-  scope: LocalPanelScope;
-  title: string;
-  children: ReactNode;
-}) {
-  const { t } = useTranslation();
-  const bounds = useStore(scope.floating, (state) => state.bounds);
-  const close = () => {
-    void movePanelToWindow(scope.panelId, "main").catch((error) =>
-      toast(translateError(error), "error"),
-    );
-  };
-  return (
-    <PanelFrame
-      label={title}
-      panelId={scope.panelId}
-      floating={scope.location === "floating"}
-      location={scope.location}
-      bounds={bounds}
-      onBounds={scope.floating.getState().setBounds}
-      onEscape={close}
-      header={(geometry) =>
-        scope.location !== "floating" ? null : (
-          <header className="workbench-panel__head" role="toolbar" aria-label={title}>
-            <button
-              type="button"
-              className="workbench-panel__drag"
-              title={t("panels.moveHint")}
-              {...geometry.handle("move")}
-              onDoubleClick={geometry.reset}
-            >
-              <span
-                draggable
-                data-panel-drag-handle
-                className="workbench-panel__dock-grip"
-                onPointerDown={(event) => event.stopPropagation()}
-                onDragStart={(event) =>
-                  startLocalPanelDrag(scope.workspace, scope.panelId, event.dataTransfer)
-                }
-                onDragEnd={endLocalPanelDrag}
-              >
-                <GripVertical size={12} />
-              </span>
-              <strong>{title}</strong>
-            </button>
-            <Menu
-              label={t("common.more")}
-              items={[
-                ...nativePanelMoveActions(scope.panelId, t),
-                ...localPanelMoveActions(scope.workspace, scope.panelId, t),
-              ]}
-            />
-            <IconButton size="sm" label={t("panels.resetLayout")} onClick={geometry.reset}>
-              <RotateCcw size={13} />
-            </IconButton>
-            <IconButton size="sm" label={t("common.close")} onClick={close}>
-              <X size={14} />
-            </IconButton>
-          </header>
-        )
-      }
-    >
-      {children}
-    </PanelFrame>
   );
 }
 function TerminalRenderer({
@@ -196,9 +121,9 @@ export function NativeTerminalView(props: NativeViewProps & { active?: boolean }
   return (
     <NativePanelView panelId={props.record.panelId}>
       {local ? (
-        <LocalFrame scope={local} title={model.terminal.session.title}>
+        <NativeWorkspaceFrame scope={local} title={model.terminal.session.title}>
           {content}
-        </LocalFrame>
+        </NativeWorkspaceFrame>
       ) : (
         content
       )}

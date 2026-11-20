@@ -42,10 +42,13 @@ export interface FilePageModel {
  * provide scoped read models and leased effects, never writable main stores.
  * The service identity/hook implementations stay fixed for a renderer lifetime. */
 export interface FilePageServices {
+  rendered?(ready: boolean): void;
+  preserveDraftOnBlur?(): boolean;
   useModel(): FilePageModel;
   getState(): Pick<FilePageModel, "sessions" | "clip" | "settings"> & { tabs: Workspace["tabs"] };
   useViewState: typeof useViewState;
-  fs: FileSystem;
+  fs: Omit<FileSystem, "readText" | "writeText"> &
+    Partial<Pick<FileSystem, "readText" | "writeText">>;
   sameFilesystem(left: FsSource, right: FsSource): boolean;
   workspace: Pick<
     Workspace,

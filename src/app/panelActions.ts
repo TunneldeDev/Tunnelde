@@ -1,3 +1,4 @@
+import { executeFileWindowAction } from "@/features/sftp/fileWindowActions";
 import { executeTerminalWindowAction } from "@/features/terminal/terminalWindowActions";
 import { executePluginListCommand } from "@/features/plugins/panel/actions";
 import { executeHostPanelCommand } from "@/features/hosts/panel/execute";
@@ -22,6 +23,8 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request, lease }) => {
       switch (request.kind) {
+        case "files":
+          return executeFileWindowAction(lease, request.command, () => client.show());
         case "terminal":
           return executeTerminalWindowAction(lease, request.command, () => client.show());
         case "plugins":

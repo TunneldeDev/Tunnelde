@@ -86,6 +86,8 @@ export function FilePathBar({
   onFinishEditing,
   onNavigate,
   list = fs.list,
+  captureKey,
+  preserveDraftOnBlur,
 }: {
   source: FsSource;
   path: string;
@@ -99,6 +101,8 @@ export function FilePathBar({
   onFinishEditing: () => void;
   onNavigate: (path: string) => void;
   list?: typeof fs.list;
+  captureKey?: string;
+  preserveDraftOnBlur?: () => boolean;
 }) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
@@ -167,6 +171,7 @@ export function FilePathBar({
         ref={root}
         className="sftp-path"
         onBlur={(event) => {
+          if (preserveDraftOnBlur?.()) return;
           if (historyPointer.current) {
             return;
           }
@@ -192,6 +197,7 @@ export function FilePathBar({
         {editing ? (
           <input
             ref={input}
+            data-panel-focus={captureKey ? `${captureKey}:path` : undefined}
             className="td-input sftp-path__input"
             aria-label={t("sftp.path")}
             value={draft}

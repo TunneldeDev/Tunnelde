@@ -1,3 +1,4 @@
+import type { FileWindowCommand } from "@/features/sftp/fileWindowModel";
 import type { TerminalWindowCommand } from "@/features/terminal/terminalWindowModel";
 import type { PluginListCommand } from "@/features/plugins/panel/model";
 import type { HostPanelWindowAction } from "@/features/hosts/panel/protocol";
@@ -58,6 +59,7 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | { kind: "files"; command: FileWindowCommand }
   | {
       kind: "terminal";
       command: TerminalWindowCommand;

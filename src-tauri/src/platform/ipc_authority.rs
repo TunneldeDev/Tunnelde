@@ -19,6 +19,7 @@ fn allowed(label: &str, command: &str, registered: bool) -> bool {
                     | "panel_window_release_drag"
                     | "panel_window_disconnect"
                     | "panel_window_forwarding"
+                    | "panel_window_files"
                     | "panel_window_terminal"
                     | "panel_window_terminal_attach"
                     | "panel_window_focus"
@@ -84,6 +85,7 @@ mod tests {
             "panel_window_release_drag",
             "panel_window_disconnect",
             "panel_window_forwarding",
+            "panel_window_files",
             "panel_window_terminal",
             "panel_window_terminal_attach",
             "panel_window_focus",

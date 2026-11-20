@@ -1429,3 +1429,39 @@ admit SFTP tabs to native windows: exact native resource registration, effect
 fences, scoped actions/provider integration, state handoff and actual SSH/SFTP
 window acceptance are still required. Keep the entry hidden until those pieces
 are connected; do not substitute a read-only demo for the full file workflow.
+
+### Native file-page renderer
+
+Live file tabs now register an explicit native resource and use the same
+`SftpPageView` in main and satellite documents. `FilePageServices` injects
+per-call owned/staged targets; staging permits directory reads only. The owner
+publishes serializable preferences, source metadata and plugin descriptors;
+highlight indexes cross the wire as entry arrays, not JavaScript Maps. Satellites
+do not hydrate main stores or gain an arbitrary IPC fallback.
+
+Create, rename, remove, copy and transfer use the scoped native broker. Transfer
+origin fences survive the returned task ID through actual worker settlement.
+Editor/preview navigation, clipboard, search roots, plugin menu execution and the
+real remote-source chooser stay with main. Menu/mount clicks rediscover current
+contributions and source authority before execution. Confirmation holds an exact
+native interaction, and disposal cleans its dialog and transfer subscriptions.
+Only derived source/root metadata is deferred during staging, never user effects.
+
+File view state includes selection, filters, navigation and inline drafts; stable
+DOM markers capture supported scroll/focus/caret state. Readiness waits for the
+actual listing/error render rather than an empty shell. Main and native file and
+terminal pages share `NativeWorkspaceFrame`, not parallel floating chrome.
+Selected file-browser interface providers currently stay in main; if one becomes
+selected after a move, the satellite provides a return-to-main action. This does
+not claim general `viewFactories.nativeWindows` support or complete native
+coverage for editor, host-detail, settings or legacy factoryless plugin pages.
+
+Isolated macOS acceptance exercised the actual `SatelliteApp` with a localhost
+SSH/SFTP server: explicit window roundtrip retained filter and selection, editor
+navigation reached main, old-generation mutation was rejected, and scoped
+mkdir/create/rename/copy/upload/download/delete completed. The single successful
+SSH authentication was retained and QA hosts/sessions/known-host entries were
+cleaned. A separate chooser check reused the existing connection in main. This
+is not physical pointer, mixed-DPI, Windows/Linux, FUSE or arbitrary-server
+acceptance. A nonblocking transient validation toast during return is tracked for
+later polish; it does not prevent ownership transfer or file operations.
