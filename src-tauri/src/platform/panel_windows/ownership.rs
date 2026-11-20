@@ -804,6 +804,9 @@ impl Ownership {
         if window == MAIN {
             return Err("coordinator cannot close");
         }
+        if self.origin_picker_pending(window) {
+            return Err("panel interaction in progress");
+        }
         let owned: Vec<_> = self
             .panels
             .values()
@@ -833,6 +836,7 @@ impl Ownership {
     }
     pub fn can_destroy(&self, window: &str) -> bool {
         window != MAIN
+            && !self.origin_picker_pending(window)
             && !self
                 .panels
                 .values()

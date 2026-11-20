@@ -106,7 +106,25 @@ pub(super) struct Pending {
 }
 #[derive(Default)]
 pub(super) struct Queue(HashMap<String, Pending>);
+impl Queue {
+    pub(super) fn has_modal(&self, window: &str) -> bool {
+        self.0
+            .values()
+            .any(|pending| pending.window == window && pending.content.confirm())
+    }
+}
 impl Ownership {
+    pub(in crate::platform::panel_windows) fn origin_picker_pending(&self, window: &str) -> bool {
+        #[cfg(not(windows))]
+        {
+            self.native_views.pickers.has_window(window)
+        }
+        #[cfg(windows)]
+        {
+            let _ = window;
+            false
+        }
+    }
     fn begin_view_ui(
         &mut self,
         origin: &Origin,
@@ -128,12 +146,8 @@ impl Ownership {
             return Err(AppError::validation("plugin.api.busy"));
         }
         if content.confirm()
-            && self
-                .native_views
-                .ui
-                .0
-                .values()
-                .any(|p| p.window == origin.window && p.content.confirm())
+            && (self.native_views.ui.has_modal(&origin.window)
+                || self.origin_picker_pending(&origin.window))
         {
             return Err(AppError::validation("plugin.api.frontend:dialog.busy"));
         }

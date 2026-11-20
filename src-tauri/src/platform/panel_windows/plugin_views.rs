@@ -31,6 +31,8 @@ pub(super) struct Views {
     bindings: HashMap<String, View>,
     adapters: HashMap<String, adapters::Adapter>,
     ui: ui::Queue,
+    #[cfg(not(windows))]
+    pickers: pickers::Pickers,
     // Accepted work is independent of the view's lifetime. Closing a token,
     // reloading a document or revoking a plugin cannot release a native effect.
     calls: HashMap<String, NativeCall>,
@@ -298,6 +300,8 @@ impl Ownership {
 pub(super) mod adapters;
 pub(crate) mod gateway;
 pub(crate) mod origin;
+#[cfg(not(windows))]
+pub(crate) mod pickers;
 #[cfg(test)]
 mod tests;
 pub(crate) mod ui;

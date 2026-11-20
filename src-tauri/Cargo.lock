@@ -6526,6 +6526,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.42.0",
  "rand",
+ "raw-window-handle",
  "reqwest",
  "rusqlite",
  "russh",

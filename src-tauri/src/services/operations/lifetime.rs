@@ -16,7 +16,7 @@ impl WorkLifetime {
             _guard: Some(Arc::new(guard)),
         }
     }
-    pub(super) fn current() -> Self {
+    pub(crate) fn current() -> Self {
         CURRENT.try_with(Clone::clone).unwrap_or_default()
     }
     pub(crate) fn scope<F: Future>(self, work: F) -> impl Future<Output = F::Output> {

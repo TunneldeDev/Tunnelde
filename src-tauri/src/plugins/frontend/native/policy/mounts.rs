@@ -55,7 +55,10 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         // workers inherit the admitted effect lifetime, including after an
         // inner timeout, caller cancellation and unreceived-result cleanup.
         "mounts.paths.local.validate" | "mounts.paths.conflicts" => Some(CallPolicy::MountPathData),
-        // Path choosers, force-unmount consent, dependency probes and legacy
+        // Windows uses the exact-origin confirmation queue; other desktops
+        // retain their OS picker callback and parent window until settlement.
+        "mounts.paths.local.pick" => Some(CallPolicy::OriginUi),
+        // Remote paths, force-unmount consent, dependency probes and legacy
         // one-off transports have separate native work/UI lifetimes to audit.
         _ => None,
     }
@@ -70,6 +73,7 @@ mod tests {
         let mut snapshots = 0;
         let mut submissions = 0;
         let mut paths = 0;
+        let mut ui = 0;
         for method in crate::plugins::api::METHODS
             .iter()
             .filter(|m| m.name.starts_with("mounts."))
@@ -88,6 +92,7 @@ mod tests {
                     CallPolicy::StagedData => snapshots += 1,
                     CallPolicy::MountSubmission => submissions += 1,
                     CallPolicy::MountPathData => paths += 1,
+                    CallPolicy::OriginUi => ui += 1,
                     other => panic!("unexpected mount policy {other:?}"),
                 }
             }
@@ -96,8 +101,8 @@ mod tests {
         assert_eq!(snapshots, 13);
         assert_eq!(submissions, 15);
         assert_eq!(paths, 2);
+        assert_eq!(ui, 1);
         for method in [
-            "mounts.paths.local.pick",
             "mounts.runtime.requestForceUnmount",
             "mounts.mount",
             "mounts.unmount",

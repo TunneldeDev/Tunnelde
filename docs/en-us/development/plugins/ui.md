@@ -420,8 +420,20 @@ also explicit admission of committed-only `mounts.paths.local.validate` and
 through nested Budget workers and unreceived result cleanup: a timed-out FUSE
 filesystem query cannot release the panel's move fence before the actual worker
 settles. Caller cancellation still prevents response delivery. This is not
-implicit admission of force-unmount consent, path choosers, dependency
+implicit admission of force-unmount consent, remote path operations, dependency
 probes or legacy one-off mounts, which still need their own lifetime integration.
+
+`mounts.paths.local.pick` is also committed-only. On macOS/Linux the OS folder
+picker is parented to the exact originating native window, with permission,
+invocation and document checks before scheduling, at UI admission and before
+delivering its result. There is no hidden-main fallback; invalid parent handles
+fail. One outstanding OS picker per window (16 globally) shares the modal lane
+with plugin confirmations. The callback retains its reservation and effect guard
+even after caller timeout/cancellation or plugin retirement, and prevents empty
+satellite destruction until the OS dialog actually returns. Cancellation does
+not programmatically dismiss an already accepted system picker; stale results
+are discarded and the user may cancel the dialog normally. On Windows the
+existing drive-letter confirmation uses the originating document's UI queue.
 
 The host's scoped view client uses only this closed gateway, reserves cancellation
 tickets before dispatch, cancels outstanding calls on document disposal and cleans

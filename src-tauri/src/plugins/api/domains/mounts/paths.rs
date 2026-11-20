@@ -67,18 +67,22 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
             }
             #[cfg(not(windows))]
             {
-                let picked = crate::commands::plugin_pick_folder(
-                    app.clone(),
-                    Some(
-                        if state.locale().starts_with("zh") {
-                            "选择挂载目录"
-                        } else {
-                            "Choose mount directory"
-                        }
-                        .into(),
-                    ),
-                )
-                .await?;
+                let title = if state.locale().starts_with("zh") {
+                    "选择挂载目录"
+                } else {
+                    "Choose mount directory"
+                }
+                .to_owned();
+                let picked = if let Some(origin) =
+                    crate::platform::panel_windows::plugin_views::origin::current()
+                {
+                    crate::platform::panel_windows::plugin_views::pickers::pick_folder(
+                        app, origin, title,
+                    )
+                    .await?
+                } else {
+                    crate::commands::plugin_pick_folder(app.clone(), Some(title)).await?
+                };
                 authorize(context, &["mounts.write"])?;
                 match picked {
                     Some(path) => validate(context, path).await,
