@@ -1,3 +1,4 @@
+import { createTerminalWindowClient } from "@/features/terminal/terminalWindowClient";
 import type { ForwardingWindowMutation } from "@/features/forwarding/runtime/windowProtocol";
 import { createNativePluginViewClient } from "./windowPluginClient";
 import type { NativePluginUiPrompt } from "./windowPluginUi";
@@ -21,6 +22,7 @@ import type {
  * plugin messages; every mutation still checks the host's lease generation. */
 export function createPanelWindowClient(identity: NativePanelIdentity) {
   let disposed = false;
+  const terminals = createTerminalWindowClient(identity);
   let pluginViews: ReturnType<typeof createNativePluginViewClient> | undefined;
   const cleanups = new Set<() => void>();
   const check = () => {
@@ -59,6 +61,7 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
   };
   return {
     windowId: identity.windowId,
+    terminals,
     /** One attachment client per document; never expose its document identity. */
     pluginViews(report: (error: unknown) => void) {
       check();
@@ -335,6 +338,7 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       return target;
     },
     dispose() {
+      terminals.dispose();
       disposed = true;
       pluginViews?.dispose();
       for (const cleanup of cleanups) cleanup();

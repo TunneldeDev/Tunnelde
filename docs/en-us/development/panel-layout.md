@@ -1327,3 +1327,36 @@ xterm parser across JSON, Unicode packet boundaries, alternate buffers, charsets
 and keyboard modes. It does not enable terminal native windows. Document/panel-
 leased native PTY endpoints, main-owned actions/shared resource handles, the page
 adapter and real SSH window acceptance remain required.
+
+### Native terminal stream endpoint
+
+The private `panel_window_terminal` broker lets only main bind an existing,
+published, user-managed PTY. Plugin/dedicated background connections are ineligible.
+Binding captures the exact writer channel instead of resolving/reconnecting by ID.
+A dynamic `terminal:` prefix alone is not transferable: it requires a live resource
+bound by the current coordinator document. Removing a panel retires the binding,
+not SSH. A session that entered native presentation must reattach through a new
+native presentation lease, never fall back to the unleased legacy subscription.
+
+Attach uses a dedicated Tauri Channel, not the plugin bus or public screen events.
+Each output packet checks the exact document/panel/generation and resource instance
+under the same ownership guard as delivery. A staged destination cannot attach.
+Detach returns the actor's output-sequence barrier; the destination attaches only
+after commit, restoring its screen and registering its listener first. Revoked or
+failed sinks retain exact bytes in a bounded buffer without advancing sequence or
+replaying accepted packets; full buffers apply SSH channel backpressure. Legacy
+unleased attach cannot steal an established private presentation stream.
+
+Write/resize/detach revalidate origin both at admission and actual actor execution.
+Admitted effect fences survive IPC receiver loss, queueing and the actual SSH
+write; failed queue admission never automatically retries input. This gateway does
+not expose hosts, credentials, connection creation/disconnection or arbitrary IPC.
+Client disposal only retires its local listener, not a late detach capable of
+stealing a successor's stream.
+
+This batch supplies the endpoint and host-private client. Tests exercise a real
+local SSH protocol/PTY actor across sink handoff, stale-input rejection, sequence
+replay and retained connection. This is not actual native-window or user remote-
+server acceptance. Terminal page/settings/provider/resource lifetime integration
+remains pending; the terminal window entry stays hidden and general nativeWindows
+support is not claimed.

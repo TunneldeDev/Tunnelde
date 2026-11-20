@@ -128,6 +128,7 @@ pub(super) struct Ownership {
     pub(super) native_views: super::plugin_views::Views,
     pub(super) forwarding_tests: super::forwarding::diagnostics::Registry,
     pub(super) preview_resources: super::preview::Resources,
+    pub(super) terminals: super::terminal::Resources,
 }
 impl Ownership {
     /// The native builder registers a window before a WebView exists. Only the
@@ -376,6 +377,7 @@ impl Ownership {
         }
         self.panels.remove(panel_id).ok_or("panel not found")?;
         self.remove_plugin_adapter(panel_id);
+        self.retire_terminal(panel_id);
         self.transfers
             .retain(|_, pending| pending.lease.panel_id != panel_id);
         self.drags

@@ -19,6 +19,7 @@ pub(super) struct Adapter {
 impl Ownership {
     pub(in crate::platform::panel_windows) fn transferable(&self, panel_id: &str) -> bool {
         super::super::ownership::transferable(panel_id)
+            || self.terminal_registered(panel_id)
             || self.native_views.adapters.contains_key(panel_id)
     }
     pub(in crate::platform::panel_windows) fn plugin_adapters(&self) -> Vec<Descriptor> {
