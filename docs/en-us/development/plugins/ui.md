@@ -373,7 +373,7 @@ is still locked; locks are released before asynchronous work. Cancellation
 suppresses late delivery rather than claiming to undo accepted effects.
 
 The reviewed allowlist includes `api.describe`, `extensions.describe` and the
-existing Bus methods. Only the two metadata methods may run in staged views;
+existing Bus methods. Metadata and the audited snapshots below may run in staged views;
 Bus snapshot/discovery and queue consumption are deliberately committed-only.
 Bus effects retain their settlement fence. `bus.receive` is a cancellable passive
 wait: it still consumes the bounded call quota, but does not block panel movement.
@@ -387,7 +387,11 @@ in `activate`, not be duplicated by each view.
 
 The internal gateway also admits explicitly reviewed owned-data methods:
 `storage.get/set/delete/observe`, all seven `configuration.*` schema/CAS/backup
-methods, and `secrets.get/set/delete`. They remain committed-only, retain their
+methods, and `secrets.get/set/delete`. Mutations and all keyring calls remain
+committed-only. `storage.get/observe` and `configuration.schema/snapshot/backups`
+are explicitly audited staged reads: they never create directories/files, migrate
+configuration, write defaults or consume queues. This lets a destination factory
+restore before render acknowledgement without gaining mutation authority. All retain their
 panel effect fence until actual I/O settlement, and use the same plugin identity,
 permissions, generation and configuration revisions as the coordinator. A native
 view does not gain access to another plugin's data or SSH credentials. Configuration
@@ -401,7 +405,10 @@ allowlist and still require separate origin/lifetime integration.
 Mount configuration/status and managed operation APIs are also explicitly
 admitted: the 14 shared `rules`/`groups` configuration methods, connection and
 operation status/observe/cancel, plus the 15 managed connect/start/stop/remove
-submission methods. These remain committed-only. Configuration awaits its
+submission methods. Only snapshot/validation queries (rules snapshot/list/get/validate/export/
+importPreview, groups list/get/validate, connections list/get and operations list/get)
+may run while staged; writes, observations and submissions remain committed-only.
+Configuration awaits its
 bounded worker and preserves revision checks; observations retain the fence
 through their at-most-five-second wait. Submission retains it through plan
 preparation and receipt publication, **not** the lifetime of the host-managed

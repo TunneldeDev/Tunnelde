@@ -609,3 +609,55 @@ fn persistent_data_effects_require_committed_ownership_and_fence_actual_settleme
         f.r.begin_close("target", &f.target).unwrap();
     }
 }
+
+#[test]
+fn audited_staged_snapshots_fence_commit_and_cannot_outlive_cancelled_offer() {
+    let mut f = Fixture::new();
+    let offer = f.offer();
+    f.staged(&offer, "destination");
+    let (_, call) =
+        f.r.native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::StagedData,
+            f.now,
+        )
+        .unwrap();
+    f.r.acknowledge("target", &f.target, &offer, f.now).unwrap();
+    assert!(f.r.commit("main", &f.main, &offer, f.now).is_err());
+    // No ownership or data-mutation authority is conferred by the read itself.
+    assert!(f
+        .r
+        .native_view_resource("target", &f.target, "destination", f.now)
+        .is_err());
+    f.r.cancel("main", &f.main, &offer).unwrap();
+    assert!(f
+        .r
+        .native_view_owner("target", &f.target, "destination", f.now)
+        .is_err());
+    f.r.settle_native_view_call(&call);
+    let next = f.offer();
+    f.staged(&next, "replacement");
+    assert!(f
+        .r
+        .native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::StagedData,
+            f.now,
+        )
+        .is_err());
+    let (_, call) =
+        f.r.native_view_call(
+            "target",
+            &f.target,
+            "replacement",
+            CallPolicy::StagedData,
+            f.now,
+        )
+        .unwrap();
+    f.r.settle_native_view_call(&call);
+    f.commit(&next);
+}

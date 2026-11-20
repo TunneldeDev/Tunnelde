@@ -348,13 +348,23 @@ fn native_view_tokens_cannot_use_raw_frontend_calls_providers_or_singleton_autho
     assert!(f.security.is_ready(&f.lease).unwrap());
 }
 #[test]
-fn staged_metadata_policy_is_explicit_not_name_or_permission_inference() {
-    for method in ["api.describe", "extensions.describe"] {
+fn staged_snapshot_policy_is_explicit_not_name_or_permission_inference() {
+    for method in [
+        "api.describe",
+        "extensions.describe",
+        "mounts.rules.get",
+        "storage.get",
+        "configuration.snapshot",
+    ] {
         assert!(super::super::native::call_policy(method).is_some_and(|p| p.staged()));
     }
     for method in [
         "hosts.snapshot",
-        "mounts.rules.get",
+        "mounts.rules.get.extra",
+        "mounts.rules.save",
+        "mounts.groups.observe",
+        "storage.set",
+        "configuration.update",
         "mounts.dependencies.get",
         "files.local.list",
         "bus.observe",

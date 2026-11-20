@@ -10,13 +10,15 @@ pub(crate) enum CallPolicy {
     OriginUi,
     /// Owned persistent data; all nested I/O is awaited through settlement.
     OwnedData,
+    /// Explicitly audited snapshot-only queries needed before staged render.
+    StagedData,
     MountData,
     /// Fenced through receipt publication; the host owns subsequent steps.
     MountSubmission,
 }
 impl CallPolicy {
     pub(crate) fn staged(self) -> bool {
-        self == Self::Metadata
+        matches!(self, Self::Metadata | Self::StagedData)
     }
     pub(crate) fn blocks_move(self) -> bool {
         self != Self::BusReceive
@@ -35,20 +37,21 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         // receiver permit; each eventual queue drain rechecks native ownership.
         "bus.receive" => Some(CallPolicy::BusReceive),
         "ui.confirm" | "ui.showMessage" => Some(CallPolicy::OriginUi),
-        // KV uses awaited tokio::fs operations under its serialization lock.
-        // Configuration awaits the blocking worker (no nested timeout/early
-        // reply); keyring access awaits the bounded credential worker. None
-        // requires a main-window UI relay or owns a background provider handle.
-        // Even reads remain committed-only: names never establish staging safety.
+        // Explicit pure snapshots, not a get/list naming heuristic. KV reads
+        // never create directories/files; configuration uses read-only SQLite
+        // connections and never migrates, writes defaults or consumes a queue.
+        // Staged factories need these to restore before render acknowledgement.
         "storage.get"
-        | "storage.set"
-        | "storage.delete"
         | "storage.observe"
         | "configuration.schema"
         | "configuration.snapshot"
+        | "configuration.backups" => Some(CallPolicy::StagedData),
+        // Mutations await actual I/O; even keyring reads can prompt/perform OS
+        // work, so they are NOT admitted during staging.
+        "storage.set"
+        | "storage.delete"
         | "configuration.update"
         | "configuration.migrate"
-        | "configuration.backups"
         | "configuration.restore"
         | "configuration.deleteBackup"
         | "secrets.get"
@@ -102,7 +105,7 @@ mod tests {
 mod owned_data_tests {
     use super::*;
     #[test]
-    fn owned_data_methods_have_explicit_committed_retained_lifetimes() {
+    fn owned_data_methods_have_explicit_reviewed_retained_lifetimes() {
         let methods = [
             "storage.get",
             "storage.set",
@@ -126,8 +129,23 @@ mod owned_data_tests {
                 "{method}"
             );
             let policy = call_policy(method).unwrap();
-            assert_eq!(policy, CallPolicy::OwnedData);
-            assert!(!policy.staged(), "{method}");
+            let snapshot = matches!(
+                method,
+                "storage.get"
+                    | "storage.observe"
+                    | "configuration.schema"
+                    | "configuration.snapshot"
+                    | "configuration.backups"
+            );
+            assert_eq!(
+                policy,
+                if snapshot {
+                    CallPolicy::StagedData
+                } else {
+                    CallPolicy::OwnedData
+                }
+            );
+            assert_eq!(policy.staged(), snapshot, "{method}");
             assert!(policy.blocks_move(), "{method}");
             assert!(policy.retained(), "{method}");
         }
