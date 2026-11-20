@@ -646,3 +646,22 @@ it("submits forwarding disconnect through closed native grammar with captured or
   await expect(client.forwardingMutation(lease, request)).rejects.toThrow("disposed");
   expect(native.invoke).toHaveBeenCalledOnce();
 });
+
+it("routes forwarding clipboard through its captured native lease without invoking a raw clipboard command", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 9 };
+  const request = { operation: "copyAddress" as const, text: "[::1]:8080" };
+  native.invoke.mockResolvedValueOnce(null);
+  const pending = client.forwardingMutation(lease, request);
+  request.text = "later";
+  lease.generation = 10;
+  await pending;
+  expect(native.invoke).toHaveBeenCalledExactlyOnceWith("panel_window_forwarding", {
+    document: identity.document,
+    lease: { panelId: "forwarding", windowId: identity.windowId, generation: 9 },
+    request: { operation: "copyAddress", text: "[::1]:8080" },
+  });
+  client.dispose();
+  await expect(client.forwardingMutation(lease, request)).rejects.toThrow("disposed");
+  expect(native.invoke).toHaveBeenCalledOnce();
+});

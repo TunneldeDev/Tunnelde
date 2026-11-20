@@ -887,3 +887,11 @@ real FUSE continuity acceptance. Main-window panel removal remains fenced until
 actual admitted work settles. The full forwarding renderer/provider/host services
 and cross-platform physical drag acceptance are still prerequisites for enabling
 native transfer discovery.
+
+The same private forwarding gateway supports bounded `copyAddress` text writes
+(up to 512 UTF-8 bytes; no control characters). It has no clipboard read, raw
+command or provider-origin field. Actual worker admission rechecks the exact
+window/document/lease before OS access, outside ownership locks. An admitted OS
+write retains the native effect through settlement even if IPC delivery is lost;
+it cannot be rolled back by later document retirement. This primitive alone does
+not admit a complete forwarding view or provider adapter.

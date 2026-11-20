@@ -9,6 +9,9 @@ use serde::Deserialize;
     deny_unknown_fields
 )]
 pub(crate) enum Request {
+    CopyAddress {
+        text: String,
+    },
     Disconnect {
         host_id: String,
         session_id: String,
@@ -162,6 +165,7 @@ impl Request {
                 && review.identity().bytes().all(|b| b.is_ascii_hexdigit())
         };
         let valid = match self {
+            Self::CopyAddress { text } => bounded(text, 512),
             Self::Disconnect {
                 host_id,
                 session_id,

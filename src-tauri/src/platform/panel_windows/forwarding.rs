@@ -1,6 +1,7 @@
 //! Private builtin forwarding ingress. No arbitrary invoke, provider authority,
 //! caller-chosen native identity. Start credentials stay request-local; they
 //! never enter capsules/read models. Transfer admission is separate.
+mod clipboard;
 mod connection;
 pub(super) mod diagnostics;
 mod request;
@@ -174,6 +175,7 @@ pub(crate) async fn panel_window_forwarding(
     let work = WorkLifetime::authorized(effect.clone());
     let result = tauri::async_runtime::spawn(work.scope(async move {
         match request {
+            Request::CopyAddress { text } => clipboard::copy(effect, text).await,
             Request::Disconnect {
                 host_id,
                 session_id,
@@ -335,7 +337,8 @@ enum Prepared {
 fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
     let state = app.state::<AppState>();
     let value = match request {
-        Request::Disconnect { .. }
+        Request::CopyAddress { .. }
+        | Request::Disconnect { .. }
         | Request::Start { .. }
         | Request::PrepareStart { .. }
         | Request::Probe { .. }

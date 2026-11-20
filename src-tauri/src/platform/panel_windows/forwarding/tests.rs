@@ -532,3 +532,45 @@ fn disconnect_requires_exact_original_consent_and_never_accepts_a_generic_ssh_pr
         .begin_forwarding("main", &document, &lease, &request)
         .is_err());
 }
+
+#[test]
+fn clipboard_is_bounded_original_document_action_without_raw_command_or_read_access() {
+    let mut registry = Ownership::default();
+    let document = registry.register("main").unwrap();
+    let foreign = registry.register("foreign").unwrap();
+    registry.ready("main", &document).unwrap();
+    registry.ready("foreign", &foreign).unwrap();
+    let lease = registry.add_panel("main", &document, "forwarding").unwrap();
+    let wire = json!({"operation":"copyAddress","text":"[::1]:8080"});
+    let request: Request = serde_json::from_value(wire.clone()).unwrap();
+    for text in ["", "line\nbreak", &"x".repeat(513)] {
+        let mut invalid = wire.clone();
+        invalid["text"] = json!(text);
+        assert!(serde_json::from_value::<Request>(invalid)
+            .unwrap()
+            .validate()
+            .is_err());
+    }
+    for extra in ["command", "origin", "window", "read"] {
+        let mut invalid = wire.clone();
+        invalid[extra] = json!("forged");
+        assert!(serde_json::from_value::<Request>(invalid).is_err());
+    }
+    assert!(registry
+        .begin_forwarding("foreign", &foreign, &lease, &request)
+        .is_err());
+    let id = registry
+        .begin_forwarding("main", &document, &lease, &request)
+        .unwrap();
+    assert!(registry
+        .remove_panel("main", &document, "forwarding")
+        .is_err());
+    let replacement = registry.register("main").unwrap();
+    assert!(registry
+        .forwarding_current("main", &document, &lease, &request)
+        .is_err());
+    assert!(registry
+        .begin_forwarding("main", &replacement, &lease, &request)
+        .is_err());
+    registry.finish_native_action("forwarding", &id);
+}
