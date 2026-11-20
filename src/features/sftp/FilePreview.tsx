@@ -24,6 +24,8 @@ import { useWorkspace } from "@/store/workspace";
 import { usePreviewSession } from "./preview/usePreviewSession";
 import { PreviewSurface } from "./preview/PreviewSurface";
 import { PreviewFrame } from "./preview/PreviewFrame";
+import { PreviewBody } from "./preview/PreviewBody";
+import { usePreviewOwner } from "./preview/usePreviewOwner";
 import { usePreviewReadOwner } from "./preview/usePreviewReadSource";
 
 export function FilePreview() {
@@ -91,6 +93,7 @@ function Preview({
     onDecodeError,
   } = usePreviewSession(file, id, providers, presentation);
   const readSource = usePreviewReadOwner(file, kind, attemptId, provider);
+  usePreviewOwner({ context, source: readSource, providers });
   const text = kind === "text" || kind === "markdown";
   const session = useSsh((state) =>
     state.sessions.find(
@@ -149,42 +152,44 @@ function Preview({
           />
         ) : null}
         <PreviewSurface context={context}>
-          {provider ? (
-            <ProviderPreview
-              key={attemptId}
-              file={file}
-              provider={provider}
-              source={readSource}
-              onReady={onReady}
-              onReadError={onReadError}
-              onDecodeError={onDecodeError}
-              onRetry={context.retry}
-            />
-          ) : text ? (
-            <TextPreview
-              key={attemptId}
-              file={file}
-              source={readSource}
-              onReady={onReady}
-              onError={onReadError}
-            />
-          ) : (
-            <div className="file-preview__empty">
-              <p>{t("preview.installHint")}</p>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  useMarketplace.getState().setScope("market");
-                  useMarketplace.getState().setTag("");
-                  useMarketplace.getState().setQuery("@tag:preview");
-                  useNavigation.getState().showSidebar("plugins");
-                  useFilePreview.getState().close();
-                }}
-              >
-                {t("preview.findPlugins")}
-              </Button>
-            </div>
-          )}
+          <PreviewBody attemptId={attemptId}>
+            {provider ? (
+              <ProviderPreview
+                key={attemptId}
+                file={file}
+                provider={provider}
+                source={readSource}
+                onReady={onReady}
+                onReadError={onReadError}
+                onDecodeError={onDecodeError}
+                onRetry={context.retry}
+              />
+            ) : text ? (
+              <TextPreview
+                key={attemptId}
+                file={file}
+                source={readSource}
+                onReady={onReady}
+                onError={onReadError}
+              />
+            ) : (
+              <div className="file-preview__empty">
+                <p>{t("preview.installHint")}</p>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    useMarketplace.getState().setScope("market");
+                    useMarketplace.getState().setTag("");
+                    useMarketplace.getState().setQuery("@tag:preview");
+                    useNavigation.getState().showSidebar("plugins");
+                    useFilePreview.getState().close();
+                  }}
+                >
+                  {t("preview.findPlugins")}
+                </Button>
+              </div>
+            )}
+          </PreviewBody>
         </PreviewSurface>
       </div>
     </PreviewFrame>

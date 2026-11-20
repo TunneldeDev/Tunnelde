@@ -1196,3 +1196,30 @@ accepted-resource detachment, failed-startup CLOSE and a usable sibling channel;
 ordinary subprocess tests cover lost-result cleanup. These are not a real FUSE
 mount or cross-platform native UI acceptance claim. General native-window parity
 and the other adapters listed above remain follow-up work.
+
+### Preview coordinator and view state
+
+The main preview owner, above `PreviewFrame` and `NativePanelView`, now publishes
+both the existing public metadata registration and a separate host-only active
+read registry. Removing a presentation body must withdraw neither registration nor
+its exact local/SFTP read. The private window publisher serializes resource/model
+updates and coordinator restarts, deduplicates unchanged resource publications,
+and follows only the current read source. Native snapshot notifications do not
+feed back into model publications. The underlying ticket appears only in the
+main-only resource command, never the model, public observation or view capsule.
+
+Text content stays in the private read model, not the <=1 MiB view-state capsule.
+The preview model alone permits 16 MiB serialized JSON: a <=2 MiB decoded file can
+expand sixfold when escaped. Other model/capsule limits are unchanged. Read/decode
+failures use a fixed display message rather than serializing arbitrary native
+exceptions. Markdown mode, PDF page/zoom, and audio/video position/volume/mute/rate
+have explicit attempt-qualified capture bindings. Text caret/scroll and PDF/Markdown
+scroll use the common DOM geometry markers; staged text never takes focus.
+Restored media is paused and cannot autoplay during staging. The shared display
+renderer now consumes supplied data/services without acquiring file resources;
+its readiness stays pending for spinners and waits for real content/load/render.
+
+These are coordinator/state foundations, not full filePreview movement admission.
+Satellite renderer/provider factories, exact-owner actions, commit-aware playback
+ownership and actual native protocol/UI roundtrips remain required before enabling
+the preview adapter. Component/unit tests are not native acceptance evidence.
