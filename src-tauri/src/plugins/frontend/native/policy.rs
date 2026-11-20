@@ -19,6 +19,8 @@ pub(crate) enum CallPolicy {
     MountDependencyProbe,
     /// Owned SFTP channel/readers retain the original connection and effect until CLOSE.
     MountRemotePath,
+    /// Owned legacy conversion/metadata workers retain origin and actual effect.
+    MountLegacy,
     /// Exact-origin destructive consent followed by an owned force-stop transaction.
     MountForceUnmount,
     /// Fenced through receipt publication; the host owns subsequent steps.

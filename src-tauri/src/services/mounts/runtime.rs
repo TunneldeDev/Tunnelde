@@ -252,8 +252,25 @@ fn rule_state(
     );
     changed(app);
 }
-pub(crate) fn adopt_state(app: &AppHandle, rule: &Entry<Rule>, mount: &crate::mounts::MountInfo) {
-    rule_state(app, rule, "running", Some(mount), None, true);
+impl Coordinator {
+    /// Infallible host publication after the conversion's DB commit. The caller
+    /// still holds the mount registry and group guards; no plugin reauthorization
+    /// or transport ownership transfer belongs here.
+    pub(crate) fn adopt_state(&self, rule: &Entry<Rule>, mount: &crate::mounts::MountInfo) {
+        self.lock().rules.insert(
+            rule.value.id.clone(),
+            RuleStatus {
+                rule_id: rule.value.id.clone(),
+                revision: rule.revision.clone(),
+                group_id: rule.value.group_id.clone(),
+                phase: "running".into(),
+                runtime_id: Some(mount.id.clone()),
+                session_id: Some(mount.session_id.clone()),
+                desired: true,
+                error: None,
+            },
+        );
+    }
 }
 fn connection_state(
     app: &AppHandle,

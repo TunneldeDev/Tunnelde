@@ -13,17 +13,20 @@ fn cancellation() -> (Cancellation, impl Drop) {
     Cancellation::for_test("cancelled")
 }
 async fn call(f: &Fixture, query: Query) -> AppResult<Value> {
+    call_with_deadline(f, query, Duration::from_secs(3)).await
+}
+async fn call_with_deadline(f: &Fixture, query: Query, deadline: Duration) -> AppResult<Value> {
     let (cancel, _pending) = cancellation();
     let capacity = Arc::new(Semaphore::new(1));
     tokio::time::timeout(
-        Duration::from_secs(5),
+        deadline + Duration::from_secs(5),
         on(
             f.handle.clone(),
             query,
             || Ok(()),
             cancel,
             capacity.clone().try_acquire_owned().unwrap(),
-            Duration::from_secs(3),
+            deadline,
         ),
     )
     .await
@@ -71,7 +74,12 @@ async fn invalid_and_hostile_replies_fail_closed_without_losing_the_parent() {
     f.seen.invalid_name.store(false, Ordering::SeqCst);
     f.seen.flood.store(true, Ordering::SeqCst);
     assert_eq!(
-        call(&f, browse(0)).await.unwrap_err().to_string(),
+        // Reading 65K entries should test the size bound, not race a much
+        // shorter test-only deadline while the full suite saturates the CPU.
+        call_with_deadline(&f, browse(0), DEADLINE)
+            .await
+            .unwrap_err()
+            .to_string(),
         "mounts.remoteListingTooLarge"
     );
     f.seen.flood.store(false, Ordering::SeqCst);

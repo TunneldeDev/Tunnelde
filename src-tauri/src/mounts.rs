@@ -7,6 +7,7 @@ mod helper;
 mod lifecycle;
 mod managed;
 pub(crate) use managed::open_managed;
+pub(crate) mod adoption;
 mod negotiation;
 mod transport;
 pub(crate) mod unmount;
@@ -607,32 +608,6 @@ fn validate(request: &MountRequest) -> AppResult<()> {
     Ok(())
 }
 impl MountRegistry {
-    /// Configuration admission and transfer occur under one registry lock.
-    /// The original SSH session is borrowed, never adopted or disconnected.
-    pub(crate) async fn adopt_managed<T>(
-        &self,
-        id: &str,
-        commit: impl FnOnce(&MountInfo) -> AppResult<T>,
-    ) -> AppResult<T> {
-        let mut mounts = self.mounts.lock().await;
-        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
-            return Err(AppError::validation("mounts.operations.cancelled"));
-        }
-        let active = mounts
-            .get_mut(id)
-            .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
-        if active.info.owner == crate::services::mounts::runtime::OWNER
-            || active.info.cleanup_error.is_some()
-            || active.bridge.is_finished()
-            || active.child.try_wait()?.is_some()
-        {
-            return Err(AppError::validation("mounts.transportClosed"));
-        }
-        let result = commit(&active.info)?;
-        active.info.owner = crate::services::mounts::runtime::OWNER.into();
-        active.generation = 0;
-        Ok(result)
-    }
     pub(crate) async fn live_owned_mount(
         &self,
         owner: &str,
@@ -1554,7 +1529,9 @@ mod shutdown_tests {
             result.unwrap_err().to_string(),
             "mounts.operations.cancelled"
         );
-        let result = registry.adopt_managed("missing", |_| Ok(())).await;
+        let result = registry
+            .adopt_managed("missing".into(), (), |_, _| Ok(()), |_, _| {})
+            .await;
         assert_eq!(
             result.unwrap_err().to_string(),
             "mounts.operations.cancelled"

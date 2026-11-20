@@ -162,7 +162,9 @@ impl russh_sftp::server::Handler for Sftp {
         let files = if self.seen.invalid_name.load(Ordering::SeqCst) {
             vec![File::new("../escape", attrs(true))]
         } else if self.seen.flood.load(Ordering::SeqCst) {
-            (0..256)
+            // Stay below the real 256 KiB SFTP packet cap while reaching the
+            // 65K entry cap without hundreds of timing-sensitive round trips.
+            (0..1024)
                 .map(|i| File::new(format!("directory-{i}"), attrs(true)))
                 .collect()
         } else {

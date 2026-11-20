@@ -577,6 +577,7 @@ fn persistent_data_effects_require_committed_ownership_and_fence_actual_settleme
         CallPolicy::OwnedData,
         CallPolicy::MountData,
         CallPolicy::MountSubmission,
+        CallPolicy::MountLegacy,
     ] {
         let mut f = Fixture::new();
         f.owned("source");
@@ -873,6 +874,26 @@ fn remote_mount_queries_are_not_staged_snapshots() {
         let id = f.offer();
         f.staged(&id, "stage");
         let policy = crate::plugins::frontend::native::call_policy(method).unwrap();
+        assert!(f
+            .r
+            .native_view_call("target", &f.target, "stage", policy, f.now)
+            .is_err());
+    }
+}
+
+#[test]
+fn legacy_mount_queries_and_mutations_never_run_from_staged_views() {
+    for method in [
+        "mounts.legacy.list",
+        "mounts.legacy.convert",
+        "mounts.legacy.dismiss",
+    ] {
+        let mut f = Fixture::new();
+        f.owned("source");
+        let id = f.offer();
+        f.staged(&id, "stage");
+        let policy = crate::plugins::frontend::native::call_policy(method).unwrap();
+        assert_eq!(policy, CallPolicy::MountLegacy);
         assert!(f
             .r
             .native_view_call("target", &f.target, "stage", policy, f.now)

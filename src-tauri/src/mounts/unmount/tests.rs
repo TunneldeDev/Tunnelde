@@ -183,7 +183,12 @@ async fn cancelled_admitted_transaction_keeps_lock_and_effect_through_real_worke
     assert!(registry.mounts.try_lock().is_err());
     assert!(tokio::time::timeout(
         std::time::Duration::ZERO,
-        registry.adopt_managed::<()>("mount", |_| panic!("adoption overtook dismount"))
+        registry.adopt_managed::<()>(
+            "mount".into(),
+            (),
+            |_, _| panic!("adoption overtook dismount"),
+            |_, _| {}
+        )
     )
     .await
     .is_err());

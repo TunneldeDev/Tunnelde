@@ -511,6 +511,17 @@ a dialog, tolerates synchronous accept/dismiss/replacement/disposal and never
 closes a later unrelated dialog. Unit subprocess fixtures are not physical FUSE
 acceptance; keep that distinction in verification reports.
 
+`mounts.legacy.list/convert/dismiss` likewise require a committed native view.
+Capture the original origin and invocation before any wait or spawned worker.
+When SQLite's mutex is busy, leave every admission gate before bounded worker
+retries; never block an async executor or wait for the DB mutex under policy locks.
+Conversion retains the group and mount-registry guards through same-host/group
+revision/create-only persistence, ownership transfer and runtime publication without
+an async gap after commit, even after delivery cancellation. Failure transfers no
+ownership. The legacy user's SSH session is borrowed, never registered as a
+host-owned dedicated connection, disconnected by group connection release, or
+mistaken for a group connection by recovery.
+
 This internal transport and its tests do not declare the production plugin panel
 adapter or resource-RPC/native-window parity complete. Keep discovery conservative
 until real adapters, actual effect lifetimes and native acceptance are finished.

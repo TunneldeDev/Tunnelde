@@ -72,8 +72,14 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         "mounts.paths.remote.browse" | "mounts.paths.remote.resolve" => {
             Some(CallPolicy::MountRemotePath)
         }
-        // Dependency documentation and legacy one-off transports have separate
-        // native work/UI lifetimes to audit.
+        // Capture original origin/invocation before waiting, retain bounded
+        // SQLite workers, and publish converted ownership/runtime inside one
+        // owned registry/group transaction. Listing reads live transports, so
+        // none of these is a staged snapshot despite the list method name.
+        "mounts.legacy.list" | "mounts.legacy.convert" | "mounts.legacy.dismiss" => {
+            Some(CallPolicy::MountLegacy)
+        }
+        // Dependency documentation has a separate native UI lifetime to audit.
         _ => None,
     }
 }
@@ -91,6 +97,7 @@ mod tests {
         let mut probes = 0;
         let mut force = 0;
         let mut remote = 0;
+        let mut legacy = 0;
         for method in crate::plugins::api::METHODS
             .iter()
             .filter(|m| m.name.starts_with("mounts."))
@@ -113,6 +120,7 @@ mod tests {
                     CallPolicy::MountDependencyProbe => probes += 1,
                     CallPolicy::MountForceUnmount => force += 1,
                     CallPolicy::MountRemotePath => remote += 1,
+                    CallPolicy::MountLegacy => legacy += 1,
                     other => panic!("unexpected mount policy {other:?}"),
                 }
             }
@@ -125,6 +133,7 @@ mod tests {
         assert_eq!(probes, 2);
         assert_eq!(force, 1);
         assert_eq!(remote, 2);
+        assert_eq!(legacy, 3);
         for method in [
             "mounts.runtime.requestForceUnmount.extra",
             "mounts.runtime.requestForceUnmount\0",
@@ -134,7 +143,9 @@ mod tests {
             "mounts.paths.remote.list",
             "mounts.mount",
             "mounts.unmount",
-            "mounts.legacy.convert",
+            "mounts.legacy.convert.extra",
+            "mounts.legacy.listAll",
+            "mounts.legacy.dismiss\0",
             "mounts.dependencies.documentation",
             "mounts.groups.connect.extra",
             "mounts.runtime.start\0",

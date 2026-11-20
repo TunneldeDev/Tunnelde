@@ -472,3 +472,28 @@ async fn remote_mount_reads_recheck_real_invocation_cancel_and_expiry_after_stat
         }
     }
 }
+
+#[tokio::test]
+async fn legacy_conversion_fences_cancel_and_expiry_but_finishes_already_committed_adoption() {
+    for expire in [false, true] {
+        for before_commit in [false, true] {
+            let registry = Requests::default();
+            registry.reserve("view", "adoption").unwrap();
+            let mut request = registry.claim("view", "adoption").unwrap();
+            let entry = request.entry.clone();
+            let result = request
+                .run_retained(crate::mounts::adoption::tests::persistence::invocation(
+                    move || {
+                        if expire {
+                            entry.lock().unwrap().deadline = Instant::now();
+                        } else {
+                            assert!(registry.cancel("view", "adoption"));
+                        }
+                    },
+                    before_commit,
+                ))
+                .await;
+            assert_eq!(result.unwrap_err().to_string(), "plugin.api.cancelled");
+        }
+    }
+}
