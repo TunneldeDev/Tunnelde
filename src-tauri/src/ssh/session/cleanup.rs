@@ -51,3 +51,41 @@ impl SessionDisposal {
             .map_err(|_| AppError::internal("plugin.resources.workerFailed"))?
     }
 }
+
+/// A session atomically removed from reuse, with exact original handles retained
+/// until its listeners/mounts have retired. No network IO occurs at detachment.
+pub(crate) struct DetachedSession {
+    handle: Option<SessionHandle>,
+    id: String,
+    work: crate::services::operations::WorkLifetime,
+}
+impl DetachedSession {
+    pub(super) fn new(handle: SessionHandle, id: String) -> Self {
+        Self {
+            handle: Some(handle),
+            id,
+            work: crate::services::operations::WorkLifetime::current(),
+        }
+    }
+    pub(crate) async fn finish(mut self) -> AppResult<()> {
+        let handle = self.handle.take().expect("detached session consumed once");
+        let id = self.id.clone();
+        self.work
+            .clone()
+            .retirement()
+            .scope(async move { SessionDisposal::start(handle, id).finish().await })
+            .await
+    }
+}
+impl Drop for DetachedSession {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            let id = self.id.clone();
+            tauri::async_runtime::spawn(self.work.clone().retirement().scope(async move {
+                if let Err(error) = SessionDisposal::start(handle, id).finish().await {
+                    tracing::warn!(%error, "Detached SSH cleanup incomplete");
+                }
+            }));
+        }
+    }
+}

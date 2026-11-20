@@ -1,6 +1,43 @@
 //! Current-instance ownership and disposal; listener state remains authoritative.
 use super::*;
 impl ForwardRegistry {
+    /// One exact session transaction. The caller validates/removes its SSH
+    /// identity before ANY listener/ticket change. Cleanup is spawned before
+    /// returning and carries the initiating effect independently of delivery.
+    pub(crate) fn take_session<T>(
+        &self,
+        session: &str,
+        commit: impl FnOnce(&[String]) -> AppResult<T>,
+    ) -> AppResult<(T, Vec<StoppedForward>)> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        let ids: Vec<_> = active
+            .iter()
+            .filter(|(_, item)| item.session == session)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let result = commit(&ids)?;
+        self.invalidate(format!("session:{session}"));
+        let removed: Vec<_> = ids
+            .into_iter()
+            .filter_map(|id| active.remove(&id))
+            .collect();
+        drop(active);
+        let tasks = removed
+            .into_iter()
+            .map(|item| {
+                let work = crate::services::operations::WorkLifetime::current();
+                StoppedForward(Some(tauri::async_runtime::spawn(
+                    work.retirement().scope(item.shutdown()),
+                )))
+            })
+            .collect();
+        self.publish();
+        Ok((result, tasks))
+    }
+
     pub(super) fn remove_matching(
         &self,
         invalidation: Option<String>,

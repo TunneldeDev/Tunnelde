@@ -65,6 +65,20 @@ impl Coordinator {
     fn lock(&self) -> std::sync::MutexGuard<'_, Book> {
         self.book.lock().unwrap_or_else(|error| error.into_inner())
     }
+    pub(super) fn pause_session_after<T>(
+        &self,
+        session: &str,
+        stop: impl FnOnce() -> AppResult<(T, Vec<String>)>,
+    ) -> AppResult<T> {
+        let mut book = self.lock();
+        let (stopped, rules) = stop()?;
+        book.pause_session(session);
+        for id in rules {
+            book.pause(&id);
+        }
+        Ok(stopped)
+    }
+
     /// Serialize manual stop with automatic admission. A rejected CAS must not
     /// pause a newer rule's recovery or cancel its in-flight start ticket.
     pub(super) fn pause_after<T>(
@@ -358,6 +372,48 @@ mod stop_tests {
             1
         );
     }
+    #[test]
+    fn disconnect_rejects_without_pausing_and_success_cancels_pending_same_group_only() {
+        let coordinator = Coordinator::default();
+        let mut sibling = row();
+        sibling.id = "pending-sibling".into();
+        let mut other = row();
+        other.id = "other-group".into();
+        let running = coordinator.lock().manual(&row());
+        coordinator
+            .lock()
+            .finish(&running, &Ok(()), Some("session".into()), Instant::now());
+        let pending = coordinator.lock().manual(&sibling);
+        let unrelated = coordinator.lock().manual(&other);
+        let denied: AppResult<()> = coordinator.pause_session_after("session", || {
+            Err(AppError::validation("ssh.sessionMissing"))
+        });
+        assert!(denied.is_err());
+        assert!(coordinator.lock().check(&pending).is_ok());
+        assert!(!*pending.cancelled.borrow());
+        coordinator
+            .pause_session_after("session", || {
+                assert!(coordinator.book.try_lock().is_err());
+                Ok(((), vec!["rule".into(), "pending-sibling".into()]))
+            })
+            .unwrap();
+        assert!(*pending.cancelled.borrow());
+        assert!(coordinator.lock().check(&pending).is_err());
+        assert!(coordinator.lock().check(&unrelated).is_ok());
+        assert_eq!(coordinator.lock().status("rule", "current").phase, "paused");
+        assert_eq!(
+            coordinator
+                .lock()
+                .status("pending-sibling", "current")
+                .phase,
+            "paused"
+        );
+        assert_eq!(
+            coordinator.lock().status("other-group", "current").phase,
+            "starting"
+        );
+    }
+
     #[test]
     fn successful_stop_pauses_after_effect_and_fences_pending_admission() {
         let coordinator = Coordinator::default();

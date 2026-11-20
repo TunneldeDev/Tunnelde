@@ -174,6 +174,11 @@ pub(crate) async fn panel_window_forwarding(
     let work = WorkLifetime::authorized(effect.clone());
     let result = tauri::async_runtime::spawn(work.scope(async move {
         match request {
+            Request::Disconnect {
+                host_id,
+                session_id,
+                ..
+            } => disconnect(effect, host_id, session_id).await,
             Request::PrepareStart { id, revision, .. } => {
                 connection::prepare(effect, id, revision).await
             }
@@ -308,6 +313,21 @@ pub(crate) async fn panel_window_forwarding(
     result
 }
 
+async fn disconnect(effect: Arc<Effect>, host: String, session: String) -> AppResult<Value> {
+    let current = effect.clone();
+    let stopping = crate::services::credentials::inspect(move || {
+        current.with_current(|| domain::disconnect::take(&current.app, &host, &session))
+    })
+    .await?;
+    // Detachment was admitted atomically under original consent. All later
+    // work retires only those exact handles; it cannot need replacement consent.
+    WorkLifetime::current()
+        .retirement()
+        .scope(stopping.finish())
+        .await?;
+    Ok(Value::Null)
+}
+
 enum Prepared {
     Value(Value),
     Stop(crate::ssh::forward::StoppedForward),
@@ -315,7 +335,8 @@ enum Prepared {
 fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
     let state = app.state::<AppState>();
     let value = match request {
-        Request::Start { .. }
+        Request::Disconnect { .. }
+        | Request::Start { .. }
         | Request::PrepareStart { .. }
         | Request::Probe { .. }
         | Request::CredentialStatus { .. }

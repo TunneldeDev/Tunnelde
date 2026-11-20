@@ -864,5 +864,26 @@ must not reacquire or silently replace visible consent. Pending/visible approval
 blocks capture and is never restored as an already-approved draft. A satellite
 without an explicit confirmation service fails closed rather than borrowing the
 main dialog store. Main-document behavior keeps the existing confirmation host.
-This UI boundary is not the missing native disconnect/provider/host services or
-full forwarding renderer, and does not enable native transfer discovery.
+This UI boundary does not itself provide native disconnect/provider/host services
+or the full forwarding renderer, and does not enable native transfer discovery.
+
+### Exact forwarding-session disconnect
+
+The private native forwarding gateway accepts `disconnect` with a fixed builtin
+host/session and the original confirmation interaction. It does not proxy raw SSH
+commands or accept serialized provider authority. Under the current owner guard,
+a short automation → registry → database → SSH-manager transaction verifies a
+published, non-terminal forwarding session for that host before detaching any
+listener or invalidating a pending start. A denied selection cannot pause newer
+recovery. Successful manual disconnect pauses the selected session's rules and
+pending siblings in the same host/group, not other groups or ungrouped rules.
+
+Exact listener/transport handles retire outside those locks. Remote cancellation
+acknowledgement, mount cleanup and transport closure retain the initiating effect
+independently of IPC delivery or withdrawn consent; cleanup is not a new connect
+permission. Failure of one listener does not skip remaining transport retirement.
+Leftover mounts report incomplete cleanup rather than false success; this is not
+real FUSE continuity acceptance. Main-window panel removal remains fenced until
+actual admitted work settles. The full forwarding renderer/provider/host services
+and cross-platform physical drag acceptance are still prerequisites for enabling
+native transfer discovery.

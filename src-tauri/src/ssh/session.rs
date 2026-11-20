@@ -28,7 +28,7 @@ mod mount_tests;
 mod probe;
 pub(crate) mod review;
 mod route;
-pub(crate) use cleanup::SessionDisposal;
+pub(crate) use cleanup::{DetachedSession, SessionDisposal};
 pub(crate) use identity::SessionIdentity;
 pub(super) use probe::ProbeTarget;
 
@@ -474,6 +474,31 @@ impl SshManager {
             .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))?;
         let _ = handle.writer.try_send(WriterMsg::Resize { cols, rows });
         Ok(())
+    }
+
+    /// Exact published builtin forwarding session only. Validation and removal
+    /// share the same manager guard; failed selection has no disposal effects.
+    pub(crate) fn take_forwarding(
+        &self,
+        host: &str,
+        session_id: &str,
+    ) -> AppResult<DetachedSession> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
+        if !session.published
+            || session.info.host_id != host
+            || session.info.terminal
+            || session.info.purpose.as_deref() != Some("forwarding")
+        {
+            return Err(AppError::validation("ssh.sessionMissing"));
+        }
+        let handle = sessions.remove(session_id).expect("checked exact session");
+        Ok(DetachedSession::new(handle, session_id.into()))
     }
 
     pub(crate) fn begin_disconnect(&self, session_id: &str) -> Option<SessionDisposal> {
@@ -1280,6 +1305,87 @@ mod tests {
         assert!(tokio::time::timeout(Duration::from_secs(1), channel.wait())
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn forwarding_detachment_is_exact_and_cleanup_survives_lost_delivery() {
+        for deliver in [true, false] {
+            let (client, _, server) = server(false, false).await;
+            let client = Arc::new(client);
+            let (writer, _receiver) = mpsc::channel(1);
+            let task = tokio::spawn(std::future::pending());
+            let aborted = task.abort_handle();
+            let manager = SshManager::default();
+            manager.insert(SessionHandle {
+                published: false,
+                user_managed: false,
+                server_key: "key".into(),
+                info: SessionInfo {
+                    id: "exact".into(),
+                    host_id: "host".into(),
+                    title: "Forward".into(),
+                    address: "qa@host:22".into(),
+                    cols: 80,
+                    rows: 24,
+                    connected_at: 1,
+                    terminal: false,
+                    purpose: Some("forwarding".into()),
+                },
+                writer,
+                task,
+                handle: client.clone(),
+                _jumps: vec![],
+                remote_forwards: Arc::default(),
+            });
+            assert!(manager.take_forwarding("host", "exact").is_err());
+            manager.publish("exact").unwrap();
+            assert!(manager.take_forwarding("foreign", "exact").is_err());
+            for (purpose, terminal) in [
+                (Some("mount"), false),
+                (None, true),
+                (Some("forwarding"), true),
+            ] {
+                {
+                    let mut sessions = manager.sessions.lock().unwrap();
+                    let handle = sessions.get_mut("exact").unwrap();
+                    handle.info.purpose = purpose.map(str::to_owned);
+                    handle.info.terminal = terminal;
+                }
+                assert!(manager.take_forwarding("host", "exact").is_err());
+                assert!(!client.is_closed());
+                assert!(!aborted.is_finished());
+            }
+            {
+                let mut sessions = manager.sessions.lock().unwrap();
+                let handle = sessions.get_mut("exact").unwrap();
+                handle.info.purpose = Some("forwarding".into());
+                handle.info.terminal = false;
+            }
+            let guard = Arc::new(());
+            let weak = Arc::downgrade(&guard);
+            let detached = crate::services::operations::WorkLifetime::new(guard)
+                .scope(async { manager.take_forwarding("host", "exact").unwrap() })
+                .await;
+            assert!(manager.list().is_empty());
+            assert!(manager.handle("exact").is_err());
+            assert!(!client.is_closed());
+            assert!(!aborted.is_finished());
+            assert!(weak.upgrade().is_some());
+            if deliver {
+                detached.finish().await.unwrap();
+            } else {
+                drop(detached);
+            }
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while !client.is_closed() || !aborted.is_finished() || weak.upgrade().is_some() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("detached cleanup lost exact handle/fence");
+            assert!(manager.take_forwarding("host", "exact").is_err());
+            server.abort();
+        }
     }
 
     #[tokio::test]

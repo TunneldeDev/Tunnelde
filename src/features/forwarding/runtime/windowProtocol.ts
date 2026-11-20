@@ -19,6 +19,13 @@ export interface ForwardingWindowStartPlan {
  * command name or caller-selected window. Prompt/provider adapters remain
  * separate work; this is not a complete ForwardingActions implementation. */
 export type ForwardingWindowMutation =
+  | {
+      operation: "disconnect";
+      hostId: string;
+      sessionId: string;
+      /** The original host-session confirmation, never replacement consent. */
+      interaction: string;
+    }
   | { operation: "prepareStart"; id: string; revision: string; interaction: string }
   | {
       operation: "test";

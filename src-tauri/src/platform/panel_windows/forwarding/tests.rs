@@ -472,3 +472,63 @@ fn key_installation_requires_original_review_and_only_bounded_request_local_inpu
         .begin_forwarding("main", &document, &lease, &request)
         .is_err());
 }
+
+#[test]
+fn disconnect_requires_exact_original_consent_and_never_accepts_a_generic_ssh_proxy() {
+    let mut registry = Ownership::default();
+    let document = registry.register("main").unwrap();
+    let other = registry.register("other").unwrap();
+    registry.ready("main", &document).unwrap();
+    registry.ready("other", &other).unwrap();
+    let lease = registry.add_panel("main", &document, "forwarding").unwrap();
+    let interaction = registry
+        .begin_interaction("main", &document, &lease)
+        .unwrap();
+    let wire = json!({"operation":"disconnect","hostId":"host","sessionId":"session","interaction":interaction});
+    let request: Request = serde_json::from_value(wire.clone()).unwrap();
+    assert!(request.validate().is_ok());
+    for field in ["hostId", "sessionId", "interaction"] {
+        for value in [json!(""), json!("x".repeat(129)), json!("line\nbreak")] {
+            let mut bad = wire.clone();
+            bad[field] = value;
+            assert!(serde_json::from_value::<Request>(bad)
+                .unwrap()
+                .validate()
+                .is_err());
+        }
+        let mut missing = wire.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        assert!(serde_json::from_value::<Request>(missing).is_err());
+    }
+    for field in ["origin", "command", "window", "purpose", "password"] {
+        let mut bad = wire.clone();
+        bad[field] = json!("forged");
+        assert!(serde_json::from_value::<Request>(bad).is_err());
+    }
+    assert!(registry
+        .begin_forwarding("other", &other, &lease, &request)
+        .is_err());
+    let id = registry
+        .begin_forwarding("main", &document, &lease, &request)
+        .unwrap();
+    registry
+        .end_interaction("main", &document, &lease, &interaction)
+        .unwrap();
+    let replacement = registry
+        .begin_interaction("main", &document, &lease)
+        .unwrap();
+    assert!(registry
+        .forwarding_current("main", &document, &lease, &request)
+        .is_err());
+    assert!(registry
+        .remove_panel("main", &document, "forwarding")
+        .is_err());
+    registry
+        .end_interaction("main", &document, &lease, &replacement)
+        .unwrap();
+    assert!(registry.panels["forwarding"].native_actions.contains(&id));
+    registry.finish_native_action("forwarding", &id);
+    assert!(registry
+        .begin_forwarding("main", &document, &lease, &request)
+        .is_err());
+}

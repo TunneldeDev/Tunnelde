@@ -9,6 +9,11 @@ use serde::Deserialize;
     deny_unknown_fields
 )]
 pub(crate) enum Request {
+    Disconnect {
+        host_id: String,
+        session_id: String,
+        interaction: String,
+    },
     PrepareStart {
         id: String,
         revision: String,
@@ -128,7 +133,8 @@ impl Request {
             {
                 interaction.as_deref()
             }
-            Self::Remove { interaction, .. }
+            Self::Disconnect { interaction, .. }
+            | Self::Remove { interaction, .. }
             | Self::Start { interaction, .. }
             | Self::Probe { interaction, .. }
             | Self::Trust { interaction, .. }
@@ -156,6 +162,11 @@ impl Request {
                 && review.identity().bytes().all(|b| b.is_ascii_hexdigit())
         };
         let valid = match self {
+            Self::Disconnect {
+                host_id,
+                session_id,
+                interaction,
+            } => bounded(host_id, 128) && bounded(session_id, 128) && bounded(interaction, 128),
             Self::InstallKey {
                 id,
                 revision,

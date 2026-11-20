@@ -609,3 +609,40 @@ it("keeps native key installation request-local and never falls back to raw key 
   });
   client.dispose();
 });
+
+it("submits forwarding disconnect through closed native grammar with captured original identity, and rejects late delivery after disposal", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 9 };
+  const request = {
+    operation: "disconnect" as const,
+    hostId: "host",
+    sessionId: "reviewed-session",
+    interaction: "original-confirmation",
+  };
+  let reply!: (value: unknown) => void;
+  native.invoke.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        reply = resolve;
+      }),
+  );
+  const pending = client.forwardingMutation(lease, request);
+  lease.generation = 10;
+  request.sessionId = "replacement";
+  request.interaction = "later";
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_forwarding", {
+    document: identity.document,
+    lease: { panelId: "forwarding", windowId: identity.windowId, generation: 9 },
+    request: {
+      operation: "disconnect",
+      hostId: "host",
+      sessionId: "reviewed-session",
+      interaction: "original-confirmation",
+    },
+  });
+  client.dispose();
+  reply(null);
+  await expect(pending).rejects.toThrow("disposed");
+  await expect(client.forwardingMutation(lease, request)).rejects.toThrow("disposed");
+  expect(native.invoke).toHaveBeenCalledOnce();
+});

@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 pub(crate) mod automation;
 pub(crate) mod connections;
 pub mod contract;
+pub(crate) mod disconnect;
 pub(crate) mod groups;
 pub(crate) mod interaction;
 pub(crate) mod query;

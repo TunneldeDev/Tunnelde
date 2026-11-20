@@ -205,3 +205,50 @@ async fn admitted_listener_keeps_transport_but_releases_its_start_effect() {
     registry.stop("scoped").await.unwrap();
     self::released(address, cancelled).await;
 }
+
+#[tokio::test]
+async fn session_take_checks_before_any_effect_and_invalidates_only_that_sessions_pending_admissions(
+) {
+    let registry = ForwardRegistry::default();
+    let (one, address1, _, cancelled1) = pending(&registry, "one").await;
+    one.commit(&registry, || Ok(())).unwrap();
+    let (two, address2, _, cancelled2) = pending(&registry, "two").await;
+    two.commit(&registry, || Ok(())).unwrap();
+    let (mut other, address3, _, cancelled3) = pending(&registry, "other").await;
+    other.item.session = "unrelated".into();
+    other.ticket = registry.ticket("other", "unrelated").unwrap();
+    other.commit(&registry, || Ok(())).unwrap();
+    let (waiting, pending_address, _, pending_cancel) = pending(&registry, "pending").await;
+    let ticket = registry.ticket("one", "session").unwrap();
+    let denied: AppResult<((), Vec<StoppedForward>)> = registry.take_session("session", |_| {
+        Err(AppError::validation("ssh.sessionMissing"))
+    });
+    assert!(denied.is_err());
+    assert!(registry.valid_ticket(&ticket));
+    assert_eq!(registry.snapshot().unwrap().len(), 3);
+    assert!(!*cancelled1.borrow());
+    assert!(!*cancelled2.borrow());
+    let (_, tasks) = registry
+        .take_session("session", |ids| {
+            let mut ids = ids.to_vec();
+            ids.sort();
+            assert_eq!(ids, ["one", "two"]);
+            Ok(())
+        })
+        .unwrap();
+    assert!(!registry.valid_ticket(&ticket));
+    assert!(waiting
+        .commit(&registry, || panic!("retired session published listener"))
+        .is_err());
+    for task in tasks {
+        task.finish().await.unwrap();
+    }
+    released(address1, cancelled1).await;
+    released(address2, cancelled2).await;
+    released(pending_address, pending_cancel).await;
+    assert!(TcpListener::bind(address3).await.is_err());
+    assert!(!*cancelled3.borrow());
+    assert_eq!(registry.snapshot().unwrap().len(), 1);
+    registry.stop("other").await.unwrap();
+    released(address3, cancelled3).await;
+}
