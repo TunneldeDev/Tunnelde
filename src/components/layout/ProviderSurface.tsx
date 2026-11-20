@@ -216,8 +216,9 @@ export function ProviderSurface({
   );
   const [renderedLease, setRenderedLease] = useState<object | null>(null);
   const mounted = useCallback(() => setRenderedLease(accessLease), [accessLease]);
+  const nativeState = target === "forwarding" || target === "backgroundTasks";
   const selectionError = useFactorySelection(
-    target === "forwarding",
+    nativeState,
     selected ? { pluginId: selected.plugin.id, viewId: selected.view.id } : null,
     !!selection && (!active || renderedLease !== accessLease),
   );
@@ -231,7 +232,7 @@ export function ProviderSurface({
   // A registered component or async factory shell is not yet an admitted view.
   // Wait for the original mount and its child capture/readiness bindings first.
   usePanelReadiness(
-    target === "forwarding" ? "forwarding.selection" : null,
+    nativeState ? `${target}.selection` : null,
     !selection || (active && !!token && renderedLease === accessLease),
     readinessError ?? selectionError,
   );
@@ -424,9 +425,9 @@ export function ProviderSurface({
               retain={accessLease.retain}
               validation={validation || undefined}
               onFailure={fail}
-              onMounted={target === "forwarding" ? mounted : undefined}
+              onMounted={nativeState ? mounted : undefined}
               captureLegacyState={
-                target === "forwarding" &&
+                nativeState &&
                 !frontendRuntime.isFactoryView(selected!.plugin.id, selected!.view.id, View)
               }
               fallback={keepFallback ? null : children}

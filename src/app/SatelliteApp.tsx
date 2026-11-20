@@ -1,3 +1,5 @@
+import { createWindowProviderOwner } from "@/lib/panels/windowProviderOwner";
+import { useLayoutEffect } from "react";
 import { NativePluginPanel } from "@/components/layout/NativePluginPanel";
 import { WindowForwardingPanel } from "@/features/forwarding/components/WindowForwardingPanel";
 import { disconnectConnectionBatch } from "@/lib/session/connectionBatch";
@@ -24,6 +26,7 @@ import { brandMark } from "@/lib/brand";
 import { initializePanelWindow, type PanelWindowClient } from "@/lib/panels/windowClient";
 import {
   createWindowViews,
+  windowViews,
   installWindowViews,
   useWindowViews,
   type WindowViewRecord,
@@ -199,6 +202,24 @@ function ConnectionView(props: NativeViewProps) {
 function TaskView(props: NativeViewProps) {
   const { client, record } = props;
   const model = useNativeReadModel<TaskWindowModel>(props);
+  const [provider] = useState(() => {
+    const views = windowViews();
+    return createWindowProviderOwner(client, record, {
+      current: () =>
+        windowViews() === views ? useWindowViews.getState().entries.get(record.panelId) : undefined,
+      frozen: () => {
+        const state = usePanelWindows.getState();
+        return (
+          !state.available ||
+          state.windowId !== client.windowId ||
+          state.snapshot.transfers.some(({ offer }) => offer.lease.panelId === record.panelId) ||
+          !!state.snapshot.interruptions?.some((item) => item.panelId === record.panelId)
+        );
+      },
+    });
+  });
+  const lease = record.staged ? undefined : record.lease;
+  useLayoutEffect(() => provider.start(lease), [provider, lease]);
   const items = useMemo(
     () =>
       model?.tasks.map((task) => ({
@@ -213,6 +234,7 @@ function TaskView(props: NativeViewProps) {
       <WorkbenchPanel view="tasks" location="workspace" visible={!record.staged}>
         <TaskModelScope
           value={{
+            providerOwner: provider.owner,
             items,
             transfers: {
               entries: model.tasks,

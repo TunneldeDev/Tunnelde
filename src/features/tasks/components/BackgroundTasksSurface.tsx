@@ -1,3 +1,4 @@
+import { WindowTaskProvider } from "./WindowTaskProvider";
 import { useRemoteTaskModel } from "@/lib/panels/taskModel";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -48,18 +49,31 @@ export function BackgroundTasksSurface({
           () =>
             visible &&
             committed.current === frame &&
-            useBackgroundTasks.getState().items === entries,
+            (remote ? remote.items === entries : useBackgroundTasks.getState().items === entries),
         ),
       }),
-    [Entries, frame, entries, visible],
+    [Entries, frame, entries, visible, remote],
   );
   /* eslint-enable react-hooks/refs */
-  if (remote) return <div className="background-tasks-surface">{children}</div>;
+
   return (
     <div className="background-tasks-surface">
-      <ProviderSurface target="backgroundTasks" backgroundTasks={context} visible={visible}>
+      {remote?.providerOwner ? (
+        <WindowTaskProvider
+          owner={remote.providerOwner}
+          context={context}
+          entries={entries}
+          model={remote}
+          validate={() => visible && committed.current === frame && remote.items === entries}
+          visible={visible}
+        />
+      ) : remote ? (
         <Entries />
-      </ProviderSurface>
+      ) : (
+        <ProviderSurface target="backgroundTasks" backgroundTasks={context} visible={visible}>
+          <Entries />
+        </ProviderSurface>
+      )}
       {createPortal(children, surface.container)}
     </div>
   );

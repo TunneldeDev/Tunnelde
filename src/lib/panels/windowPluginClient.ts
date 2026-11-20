@@ -16,6 +16,23 @@ export type NativePluginViewTarget =
   { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
 type Request =
   | { action: "forwarding"; token: string; lease: PanelLease; request: ForwardingWindowMutation }
+  | { action: "describeTasksProvider"; target: NativePluginViewTarget }
+  | {
+      action: "openTasksProvider";
+      target: NativePluginViewTarget;
+      pluginId: string;
+      runtimeId: string;
+      viewId: string;
+      selectionRevision: number;
+    }
+  | {
+      action: "submitTasksProviderAction";
+      token: string;
+      lease: PanelLease;
+      key: string;
+      ticket: string;
+      actionId: string;
+    }
   | { action: "describeForwardingProvider"; target: NativePluginViewTarget }
   | {
       action: "openForwardingProvider";
@@ -185,6 +202,49 @@ export function createNativePluginViewClient(
       });
       check();
       return changed;
+    },
+    async describeTasksProvider(target: NativePluginViewTarget) {
+      check();
+      const value = await request<NativeForwardingProviderDescriptor | null>({
+        action: "describeTasksProvider",
+        target,
+      });
+      check();
+      return value;
+    },
+    async openTasksProvider(
+      target: NativePluginViewTarget,
+      descriptor: NativeForwardingProviderDescriptor,
+    ) {
+      check();
+      return acceptSession(
+        await request<FrontendSession>({
+          action: "openTasksProvider",
+          target,
+          pluginId: descriptor.view.pluginId,
+          runtimeId: descriptor.view.runtimeId,
+          viewId: descriptor.view.viewId,
+          selectionRevision: descriptor.selectionRevision,
+        }),
+      );
+    },
+    async submitTasksProviderAction(
+      token: string,
+      lease: PanelLease,
+      key: string,
+      ticket: string,
+      actionId: string,
+    ) {
+      check(token);
+      // Return even after disposal so the owner can cancel an unclaimed receipt.
+      return request<string>({
+        action: "submitTasksProviderAction",
+        token,
+        lease,
+        key,
+        ticket,
+        actionId,
+      });
     },
     async describeForwardingProvider(target: NativePluginViewTarget) {
       check();

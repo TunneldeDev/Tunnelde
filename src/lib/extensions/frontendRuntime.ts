@@ -217,7 +217,9 @@ export function createFrontendRuntime(transport: FrontendTransport) {
               // async slot/handle admission; never opt them in implicitly.
               if (
                 view.kind !== "component" ||
-                (view.provider && view.provider !== "forwarding") ||
+                (view.provider &&
+                  view.provider !== "forwarding" &&
+                  view.provider !== "backgroundTasks") ||
                 current.views.has(view.id)
               )
                 continue;

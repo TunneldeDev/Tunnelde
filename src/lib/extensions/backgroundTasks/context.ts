@@ -15,6 +15,7 @@ export function createBackgroundTasksContext(
   snapshot: Pick<FrontendBackgroundTasksSnapshot, "revision" | "presentation">,
   entries: readonly BackgroundTaskEntry[],
   validate: () => boolean,
+  run: typeof runBackgroundTaskAction = runBackgroundTaskAction,
 ): BackgroundTasksContext {
   const originals = entries.filter((entry) => entry.visible !== false);
   const rows = projectBackgroundTasks(originals);
@@ -72,7 +73,7 @@ export function createBackgroundTasksContext(
         ?.actions.find((item) => item.id === request.actionId);
       if (!entry || !action || action.disabled)
         throw new Error("plugin.backgroundTasks.actionUnavailable");
-      await runBackgroundTaskAction(entry, request.actionId);
+      await run(entry, request.actionId);
     },
   });
 }
