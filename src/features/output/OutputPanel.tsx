@@ -4,7 +4,6 @@ import { matchesSearch, parseSearchQuery } from "@/lib/search/query";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
-import { useTabBarContribution } from "@/store/tabBar";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
 import { PanelHeader, useWorkbenchPanel } from "@/components/layout/WorkbenchPanel";
@@ -37,7 +36,7 @@ const OutputLine = memo(function OutputLine({ entry }: { entry: OutputEntry }) {
   );
 });
 
-export function OutputPanel({ active, docked = false }: { active: boolean; docked?: boolean }) {
+export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
   const { t } = useTranslation();
   const scope = useWorkbenchPanel();
   const output = useOutput(active);
@@ -154,52 +153,10 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
       <Menu label={t("output.actions")} items={menuActions} />
     </div>
   );
-  useTabBarContribution("sidebar:output", "output.actions", docked ? controls : null, 100, {
-    group: "output.actions",
-    overflowActions: [
-      {
-        label: t("output.follow"),
-        checked: follow,
-        checkable: "checkbox",
-        onSelect: () => setFollow((value) => !value),
-      },
-      { label: t("output.clear"), disabled: channel === "runtime", onSelect: output.clear },
-      ...menuActions,
-    ],
-  });
-  const channelControl = (
-    <Select
-      className="tabbar-contribution__select"
-      label={t("output.channel")}
-      value={channel}
-      options={options}
-      onChange={setChannel}
-    />
-  );
-  useTabBarContribution("sidebar:output", "output.channel", docked ? channelControl : null, 200, {
-    group: "output.channel",
-    overflowActions: options.map((option) => ({
-      label: `${t("output.channel")}: ${option.label}`,
-      checked: channel === option.value,
-      checkable: "radio",
-      onSelect: () => setChannel(option.value),
-    })),
-  });
 
   return (
     <section className="output-panel" aria-label={scope ? undefined : t("output.title")}>
-      <PanelHeader view="output">{controls}</PanelHeader>
-      {!docked ? (
-        <div className="output-panel__toolbar">
-          <Select
-            className="output-panel__channel"
-            label={t("output.channel")}
-            value={channel}
-            options={options}
-            onChange={setChannel}
-          />
-        </div>
-      ) : null}
+      <PanelHeader view="output" />
       <SearchToolbar
         className="output-panel__filters"
         aria-label={t("output.search")}
@@ -224,16 +181,26 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
           { key: "source", value: "runtime", label: t("output.runtime") },
         ]}
         actions={
-          <Select
-            label={t("output.level")}
-            value={minimum}
-            disabled={channel === "runtime"}
-            options={[
-              { value: "TRACE", label: t("output.allLevels") },
-              ...["DEBUG", "INFO", "WARN", "ERROR"].map((value) => ({ value, label: value })),
-            ]}
-            onChange={setMinimum}
-          />
+          <>
+            <Select
+              className="output-panel__channel"
+              label={t("output.channel")}
+              value={channel}
+              options={options}
+              onChange={setChannel}
+            />
+            <Select
+              label={t("output.level")}
+              value={minimum}
+              disabled={channel === "runtime"}
+              options={[
+                { value: "TRACE", label: t("output.allLevels") },
+                ...["DEBUG", "INFO", "WARN", "ERROR"].map((value) => ({ value, label: value })),
+              ]}
+              onChange={setMinimum}
+            />
+            {controls}
+          </>
         }
       />
       {output.error ? (

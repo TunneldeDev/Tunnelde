@@ -78,6 +78,8 @@ fn independent_schema_covers_exactly_the_public_projection() {
         "lastUpdateCheck",
         "skippedVersion",
         "editorDraftRecovery",
+        // Available through settings.get/update; frozen preferences v1 omits it.
+        "disconnectOnPanelClose",
     ];
     let covered: std::collections::HashSet<_> = mapped
         .iter()

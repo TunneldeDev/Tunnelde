@@ -15,15 +15,14 @@ export function closeTab(tab: WorkspaceTab): void {
       confirmLabel: i18n.t("editor.discard"),
       danger: true,
       onConfirm: () => {
-        editors.discard(tab.id);
         workspace.close(tab.id);
+        editors.discard(tab.id);
       },
     });
     return;
   }
 
-  if (tab.kind === "editor") {
-    editors.discard(tab.id);
-  }
+  // Workspace close samples the live session before an editor is discarded.
   workspace.close(tab.id);
+  if (tab.kind === "editor") editors.discard(tab.id);
 }

@@ -86,6 +86,7 @@ export interface Settings {
     >
   >;
   restoreWorkspace: boolean;
+  disconnectOnPanelClose: boolean;
   hostActivation: HostActivation;
   hostDirectConnect: boolean;
   terminalScrollback: number;
@@ -488,6 +489,8 @@ export interface PluginCommand {
 }
 
 export interface PluginView {
+  /** Defaults to true. Only plugin-contributed views can disable floating. */
+  allowFloating?: boolean;
   id: string;
   title: string;
   location?: "sidebar" | "workspace";

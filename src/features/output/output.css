@@ -16,23 +16,15 @@
   gap: 2px;
   flex-shrink: 0;
 }
-.output-panel__toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--td-border);
-}
 .output-panel__filters {
   padding: 6px 10px;
   border-bottom: 1px solid var(--td-border);
 }
 .output-panel__channel {
-  flex: 1 1 150px;
+  flex: 0 1 180px;
   min-width: 0;
 }
-.output-panel__filters .td-select {
+.output-panel__filters .td-select:not(.output-panel__channel) {
   width: 104px;
   min-width: 0;
 }

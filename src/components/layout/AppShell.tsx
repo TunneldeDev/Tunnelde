@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { createWorkbenchSurfaces } from "./WorkbenchSurfaces";
 import { ProviderSurface } from "./ProviderSurface";
 
+import { FloatingWorkspaceLayer } from "@/components/layout/PaneLayout";
 import { SidebarArea, SidebarContents, FloatingPanelLayer } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { FormatterPicker } from "@/features/editor/FormatterPicker";
@@ -339,7 +340,9 @@ export function AppShell() {
         <RestartPrompt />
         <FormatterPicker />
         <FilePreview />
-        <FloatingPanelLayer />
+        <FloatingPanelLayer>
+          <FloatingWorkspaceLayer />
+        </FloatingPanelLayer>
         {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
       </div>
     </SplitGeometryScope>

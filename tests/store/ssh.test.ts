@@ -224,3 +224,41 @@ it("records sessions removed by a snapshot without making up a disconnect cause"
   });
   expect(useSsh.getState().history[0]!.events[1]!.detail).toBeUndefined();
 });
+
+it("batch disconnect deduplicates IDs, skips absent sessions and keeps failures retryable", async () => {
+  useSsh.setState({
+    sessions: [session, { ...session, id: "failed" }, { ...session, id: "kept" }],
+  });
+  apiMock.sshDisconnect.mockImplementation(async (id: string) => {
+    if (id === "failed") throw new Error("busy");
+  });
+  const result = await useSsh
+    .getState()
+    .disconnectMany([session.id, "failed", session.id, "absent"]);
+  expect(apiMock.sshDisconnect.mock.calls.map(([id]) => id).sort()).toEqual(
+    ["failed", session.id].sort(),
+  );
+  expect(result).toEqual({ closed: [session.id], failed: ["failed"] });
+  expect(useSsh.getState().sessions.map((s) => s.id)).toEqual(["failed", "kept"]);
+  expect(useSsh.getState().disconnectingSessionIds).toEqual([]);
+});
+
+it("bounds simultaneous cleanup to four sessions and does not stop after a failure", async () => {
+  useSsh.setState({
+    sessions: Array.from({ length: 9 }, (_, i) => ({ ...session, id: String(i) })),
+  });
+  let active = 0,
+    peak = 0;
+  apiMock.sshDisconnect.mockImplementation(async (id: string) => {
+    peak = Math.max(peak, ++active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active--;
+    if (id === "0") throw new Error("busy");
+  });
+  const result = await useSsh
+    .getState()
+    .disconnectMany(Array.from({ length: 9 }, (_, i) => String(i)));
+  expect(peak).toBe(4);
+  expect(result.failed).toEqual(["0"]);
+  expect(result.closed).toHaveLength(8);
+});

@@ -623,3 +623,13 @@ describe("numeric preference drafts", () => {
     expect(onChange).toHaveBeenCalledWith(1.5);
   });
 });
+
+it("offers default-on session cleanup and persists opting out", async () => {
+  useNavigation.setState({ settingsSection: "workspace" });
+  render(<SettingsPage />);
+  const toggle = row("disconnectOnPanelClose").getByRole("switch");
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  await act(async () => fireEvent.click(toggle));
+  expect(update).toHaveBeenLastCalledWith({ disconnectOnPanelClose: false });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+});

@@ -160,3 +160,43 @@ it("toggles the same panel from its status entry without stopping sessions", () 
   expect(useSsh.getState().sessions).toHaveLength(1);
   expect(disconnect).not.toHaveBeenCalled();
 });
+
+it("combines search presets and text, selecting only visible sessions for batch closure", async () => {
+  useSsh.getState().acceptSession(session("term"));
+  useSsh.getState().acceptSession(session("forward", { terminal: false, purpose: "forwarding" }));
+  useSsh.getState().acceptSession(session("other", { address: "root@elsewhere:22" }));
+  render(<ConnectionStatus />);
+  fireEvent.click(screen.getByRole("button", { name: "3 connections" }));
+  const query = screen.getByRole("textbox", { name: "Search sessions…" });
+  fireEvent.change(query, { target: { value: "example @type:terminal @status:connected" } });
+  expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Select visible" }));
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Close selected" }));
+  expect(disconnect).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm close" }));
+  await waitFor(() => expect(disconnect).toHaveBeenCalledExactlyOnceWith("term"));
+  expect(
+    useSsh
+      .getState()
+      .sessions.map((s) => s.id)
+      .sort(),
+  ).toEqual(["forward", "other"]);
+});
+
+it("clears hidden selections when changing the query and exposes reusable filter presets", () => {
+  useSsh.getState().acceptSession(session("a"));
+  useSsh.getState().acceptSession(session("b", { purpose: "mounts", terminal: false }));
+  render(<ConnectionStatus />);
+  fireEvent.click(screen.getByRole("button", { name: "2 connections" }));
+  fireEvent.click(screen.getByRole("button", { name: "Select visible" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Search sessions…" }), {
+    target: { value: "@type:mounts" },
+  });
+  expect(
+    (screen.getByRole("button", { name: "Close selected" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Filter presets" }));
+  expect(screen.getByRole("menuitemcheckbox", { name: /Mounts/ })).toBeTruthy();
+  expect(disconnect).not.toHaveBeenCalled();
+});

@@ -331,9 +331,13 @@ export function SftpPage({
         ? [sourceA, sourceB]
         : [sourceB, sourceA];
     const remote = candidates.find((source) => source.kind === "remote");
-    useWorkspace
-      .getState()
-      .setFileSession(tabId, remote?.kind === "remote" ? remote.sessionId : null);
+    useWorkspace.getState().setFileSession(
+      tabId,
+      remote?.kind === "remote" ? remote.sessionId : null,
+      (single ? [sourceA] : [sourceA, sourceB]).flatMap((source) =>
+        source.kind === "remote" ? [source.sessionId] : [],
+      ),
+    );
   }, [tabId, single, active, sourceA, sourceB]);
   useBackgroundGuard(panes.a.state.busy || panes.b.state.busy);
   const [remotePane, setRemotePane] = useState<PaneId | null>(null);

@@ -29,6 +29,9 @@ interface SshStore {
     acquisition?: { key: string; connect: (request: SshConnectRequest) => Promise<SshSession> },
   ) => Promise<SshSession | null>;
   disconnect: (sessionId: string) => Promise<void>;
+  disconnectMany: (
+    sessionIds: readonly string[],
+  ) => Promise<{ closed: string[]; failed: string[] }>;
   forget: (sessionId: string, reason?: string) => void;
   renameHost: (hostId: string, title: string) => void;
 }
@@ -153,6 +156,20 @@ export const useSsh = create<SshStore>((set, get) => ({
     })();
     disconnections.set(sessionId, operation);
     return operation;
+  },
+
+  disconnectMany: async (sessionIds) => {
+    const ids = [...new Set(sessionIds)].filter((id) => get().sessions.some((s) => s.id === id));
+    let next = 0;
+    // Bound simultaneous native cleanup; one busy mount or failed disconnect
+    // does not stop the rest. Existing per-session deduplication still applies.
+    await Promise.all(
+      Array.from({ length: Math.min(4, ids.length) }, async () => {
+        while (next < ids.length) await get().disconnect(ids[next++]!);
+      }),
+    );
+    const live = new Set(get().sessions.map((session) => session.id));
+    return { closed: ids.filter((id) => !live.has(id)), failed: ids.filter((id) => live.has(id)) };
   },
 
   forget: (sessionId, reason) => {

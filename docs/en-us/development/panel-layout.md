@@ -103,3 +103,46 @@ transaction. Plugin callers can use experimental
 `workspace.resizeSplits({ratios:{splitId:ratio,...}})` with `workspace.write`:
 1–32 known IDs and finite 0.1–0.9 ratios are fully validated before one mutation;
 existing workspace size limits still clamp values. Frozen workspace v1 is unchanged.
+
+## Ordinary pages and empty groups
+
+All built-in workspace pages can move to a same-document floating window through
+its tab/group menu. `PanelFrame` is the common surface, geometry and Escape layer
+for pages and `WorkbenchPanel`; the two are adapters, not separate window systems.
+`WorkspaceContents` still owns each page once. `TabContent` reparents the retained
+container, preserving editor drafts, terminal instances and component state.
+Floating groups keep a dock target and remember their return group; Escape or
+Move to workspace redocks, while the tab close action actually closes the page.
+Dragging its tab into another group uses the ordinary workspace drop adapter.
+Floating geometry is transient and excluded from frozen workspace v1; cold-start
+restoration places saved pages in ordinary groups. This is not native-window
+handoff, which requires the separate ownership protocol above.
+
+Contributed plugin views may declare `allowFloating: false` in their manifest view
+entry. Omission permits floating. The host enforces the opt-out at mutation time
+and omits that presentation from discovery and menus. Built-in pages do not have
+an allowlist or opt-out. All floating adapters share one stacking clock.
+
+Use `--td-workbench-header-h` for sidebar, panel and tab chrome. An empty group has
+no tab toolbar, lock or overflow actions, but its body remains a drop target.
+Compact native windows retain only the necessary window-controls/drag safety area.
+Workspace panel chrome must not duplicate tab placement/close controls; feature
+commands remain in one business toolbar. Output keeps channel, search, severity,
+follow, clear and overflow together below the tab strip and registers no tab actions.
+
+## Closing connection consumers
+
+`disconnectOnPanelClose` defaults to true, including older settings files. Explicit
+closing releases the exact session only after its last terminal, SFTP source,
+editor or monitor consumer disappears. Track both sources of a dual-file pane.
+Rule-owned forwarding/mount connections are not released by ordinary page close.
+Moving, redocking, hiding or unmounting a view must never disconnect. Opting out
+keeps sessions in the background. This additive setting is available through
+`settings.get/update` and settings profiles; frozen public preferences v1 is not
+silently extended.
+
+The connection manager uses shared `SearchToolbar`/`SearchField` parsing for text,
+`@type`, `@status` and `@host` filters. Selection is limited to live visible results;
+changing the query clears it. Batch confirmation binds a fixed set of IDs and
+cleanup runs with bounded concurrency, retaining failures for retry. History is
+searchable but never selectable for disconnection.

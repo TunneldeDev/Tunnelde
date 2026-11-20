@@ -624,3 +624,6 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 - [公共 Profile 写入与启用](profile-mutations.md)
 
 [宿主快速预览 API](file-preview.md).
+
+插件视图条目可设置 `allowFloating: false`，禁用宿主的同文档小窗展示。省略则
+允许；所有内置页面和面板都支持小窗。此字段不授予原生窗口所有权或资源权限。

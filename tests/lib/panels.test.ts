@@ -101,3 +101,34 @@ it("rejects nonexistent contributions and unavailable previews", () => {
   expect(() => requirePanel("plugin:missing:view")).toThrow("panel.notFound");
   expect(() => requirePanel("filePreview")).toThrow("panel.unavailable");
 });
+it("opens an opted-out contribution in the sidebar despite an old floating preference", () => {
+  usePlugins.setState({
+    items: [
+      {
+        id: "sample",
+        name: "Sample",
+        version: "1.0.0",
+        apiVersion: 1,
+        description: null,
+        commands: [],
+        permissions: [],
+        status: "stopped",
+        error: null,
+        path: "/qa",
+        runtime: "node",
+        views: [{ id: "main", title: "Main", location: "sidebar", allowFloating: false }],
+      },
+    ],
+  });
+  panelPresentation("plugin:sample:main").setState({ preferred: "floating", open: false });
+  expect(() => revealPanel("plugin:sample:main", "floating")).not.toThrow();
+  expect(useNavigation.getState()).toMatchObject({
+    activeSidebar: "plugin:sample:main",
+    sidebarVisible: true,
+  });
+  expect(panelsSnapshot().panels.find((p) => p.id === "plugin:sample:main")).toMatchObject({
+    presentation: "sidebar",
+    visible: true,
+    presentations: ["sidebar", "workspace"],
+  });
+});
