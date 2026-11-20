@@ -1,3 +1,5 @@
+import { hostPanelSource } from "@/features/hosts/panel/source";
+import type { HostPanelData } from "@/features/hosts/panel/projection";
 import { startPreviewWindowPublication } from "@/features/sftp/preview/windowPublication";
 import { createForwardingReadSource } from "@/features/forwarding/data/readSource";
 import type { ForwardingReadData } from "@/features/forwarding/data/readModel";
@@ -40,6 +42,9 @@ export interface WindowModelAppearance {
   appearance: WindowAppearance;
   language: string;
   platform: string;
+}
+export interface HostsWindowModel extends WindowModelAppearance {
+  hosts: HostPanelData;
 }
 export interface TaskWindowModel extends WindowModelAppearance {
   tasks: readonly TaskViewEntry[];
@@ -114,7 +119,9 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
     };
   };
   const preview = startPreviewWindowPublication(client, appearance, failure);
-  const publish = (panelId: "connections" | "tasks" | "output" | "knownHosts" | "forwarding") => {
+  const publish = (
+    panelId: "hosts" | "connections" | "tasks" | "output" | "knownHosts" | "forwarding",
+  ) => {
     if (disposed) return;
     let state = publishers.get(panelId);
     if (!state) {
@@ -131,43 +138,45 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
         while (current.queued && !disposed) {
           current.queued = false;
           const model =
-            panelId === "forwarding"
-              ? { ...appearance(), forwarding: forwarding.snapshot() }
-              : panelId === "knownHosts"
-                ? { ...appearance(), knownHosts: knownHosts.store.getState() }
-                : panelId === "connections"
-                  ? { ...appearance(), connection: connectionPanelModel() }
-                  : panelId === "tasks"
-                    ? { ...appearance(), tasks: useTaskProjection.getState().items }
-                    : {
-                        ...appearance(),
-                        output: {
-                          ...output.store.getState(),
-                          info: (() => {
-                            const info = useSettings.getState().info;
-                            return info
-                              ? {
-                                  name: info.name,
-                                  version: info.version,
-                                  os: info.os,
-                                  arch: info.arch,
-                                  tauriVersion: info.tauriVersion,
-                                  debug: info.debug,
-                                }
-                              : null;
-                          })(),
-                          plugins: usePlugins
-                            .getState()
-                            .items.map(({ id, name, version, status, error }) => ({
-                              id,
-                              name,
-                              version,
-                              status,
-                              error,
-                            })),
-                          sessionCount: useSsh.getState().sessions.length,
-                        },
-                      };
+            panelId === "hosts"
+              ? { ...appearance(), hosts: hostPanelSource.snapshot() }
+              : panelId === "forwarding"
+                ? { ...appearance(), forwarding: forwarding.snapshot() }
+                : panelId === "knownHosts"
+                  ? { ...appearance(), knownHosts: knownHosts.store.getState() }
+                  : panelId === "connections"
+                    ? { ...appearance(), connection: connectionPanelModel() }
+                    : panelId === "tasks"
+                      ? { ...appearance(), tasks: useTaskProjection.getState().items }
+                      : {
+                          ...appearance(),
+                          output: {
+                            ...output.store.getState(),
+                            info: (() => {
+                              const info = useSettings.getState().info;
+                              return info
+                                ? {
+                                    name: info.name,
+                                    version: info.version,
+                                    os: info.os,
+                                    arch: info.arch,
+                                    tauriVersion: info.tauriVersion,
+                                    debug: info.debug,
+                                  }
+                                : null;
+                            })(),
+                            plugins: usePlugins
+                              .getState()
+                              .items.map(({ id, name, version, status, error }) => ({
+                                id,
+                                name,
+                                version,
+                                status,
+                                error,
+                              })),
+                            sessionCount: useSsh.getState().sessions.length,
+                          },
+                        };
           await client.control({
             action: "publishModel",
             publisher: current.publisher,
@@ -186,6 +195,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
   const connections = () => publish("connections"),
     tasks = () => publish("tasks"),
     both = () => {
+      publish("hosts");
       preview.refresh();
       connections();
       tasks();
@@ -194,6 +204,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       publish("forwarding");
     };
   const cleanups = [
+    hostPanelSource.subscribe(() => publish("hosts")),
     startPluginPanelAppearance(client, appearance, failure),
     useSsh.subscribe(() => {
       connections();

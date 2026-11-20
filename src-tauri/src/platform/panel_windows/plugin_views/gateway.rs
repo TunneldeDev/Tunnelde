@@ -43,6 +43,16 @@ pub(crate) enum Request {
         lease: super::super::ownership::Lease,
         request: super::super::forwarding::request::Request,
     },
+    DescribeHostsProvider {
+        target: Target,
+    },
+    OpenHostsProvider {
+        target: Target,
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+        selection_revision: u64,
+    },
     DescribeTasksProvider {
         target: Target,
     },
@@ -209,6 +219,27 @@ pub(crate) async fn panel_window_plugin_view(
                 lease,
                 token,
                 request,
+            )
+            .await
+        }
+        Request::DescribeHostsProvider { target } => {
+            super::host_provider::describe(app, window.label(), &document, target).await
+        }
+        Request::OpenHostsProvider {
+            target,
+            plugin_id,
+            runtime_id,
+            view_id,
+            selection_revision,
+        } => {
+            super::host_provider::open(
+                app,
+                (window.label(), &document),
+                target,
+                plugin_id,
+                runtime_id,
+                view_id,
+                selection_revision,
             )
             .await
         }

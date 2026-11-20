@@ -1,3 +1,4 @@
+import { usePanelViewController } from "@/lib/panels/viewState";
 import {
   Component,
   useCallback,
@@ -216,7 +217,16 @@ export function ProviderSurface({
   );
   const [renderedLease, setRenderedLease] = useState<object | null>(null);
   const mounted = useCallback(() => setRenderedLease(accessLease), [accessLease]);
-  const nativeState = target === "forwarding" || target === "backgroundTasks";
+  const nativeState =
+    target === "forwarding" || target === "backgroundTasks" || target === "hostList";
+  const panelController = usePanelViewController();
+  const hostListFloating = target !== "hostList" || selected?.view.allowFloating !== false;
+  useLayoutEffect(() => {
+    if (target !== "hostList" || hostListFloating) return;
+    return panelController?.register("hostList.presentation", () => {
+      throw new Error("plugin.frontend.undeclaredContribution");
+    });
+  }, [panelController, target, hostListFloating]);
   const selectionError = useFactorySelection(
     nativeState,
     selected ? { pluginId: selected.plugin.id, viewId: selected.view.id } : null,

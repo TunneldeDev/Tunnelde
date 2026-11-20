@@ -22,6 +22,7 @@ export const pluginPanelDescriptor = (id: string, snapshot: NativePanelSnapshot)
       id === `plugin:${view.pluginId}:${view.viewId}`,
   );
 export const transferablePanel = (id: string, snapshot = usePanelWindows.getState().snapshot) =>
+  id === "hosts" ||
   id === "connections" ||
   id === "tasks" ||
   id === "output" ||

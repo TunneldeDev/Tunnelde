@@ -1,3 +1,4 @@
+import { HostPanelDialogs } from "@/features/hosts/panel/HostPanelDialogs";
 import { SplitGeometryScope } from "@/components/ui/layout/SplitGeometry";
 import { subscribePanels } from "@/lib/panels/observation";
 import { ShortcutConflictDialog } from "@/features/settings/ShortcutConflictDialog";
@@ -333,6 +334,7 @@ export function AppShell() {
           surfaces.container("statusbar"),
         )}
         <ToastHost />
+        <HostPanelDialogs />
         <DialogHost />
         <ShortcutConflictDialog />
         <ContextMenuHost />
