@@ -284,3 +284,121 @@ it("bounds live-dialog history without evicting early cancellations and retries 
     [{ action: "endInteraction", lease, id: "original" }],
   ]);
 });
+
+it("keeps every provider prompt operation on its original native child, never builtin or raw provider IPC", async () => {
+  const { createForwardingProviderWindowPrompt } =
+    await import("@/features/forwarding/runtime/windowPrompt");
+  const control = vi.fn(async (r: PanelWindowCommand): Promise<unknown> =>
+    r.action === "beginInteraction" ? "provider-original" : null,
+  );
+  const builtin = vi.fn(async () => {
+    throw new Error("builtin fallback forbidden");
+  });
+  let revoked = false;
+  const provider = {
+    forwardingMutation: vi.fn(
+      async (_token: string, _lease: unknown, r: ForwardingWindowMutation): Promise<unknown> => {
+        if (revoked) throw new Error("plugin.frontend.expired");
+        if (r.operation === "prepareStart")
+          return structuredClone({ host, jumpHosts: [jump], review });
+        if (r.operation === "trust")
+          return { info, review: { ...review, revision: "b".repeat(64) } };
+        if (r.operation === "start") return { id: "provider-session", hostId: host.id };
+        return null;
+      },
+    ),
+  };
+  const requested = { ...lease },
+    displayed = { ...target };
+  const scope = createForwardingProviderWindowPrompt(
+    { control, forwardingMutation: builtin } as unknown as PanelWindowClient,
+    provider as unknown as Parameters<typeof createForwardingProviderWindowPrompt>[1],
+    requested,
+    displayed,
+    "original-native-child",
+  );
+  requested.generation = 999;
+  displayed.id = "replacement";
+  const { services } = await scope.ready;
+  await services.credentialStatus(host.id);
+  await services.probe({});
+  await services.trust(info.fingerprint, {}, host.id);
+  await services.test(crypto.randomUUID(), {});
+  await services.cancelTest(crypto.randomUUID());
+  await services.credential(host.id, "ephemeral");
+  await services.credential(host.id, null);
+  await services.installKey("ephemeral", {});
+  await services.connect({ hostId: host.id, cols: 80, rows: 24, password: "ephemeral" });
+  for (const [token, actualLease, request] of provider.forwardingMutation.mock.calls) {
+    expect(token).toBe("original-native-child");
+    expect(actualLease).toEqual(lease);
+    expect(request).toHaveProperty("interaction", "provider-original");
+    if ("id" in request) expect(request.id).toBe(target.id);
+    if ("revision" in request) expect(request.revision).toBe(target.revision);
+  }
+  expect(provider.forwardingMutation.mock.calls.at(-1)?.[2]).toMatchObject({
+    review: { revision: "b".repeat(64) },
+  });
+  revoked = true;
+  await expect(services.connect({ hostId: host.id, cols: 80, rows: 24 })).rejects.toThrow(
+    "expired",
+  );
+  expect(builtin).not.toHaveBeenCalled();
+  await scope.close();
+  expect(control).toHaveBeenLastCalledWith({
+    action: "endInteraction",
+    lease,
+    id: "provider-original",
+  });
+});
+
+it("releases original consent after native provider preparation rejects without retrying as builtin", async () => {
+  const { createForwardingProviderWindowPrompt } =
+    await import("@/features/forwarding/runtime/windowPrompt");
+  const admission = deferred<unknown>();
+  const control = vi.fn((r: PanelWindowCommand) =>
+    r.action === "beginInteraction" ? admission.promise : Promise.resolve(null),
+  );
+  const builtin = vi.fn(),
+    provider = {
+      forwardingMutation: vi.fn().mockRejectedValue(new Error("plugin.forwarding.expired")),
+    };
+  const scope = createForwardingProviderWindowPrompt(
+    { control, forwardingMutation: builtin } as unknown as PanelWindowClient,
+    provider,
+    lease,
+    target,
+    "original",
+  );
+  const rejected = expect(scope.ready).rejects.toThrow("expired");
+  admission.resolve("original-consent");
+  await rejected;
+  expect(provider.forwardingMutation).toHaveBeenCalledTimes(1);
+  expect(builtin).not.toHaveBeenCalled();
+  expect(control).toHaveBeenLastCalledWith({
+    action: "endInteraction",
+    lease,
+    id: "original-consent",
+  });
+});
+
+it("rejects an absent native provider token without invoking any mutation route and releases consent", async () => {
+  const { createForwardingProviderWindowPrompt } =
+    await import("@/features/forwarding/runtime/windowPrompt");
+  const control = vi.fn(async (r: PanelWindowCommand): Promise<unknown> =>
+    r.action === "beginInteraction" ? "original" : null,
+  );
+  const builtin = vi.fn();
+  const provider = { forwardingMutation: vi.fn() };
+  const scope = createForwardingProviderWindowPrompt(
+    { control, forwardingMutation: builtin } as unknown as PanelWindowClient,
+    provider,
+    lease,
+    target,
+    "",
+  );
+  await expect(scope.ready).rejects.toThrow("expired");
+  expect(provider.forwardingMutation).not.toHaveBeenCalled();
+  expect(builtin).not.toHaveBeenCalled();
+  expect(control).toHaveBeenLastCalledWith({ action: "endInteraction", lease, id: "original" });
+});

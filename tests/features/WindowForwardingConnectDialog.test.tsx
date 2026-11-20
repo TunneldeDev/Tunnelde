@@ -222,3 +222,173 @@ it("strict lifecycle replay releases retired pending origins rather than duplica
   expect(f.control).toHaveBeenCalledWith({ action: "endInteraction", lease, id: "origin-1" });
   expect(f.mutation.mock.calls.filter(([, r]) => r.operation === "prepareStart")).toHaveLength(1);
 });
+
+it("uses the shared production prompt exclusively through an original native provider child", async () => {
+  const f = fixture();
+  const providerMutation = vi.fn(
+    async (_token: string, _lease: unknown, r: ForwardingWindowMutation): Promise<unknown> =>
+      r.operation === "prepareStart"
+        ? structuredClone(plan)
+        : r.operation === "probe"
+          ? info
+          : r.operation === "credentialStatus"
+            ? true
+            : r.operation === "start"
+              ? session
+              : null,
+  );
+  const provider = { forwardingMutation: providerMutation } as unknown as NonNullable<
+    Parameters<typeof WindowForwardingConnectDialog>[0]["provider"]
+  >["client"];
+  const element = () => (
+    <WindowForwardingConnectDialog
+      client={f.client}
+      lease={{ ...lease }}
+      rule={{ ...rule }}
+      provider={{ client: provider, token: "original-provider-child" }}
+      onClose={f.close}
+      onConnected={f.done}
+    />
+  );
+  const view = render(element());
+  await screen.findByText("Trusted");
+  view.rerender(element());
+  expect(f.control.mock.calls.filter(([r]) => r.action === "beginInteraction")).toHaveLength(1);
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "ephemeral-provider" } });
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(session));
+  expect(f.mutation).not.toHaveBeenCalled();
+  for (const [token, actualLease, r] of providerMutation.mock.calls) {
+    expect(token).toBe("original-provider-child");
+    expect(actualLease).toEqual(lease);
+    expect(r).toMatchObject({ interaction: "origin-1" });
+  }
+});
+
+it("retires a replaced provider child and ignores its late preparation instead of adopting replacement authority", async () => {
+  const f = fixture(),
+    old = deferred<unknown>();
+  const mutation = vi.fn(
+    async (token: string, _lease: unknown, r: ForwardingWindowMutation): Promise<unknown> =>
+      r.operation === "prepareStart"
+        ? token === "old-child"
+          ? old.promise
+          : structuredClone(plan)
+        : r.operation === "probe"
+          ? info
+          : true,
+  );
+  const provider = { forwardingMutation: mutation } as unknown as NonNullable<
+    Parameters<typeof WindowForwardingConnectDialog>[0]["provider"]
+  >["client"];
+  const element = (token: string) => (
+    <WindowForwardingConnectDialog
+      client={f.client}
+      lease={lease}
+      rule={rule}
+      provider={{ client: provider, token }}
+      onClose={f.close}
+      onConnected={f.done}
+    />
+  );
+  const view = render(element("old-child"));
+  await waitFor(() => expect(mutation).toHaveBeenCalledTimes(1));
+  view.rerender(element("new-child"));
+  await screen.findByText("Trusted");
+  await act(async () => old.resolve(plan));
+  expect(f.control).toHaveBeenCalledWith({ action: "endInteraction", lease, id: "origin-1" });
+  expect(
+    mutation.mock.calls.filter(
+      ([token, , r]) => token === "old-child" && r.operation !== "prepareStart",
+    ),
+  ).toHaveLength(0);
+  expect(f.mutation).not.toHaveBeenCalled();
+});
+
+it("retires the old provider client even with the same child string and does not reacquire on ordinary model refresh", async () => {
+  const f = fixture();
+  const pending = deferred<unknown>();
+  const old = { forwardingMutation: vi.fn(() => pending.promise) };
+  const next = {
+    forwardingMutation: vi.fn(
+      async (_token: string, _lease: unknown, r: ForwardingWindowMutation) =>
+        r.operation === "prepareStart"
+          ? structuredClone(plan)
+          : r.operation === "probe"
+            ? info
+            : true,
+    ),
+  };
+  type Client = NonNullable<
+    Parameters<typeof WindowForwardingConnectDialog>[0]["provider"]
+  >["client"];
+  const element = (client: Client) => (
+    <WindowForwardingConnectDialog
+      client={f.client}
+      lease={{ ...lease }}
+      rule={{ ...rule }}
+      provider={{ client, token: "same-child" }}
+      onClose={f.close}
+      onConnected={f.done}
+    />
+  );
+  const view = render(element(old as unknown as Client));
+  await waitFor(() => expect(old.forwardingMutation).toHaveBeenCalledOnce());
+  view.rerender(element(next as unknown as Client));
+  await screen.findByText("Trusted");
+  view.rerender(element(next as unknown as Client));
+  await act(async () => pending.resolve(plan));
+  expect(f.control.mock.calls.filter(([r]) => r.action === "beginInteraction")).toHaveLength(2);
+  expect(f.control).toHaveBeenCalledWith({ action: "endInteraction", lease, id: "origin-1" });
+  expect(f.mutation).not.toHaveBeenCalled();
+});
+
+it("keeps late provider connection completion out of replacement callbacks and leaves the fresh prompt open", async () => {
+  const f = fixture(),
+    pending = deferred<unknown>();
+  const mutation = vi.fn(
+    async (token: string, _lease: unknown, r: ForwardingWindowMutation): Promise<unknown> =>
+      r.operation === "prepareStart"
+        ? structuredClone(plan)
+        : r.operation === "probe"
+          ? info
+          : r.operation === "credentialStatus"
+            ? true
+            : r.operation === "start"
+              ? token === "old"
+                ? pending.promise
+                : session
+              : null,
+  );
+  type Client = NonNullable<
+    Parameters<typeof WindowForwardingConnectDialog>[0]["provider"]
+  >["client"];
+  const provider = { forwardingMutation: mutation } as unknown as Client;
+  const replacement = vi.fn();
+  const element = (token: string, done = f.done) => (
+    <WindowForwardingConnectDialog
+      client={f.client}
+      lease={lease}
+      rule={rule}
+      provider={{ client: provider, token }}
+      onClose={f.close}
+      onConnected={done}
+    />
+  );
+  const view = render(element("old"));
+  await screen.findByText("Trusted");
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  await waitFor(() =>
+    expect(
+      mutation.mock.calls.some(([token, , r]) => token === "old" && r.operation === "start"),
+    ).toBe(true),
+  );
+  view.rerender(element("fresh", replacement));
+  await screen.findByText("Trusted");
+  await act(async () => pending.resolve(session));
+  expect(f.done).not.toHaveBeenCalled();
+  expect(replacement).not.toHaveBeenCalled();
+  expect(f.close).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Connect" })).toBeTruthy();
+  expect(f.mutation).not.toHaveBeenCalled();
+});

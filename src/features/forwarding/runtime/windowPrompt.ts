@@ -1,5 +1,6 @@
 import type { ConnectionReview } from "@/lib/api/connections/review";
 import type { ConnectionQuality, HostKeyInfo, SshSession } from "@/lib/api/types";
+import type { createNativePluginViewClient } from "@/lib/panels/windowPluginClient";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
 import { createPanelWindowInteraction } from "@/lib/panels/windowInteraction";
@@ -10,6 +11,10 @@ export interface WindowForwardingPrompt {
   host: ConnectionPromptHost;
   services: ConnectionPromptServices;
 }
+export type NativeForwardingPromptClient = Pick<
+  ReturnType<typeof createNativePluginViewClient>,
+  "forwardingMutation"
+>;
 export type WindowForwardingPromptTarget = { id: string; revision: string; hostId: string };
 
 function display({
@@ -29,6 +34,35 @@ function display({
  * native actual-effect fences outlive UI disposal independently. */
 export function createForwardingWindowPrompt(
   client: PanelWindowClient,
+  requestedLease: PanelLease,
+  requestedTarget: WindowForwardingPromptTarget,
+) {
+  return createWindowPrompt(client, client, requestedLease, requestedTarget);
+}
+
+/** The original native provider child is the only mutation route. Main window
+ * control supplies consent lifetime only, never a builtin mutation fallback.
+ * Child/selection/runtime policy is checked natively at each actual effect. */
+export function createForwardingProviderWindowPrompt(
+  client: PanelWindowClient,
+  provider: NativeForwardingPromptClient,
+  requestedLease: PanelLease,
+  requestedTarget: WindowForwardingPromptTarget,
+  token: string,
+) {
+  const transport: Pick<PanelWindowClient, "forwardingMutation"> = {
+    forwardingMutation: async (lease, request) => {
+      if (typeof token !== "string" || !token || !provider)
+        throw new Error("plugin.forwarding.expired");
+      return provider.forwardingMutation(token, lease, request);
+    },
+  };
+  return createWindowPrompt(client, transport, requestedLease, requestedTarget);
+}
+
+function createWindowPrompt(
+  client: PanelWindowClient,
+  transport: Pick<PanelWindowClient, "forwardingMutation">,
   requestedLease: PanelLease,
   requestedTarget: WindowForwardingPromptTarget,
 ) {
@@ -57,7 +91,7 @@ export function createForwardingWindowPrompt(
     check();
     const work = tail.then(async () => {
       check();
-      const result = await client.forwardingMutation<T>(lease, request());
+      const result = await transport.forwardingMutation<T>(lease, request());
       check();
       accepted?.(result);
       return result;
@@ -133,7 +167,7 @@ export function createForwardingWindowPrompt(
       // Cleanup must bypass the occupied operation queue, including a queued
       // start. Correlation stays bound to this ORIGINAL interaction, never a
       // global ssh_cancel_test ID or another prompt's replacement consent.
-      await client.forwardingMutation(lease, { operation: "cancelTest", testId, interaction });
+      await transport.forwardingMutation(lease, { operation: "cancelTest", testId, interaction });
     },
     credential: async (hostId, password) => {
       hostAllowed(hostId);
@@ -152,15 +186,15 @@ export function createForwardingWindowPrompt(
     .then(async (id): Promise<WindowForwardingPrompt> => {
       interaction = id;
       check();
-      const plan = await client.forwardingMutation<ForwardingWindowStartPlan>(lease, {
+      const plan = await transport.forwardingMutation<ForwardingWindowStartPlan>(lease, {
         operation: "prepareStart",
         id: target.id,
         revision: target.revision,
         interaction,
       });
       check();
-      // Provider prompts require native provider handles. Never downgrade them
-      // to this builtin route or hydrate full host/credential stores.
+      // Both routes are limited to builtin hosts. The provider route keeps its
+      // original native child; never downgrade or hydrate writable host stores.
       if (
         plan.host.source ||
         plan.jumpHosts.some((host) => host.source) ||

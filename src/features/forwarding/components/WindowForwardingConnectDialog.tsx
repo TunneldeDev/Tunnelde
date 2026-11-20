@@ -10,6 +10,8 @@ import type { PanelLease } from "@/lib/panels/windowProtocol";
 import { toast } from "@/store/toasts";
 import {
   createForwardingWindowPrompt,
+  createForwardingProviderWindowPrompt,
+  type NativeForwardingPromptClient,
   type WindowForwardingPrompt,
   type WindowForwardingPromptTarget,
 } from "../runtime/windowPrompt";
@@ -21,6 +23,8 @@ interface Props {
   onClose: () => void;
   onConnected: (session: SshSession) => void | Promise<void>;
   context?: ReactNode;
+  /** Exact native child, never a raw provider bearer origin. */
+  provider?: { client: NativeForwardingPromptClient; token: string };
 }
 /** Origin-window UI only. The factory acquires consent before the shared
  * prompt mounts; neither its secrets nor review are checkpointed. */
@@ -33,15 +37,23 @@ export function WindowForwardingConnectDialog(props: Props) {
     rule.id,
     rule.revision,
     rule.hostId,
+    props.provider ? ["provider", props.provider.token] : ["builtin"],
   ]);
   return <OriginPrompt key={key} {...props} />;
 }
-function OriginPrompt({ client, lease, rule, onClose, onConnected, context }: Props) {
+function OriginPrompt({ client, lease, rule, provider, onClose, onConnected, context }: Props) {
   const { t } = useTranslation();
   // Keyed primitive identity, not a refreshed model object's identity.
-  const [binding] = useState(() => ({ lease: { ...lease }, rule: { ...rule } }));
+  const [binding] = useState(() => ({
+    lease: { ...lease },
+    rule: { ...rule },
+    providerToken: provider ? provider.token : null,
+  }));
+  const providerClient = provider?.client;
   const [result, setResult] = useState<{
     client: PanelWindowClient;
+    providerClient: NativeForwardingPromptClient | undefined;
+    scope: ReturnType<typeof createForwardingWindowPrompt>;
     prompt?: WindowForwardingPrompt;
     error?: string;
   } | null>(null);
@@ -53,21 +65,30 @@ function OriginPrompt({ client, lease, rule, onClose, onConnected, context }: Pr
   }, [onClose, onConnected]);
   useLayoutEffect(() => {
     let live = true;
-    const scope = createForwardingWindowPrompt(client, binding.lease, binding.rule);
+    const scope =
+      binding.providerToken !== null
+        ? createForwardingProviderWindowPrompt(
+            client,
+            providerClient!,
+            binding.lease,
+            binding.rule,
+            binding.providerToken,
+          )
+        : createForwardingWindowPrompt(client, binding.lease, binding.rule);
     active.current = scope;
     void scope.ready
       .then((prompt) => {
-        if (live) setResult({ client, prompt });
+        if (live) setResult({ client, providerClient, scope, prompt });
       })
       .catch((cause) => {
-        if (live) setResult({ client, error: translateError(cause) });
+        if (live) setResult({ client, providerClient, scope, error: translateError(cause) });
       });
     return () => {
       live = false;
       if (active.current === scope) active.current = null;
       void scope.close().catch((cause) => toast(translateError(cause), "error"));
     };
-  }, [client, binding]);
+  }, [client, binding, providerClient]);
   const close = () => {
     if (dismissed) return;
     const scope = active.current;
@@ -78,7 +99,8 @@ function OriginPrompt({ client, lease, rule, onClose, onConnected, context }: Pr
     if (scope) void scope.close().catch((cause) => toast(translateError(cause), "error"));
     callbacks.current.onClose();
   };
-  const current = result?.client === client ? result : null;
+  const current =
+    result?.client === client && result.providerClient === providerClient ? result : null;
   if (dismissed) return null;
   if (current?.prompt)
     return (
@@ -88,8 +110,13 @@ function OriginPrompt({ client, lease, rule, onClose, onConnected, context }: Pr
         after="background"
         purpose="forwarding"
         context={context}
-        onClose={close}
-        onConnected={(session) => callbacks.current.onConnected(session)}
+        onClose={() => {
+          if (active.current === current.scope) close();
+        }}
+        onConnected={(session) => {
+          if (active.current !== current.scope) return;
+          return callbacks.current.onConnected(session);
+        }}
       />
     );
   return (

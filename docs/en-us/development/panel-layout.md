@@ -942,3 +942,15 @@ builtin route, and policy loss cancels pending provider diagnostics.
 This is a service ingress, not the complete `ForwardingActions`, provider prompt
 or production satellite renderer. It does not enable native-window discovery or
 relax the raw main-document frontend lease bridge.
+
+### Original-window provider connection prompts
+
+The shared `WindowForwardingConnectDialog` can use an explicit native provider
+child. All prompt phases use that same child transport: preparation, trust,
+diagnostics/cancellation, credentials, key installation and managed rule start.
+The panel client supplies only the original interaction lifecycle, never a builtin
+mutation fallback. Equivalent read-model refreshes preserve consent; replacing the
+child, provider client, rule revision or native owner retires the old scope. Late
+preparation/completion cannot be delivered to replacement callbacks. Secrets stay
+in direct prompt requests and are not checkpointed or projected into read models.
+This still does not supply a batch rule prompt or complete satellite renderer.
