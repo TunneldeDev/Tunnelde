@@ -22,6 +22,24 @@ pub(crate) enum Request {
         #[serde(default)]
         credentials: super::connection::Credentials,
     },
+    Probe {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        #[serde(default)]
+        credentials: super::connection::JumpCredentials,
+    },
+    Trust {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        fingerprint: String,
+        expected_host_id: String,
+        #[serde(default)]
+        credentials: super::connection::JumpCredentials,
+    },
     Save {
         rule: ForwardRule,
         revision: Option<String>,
@@ -68,12 +86,25 @@ impl Request {
             }
             Self::Remove { interaction, .. }
             | Self::Start { interaction, .. }
+            | Self::Probe { interaction, .. }
+            | Self::Trust { interaction, .. }
             | Self::PrepareStart { interaction, .. } => Some(interaction),
             _ => None,
         }
     }
     pub(super) fn validate(&self) -> Result<(), &'static str> {
         let optional = |value: &Option<String>, max| value.as_ref().is_none_or(|v| bounded(v, max));
+        let reviewed = |id: &str,
+                        revision: &str,
+                        interaction: &str,
+                        review: &crate::ssh::session::review::Review| {
+            bounded(id, 128)
+                && bounded(revision, 256)
+                && bounded(interaction, 128)
+                && bounded(&review.host_id, 128)
+                && review.identity().len() == 64
+                && review.identity().bytes().all(|b| b.is_ascii_hexdigit())
+        };
         let valid = match self {
             Self::PrepareStart {
                 id,
@@ -86,13 +117,26 @@ impl Request {
                 interaction,
                 review,
                 credentials,
+            } => reviewed(id, revision, interaction, review) && credentials.valid(),
+            Self::Probe {
+                id,
+                revision,
+                interaction,
+                review,
+                credentials,
+            } => reviewed(id, revision, interaction, review) && credentials.valid(),
+            Self::Trust {
+                id,
+                revision,
+                interaction,
+                review,
+                fingerprint,
+                expected_host_id,
+                credentials,
             } => {
-                bounded(id, 128)
-                    && bounded(revision, 256)
-                    && bounded(interaction, 128)
-                    && bounded(&review.host_id, 128)
-                    && review.identity().len() == 64
-                    && review.identity().bytes().all(|b| b.is_ascii_hexdigit())
+                reviewed(id, revision, interaction, review)
+                    && bounded(fingerprint, 256)
+                    && bounded(expected_host_id, 128)
                     && credentials.valid()
             }
             Self::Save {

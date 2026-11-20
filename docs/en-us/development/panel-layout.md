@@ -715,9 +715,19 @@ review, never a full host/key path/proxy/credential record. `start` binds that
 review, rule revision and the original live owning-panel interaction. It forces
 background forwarding purpose and host-owned group pooling; arbitrary SSH input,
 foreign jump credentials, caller window labels and provider authority are not
-accepted. This transport is not yet a complete connection-prompt adapter: probe,
-trust, saved-credential management, connection testing and actual prompt/renderer
+accepted. This transport is not yet a complete connection-prompt adapter:
+saved-credential management, connection testing and actual prompt/renderer
 integration remain mandatory before forwarding transfer discovery is admitted.
+
+The private `probe`/`trust` operations bind the same rule revision, route review
+and original interaction. Only bounded credentials for actual reviewed jump
+hosts are accepted. Trust re-probes the exact route, compares the displayed
+fingerprint and expected hop, and observes proxy/keychain state outside locks.
+Its final ownership-held write checks the rule revision/host and native route
+under the same DB guard before approving only the observed endpoint and returning
+an advanced review. Failed or retired operations cannot approve a replacement
+rule, host, route or dialog. Transport cleanup retains the effect through actual
+settlement even when IPC delivery is lost; these methods do not enable discovery.
 
 A private `WorkLifetime` may carry a synchronous native publication authority.
 Bounded descendants inherit the effect and check before worker admission and

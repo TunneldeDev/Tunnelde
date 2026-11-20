@@ -277,7 +277,7 @@ fn observed_key_approval_updates_only_original_endpoint_aliases_without_os_reads
                 known_fingerprint: None,
                 connection_time_ms: None,
             };
-            expected.approve_at(conn, &info, || Ok(()))?;
+            expected.approve_at(conn, &info, |_| Ok(()))?;
             expected.verify_saved(conn)?;
             assert_ne!(original, expected.revision());
             assert_eq!(expected.nodes[0].key.as_deref(), Some("SHA256:approved"));
@@ -307,7 +307,7 @@ fn cancelled_or_stale_observed_key_approval_never_changes_native_trust() {
             };
             assert_eq!(
                 expected
-                    .approve_at(conn, &info, || Err(AppError::validation(
+                    .approve_at(conn, &info, |_| Err(AppError::validation(
                         "plugin.runners.browserExpired"
                     )))
                     .unwrap_err()
@@ -320,7 +320,7 @@ fn cancelled_or_stale_observed_key_approval_never_changes_native_trust() {
             db::settings::save(conn, &settings)?;
             assert_eq!(
                 expected
-                    .approve_at(conn, &info, || panic!("stale operation admitted"))
+                    .approve_at(conn, &info, |_| panic!("stale operation admitted"))
                     .unwrap_err()
                     .to_string(),
                 "ssh.connectionChanged"
@@ -330,4 +330,41 @@ fn cancelled_or_stale_observed_key_approval_never_changes_native_trust() {
             Ok(())
         })
         .unwrap();
+}
+
+#[test]
+fn forwarding_rule_revision_and_host_are_checked_inside_the_observed_trust_write() {
+    use crate::services::forwarding::{automation::Options, contract::ForwardRule, repository};
+    Database::in_memory().unwrap().with(|conn| {
+        let mut expected = snapshot(conn, &crate::settings::Settings::default());
+        let target = expected.target().clone();
+        let rule = ForwardRule {
+            id: "reviewed-rule".into(), host_id: target.id.clone(), name: "Reviewed".into(),
+            mode: "local".into(), bind_host: "127.0.0.1".into(), bind_port: 1480,
+            target_host: "127.0.0.1".into(), target_port: 1479,
+        };
+        repository::import_at(conn, &rule, Options::default(), None)?;
+        let original = repository::list_conn(conn)?.remove(0);
+        let info = HostKeyInfo {
+            host_id: target.id.clone(), fingerprint: "SHA256:approved".into(),
+            algorithm: "ssh-ed25519".into(), status: HostKeyStatus::Unknown,
+            known_fingerprint: None, connection_time_ms: None,
+        };
+        for (revision, host) in [("stale", target.id.as_str()), (original.revision.as_str(), "foreign")] {
+            assert_eq!(expected.approve_at(conn, &info, |conn| {
+                repository::require_reviewed_host(conn, &rule.id, revision, host)
+            }).unwrap_err().to_string(), "forward.changed");
+            assert!(db::known_hosts::find(conn, &target.host, target.port as i64)?.is_none());
+        }
+        conn.execute("UPDATE settings SET value='\"replacement-revision\"' WHERE key='forward-version:reviewed-rule'", [])?;
+        assert!(expected.approve_at(conn, &info, |conn| {
+            repository::require_reviewed_host(conn, &rule.id, &original.revision, &target.id)
+        }).is_err());
+        assert!(db::known_hosts::find(conn, &target.host, target.port as i64)?.is_none());
+        expected.approve_at(conn, &info, |conn| {
+            repository::require_reviewed_host(conn, &rule.id, "replacement-revision", &target.id)
+        })?;
+        assert_eq!(db::known_hosts::find(conn, &target.host, target.port as i64)?.unwrap().fingerprint, info.fingerprint);
+        Ok(())
+    }).unwrap();
 }

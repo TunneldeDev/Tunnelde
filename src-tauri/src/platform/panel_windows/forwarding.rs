@@ -148,6 +148,32 @@ pub(crate) async fn panel_window_forwarding(
                 credentials,
                 ..
             } => connection::start(effect, id, revision, review, credentials).await,
+            Request::Probe {
+                id,
+                revision,
+                review,
+                credentials,
+                ..
+            } => connection::probe(effect, id, revision, review, credentials, None).await,
+            Request::Trust {
+                id,
+                revision,
+                review,
+                credentials,
+                fingerprint,
+                expected_host_id,
+                ..
+            } => {
+                connection::probe(
+                    effect,
+                    id,
+                    revision,
+                    review,
+                    credentials,
+                    Some((fingerprint, expected_host_id)),
+                )
+                .await
+            }
             request => {
                 let current = effect.clone();
                 // Blocking jobs inherit both lifetime and short authority, but
@@ -185,9 +211,10 @@ enum Prepared {
 fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
     let state = app.state::<AppState>();
     let value = match request {
-        Request::Start { .. } | Request::PrepareStart { .. } => {
-            return Err(AppError::validation("forward.invalid"))
-        }
+        Request::Start { .. }
+        | Request::PrepareStart { .. }
+        | Request::Probe { .. }
+        | Request::Trust { .. } => return Err(AppError::validation("forward.invalid")),
         Request::Save {
             rule,
             revision,

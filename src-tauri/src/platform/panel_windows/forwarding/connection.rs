@@ -1,4 +1,4 @@
-//! Builtin-only reviewed starts. The original interaction owns every phase;
+//! Builtin-only reviewed connections. The original interaction owns every phase;
 //! credentials are request-local, never part of a panel capsule/read model.
 use super::*;
 use crate::ssh::{
@@ -7,6 +7,33 @@ use crate::ssh::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
+
+#[derive(Default, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct JumpCredentials(HashMap<String, Hop>);
+impl JumpCredentials {
+    pub(super) fn valid(&self) -> bool {
+        valid_jumps(&self.0, 0)
+    }
+    fn for_target(
+        self,
+        target: &Target,
+    ) -> AppResult<HashMap<String, crate::ssh::session::HopCredential>> {
+        let jumps = target.jump_hosts();
+        if self
+            .0
+            .keys()
+            .any(|id| !jumps.iter().any(|host| &host.id == id))
+        {
+            return Err(AppError::validation("ssh.connectionChanged"));
+        }
+        Ok(self
+            .0
+            .into_iter()
+            .map(|(id, hop)| (id, hop.into()))
+            .collect())
+    }
+}
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -22,25 +49,36 @@ struct Hop {
     password: Option<String>,
     passphrase: Option<String>,
 }
+impl From<Hop> for crate::ssh::session::HopCredential {
+    fn from(hop: Hop) -> Self {
+        Self {
+            password: hop.password,
+            passphrase: hop.passphrase,
+        }
+    }
+}
+fn valid_jumps(jumps: &HashMap<String, Hop>, mut total: usize) -> bool {
+    if jumps.len() > 8 || total > 128 * 1024 {
+        return false;
+    }
+    for (id, hop) in jumps {
+        let bytes = hop.password.as_ref().map_or(0, String::len)
+            + hop.passphrase.as_ref().map_or(0, String::len);
+        if id.is_empty() || id.len() > 128 || id.chars().any(char::is_control) || bytes > 128 * 1024
+        {
+            return false;
+        }
+        total += bytes;
+    }
+    total <= 512 * 1024
+}
 impl Credentials {
     pub(super) fn valid(&self) -> bool {
         let length = |value: &Option<String>| value.as_ref().map_or(0, String::len);
-        let mut total = length(&self.password) + length(&self.passphrase);
-        if self.jumps.len() > 8 || total > 128 * 1024 {
-            return false;
-        }
-        for (id, hop) in &self.jumps {
-            let bytes = length(&hop.password) + length(&hop.passphrase);
-            if id.is_empty()
-                || id.len() > 128
-                || id.chars().any(char::is_control)
-                || bytes > 128 * 1024
-            {
-                return false;
-            }
-            total += bytes;
-        }
-        total <= 512 * 1024
+        valid_jumps(
+            &self.jumps,
+            length(&self.password) + length(&self.passphrase),
+        )
     }
     fn request(self, host: String) -> SshConnectRequest {
         SshConnectRequest {
@@ -54,18 +92,74 @@ impl Credentials {
             jump_credentials: self
                 .jumps
                 .into_iter()
-                .map(|(id, hop)| {
-                    (
-                        id,
-                        crate::ssh::session::HopCredential {
-                            password: hop.password,
-                            passphrase: hop.passphrase,
-                        },
-                    )
-                })
+                .map(|(id, hop)| (id, hop.into()))
                 .collect(),
         }
     }
+}
+
+/// Rule and route are checked on both sides of slow network/OS work. Trust
+/// publication additionally rechecks the rule within the SAME database guard
+/// that writes the observed endpoint and advances its native review.
+pub(super) async fn probe(
+    effect: Arc<Effect>,
+    id: String,
+    revision: String,
+    review: Review,
+    credentials: JumpCredentials,
+    approval: Option<(String, String)>,
+) -> AppResult<Value> {
+    let handle = effect.clone();
+    let rule = id.clone();
+    let expected = revision.clone();
+    let reviewed = review.clone();
+    let target = crate::services::credentials::inspect(move || {
+        handle.with_current(|| {
+            handle.app.state::<AppState>().db.with(|conn| {
+                domain::repository::require_reviewed_host(conn, &rule, &expected, &reviewed.host_id)
+            })
+        })?;
+        // Snapshot capture can read an OS proxy credential. Do that outside
+        // ownership, then reject any rule edit before admitting network I/O.
+        let target = Target::capture(&handle.app, &reviewed)?;
+        handle.with_current(|| {
+            handle.app.state::<AppState>().db.with(|conn| {
+                domain::repository::require_reviewed_host(conn, &rule, &expected, &reviewed.host_id)
+            })
+        })?;
+        Ok(target)
+    })
+    .await?;
+    let credentials = credentials.for_target(&target)?;
+    if approval.as_ref().is_some_and(|(_, host)| {
+        host != target.host_id() && !target.jump_hosts().iter().any(|jump| &jump.id == host)
+    }) {
+        return Err(AppError::validation("ssh.hostKeyChanged"));
+    }
+    let info = target.probe(&effect.app, &credentials).await?;
+    if let Some((fingerprint, expected_host_id)) = &approval {
+        if &info.fingerprint != fingerprint || &info.host_id != expected_host_id {
+            return Err(AppError::validation("ssh.hostKeyChanged"));
+        }
+    }
+    // Proxy/keychain observation must not run inside ownership or DB guards.
+    let observed = target.observe_background(&effect.app).await?;
+    crate::services::credentials::checked(move |job| {
+        effect.with_current(|| {
+            let check = |conn: &rusqlite::Connection| {
+                domain::repository::require_reviewed_host(conn, &id, &revision, &review.host_id)?;
+                job.commit()
+            };
+            match approval {
+                Some(_) => Ok(json!(observed.approve_checked(&effect.app, info, check)?)),
+                None => observed.with_current(&effect.app, |conn| {
+                    check(conn)?;
+                    Ok(json!(info))
+                }),
+            }
+        })
+    })
+    .await
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,11 +200,14 @@ pub(super) async fn prepare(effect: Arc<Effect>, id: String, revision: String) -
     .await?;
     let observed = target.observe_background(&effect.app).await?;
     effect.with_current(|| {
-        let current = domain::repository::find_entry(&effect.app, &entry.rule.id)?;
-        if current.revision != entry.revision {
-            return Err(AppError::validation("forward.changed"));
-        }
-        observed.with_current(&effect.app, |_| Ok(()))
+        observed.with_current(&effect.app, |conn| {
+            domain::repository::require_reviewed_host(
+                conn,
+                &entry.rule.id,
+                &entry.revision,
+                &entry.rule.host_id,
+            )
+        })
     })?;
     Ok(
         json!({"review": target.review(), "host": PromptHost::from(host), "jumpHosts": target.jump_hosts().into_iter().map(PromptHost::from).collect::<Vec<_>>()}),

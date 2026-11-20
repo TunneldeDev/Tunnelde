@@ -2,6 +2,7 @@ import type { ConnectionReview } from "@/lib/api/connections/review";
 import type { ConnectionPromptHost } from "@/features/connect/prompt";
 import type { ForwardAutomation } from "../model/contract";
 import type { forwardingSavePayload } from "../model/payload";
+import type { PromptCredentials } from "@/features/connect/prompt";
 
 export interface ForwardingWindowCredentials {
   password?: string | null;
@@ -27,6 +28,24 @@ export type ForwardingWindowMutation =
       review: ConnectionReview;
       /** Ephemeral direct IPC only: never checkpoint, publish or broadcast. */
       credentials?: ForwardingWindowCredentials;
+    }
+  | {
+      operation: "probe";
+      id: string;
+      revision: string;
+      interaction: string;
+      review: ConnectionReview;
+      credentials?: PromptCredentials;
+    }
+  | {
+      operation: "trust";
+      id: string;
+      revision: string;
+      interaction: string;
+      review: ConnectionReview;
+      fingerprint: string;
+      expectedHostId: string;
+      credentials?: PromptCredentials;
     }
   | {
       operation: "save";

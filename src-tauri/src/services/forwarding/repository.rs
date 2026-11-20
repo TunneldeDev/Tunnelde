@@ -208,6 +208,20 @@ pub(crate) fn find_entry(app: &tauri::AppHandle, id: &str) -> AppResult<Revision
         .ok_or_else(|| AppError::validation("forward.missing"))
 }
 
+/// A private connection prompt may only inspect/approve the host of the exact
+/// rule it displayed. Call inside the same DB guard as the final publication.
+pub(crate) fn require_reviewed_host(
+    conn: &Connection,
+    id: &str,
+    revision: &str,
+    host_id: &str,
+) -> AppResult<()> {
+    match find(conn, id)? {
+        Some(entry) if entry.revision == revision && entry.rule.host_id == host_id => Ok(()),
+        _ => Err(AppError::validation("forward.changed")),
+    }
+}
+
 pub(crate) fn import_at(
     conn: &Connection,
     rule: &ForwardRule,

@@ -43,6 +43,14 @@ impl Observed {
         info: HostKeyInfo,
         check: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<Trusted> {
+        self.approve_checked(app, info, |_| check())
+    }
+    pub(crate) fn approve_checked(
+        self,
+        app: &AppHandle,
+        info: HostKeyInfo,
+        check: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
+    ) -> AppResult<Trusted> {
         let target = Target(self.0.approve(app, &info, check)?);
         Ok(target.trusted(info))
     }

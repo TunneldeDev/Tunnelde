@@ -302,3 +302,85 @@ fn reviewed_start_grammar_requires_original_consent_and_never_accepts_arbitrary_
         .contains(&action));
     registry.finish_native_action("forwarding", &action);
 }
+
+#[test]
+fn probe_and_trust_are_bounded_reviewed_interactions_not_generic_host_key_commands() {
+    let review = json!({"hostId":"host","revision":"a".repeat(64)});
+    for operation in ["probe", "trust"] {
+        let mut wire = json!({"operation":operation,"id":"rule","revision":"one","interaction":"original","review":review,"credentials":{"jump":{"password":"ephemeral"}}});
+        if operation == "trust" {
+            wire["fingerprint"] = json!("SHA256:observed");
+            wire["expectedHostId"] = json!("jump");
+        }
+        let request: Request = serde_json::from_value(wire.clone()).unwrap();
+        assert!(request.validate().is_ok());
+        assert_eq!(request.interaction(), Some("original"));
+        for field in ["id", "revision", "interaction"] {
+            let mut invalid = wire.clone();
+            invalid[field] = json!("");
+            assert!(serde_json::from_value::<Request>(invalid)
+                .unwrap()
+                .validate()
+                .is_err());
+        }
+        for (field, value) in [
+            ("origin", json!({"token":"provider"})),
+            ("window", json!("main")),
+            ("hostId", json!("foreign")),
+            ("request", json!({"purpose":"terminal"})),
+            ("credentials", json!({"jump":{"host":"foreign"}})),
+            ("credentials", json!({"password":"not-a-jump-map"})),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field] = value;
+            assert!(serde_json::from_value::<Request>(invalid).is_err());
+        }
+        for credentials in [
+            json!({"jump":{"password":"x".repeat(128*1024+1)}}),
+            json!({"":{"password":"x"}}),
+            json!({"jump\n":{"passphrase":"x"}}),
+            serde_json::Value::Object(
+                (0..9)
+                    .map(|n| (format!("jump{n}"), json!({"password":"x"})))
+                    .collect(),
+            ),
+            serde_json::Value::Object(
+                (0..5)
+                    .map(|n| (format!("jump{n}"), json!({"password":"x".repeat(128*1024)})))
+                    .collect(),
+            ),
+        ] {
+            let mut invalid = wire.clone();
+            invalid["credentials"] = credentials;
+            assert!(serde_json::from_value::<Request>(invalid)
+                .unwrap()
+                .validate()
+                .is_err());
+        }
+        let mut registry = Ownership::default();
+        let document = registry.register("main").unwrap();
+        registry.ready("main", &document).unwrap();
+        let lease = registry.add_panel("main", &document, "forwarding").unwrap();
+        let consent = registry
+            .begin_interaction("main", &document, &lease)
+            .unwrap();
+        wire["interaction"] = json!(consent);
+        let original: Request = serde_json::from_value(wire).unwrap();
+        let action = registry
+            .begin_forwarding("main", &document, &lease, &original)
+            .unwrap();
+        registry
+            .end_interaction("main", &document, &lease, &consent)
+            .unwrap();
+        registry
+            .begin_interaction("main", &document, &lease)
+            .unwrap();
+        assert!(registry
+            .forwarding_current("main", &document, &lease, &original)
+            .is_err());
+        assert!(registry.panels["forwarding"]
+            .native_actions
+            .contains(&action));
+        registry.finish_native_action("forwarding", &action);
+    }
+}

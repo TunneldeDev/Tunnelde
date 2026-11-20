@@ -436,6 +436,38 @@ it("captures exact deletion target and original confirmation before native deliv
   client.dispose();
 });
 
+it("captures native probe/trust review and jump credentials without a generic host-key fallback", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 2 };
+  for (const operation of ["probe", "trust"] as const) {
+    const common = {
+      id: "rule",
+      revision: "rule-revision",
+      interaction: "original-dialog",
+      review: { hostId: "host", revision: "a".repeat(64) },
+      credentials: { jump: { password: "request-local" } },
+    };
+    const request =
+      operation === "trust"
+        ? { ...common, operation, fingerprint: "SHA256:observed", expectedHostId: "jump" }
+        : { ...common, operation };
+    const expected = structuredClone(request);
+    native.invoke.mockRejectedValueOnce(new Error("original interaction expired"));
+    const pending = client.forwardingMutation(lease, request);
+    request.review.hostId = "replacement";
+    request.credentials.jump.password = "replacement-secret";
+    request.interaction = "replacement-dialog";
+    await expect(pending).rejects.toThrow("original interaction expired");
+    expect(native.invoke).toHaveBeenLastCalledWith("panel_window_forwarding", {
+      document: identity.document,
+      lease,
+      request: expected,
+    });
+  }
+  expect(native.invoke).toHaveBeenCalledTimes(2);
+  client.dispose();
+});
+
 it("keeps reviewed start credentials in the exact direct request without replaying raw SSH", async () => {
   const client = createPanelWindowClient(identity);
   const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 3 };

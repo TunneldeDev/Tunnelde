@@ -64,7 +64,7 @@ impl Observed {
         mut self,
         app: &AppHandle,
         info: &HostKeyInfo,
-        check: impl FnOnce() -> AppResult<()>,
+        check: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
     ) -> AppResult<Snapshot> {
         verify_dynamic(&self.0.nodes, |id| crate::services::hosts::resolve(app, id))?;
         app.state::<AppState>()
@@ -81,7 +81,7 @@ impl Snapshot {
         &mut self,
         conn: &rusqlite::Connection,
         info: &HostKeyInfo,
-        check: impl FnOnce() -> AppResult<()>,
+        check: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
     ) -> AppResult<()> {
         self.verify_saved(conn)?;
         let node = self
@@ -90,7 +90,7 @@ impl Snapshot {
             .find(|node| node.host.id == info.host_id)
             .ok_or_else(changed)?;
         let endpoint = (node.host.host.clone(), node.host.port);
-        check()?;
+        check(conn)?;
         db::known_hosts::upsert(
             conn,
             &endpoint.0,
