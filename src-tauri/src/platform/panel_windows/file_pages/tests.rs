@@ -267,3 +267,28 @@ fn closed_grammar_rejects_arbitrary_ipc_caller_selectors_and_unbounded_paths() {
     }
     .valid());
 }
+
+#[test]
+fn transfer_validation_checks_both_sources_and_paths_without_session_fallback() {
+    let valid = json!({"operation":"transfer","fromSource":{"kind":"local"},"fromPath":"/local/file",
+        "toSource":{"kind":"remote","sessionId":uuid::Uuid::new_v4().to_string()},
+        "toPath":"/remote/file","removeSource":false,"overwrite":false});
+    let operation: Operation = serde_json::from_value(valid.clone()).unwrap();
+    assert!(operation.valid());
+    assert!(operation.mutation());
+    assert_eq!(operation.sources().len(), 2);
+    for (field, value) in [
+        ("toPath", json!("bad\0path")),
+        ("fromPath", json!("")),
+        ("toSource", json!({"kind":"remote","sessionId":"invalid"})),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[field] = value;
+        assert!(!serde_json::from_value::<Operation>(invalid)
+            .unwrap()
+            .valid());
+    }
+    let mut unknown = valid;
+    unknown["windowId"] = json!("main");
+    assert!(serde_json::from_value::<Operation>(unknown).is_err());
+}

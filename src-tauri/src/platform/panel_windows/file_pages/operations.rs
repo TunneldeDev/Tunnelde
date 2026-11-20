@@ -47,7 +47,7 @@ struct Call {
     document: String,
     target: Target,
     binding: Arc<Binding>,
-    source: Source,
+    sources: Vec<Source>,
     fence: Option<(Lease, String)>,
 }
 impl Call {
@@ -73,23 +73,25 @@ impl Call {
                 return Err(native::invalid("stale file page effect"));
             }
         }
-        match &self.source {
-            Source::Local {} if self.binding.sources.local => {}
-            Source::Remote { session_id } => {
-                let expected = self
-                    .binding
-                    .sources
-                    .remote
-                    .get(session_id)
-                    .ok_or_else(|| native::invalid("unbound file page source"))?;
-                let state = self.app.state::<AppState>();
-                if !state.ssh.user_managed(session_id)
-                    || state.ssh.identity(session_id)? != *expected
-                {
-                    return Err(AppError::validation("ssh.sessionMissing"));
+        for source in &self.sources {
+            match source {
+                Source::Local {} if self.binding.sources.local => {}
+                Source::Remote { session_id } => {
+                    let expected = self
+                        .binding
+                        .sources
+                        .remote
+                        .get(session_id)
+                        .ok_or_else(|| native::invalid("unbound file page source"))?;
+                    let state = self.app.state::<AppState>();
+                    if !state.ssh.user_managed(session_id)
+                        || state.ssh.identity(session_id)? != *expected
+                    {
+                        return Err(AppError::validation("ssh.sessionMissing"));
+                    }
                 }
+                _ => return Err(native::invalid("unbound file page source")),
             }
-            _ => return Err(native::invalid("unbound file page source")),
         }
         // Only short synchronous admission/publication transactions belong here.
         // Never hold this lock across OS/network I/O.
@@ -153,7 +155,7 @@ pub(super) async fn execute(
         document,
         target,
         binding,
-        source: operation.source().clone(),
+        sources: operation.sources().into_iter().cloned().collect(),
         fence,
     });
     call.with_current(|| Ok(()))?;
@@ -235,12 +237,62 @@ async fn run(call: Arc<Call>, operation: Operation) -> AppResult<Value> {
             .await?;
             Value::Null
         }
+        Operation::Copy {
+            source,
+            from,
+            to,
+            overwrite,
+        } => {
+            call.with_current(|| Ok(()))?;
+            files::start_panel_transfer(
+                call.app.clone(),
+                endpoint(source.clone(), from),
+                endpoint(source, to),
+                false,
+                overwrite,
+                WorkLifetime::authorized(call.clone()),
+            )?
+            .wait()
+            .await?;
+            Value::Null
+        }
+        Operation::Transfer {
+            from_source,
+            from_path,
+            to_source,
+            to_path,
+            remove_source,
+            overwrite,
+        } => {
+            call.with_current(|| Ok(()))?;
+            let task = files::start_panel_transfer(
+                call.app.clone(),
+                endpoint(from_source, from_path),
+                endpoint(to_source, to_path),
+                remove_source,
+                overwrite,
+                WorkLifetime::authorized(call.clone()),
+            )?;
+            // Dropping this delivery receipt does not cancel the worker. The
+            // registry observation and actual worker both retain the origin.
+            json!(task.id)
+        }
         local => local_operation(&LOCAL, local).await?,
     };
     // Re-check read delivery after slow work; a retired source must not receive
     // a successor's listing. Mutations already retain their actual worker result.
     call.with_current(|| Ok(()))?;
     Ok(result)
+}
+
+fn endpoint(source: Source, path: String) -> files::Endpoint {
+    files::Endpoint {
+        session: match source {
+            Source::Local {} => None,
+            Source::Remote { session_id } => Some(session_id),
+        },
+        path,
+    }
 }
 
 async fn local_operation(budget: &Budget, operation: Operation) -> AppResult<Value> {

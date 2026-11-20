@@ -878,7 +878,7 @@ pub fn spawn_transfer(
     remove_source: bool,
     overwrite: bool,
 ) -> AppResult<String> {
-    spawn_transfer_inner(app, from, to, remove_source, overwrite, None).map(|task| task.id)
+    spawn_transfer_inner(app, from, to, remove_source, overwrite, None, None).map(|task| task.id)
 }
 
 pub(crate) fn spawn_plugin_transfer(
@@ -890,7 +890,7 @@ pub(crate) fn spawn_plugin_transfer(
 ) -> AppResult<String> {
     // Plugin transfers copy only; deleting the source requires a separate,
     // explicitly permitted file operation.
-    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner)).map(|task| task.id)
+    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner), None).map(|task| task.id)
 }
 
 /// Compatibility copy commands wait for the same journaled worker used by
@@ -933,7 +933,7 @@ pub(crate) fn start_copy(
     overwrite: bool,
     owner: Option<crate::plugins::security::Lease>,
 ) -> AppResult<TransferTask> {
-    spawn_transfer_inner(app, from, to, false, overwrite, owner)
+    spawn_transfer_inner(app, from, to, false, overwrite, owner, None)
 }
 
 /// Only the UI's confirmed local rename fallback uses this copy-based move.
@@ -958,7 +958,23 @@ pub(crate) fn start_local_move(
         true,
         overwrite,
         None,
+        None,
     )
+}
+
+/// Native file pages retain the original document/source authority in the
+/// actual transfer worker AND every queued mutation observation. Returning an
+/// asynchronous task ID or dropping a completion receiver never releases it.
+pub(crate) fn start_panel_transfer(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    remove_source: bool,
+    overwrite: bool,
+    origin: crate::services::operations::WorkLifetime,
+) -> AppResult<TransferTask> {
+    origin.with(|| Ok(()))?;
+    spawn_transfer_inner(app, from, to, remove_source, overwrite, None, Some(origin))
 }
 
 fn spawn_transfer_inner(
@@ -968,6 +984,7 @@ fn spawn_transfer_inner(
     remove_source: bool,
     overwrite: bool,
     owner: Option<crate::plugins::security::Lease>,
+    origin: Option<crate::services::operations::WorkLifetime>,
 ) -> AppResult<TransferTask> {
     if from.session == to.session && from.path == to.path {
         return Err(AppError::validation("sftp.samePath"));
@@ -999,6 +1016,16 @@ fn spawn_transfer_inner(
             .get_mut(&id)
             .ok_or_else(|| AppError::validation("sftp.transferBusy"))?
             .lease = Some(lease.clone());
+    }
+    if let Some(origin) = &origin {
+        if let Err(error) = app
+            .state::<AppState>()
+            .transfers
+            .bind_worker_origin(&id, origin.clone())
+        {
+            app.state::<AppState>().transfers.release(&id);
+            return Err(error);
+        }
     }
     let recorded = (|| -> AppResult<()> {
         let sessions = app.state::<AppState>().ssh.list();
@@ -1057,7 +1084,8 @@ fn spawn_transfer_inner(
     let transfer_id = id.clone();
     let (completed, completion) = tokio::sync::oneshot::channel();
     let receipt_app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    let origin = origin.unwrap_or_default();
+    tauri::async_runtime::spawn(origin.scope(async move {
         let app_handle = app.clone();
         let operation = run(
             &app_handle,
@@ -1089,7 +1117,7 @@ fn spawn_transfer_inner(
         finish(&app_handle, &transfer_id, &name, &outcome).await;
         notify_transfer_files(&app_handle, &from, &to, remove_source);
         let _ = completed.send(outcome.into_result());
-    });
+    }));
 
     Ok(TransferTask {
         id,
@@ -2788,6 +2816,9 @@ async fn run(
         Ok(observation) => observation,
         Err(error) => return Outcome::Failed(0, error),
     };
+    if let Err(error) = observation.authorize() {
+        return Outcome::from_result(Err(error), 0, cancel);
+    }
     let scheduler = app.state::<AppState>().transfers.scheduler.clone();
     let settings = app.state::<AppState>().settings();
     let archive_channels = options.durable && !options.overwrite && settings.transfer_optimization;
@@ -2813,6 +2844,9 @@ async fn run(
         Ok(permit) => permit,
         Err(error) => return Outcome::from_result(Err(error), 0, cancel),
     };
+    if let Err(error) = observation.authorize() {
+        return Outcome::from_result(Err(error), 0, cancel);
+    }
     phase(app, id, "preparing");
     let TransferOptions {
         remove_source,
