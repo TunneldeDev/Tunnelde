@@ -1411,3 +1411,21 @@ this acceptance.
 
 A naturally closed, still-open terminal tab retains a transferable render-only
 binding. This does not reopen the PTY or grant write/resize authority after exit.
+
+### File-page resource boundary
+
+`SftpPageView` is the shared production file renderer. Its required
+`FilePageServices` supplies explicit session/host/file-preference read models,
+filesystem operations, workspace/clipboard/search/preview effects, plugin menus,
+provider surfaces, native file drops and shortcut routing. The main-only wrapper
+provides the existing store/IPC services; a satellite must supply leased services
+and must not hydrate writable main stores. Breadcrumb child-folder reads use the
+same supplied backend, not an implicit global filesystem. `createFileSystem`
+routes every operation through its supplied backend and never retries a rejected
+operation through main IPC.
+
+This separation preserves the current main file-page behavior. It does not yet
+admit SFTP tabs to native windows: exact native resource registration, effect
+fences, scoped actions/provider integration, state handoff and actual SSH/SFTP
+window acceptance are still required. Keep the entry hidden until those pieces
+are connected; do not substitute a read-only demo for the full file workflow.

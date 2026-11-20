@@ -14,11 +14,13 @@ function ChildFolders({
   source,
   view,
   onNavigate,
+  list,
 }: {
   path: string;
   source: FsSource;
   view: FileViewPreferences;
   onNavigate: (path: string) => void;
+  list: typeof fs.list;
 }) {
   const { t, i18n } = useTranslation();
   const [result, setResult] = useState<{ entries?: FileEntry[]; error?: string }>({});
@@ -38,7 +40,7 @@ function ChildFolders({
     const version = ++request.current;
     setResult({});
     try {
-      const listing = await fs.list(source, path);
+      const listing = await list(source, path);
       if (request.current === version) setResult({ entries: listing.entries });
     } catch (error) {
       if (request.current === version) setResult({ error: translateError(error) });
@@ -83,6 +85,7 @@ export function FilePathBar({
   onEditing,
   onFinishEditing,
   onNavigate,
+  list = fs.list,
 }: {
   source: FsSource;
   path: string;
@@ -95,6 +98,7 @@ export function FilePathBar({
   onEditing: (editing: boolean) => void;
   onFinishEditing: () => void;
   onNavigate: (path: string) => void;
+  list?: typeof fs.list;
 }) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
@@ -222,6 +226,7 @@ export function FilePathBar({
                     {crumb.name}
                   </button>
                   <ChildFolders
+                    list={list}
                     key={`${sourceKey(source)}:${crumb.path}`}
                     path={crumb.path}
                     source={source}
