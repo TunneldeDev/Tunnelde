@@ -7,6 +7,7 @@ All notable changes to Tunnelde are documented here. The format follows
 ## [Unreleased]
 
 - 独立窗口中的插件支持创建一次性 SSHFS 挂载；启动失败或结果丢失会清理自身进程和通道，不断开借用的 SSH 会话。Plugins in native panel windows can create one-off SSHFS mounts, with owned startup cleanup that preserves the borrowed SSH session.
+- 后台任务插件界面支持独立窗口迁移，保留草稿和任务状态，操作受权限保护且不会重复启动插件。Background-task interface providers support native window handoff with preserved drafts/task state and permission-checked actions, without replaying plugin activation.
 
 - 面板独立窗口预览：连接、后台任务、输出、已知主机和端口转发面板，以及兼容的侧栏插件视图可在窗口间移动；迁移保留受支持的视图状态。其他页面及无工厂旧插件视图的跨窗口适配仍在进行。Native panel-window preview supports connections, background tasks, output, known hosts, forwarding and compatible sidebar plugin views with supported view-state transfer; other pages and legacy factoryless views remain in progress.
 - 改进挂载目录浏览、状态读取、打开和卸载，复用原 SSH 连接并在取消操作后完成资源清理。Improve mount browsing, snapshots, opening and teardown while reusing the original SSH connection and completing resource cleanup after cancellation.

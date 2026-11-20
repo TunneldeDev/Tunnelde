@@ -148,10 +148,32 @@ cannot race the platform destroy call. Frontend cancel/reload cannot release tha
 reservation; only native failure cleanup or actual destruction can.
 
 Other built-ins/plugin views and native cross-window drag-and-drop still need
-their adapters and platform acceptance. Transfer-specific reconnect/consent UI and
-plugin task presentation providers still require window-aware adapters. Do not
+their adapters and platform acceptance. Other resource-specific interfaces still
+require window-aware adapters. Do not
 advertise those capabilities or widen gateway permissions to hide an incomplete adapter.
 The public plugin workspace v1 contract remains unchanged.
+
+### Background-task interface providers
+
+Tasks retain the main window's single task registry. The selected `backgroundTasks`
+provider uses native-issued display identity and target-specific permissions, not
+forwarding permissions. Satellites instantiate scoped `createView` children without
+replaying singleton activation. Main, staged and returned views share the state
+capsule; commit waits for actual restoration/rendering. Factoryless legacy views
+still reject transfer explicitly instead of silently dropping drafts.
+
+`backgroundTasks.read` admits display; `backgroundTasks.write` admits actions.
+Staged targets are read-only; stale leases, hidden replaced trees and frozen
+sources cannot mutate. Submission binds the exact document, child view and lease
+to the existing bounded action queue. Main resolves the task incarnation ticket
+before calling its original registry callback. Tickets/callbacks never enter
+public plugin APIs, capsules or metadata events. Late receipts still cancel
+unclaimed work after view disposal.
+
+Native macOS acceptance covers two main-to-satellite-to-main roundtrips, restored
+drafts and satellite actions with one singleton activation. This is explicit
+handoff acceptance, not physical multi-display dragging, Windows/Linux or FUSE
+continuity.
 
 ### Interrupted coordinator and bounded view state
 

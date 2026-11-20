@@ -9,7 +9,7 @@ use crate::{
     state::AppState,
 };
 pub(crate) use policy::{call_policy, CallPolicy};
-pub(crate) use provider::{selected_forwarding_source, ProviderSelection};
+pub(crate) use provider::{selected_forwarding_source, selected_tasks_source, ProviderSelection};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
@@ -71,7 +71,7 @@ async fn source_for(
                 && v.kind.as_deref() == Some("component")
                 && match &provider {
                     None => v.location.as_deref() == Some("sidebar") && v.provider.is_none(),
-                    Some(_) => v.provider.as_deref() == Some("forwarding"),
+                    Some(selection) => v.provider.as_deref() == Some(selection.target()),
                 }
         })
         .ok_or_else(|| AppError::validation("plugin.frontend.undeclaredContribution"))?;
@@ -167,11 +167,11 @@ impl Source {
         operation: impl FnOnce() -> AppResult<T>,
     ) -> AppResult<T> {
         let state = app.state::<AppState>();
-        let permissions: &[&str] = if self.provider.is_some() {
-            &["ui.trusted", "hosts.read", "forwards.read"]
-        } else {
-            &["ui.trusted"]
-        };
+        let permissions = self
+            .provider
+            .as_ref()
+            .map(|p| p.permissions())
+            .unwrap_or(&["ui.trusted"]);
         let permissions: Vec<_> = permissions.iter().chain(additional).copied().collect();
         state
             .plugins
@@ -192,6 +192,12 @@ impl Source {
                     operation()
                 }
             })
+    }
+    #[cfg(test)]
+    pub(crate) fn test_tasks_source(lease: Lease, revision: u64) -> Self {
+        let mut source = Self::test_source(lease, "runtime", "tasks", true, "private-singleton");
+        source.provider = Some(ProviderSelection::test_tasks_selection(revision));
+        source
     }
     #[cfg(test)]
     pub(crate) fn test_forwarding_source(lease: Lease, revision: u64) -> Self {

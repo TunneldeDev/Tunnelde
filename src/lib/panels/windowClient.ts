@@ -35,6 +35,28 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
     check();
     return result;
   };
+  const receiveAction = async <T = unknown>(id: string, signal?: AbortSignal): Promise<T> => {
+    let completed = false;
+    try {
+      for (;;) {
+        check();
+        if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+        const result = await control<PanelActionResult | null>({ action: "actionResult", id });
+        if (result) {
+          completed = true;
+          if (result.status === "failed") throw new Error(result.message);
+          return result.value as T;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+    } finally {
+      if (!completed)
+        await invoke("panel_window_control", {
+          document: identity.document,
+          request: { action: "cancelAction", id },
+        }).catch(() => {});
+    }
+  };
   return {
     windowId: identity.windowId,
     /** One attachment client per document; never expose its document identity. */
@@ -175,27 +197,10 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
         document: identity.document,
         request: { action: "requestAction", lease, request },
       });
-      let completed = false;
-      try {
-        for (;;) {
-          check();
-          if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-          const result = await control<PanelActionResult | null>({ action: "actionResult", id });
-          if (result) {
-            completed = true;
-            if (result.status === "failed") throw new Error(result.message);
-            return result.value as T;
-          }
-          await new Promise<void>((resolve) => setTimeout(resolve, 50));
-        }
-      } finally {
-        if (!completed)
-          await invoke("panel_window_control", {
-            document: identity.document,
-            request: { action: "cancelAction", id },
-          }).catch(() => {});
-      }
+      return receiveAction<T>(id, signal);
     },
+    receiveAction,
+
     async forwardingMutation<T = unknown>(
       lease: PanelLease,
       request: ForwardingWindowMutation,

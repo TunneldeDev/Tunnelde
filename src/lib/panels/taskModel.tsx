@@ -1,3 +1,4 @@
+import type { WindowProviderOwner } from "./windowProviderSource";
 import { translateError } from "@/lib/api/errors";
 import { usePanelWindows } from "@/store/panelWindows";
 import { windowViews } from "./windowViews";
@@ -17,6 +18,7 @@ export interface TransferPanelModel {
   action: <T>(request: TransferWindowAction) => Promise<T>;
 }
 export interface TaskPanelModel {
+  providerOwner?: WindowProviderOwner;
   transfers?: TransferPanelModel;
   items: readonly BackgroundTaskEntry[];
   viewKey: (task: BackgroundTaskEntry) => string;

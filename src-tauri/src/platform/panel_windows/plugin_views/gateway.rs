@@ -24,6 +24,23 @@ pub(crate) enum Request {
         lease: super::super::ownership::Lease,
         request: super::super::forwarding::request::Request,
     },
+    DescribeTasksProvider {
+        target: Target,
+    },
+    OpenTasksProvider {
+        target: Target,
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+        selection_revision: u64,
+    },
+    SubmitTasksProviderAction {
+        token: String,
+        lease: super::super::ownership::Lease,
+        key: String,
+        ticket: String,
+        action_id: String,
+    },
     DescribeForwardingProvider {
         target: Target,
     },
@@ -127,6 +144,46 @@ pub(crate) async fn panel_window_plugin_view(
                 request,
             )
             .await
+        }
+        Request::DescribeTasksProvider { target } => {
+            super::task_provider::describe(app, window.label(), &document, target).await
+        }
+        Request::OpenTasksProvider {
+            target,
+            plugin_id,
+            runtime_id,
+            view_id,
+            selection_revision,
+        } => {
+            super::task_provider::open(
+                app,
+                (window.label(), &document),
+                target,
+                plugin_id,
+                runtime_id,
+                view_id,
+                selection_revision,
+            )
+            .await
+        }
+        Request::SubmitTasksProviderAction {
+            token,
+            lease,
+            key,
+            ticket,
+            action_id,
+        } => {
+            let id = super::task_provider::submit(
+                app,
+                (window.label(), &document),
+                &lease,
+                &token,
+                key,
+                ticket,
+                action_id,
+            )?;
+            native::changed(app);
+            Ok(json!(id))
         }
         Request::DescribeForwardingProvider { target } => {
             super::provider::describe(app, window.label(), &document, target).await

@@ -141,6 +141,9 @@ impl Ownership {
         if let Some(binding) = &view.provider {
             binding.check(app)?;
         }
+        if let Some(source) = &view.tasks_provider {
+            source.with_current(app, || Ok(()))?;
+        }
         Ok(())
     }
     fn bind_forwarding_provider(
@@ -153,7 +156,11 @@ impl Ownership {
         now: Instant,
     ) -> Result<()> {
         self.forwarding_provider_target(caller.0, caller.1, &target, now)?;
-        if source.provider_selection().is_none() || !source.descriptor().allow_floating {
+        if source
+            .provider_selection()
+            .is_none_or(|p| p.target() != "forwarding")
+            || !source.descriptor().allow_floating
+        {
             return Err("plugin.frontend.undeclaredContribution");
         }
         self.insert_native_view(
