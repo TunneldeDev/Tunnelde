@@ -999,3 +999,16 @@ Refreshing a satellite display copy alone would not reload backend data. The
 renderer route is implemented separately from transfer/discovery admission;
 forwarding remains outside the transferable adapter allowlist pending complete
 state/readiness and real native handoff acceptance.
+
+Selected-provider discovery registers a private readiness field in a child layout
+effect, before the destination's parent checks admission. Metadata loading is not
+readiness: the existing capture controller also waits for the actual factory's
+module import, state restoration and committed renderer, including fields added
+during that wait. Explicit no-provider metadata admits the builtin surface;
+discovery, import, restore or render failures reject staging rather than admitting
+an error/loading shell or silently falling back. An unmounted readiness binding
+rejects its original waiters and cannot be revived by late discovery. Explicit
+retry creates a fresh provider factory; old rejected waits stay rejected.
+The `forwarding.selection` capture field is only a null admission marker, never
+plugin state, credentials or action authority. These readiness tests do not replace
+real native handoff acceptance or enable the transferable adapter allowlist.

@@ -132,7 +132,12 @@ export function createWindowForwardingProviderSource(
           } catch (error) {
             // A failed discovery read is not proof of a selection change. Keep
             // the actual draft/attachment; native effects still reauthorize.
-            if (!stopped) publish({ loading: false, source: current, error });
+            if (!stopped)
+              publish({
+                loading: false,
+                source: current,
+                error: error ?? new Error("plugin.frontend.viewUnavailable"),
+              });
           } finally {
             running = false;
             if (queued && !stopped) refresh();
@@ -162,7 +167,12 @@ export function createWindowForwardingProviderSource(
             }
           },
           (error) => {
-            if (!stopped) publish({ loading: false, source: current, error });
+            if (!stopped)
+              publish({
+                loading: false,
+                source: current,
+                error: error ?? new Error("plugin.frontend.viewUnavailable"),
+              });
           },
         );
       refresh();

@@ -1,7 +1,15 @@
-import { Component, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import {
+  Component,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { translateError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
+import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
 import { Button } from "@/components/ui/form/Button";
 import {
   ForwardingSurfaceBody,
@@ -17,7 +25,7 @@ import type { createWindowForwardingActions } from "../runtime/windowActions";
 
 type Service = ReturnType<typeof createWindowForwardingActions>;
 class Boundary extends Component<
-  { children: ReactNode; failed(error: unknown): ReactNode },
+  { children: ReactNode; failed(error: unknown): ReactNode; onFailure(error: unknown): void },
   { error: { cause: unknown } | null }
 > {
   override state = { error: null as { cause: unknown } | null };
@@ -26,6 +34,7 @@ class Boundary extends Component<
   }
   override componentDidCatch(error: unknown) {
     reportError("panels.forwarding", "nativeProvider.render", error);
+    this.props.onFailure(error);
   }
   override render() {
     return this.state.error ? this.props.failed(this.state.error.cause) : this.props.children;
@@ -51,6 +60,12 @@ function SelectedProvider({
     [owner, context.snapshot.hostId],
   );
   const snapshot = useSyncExternalStore(selection.subscribe, selection.snapshot);
+  const [renderFailure, setRenderFailure] = useState<{ id: string; cause: unknown } | null>(null);
+  const discoveryFailed = snapshot.error !== null;
+  const cause =
+    snapshot.error ??
+    (renderFailure?.id === snapshot.source?.id ? renderFailure?.cause : undefined);
+  usePanelReadiness("forwarding.selection", !snapshot.loading && cause === undefined, cause);
   useEffect(() => selection.start(), [selection]);
   const source = snapshot.source;
   const scopeOwner = useMemo(() => source && { service, check: source.check }, [source, service]);
@@ -63,7 +78,7 @@ function SelectedProvider({
     </div>
   );
   if (!source)
-    return snapshot.error ? (
+    return discoveryFailed ? (
       failed(snapshot.error)
     ) : snapshot.loading ? (
       <p role="status">{t("common.loading")}</p>
@@ -73,8 +88,17 @@ function SelectedProvider({
   const View = source.View;
   return (
     <>
-      {snapshot.error ? failed(snapshot.error) : null}
-      <Boundary key={source.id} failed={failed}>
+      {discoveryFailed ? failed(snapshot.error) : null}
+      <Boundary
+        key={source.id}
+        failed={failed}
+        onFailure={(cause) =>
+          setRenderFailure({
+            id: source.id,
+            cause: cause ?? new Error("plugin.frontend.viewUnavailable"),
+          })
+        }
+      >
         <WindowForwardingProviderScope value={{ owner: scopeOwner!, context }}>
           <View
             pluginId={source.descriptor.view.pluginId}

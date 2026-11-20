@@ -1,5 +1,5 @@
 import "@/i18n/i18n";
-import { useState } from "react";
+import { StrictMode, useLayoutEffect, useState, type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { WindowForwardingPanel } from "@/features/forwarding/components/WindowForwardingPanel";
@@ -103,6 +103,9 @@ function fixture(staged = true, capsule?: PanelViewCapsule) {
   const activate = vi.fn();
   const disposeInstance = vi.fn();
   let savedDraft = "seed";
+  const restore = vi.fn(async (value: unknown) => {
+    savedDraft = (value as { draft: string }).draft;
+  });
   const createView = vi.fn(() => ({
     component: function Provider({ forwarding: next }: FrontendViewProps) {
       forwarding = next!;
@@ -123,20 +126,20 @@ function fixture(staged = true, capsule?: PanelViewCapsule) {
       );
     },
     captureState: () => ({ draft: savedDraft }),
-    restoreState: (value: unknown) => {
-      savedDraft = (value as { draft: string }).draft;
-    },
+    restoreState: restore,
     dispose: disposeInstance,
   }));
+  let childSerial = 0;
   const invoke = vi.fn(async (_command: string, { request }: { request: { action: string } }) => {
     if (request.action === "describeForwardingProvider") return descriptor;
     if (request.action === "openForwardingProvider")
-      return { ...descriptor.view, token: "original-child" };
+      return { ...descriptor.view, token: `native-child-${++childSerial}` };
     return null;
   });
+  const load = vi.fn(async () => ({ activate, createView }));
   const provider = createNativePluginViewClient(
     { windowId: "satellite", document: "document" },
-    { invoke: invoke as never, load: async () => ({ activate, createView }), report: vi.fn() },
+    { invoke: invoke as never, load, report: vi.fn() },
   );
   const mutation = vi.fn(async () => ({ id: "group" }));
   const refresh = vi.fn(async () => null);
@@ -173,6 +176,9 @@ function fixture(staged = true, capsule?: PanelViewCapsule) {
     activate,
     disposeInstance,
     invoke,
+    descriptor,
+    load,
+    restore,
     mutation,
     refresh,
     forwarding: () => forwarding,
@@ -257,7 +263,7 @@ it("captures and restores provider state, selected host and builtin editor field
   const wire = JSON.stringify(capsule);
   expect(wire).toContain("portable provider draft");
   expect(wire).toContain("Unsaved rule");
-  expect(wire).not.toContain("original-child");
+  expect(wire).not.toContain("native-child-");
   expect(wire).not.toContain("document");
   view.unmount();
   const destination = fixture(true, capsule);
@@ -296,4 +302,258 @@ it("renders and edits builtin rules only after native discovery explicitly selec
     }),
   ]);
   expect(f.activate).not.toHaveBeenCalled();
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+function ParentReadiness({
+  controller,
+  report,
+  children,
+}: {
+  controller: ReturnType<typeof createPanelViewState>;
+  report: (work: Promise<void>) => void;
+  children: ReactNode;
+}) {
+  useLayoutEffect(() => {
+    expect(controller.hasReadiness()).toBe(true);
+    report(controller.waitReady(new AbortController().signal));
+  }, [controller, report]);
+  return children;
+}
+it("registers before a parent layout check and waits for delayed metadata, module load and actual restored factory render", async () => {
+  // Restore a real source capsule so the destination must complete restoreState.
+  const source = fixture(false);
+  const originalView = render(source.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  await screen.findByText("Real native provider");
+  const capsule = await source.controller.captureAsync();
+  originalView.unmount();
+  const f = fixture(true, capsule),
+    metadata = deferred<typeof f.descriptor>();
+  const module = deferred<Awaited<ReturnType<typeof f.load>>>(),
+    restored = deferred<void>();
+  f.invoke.mockImplementation(async (_command, { request }) =>
+    request.action === "describeForwardingProvider"
+      ? metadata.promise
+      : request.action === "openForwardingProvider"
+        ? { ...f.descriptor.view, token: "original-child" }
+        : null,
+  );
+  const actualModule = await f.load();
+  f.load.mockReturnValue(module.promise);
+  f.restore.mockReturnValue(restored.promise);
+  let complete = false,
+    waiting!: Promise<void>;
+  const report = (work: Promise<void>) => {
+    waiting = work.then(() => {
+      complete = true;
+    });
+  };
+  render(
+    <ParentReadiness controller={f.controller} report={report}>
+      {f.tree()}
+    </ParentReadiness>,
+  );
+  await Promise.resolve();
+  expect(complete).toBe(false);
+  await act(async () => {
+    metadata.resolve(f.descriptor);
+  });
+  await waitFor(() => expect(f.load).toHaveBeenCalledTimes(2));
+  expect(complete).toBe(false);
+  expect(f.createView).not.toHaveBeenCalled();
+  await act(async () => {
+    module.resolve(actualModule);
+  });
+  await waitFor(() => expect(f.restore).toHaveBeenCalledOnce());
+  expect(complete).toBe(false);
+  expect(screen.queryByText("Real native provider")).toBeNull();
+  await act(async () => {
+    restored.resolve();
+  });
+  await waiting;
+  expect(screen.getByText("Real native provider")).toBeTruthy();
+  expect(complete).toBe(true);
+  expect(f.activate).not.toHaveBeenCalled();
+});
+it("discovery failures reject actual staged readiness instead of acknowledging a loading/error shell", async () => {
+  const f = fixture();
+  f.invoke.mockRejectedValue(new Error("discovery unavailable"));
+  render(f.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  await act(async () => {
+    await expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow(
+      "discovery unavailable",
+    );
+  });
+  expect(f.createView).not.toHaveBeenCalled();
+  expect(screen.queryByText("No forwarding rules yet")).toBeNull();
+});
+it.each([undefined, null, false, 0, ""])(
+  "a falsy discovery rejection (%s) is still a failed stage, not explicit no-provider consent",
+  async (error) => {
+    const f = fixture();
+    f.invoke.mockRejectedValue(error);
+    render(f.tree());
+    fireEvent.click(screen.getByRole("button", { name: "Server" }));
+    const rejected = f.controller.waitReady(new AbortController().signal).then(
+      () => "unexpectedly ready",
+      () => "rejected",
+    );
+    await screen.findByRole("alert");
+    expect(await rejected).toBe("rejected");
+    expect(f.createView).not.toHaveBeenCalled();
+    expect(screen.queryByText("No forwarding rules yet")).toBeNull();
+  },
+);
+it("unmounting a pending discovery rejects the original readiness and never mounts its late provider", async () => {
+  const f = fixture(),
+    metadata = deferred<typeof f.descriptor>();
+  f.invoke.mockImplementation(async () => metadata.promise);
+  const view = render(f.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  const rejected = expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow(
+    "cancelled",
+  );
+  view.unmount();
+  await rejected;
+  await act(async () => {
+    metadata.resolve(f.descriptor);
+  });
+  expect(f.createView).not.toHaveBeenCalled();
+  expect(f.activate).not.toHaveBeenCalled();
+});
+
+it("explicit no-provider discovery resolves staged readiness without attaching a plugin", async () => {
+  const f = fixture(),
+    metadata = deferred<null>();
+  f.invoke.mockImplementation(async () => metadata.promise);
+  render(f.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  let done = false;
+  const waiting = f.controller.waitReady(new AbortController().signal).then(() => {
+    done = true;
+  });
+  await Promise.resolve();
+  expect(done).toBe(false);
+  await act(async () => {
+    metadata.resolve(null);
+  });
+  await waiting;
+  expect(screen.getByText("No forwarding rules yet")).toBeTruthy();
+  expect(f.createView).not.toHaveBeenCalled();
+});
+it("a selected module import failure rejects staged readiness and never renders builtin fallback as accepted content", async () => {
+  const f = fixture();
+  f.load.mockRejectedValue(new Error("module import failed"));
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    render(f.tree());
+    fireEvent.click(screen.getByRole("button", { name: "Server" }));
+    await act(async () => {
+      await expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow();
+    });
+    await screen.findByRole("alert");
+    await expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow();
+    expect(screen.queryByText("No forwarding rules yet")).toBeNull();
+    expect(f.createView).not.toHaveBeenCalled();
+  } finally {
+    errors.mockRestore();
+  }
+});
+it("StrictMode restarts readiness bindings without duplicate capture keys or reviving abandoned discovery waits", async () => {
+  const f = fixture();
+  render(<StrictMode>{f.tree()}</StrictMode>);
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  const waiting = f.controller.waitReady(new AbortController().signal);
+  await screen.findByText("Real native provider");
+  await waiting;
+  expect(screen.getByText("Real native provider")).toBeTruthy();
+  expect(f.activate).not.toHaveBeenCalled();
+  expect(f.mutation).not.toHaveBeenCalled();
+});
+
+it("a real provider render failure cannot resolve staged readiness merely because its module loaded", async () => {
+  const f = fixture();
+  const instance = f.createView();
+  f.createView.mockClear();
+  f.createView.mockReturnValue({
+    ...instance,
+    component: () => {
+      throw new Error("provider render failed");
+    },
+  });
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    render(f.tree());
+    fireEvent.click(screen.getByRole("button", { name: "Server" }));
+    const rejected = expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow();
+    await screen.findByRole("alert");
+    await rejected;
+    await expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow(
+      "provider render failed",
+    );
+    expect(screen.queryByText("No forwarding rules yet")).toBeNull();
+    // A new explicit selection attempt must get a new factory/readiness owner;
+    // neither the rejected wait nor the error boundary may revive itself.
+    f.createView.mockReturnValue(instance);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Real native provider");
+    await f.controller.waitReady(new AbortController().signal);
+    expect(f.activate).not.toHaveBeenCalled();
+  } finally {
+    errors.mockRestore();
+  }
+});
+it("a rejected provider restore never acknowledges destination readiness", async () => {
+  const source = fixture(false);
+  const sourceView = render(source.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  await screen.findByText("Real native provider");
+  const capsule = await source.controller.captureAsync();
+  sourceView.unmount();
+  const f = fixture(true, capsule);
+  f.restore.mockRejectedValue(new Error("provider restore failed"));
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    render(f.tree());
+    const rejected = expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow();
+    await screen.findByRole("alert");
+    await rejected;
+    expect(f.restore).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Real native provider")).toBeNull();
+    expect(screen.queryByText("No forwarding rules yet")).toBeNull();
+    await expect(f.controller.waitReady(new AbortController().signal)).rejects.toThrow();
+    expect(f.activate).not.toHaveBeenCalled();
+  } finally {
+    errors.mockRestore();
+  }
+});
+it("capture cannot silently omit a provider discovered while its original capture was waiting", async () => {
+  const f = fixture(),
+    metadata = deferred<typeof f.descriptor>();
+  f.invoke.mockImplementation(async (_, { request }) =>
+    request.action === "describeForwardingProvider"
+      ? metadata.promise
+      : request.action === "openForwardingProvider"
+        ? { ...f.descriptor.view, token: "late-capture-child" }
+        : null,
+  );
+  render(f.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  const rejected = expect(f.controller.captureAsync()).rejects.toThrow("changedDuringCapture");
+  await act(async () => {
+    metadata.resolve(f.descriptor);
+  });
+  await rejected;
+  await screen.findByText("Real native provider");
+  const captured = await f.controller.captureAsync();
+  expect(JSON.stringify(captured)).toContain("plugin.factory");
+  expect(JSON.stringify(captured)).not.toContain("late-capture-child");
 });
