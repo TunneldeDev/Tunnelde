@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPanelViewState, PanelViewStateScope } from "@/lib/panels/viewState";
 import i18n from "@/i18n/i18n";
 import PdfPreview from "@/features/sftp/PdfPreview";
 
@@ -83,4 +84,21 @@ describe("PDF preview continuity", () => {
     expect(getDocument).toHaveBeenCalledTimes(1);
     expect(passwordLoading.destroy).toHaveBeenCalledTimes(1);
   });
+});
+
+it("restores a bounded PDF page and zoom and clamps an obsolete page to the actual document", async () => {
+  const controller = createPanelViewState({
+    version: 1,
+    fields: { "pdf.page": 30, "pdf.zoom": 1.75 },
+  });
+  const view = render(
+    <PanelViewStateScope controller={controller}>
+      <PdfPreview url="preview://localhost/restored" size={1000} />
+    </PanelViewStateScope>,
+  );
+  await waitFor(() => expect(document.getPage).toHaveBeenLastCalledWith(3));
+  expect(screen.getByText("175%")).toBeTruthy();
+  expect(controller.capture()).toMatchObject({ fields: { "pdf.page": 3, "pdf.zoom": 1.75 } });
+  expect(getDocument).toHaveBeenCalledOnce();
+  view.unmount();
 });

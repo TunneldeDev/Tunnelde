@@ -1,3 +1,4 @@
+import { startPreviewWindowPublication } from "@/features/sftp/preview/windowPublication";
 import { createForwardingReadSource } from "@/features/forwarding/data/readSource";
 import type { ForwardingReadData } from "@/features/forwarding/data/readModel";
 import { startPluginPanelAppearance } from "./pluginPanelAppearance";
@@ -112,6 +113,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       ) as WindowAppearance,
     };
   };
+  const preview = startPreviewWindowPublication(client, appearance, failure);
   const publish = (panelId: "connections" | "tasks" | "output" | "knownHosts" | "forwarding") => {
     if (disposed) return;
     let state = publishers.get(panelId);
@@ -184,6 +186,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
   const connections = () => publish("connections"),
     tasks = () => publish("tasks"),
     both = () => {
+      preview.refresh();
       connections();
       tasks();
       publish("output");
@@ -218,6 +221,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
   both();
   return () => {
     disposed = true;
+    preview.dispose();
     for (const cleanup of cleanups) cleanup();
     i18n.off("languageChanged", both);
     stopRemoteOutput?.();

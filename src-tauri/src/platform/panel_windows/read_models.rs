@@ -30,7 +30,11 @@ impl Ownership {
         self.main(window, document)?;
         // Output retains bounded UTF-8 entries plus JSON row metadata. View
         // draft capsules keep their separate stricter 1 MiB limit.
-        let limit = if panel_id == "output" {
+        // A decoded preview is <=2MiB UTF-8, but JSON escaping can
+        // expand each byte sixfold. This is not a view draft/capsule.
+        let limit = if panel_id == "filePreview" {
+            16 * 1024 * 1024
+        } else if panel_id == "output" {
             2 * 1024 * 1024
         } else {
             1024 * 1024
@@ -247,5 +251,53 @@ mod producer_tests {
             registry.read_model("main", &main, &lease).unwrap(),
             json!("next")
         );
+    }
+}
+
+#[cfg(test)]
+mod preview_model_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn escaped_preview_text_has_a_separate_bounded_model_budget_not_a_larger_draft_capsule() {
+        let mut registry = Ownership::default();
+        let main = registry.register("main").unwrap();
+        let lease = registry.add_panel("main", &main, "filePreview").unwrap();
+        let publisher = registry.begin_model("main", &main, "filePreview").unwrap();
+        let model = json!({ "content": "\u{0001}".repeat(2 * 1024 * 1024) });
+        registry
+            .publish_model("main", &main, "filePreview", &publisher, 1, model.clone())
+            .unwrap();
+        assert_eq!(registry.read_model("main", &main, &lease).unwrap(), model);
+        assert!(registry
+            .publish_model(
+                "main",
+                &main,
+                "filePreview",
+                &publisher,
+                2,
+                json!("x".repeat(16 * 1024 * 1024))
+            )
+            .is_err());
+        let other = registry.add_panel("main", &main, "connections").unwrap();
+        let other_publisher = registry.begin_model("main", &main, "connections").unwrap();
+        assert!(registry
+            .publish_model(
+                "main",
+                &main,
+                "connections",
+                &other_publisher,
+                1,
+                model.clone()
+            )
+            .is_err());
+        assert!(registry
+            .checkpoint("main", &main, &lease, 1, model.clone())
+            .is_err());
+        assert_eq!(registry.read_model("main", &main, &lease).unwrap(), model);
+        assert!(registry
+            .read_model("main", &main, &other)
+            .unwrap()
+            .is_null());
     }
 }
