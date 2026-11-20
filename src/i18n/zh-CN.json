@@ -2263,6 +2263,8 @@
     "connectionBusy": "先前的 SSHFS 连接请求仍在等待服务器响应，请稍后重试或重新连接受影响的 SSH 会话。",
     "pathTimeout": "挂载目录响应超时，请检查连接后重试。",
     "pathBusy": "挂载目录仍在处理先前的请求，请稍后重试。",
+    "dependencyBusy": "SSHFS 依赖检测仍在处理中，请稍后重试。",
+    "dependencyFailed": "无法完成 SSHFS 依赖检测，请重试或查看日志。",
     "busy": "目录正在使用中，请关闭使用此目录的文件和终端，再重试卸载。",
     "unmountTimeout": "卸载超时，请关闭使用此目录的文件后重试。",
     "processExited": "SSHFS 进程已退出，请先卸载此记录再重新连接。",

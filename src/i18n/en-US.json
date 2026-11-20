@@ -2263,6 +2263,8 @@
     "connectionBusy": "Earlier SSHFS connection requests are still waiting for the server. Retry later or reconnect the affected SSH session.",
     "pathTimeout": "The mounted directory did not respond in time. Check the connection and try again.",
     "pathBusy": "The mounted directory is still responding to earlier requests. Try again shortly.",
+    "dependencyBusy": "SSHFS dependency checks are still running. Try again shortly.",
+    "dependencyFailed": "Could not complete the SSHFS dependency check. Try again or check the logs.",
     "busy": "The directory is busy. Close files and terminals using it, then retry unmounting.",
     "unmountTimeout": "Unmounting timed out. Close files using this directory and retry.",
     "processExited": "The SSHFS process stopped. Unmount this entry before reconnecting.",

@@ -118,12 +118,16 @@ pub(in crate::plugins::api) async fn dispatch(
         "legacy.list" | "legacy.convert" | "legacy.dismiss" => {
             legacy::call(context, method, params).await
         }
-        "dependencies.get" | "dependencies.refresh" => encode(crate::mounts::dependencies().await),
+        "dependencies.get" | "dependencies.refresh" => {
+            let result = crate::mounts::dependencies().await?;
+            authorize(context, &["mounts.read"])?;
+            encode(result)
+        }
         "dependencies.documentation" => {
             authorize(context, &["mounts.read"])?;
             crate::commands::open_external(
                 app.clone(),
-                crate::mounts::dependencies().await.documentation,
+                crate::mounts::dependencies().await?.documentation,
             )?;
             Ok(Value::Null)
         }

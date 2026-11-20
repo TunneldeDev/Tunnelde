@@ -15,6 +15,8 @@ pub(crate) enum CallPolicy {
     MountData,
     /// Filesystem queries retain the fence through timed-out FUSE workers.
     MountPathData,
+    /// OS dependency probes retain their worker through process kill and reap.
+    MountDependencyProbe,
     /// Fenced through receipt publication; the host owns subsequent steps.
     MountSubmission,
 }

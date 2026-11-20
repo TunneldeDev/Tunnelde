@@ -421,7 +421,7 @@ through nested Budget workers and unreceived result cleanup: a timed-out FUSE
 filesystem query cannot release the panel's move fence before the actual worker
 settles. Caller cancellation still prevents response delivery. This is not
 implicit admission of force-unmount consent, remote path operations, dependency
-probes or legacy one-off mounts, which still need their own lifetime integration.
+documentation or legacy one-off mounts, which still need their own lifetime integration.
 
 `mounts.paths.local.pick` is also committed-only. On macOS/Linux the OS folder
 picker is parented to the exact originating native window, with permission,
@@ -434,6 +434,15 @@ satellite destruction until the OS dialog actually returns. Cancellation does
 not programmatically dismiss an already accepted system picker; stale results
 are discarded and the user may cancel the dialog normally. On Windows the
 existing drive-letter confirmation uses the originating document's UI queue.
+
+`mounts.dependencies.get` and `mounts.dependencies.refresh` are committed-only
+probes, not staged snapshots: they inspect local paths and may execute SSHFS's
+help command. Bounded asynchronous and blocking workers retain the actual
+native effect through filesystem discovery and process cleanup. A timed-out or
+malformed help probe kills and waits for its child before releasing that work;
+cancelling response delivery does not prematurely free its capacity or move
+fence. The existing result shape is unchanged; busy/failure errors are explicit.
+No driver installation or automatic permission approval is performed.
 
 The host's scoped view client uses only this closed gateway, reserves cancellation
 tickets before dispatch, cancels outstanding calls on document disposal and cleans

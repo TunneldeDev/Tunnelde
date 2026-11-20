@@ -1,5 +1,7 @@
 //! SSHFS transports reuse an authenticated SSH channel. No credentials or
 //! unauthenticated local listening sockets are exposed to the mount program.
+#[cfg(all(test, unix))]
+mod dependency_tests;
 mod lifecycle;
 mod managed;
 pub(crate) use managed::open_managed;
@@ -251,7 +253,7 @@ fn executable() -> Option<PathBuf> {
         .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
         .find(|path| path.is_file())
 }
-pub async fn dependencies() -> MountDependencies {
+fn dependency_paths() -> (Option<PathBuf>, bool) {
     let path = executable();
     let driver = if cfg!(windows) {
         std::env::var_os("ProgramFiles(x86)")
@@ -266,6 +268,32 @@ pub async fn dependencies() -> MountDependencies {
     } else {
         Path::new("/dev/fuse").exists()
     };
+    (path, driver)
+}
+pub async fn dependencies() -> AppResult<MountDependencies> {
+    use crate::services::operations::{Budget, Errors};
+    use std::sync::LazyLock;
+    const ERRORS: Errors = Errors {
+        domain: "mounts.dependencies",
+        busy: "mounts.dependencyBusy",
+        cancelled: "plugin.api.cancelled",
+        failed: "mounts.dependencyFailed",
+    };
+    // Both filesystem discovery and the process probe retain actual work
+    // capacity and any originating view's effect guard after delivery stops.
+    static PROBES: LazyLock<Budget> = LazyLock::new(|| Budget::new(4, ERRORS));
+    static PATHS: LazyLock<Budget> = LazyLock::new(|| Budget::new(4, ERRORS));
+    PROBES
+        .asynchronous(|cancel| async move {
+            let (path, driver) = PATHS.blocking(|_| Ok(dependency_paths())).await?;
+            cancel.check()?;
+            let result = dependency_report(path, driver).await;
+            cancel.check()?;
+            Ok(result)
+        })
+        .await
+}
+async fn dependency_report(path: Option<PathBuf>, driver: bool) -> MountDependencies {
     // Different SSHFS distributions support different transports. In
     // particular, never fall back to spawning ssh.exe with saved credentials.
     let transport = if let Some(path) = path.as_ref() {
@@ -308,15 +336,23 @@ fn advertised_transport(help: &str) -> Option<String> {
         .map(str::to_owned)
 }
 async fn detect_transport(program: &Path) -> Option<String> {
+    let mut child = command(program)
+        .arg("-h")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .ok()?;
+    probe_transport(&mut child, std::time::Duration::from_secs(3)).await
+}
+
+// An outer caller timeout must not confuse sending a kill with completion.
+// Native dependency workers retain their effect guard until this child has
+// actually been waited on, including output errors and the probe deadline.
+async fn probe_transport(child: &mut Child, timeout: std::time::Duration) -> Option<String> {
     use tokio::io::AsyncReadExt;
     let probe = async {
-        let mut child = command(program)
-            .arg("-h")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
         let stdout = child
             .stdout
             .take()
@@ -343,11 +379,16 @@ async fn detect_transport(program: &Path) -> Option<String> {
             String::from_utf8_lossy(&err)
         )))
     };
-    tokio::time::timeout(std::time::Duration::from_secs(3), probe)
-        .await
-        .ok()?
-        .ok()?
+    let result = tokio::time::timeout(timeout, probe).await;
+    if child.id().is_some() {
+        // Tokio's kill awaits exit; wait also reaps an already-exited child.
+        // Keep both cleanup operations inside the admitted worker lifetime.
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+    result.ok()?.ok()?
 }
+
 fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let cmd = Command::new(program);
     #[cfg(windows)]
@@ -635,7 +676,7 @@ impl MountRegistry {
             return Err(AppError::validation("mounts.operations.cancelled"));
         }
         validate(&request)?;
-        let dependencies = dependencies().await;
+        let dependencies = dependencies().await?;
         if !dependencies.available {
             return Err(AppError::validation("mounts.dependencies.required"));
         }
@@ -986,7 +1027,7 @@ pub async fn action(
         .guard(&lease, async {
             state.mounts.reap().await;
             match method.as_str() {
-                "dependencies" => Ok(serde_json::to_value(dependencies().await)?),
+                "dependencies" => Ok(serde_json::to_value(dependencies().await?)?),
                 "list" => Ok(serde_json::to_value(
                     state.mounts.list(Some(&plugin_id)).await,
                 )?),
@@ -1039,7 +1080,7 @@ pub async fn action(
                 "documentation" => {
                     crate::commands::open_external(
                         app.clone(),
-                        dependencies().await.documentation,
+                        dependencies().await?.documentation,
                     )?;
                     Ok(serde_json::Value::Null)
                 }
