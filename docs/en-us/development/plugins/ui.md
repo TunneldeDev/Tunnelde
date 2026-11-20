@@ -447,7 +447,9 @@ No driver installation or automatic permission approval is performed.
 `mounts.paths.remote.browse` and `mounts.paths.remote.resolve` are committed-only,
 retained read operations, never staged snapshots. Each query binds the original
 mount group, host, connection identity and authenticated SSH handle. It does not
-follow a reconnection onto another transport. The original document, plugin
+follow a reconnection onto another transport. Canonical Windows drive aliases
+are normalized to the mount namespace (`C:/...` → `/C:/...`); drive-relative
+paths are never guessed. The original document, plugin
 permissions and invocation are rechecked between SFTP requests and after cleanup,
 including the resolve-only path. Windows drive selection also retains
 `mounts.write` through confirmation and final filesystem validation.
@@ -456,7 +458,9 @@ Remote queries use independent SFTP channels, at most four active workers and
 eight pending/retiring channels. A 15-second delivery timeout or cancelled caller
 does not release a late OPEN or a channel awaiting CLOSE. The SFTP library's
 hidden stream halves and the bridge retain the native effect through actual
-teardown. No terminal, user SFTP session or mount-group transport is disconnected.
+teardown. Retirement drains incoming channel messages concurrently with enqueueing
+CLOSE, so full read/write queues cannot deadlock each other. No terminal, user
+SFTP session or mount-group transport is disconnected.
 Listings allow at most 65,536 decoded entries and 8 MiB of retained string data
 (including repeated canonical parent paths); each response is at most 512 KiB and
 128 entries. `nextOffset` reflects the entries actually returned. Oversized

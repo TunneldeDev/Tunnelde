@@ -196,10 +196,23 @@ async fn canonical(raw: &RawSftpSession, path: String) -> AppResult<String> {
         .next()
         .ok_or_else(|| AppError::validation("fileRead.invalidReply"))?
         .filename;
-    if !path.starts_with('/') || path.contains('\0') || path.len() > 32768 {
+    canonical_path(path)
+}
+fn canonical_path(path: String) -> AppResult<String> {
+    if path.contains(['\0', '\r', '\n']) || path.len() > 32768 {
         return Err(AppError::validation("fileRead.invalidReply"));
     }
-    Ok(path)
+    if path.starts_with('/') {
+        return Ok(path);
+    }
+    // Windows OpenSSH can return a canonical drive path without its SFTP
+    // namespace slash. Mount rules and directory joins use /C:/..., never a
+    // drive-relative C:folder, backslash path or a guessed Unix home prefix.
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && &bytes[1..3] == b":/" {
+        return Ok(format!("/{path}"));
+    }
+    Err(AppError::validation("fileRead.invalidReply"))
 }
 async fn entries(
     raw: &RawSftpSession,

@@ -382,3 +382,24 @@ fn pagination_caps_actual_json_bytes_and_advances_without_skipping() {
         Value::Null
     );
 }
+
+#[test]
+fn canonical_windows_drive_aliases_keep_the_mount_sftp_namespace() {
+    for (raw, expected) in [
+        ("C:/qa-home", "/C:/qa-home"),
+        ("d:/", "/d:/"),
+        ("/C:/qa-home", "/C:/qa-home"),
+        ("/home/qa", "/home/qa"),
+    ] {
+        assert_eq!(canonical_path(raw.into()).unwrap(), expected);
+    }
+    for raw in [
+        "C:relative",
+        "relative",
+        "C:\\qa-home",
+        "bad\0path",
+        "/bad\npath",
+    ] {
+        assert!(canonical_path(raw.into()).is_err(), "{raw:?}");
+    }
+}

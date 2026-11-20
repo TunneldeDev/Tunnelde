@@ -72,21 +72,40 @@ impl SplitChannel {
 
     fn retire(&mut self) -> Option<tokio::task::JoinHandle<()>> {
         let permit = self.permit.take()?;
-        let mut reader = self.reader.take().expect("owned SSH channel read side");
+        let reader = self.reader.take().expect("owned SSH channel read side");
         let writer = self.writer.clone();
         let lifetime = self.lifetime.clone();
         Some(tokio::spawn(lifetime.scope(async move {
             let _permit = permit;
-            if writer.close().await.is_ok() {
-                while let Some(message) = reader.wait().await {
-                    if matches!(message, russh::ChannelMsg::Close) {
-                        break;
-                    }
-                }
-            }
+            let messages = futures_util::stream::unfold(reader, |mut reader| async move {
+                reader.wait().await.map(|message| (message, reader))
+            });
+            drain_close(writer.close(), messages).await;
         })))
     }
 }
+/// Draining and enqueueing must progress together, including while both bounded
+/// queues are full. CLOSE ACK (or receiver/session end) is the retirement proof.
+async fn drain_close<E>(
+    close: impl Future<Output = Result<(), E>>,
+    messages: impl futures_util::Stream<Item = russh::ChannelMsg>,
+) {
+    use futures_util::{pin_mut, StreamExt};
+    pin_mut!(close, messages);
+    let mut sent = false;
+    loop {
+        tokio::select! {
+            result = &mut close, if !sent => {
+                if result.is_err() { break; }
+                sent = true;
+            }
+            message = messages.next() => {
+                if matches!(message, Some(russh::ChannelMsg::Close) | None) { break; }
+            }
+        }
+    }
+}
+
 impl Drop for SplitChannel {
     fn drop(&mut self) {
         self.retire();
@@ -128,4 +147,33 @@ pub(crate) async fn open(
     receiver
         .await
         .map_err(|_| AppError::Ssh("SSH channel owner unavailable".into()))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn retirement_drains_full_read_queue_before_close_enqueue_can_finish() {
+        use russh::ChannelMsg;
+        let (send, receive) = tokio::sync::mpsc::channel(1);
+        send.send(ChannelMsg::Eof).await.unwrap();
+        let (closed, wait) = oneshot::channel();
+        // Model the SSH event loop blocked forwarding output into a full
+        // per-channel read queue before it can process our outgoing CLOSE.
+        let session = tokio::spawn(async move {
+            send.send(ChannelMsg::Eof).await.unwrap();
+            closed.send(()).unwrap();
+            send.send(ChannelMsg::Close).await.unwrap();
+        });
+        let messages = futures_util::stream::unfold(receive, |mut receiver| async move {
+            receiver.recv().await.map(|message| (message, receiver))
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            drain_close(wait, messages),
+        )
+        .await
+        .unwrap();
+        session.await.unwrap();
+    }
 }
