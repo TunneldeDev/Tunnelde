@@ -1314,3 +1314,12 @@
 .sftp-pane__drag:hover {
   color: var(--td-text);
 }
+
+/* No tab actions for an empty group; retain only native window chrome safety. */
+.pane__empty-chrome {
+  height: var(--td-workbench-header-h, 34px);
+  flex: 0 0 var(--td-workbench-header-h, 34px);
+}
+.is-compact-chrome.is-macos .workbench-panel.is-sidebar > .workbench-panel__head {
+  padding-left: 36px;
+}

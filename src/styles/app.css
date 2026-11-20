@@ -188,8 +188,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 34px;
-  flex: 0 0 34px;
+  height: var(--td-workbench-header-h, 34px);
+  flex: 0 0 var(--td-workbench-header-h, 34px);
   padding: 0 6px;
   border-bottom: 1px solid var(--td-border);
 }
@@ -601,8 +601,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
-  flex: 0 0 34px;
+  height: var(--td-workbench-header-h, 34px);
+  flex: 0 0 var(--td-workbench-header-h, 34px);
   padding: 0 6px 0 12px;
   border-bottom: 1px solid var(--td-border);
 }
@@ -3464,7 +3464,7 @@
   display: flex;
   flex: 0 0 auto;
   align-items: stretch;
-  height: 34px;
+  height: var(--td-workbench-header-h, 34px);
   min-width: 0;
   border-bottom: 1px solid var(--td-border);
   background: var(--td-panel);

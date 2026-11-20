@@ -24,6 +24,8 @@ export const usePanelPresentations = create<{
   panels: Partial<Record<SidebarView, FloatingPanelState>>;
 }>(() => ({ panels: {} }));
 let order = 0;
+/** One stacking clock for all same-document floating adapters. */
+export const nextPanelOrder = () => ++order;
 const stores = new Map<SidebarView, ReturnType<typeof createFloatingPanelStore>>();
 
 function createFloatingPanelStore(view: SidebarView) {
@@ -77,11 +79,11 @@ function createFloatingPanelStore(view: SidebarView) {
       }
       set({ bounds });
     },
-    show: () => set({ open: true, order: ++order }),
+    show: () => set({ open: true, order: nextPanelOrder() }),
     close: () => set({ open: false }),
-    toggle: () => set((state) => ({ open: !state.open, order: ++order })),
+    toggle: () => set((state) => ({ open: !state.open, order: nextPanelOrder() })),
     togglePinned: () => set((state) => ({ pinned: !state.pinned })),
-    raise: () => set({ order: ++order }),
+    raise: () => set({ order: nextPanelOrder() }),
   }));
   store.subscribe((state) =>
     usePanelPresentations.setState((all) => ({

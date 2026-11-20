@@ -182,3 +182,17 @@
     padding: 12px;
   }
 }
+
+.connection-panel__body > .td-search-toolbar {
+  margin-bottom: 16px;
+}
+.connection-list__select {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--td-accent);
+}
+.connection-list__heading > .connection-list__identity {
+  flex: 1;
+}

@@ -29,7 +29,10 @@ page durable; put temporary plans, screenshots and handoff notes in `.tmp/`.
 
 - A presentation change moves a view; it must not reconnect SSH, restart plugin
   runtimes, duplicate background work or discard user drafts. Keep one resource
-  owner. Hiding and stopping/disconnecting are distinct operations.
+  owner. Hiding and stopping/disconnecting are distinct operations. Explicitly
+  closing the last ordinary connection consumer follows the default-on
+  disconnect-on-close preference; moving or hiding never does. Every built-in
+  panel/page supports floating; only contributed plugin views may opt out.
 - Reuse the shared layout/pointer primitives. Preview geometry at most once per
   frame, persist on release, and roll back interrupted gestures. Batch related
   split changes in one owner transaction; do not remount content to resize it.

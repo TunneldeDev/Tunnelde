@@ -33,6 +33,7 @@ export const PORTABLE_SETTING_KEYS = [
   "showStatusBar",
   "uiProviders",
   "restoreWorkspace",
+  "disconnectOnPanelClose",
   "hostActivation",
   "hostDirectConnect",
   "terminalScrollback",

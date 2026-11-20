@@ -1,5 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { canFloatTab } from "@/lib/plugins/presentation";
+import { usePlugins } from "@/store/plugins";
 import { PanelLayout } from "@/components/ui/layout/PanelLayout";
 import { PaneView } from "@/components/layout/PaneView";
 import { useWorkspace, visibleWorkspaceLayout } from "@/store/workspace";
@@ -32,4 +34,34 @@ export function PaneLayout() {
       childClassName="pane-layout__child"
     />
   );
+}
+
+/** Slots join the common floating layer; adapters share its stacking clock. */
+export function FloatingWorkspaceLayer() {
+  const panes = useWorkspace((state) => state.panes);
+  const tabs = useWorkspace((state) => state.tabs);
+  const plugins = usePlugins((state) => state.items);
+  useEffect(() => {
+    for (const pane of panes)
+      if (
+        pane.floating &&
+        pane.tabIds.some((id) => {
+          const tab = tabs.find((item) => item.id === id);
+          return tab && !canFloatTab(tab);
+        })
+      )
+        useWorkspace.getState().dockPane(pane.id);
+  }, [panes, tabs, plugins]);
+  const active = useWorkspace((state) => state.activePaneId);
+  return panes
+    .filter((pane) => pane.floating)
+    .map((pane) => (
+      <div
+        className="workbench-floating-slot"
+        key={pane.id}
+        style={{ zIndex: pane.floating!.order + 1 }}
+      >
+        <PaneView pane={pane} active={pane.id === active} />
+      </div>
+    ));
 }

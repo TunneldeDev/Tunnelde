@@ -45,6 +45,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     uiProviders: {},
     mountHostDetailsSelection: null,
     restoreWorkspace: true,
+    disconnectOnPanelClose: true,
     hostActivation: "details",
     hostDirectConnect: true,
     terminalScrollback: 10_000,
