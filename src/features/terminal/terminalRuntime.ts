@@ -3,6 +3,8 @@ import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import type { ITerminalOptions, Terminal } from "@xterm/xterm";
 
 import type { Settings } from "@/lib/api/types";
+import type { TerminalSettingsSource, TerminalViewPreferences } from "./terminalViewServices";
+
 import {
   monoStack,
   prefersLightScheme,
@@ -13,6 +15,14 @@ import {
 import { useSettings } from "@/store/settings";
 import { COLOR_PREVIEW_EVENT } from "@/lib/prefs/colors";
 import { terminalTheme } from "./terminalTheme";
+
+export const localTerminalSettings: TerminalSettingsSource = {
+  read: () => useSettings.getState().settings,
+  subscribe: (changed) =>
+    useSettings.subscribe((state, previous) => {
+      if (state.settings !== previous.settings) changed();
+    }),
+};
 
 /** Wait for glyph metrics before opening or resizing the terminal. */
 export async function waitForFont(family: string, size: number): Promise<void> {
@@ -38,17 +48,20 @@ export async function waitForFont(family: string, size: number): Promise<void> {
 }
 
 /** A font choice can change while its initial load is still pending. */
-export async function waitForCurrentTerminalFont(cancelled: () => boolean): Promise<void> {
+export async function waitForCurrentTerminalFont(
+  cancelled: () => boolean,
+  source: TerminalSettingsSource = localTerminalSettings,
+): Promise<void> {
   while (!cancelled()) {
-    const before = useSettings.getState().settings;
+    const before = source.read();
     await waitForFont(monoStack(before.monoFont), before.monoFontSize);
-    const after = useSettings.getState().settings;
+    const after = source.read();
     if (before.monoFont === after.monoFont && before.monoFontSize === after.monoFontSize) return;
   }
 }
 
 export function terminalOptions(
-  settings: Settings,
+  settings: TerminalViewPreferences,
   light = prefersLightScheme(),
   reduced = prefersReducedMotion(),
 ): ITerminalOptions {
@@ -76,7 +89,10 @@ export function terminalOptions(
 export function bindTerminalSettings(
   terminal: Terminal,
   fit: () => void,
-  { minimumScrollback = 0 }: { minimumScrollback?: number } = {},
+  {
+    minimumScrollback = 0,
+    source = localTerminalSettings,
+  }: { minimumScrollback?: number; source?: TerminalSettingsSource } = {},
 ) {
   // Configure widths before any output: Unicode 6 counts ❌ as one column and
   // splits emoji sequences, moving table borders and TUI cursor positions.
@@ -130,7 +146,7 @@ export function bindTerminalSettings(
   };
   const apply = () => {
     if (disposed) return;
-    const settings = useSettings.getState().settings;
+    const settings = source.read();
     const next = terminalOptions(settings, colorScheme.matches, motion.matches);
     next.scrollback = Math.max(minimumScrollback, next.scrollback ?? 0);
     const { fontFamily, fontSize, ...otherOptions } = next;
@@ -153,9 +169,7 @@ export function bindTerminalSettings(
     }
   };
   apply();
-  const unsubscribe = useSettings.subscribe((state, previous) => {
-    if (state.settings !== previous.settings) apply();
-  });
+  const unsubscribe = source.subscribe(apply);
   colorScheme.addEventListener("change", apply);
   motion.addEventListener("change", apply);
   window.addEventListener(COLOR_PREVIEW_EVENT, apply);

@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 终端渲染器支持只读设置与限定作用域的连接服务，普通检查点不会被误当成迁移交接；远程 shell 在暂离期间退出时，为交接保留最后输出。Terminal rendering supports read-only preferences and scoped I/O; periodic checkpoints are distinct from move barriers, and detached shell exit retains final output for handoff. The native terminal page entry remains pending.
+
 - 原生终端流具备按窗口/文档/面板代次校验的私有端点，交接保留原 SSH 与序列回放；为后续终端页面跨窗接入提供基础，暂未开放该页面入口。Private native terminal endpoints enforce window/document/panel generations and retain the original SSH stream with sequence replay; terminal page window integration remains pending.
 
 - 终端交接按会话隔离并支持失败恢复，后台恢复不会抢占正在迁移的终端；保留字符集、键盘协议和分包状态的 JSON 快照为终端跨窗接入提供基础。Terminal handoff reserves individual sessions with rollback/retry; background resume cannot steal a pending handoff, and lossless JSON checkpoints prepare the terminal window adapter.

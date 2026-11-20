@@ -184,3 +184,37 @@ it("captures and gates nested async groups under the same strict capsule bounds"
   ui.unmount();
   state.dispose();
 });
+
+it("does not reuse a periodic checkpoint as a move barrier (or the reverse)", async () => {
+  const state = createPanelViewState();
+  const result = deferred<unknown>();
+  const capture = vi.fn((_signal, options) =>
+    options?.intent === "move" ? "detached" : result.promise,
+  );
+  state.registerAsync("terminal", capture);
+  const checkpoint = state.captureAsync(undefined, { intent: "checkpoint" });
+  await expect(state.captureAsync(undefined, { intent: "move" })).rejects.toThrow("moveInProgress");
+  expect(capture).toHaveBeenCalledOnce();
+  result.resolve("running");
+  expect((await checkpoint).fields.terminal).toBe("running");
+  expect((await state.captureAsync(undefined, { intent: "move" })).fields.terminal).toBe(
+    "detached",
+  );
+  expect(capture).toHaveBeenCalledTimes(2);
+  state.dispose();
+});
+
+it("treats legacy unspecified captures as checkpoints, but forwards explicit move intent", async () => {
+  const state = createPanelViewState();
+  const result = deferred<unknown>();
+  const capture = vi.fn(() => result.promise);
+  state.registerAsync("terminal", capture);
+  const first = state.captureAsync();
+  const second = state.captureAsync(undefined, { intent: "checkpoint" });
+  result.resolve("same");
+  expect(await first).toEqual(await second);
+  expect(capture).toHaveBeenCalledOnce();
+  await state.captureAsync(undefined, { intent: "move" });
+  expect(capture).toHaveBeenLastCalledWith(expect.any(AbortSignal), { intent: "move" });
+  state.dispose();
+});
