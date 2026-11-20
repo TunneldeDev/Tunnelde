@@ -1,3 +1,4 @@
+import { createFileWindowClient } from "@/features/sftp/fileWindowClient";
 import { createTerminalWindowClient } from "@/features/terminal/terminalWindowClient";
 import type { ForwardingWindowMutation } from "@/features/forwarding/runtime/windowProtocol";
 import { createNativePluginViewClient } from "./windowPluginClient";
@@ -23,6 +24,7 @@ import type {
 export function createPanelWindowClient(identity: NativePanelIdentity) {
   let disposed = false;
   const terminals = createTerminalWindowClient(identity);
+  const files = createFileWindowClient(identity);
   let pluginViews: ReturnType<typeof createNativePluginViewClient> | undefined;
   const cleanups = new Set<() => void>();
   const check = () => {
@@ -62,6 +64,7 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
   return {
     windowId: identity.windowId,
     terminals,
+    files,
     /** One attachment client per document; never expose its document identity. */
     pluginViews(report: (error: unknown) => void) {
       check();
@@ -339,6 +342,7 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
     },
     dispose() {
       terminals.dispose();
+      files.dispose();
       disposed = true;
       pluginViews?.dispose();
       for (const cleanup of cleanups) cleanup();

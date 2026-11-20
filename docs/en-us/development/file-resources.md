@@ -212,3 +212,23 @@ remain intact. Scoped AI tool allowlists are unchanged pending separate handle a
 path-scope contracts. Public preview lifecycle and presentation have their own
 [experimental contract](plugins/file-preview.md); mutation transactions remain
 separate work. These methods do not expand the stable API set.
+
+## Private native file-page resource boundary
+
+The coordinator explicitly binds a file page to existing user-managed SSH
+sessions and/or the local filesystem. A `files:`/`sftp:` panel name alone grants
+nothing. Native code captures the original session identity; descriptors expose
+only the panel ID and whether its provider permits outgoing moves.
+
+The private `panel_window_files` broker currently supports directory/home reads,
+mkdir, empty-file creation, removal and atomic rename. Reads require the exact
+owned lease or live staged destination; staged destinations cannot mutate. A
+source-set change or coordinator reload retires earlier bindings. Actual workers,
+not reply receivers, retain mutation fences through settlement; bounded local
+workers and remote dispatch recheck the originating authority. Late reads and
+disposed renderer replies cannot update a replacement view.
+
+This boundary does not yet expose native file-page presentation. Copy/transfers,
+text editing, provider/action integration and end-to-end SFTP handoff remain
+separate integration work. Keep the existing main-window workflow available;
+do not advertise complete native file-page support based on resource tests.

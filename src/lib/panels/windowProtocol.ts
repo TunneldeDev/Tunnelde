@@ -48,6 +48,7 @@ export interface NativePreviewProviderDescriptor extends NativeForwardingProvide
   sourceKind: "local" | "remote";
 }
 export interface NativePanelSnapshot {
+  filePages?: Array<{ panelId: string; allowMove: boolean }>;
   terminalViews?: Array<{ panelId: string; allowMove: boolean }>;
   pluginViews?: NativePluginViewDescriptor[];
   /** Unknown effects after coordinator document loss; counts only, no requests. */

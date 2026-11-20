@@ -129,8 +129,15 @@ pub(super) struct Ownership {
     pub(super) forwarding_tests: super::forwarding::diagnostics::Registry,
     pub(super) preview_resources: super::preview::Resources,
     pub(super) terminals: super::terminal::Resources,
+    pub(super) file_pages: super::file_pages::Resources,
 }
 impl Ownership {
+    pub(super) fn file_page_transfer_pending(&self, id: &str) -> bool {
+        self.transfers
+            .values()
+            .any(|pending| pending.lease.panel_id == id)
+    }
+
     /// The native builder registers a window before a WebView exists. Only the
     /// host issues document identities; a reload invalidates every old caller.
     pub fn register(&mut self, window: &str) -> Result<String> {
@@ -378,6 +385,7 @@ impl Ownership {
         self.panels.remove(panel_id).ok_or("panel not found")?;
         self.remove_plugin_adapter(panel_id);
         self.retire_terminal(panel_id);
+        self.retire_file_page(panel_id);
         self.transfers
             .retain(|_, pending| pending.lease.panel_id != panel_id);
         self.drags
@@ -564,6 +572,7 @@ impl Ownership {
             return Err("panel interaction in progress");
         }
         self.terminal_move_allowed(&lease.panel_id, target)?;
+        self.file_page_move_allowed(&lease.panel_id, target)?;
         Self::validate_state(&state)?;
         if !self.windows[window].ready || (self.windows[window].closing && target != MAIN) {
             return Err("source unavailable");
