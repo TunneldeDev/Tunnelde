@@ -182,7 +182,11 @@ async fn exercise(
     // An open descriptor must make normal unmount fail without detaching the
     // filesystem or killing its live transport. Revocation below has no such
     // descriptor, so it must reconcile the separate EOF/unmount race instead.
-    let held = std::fs::File::open(root.join("mount-a/file.txt")).unwrap();
+    // This fixture uses a current-thread runtime: a synchronous File::open
+    // here would block the same executor needed by its own SSH/SFTP bridge.
+    let held = tokio::fs::File::open(root.join("mount-a/file.txt"))
+        .await
+        .unwrap();
     assert_eq!(
         mounts
             .unmount("owner-a", &first.id, false)
