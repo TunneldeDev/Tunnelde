@@ -1,6 +1,8 @@
 import "@/i18n/i18n";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createNativePluginViewClient } from "@/lib/panels/windowPluginClient";
+import type { FrontendViewProps } from "@/lib/extensions/uiSdkContract";
 import { WindowForwardingSection } from "@/features/forwarding/components/WindowForwardingSection";
 import { createWindowForwardingActions } from "@/features/forwarding/runtime/windowActions";
 import { ForwardingReadScope } from "@/features/forwarding/data/readScope";
@@ -14,7 +16,10 @@ import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { usePanelWindows } from "@/store/panelWindows";
 const raw = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: raw.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: raw.invoke,
+  convertFileSrc: (token: string) => `https://native/${token}`,
+}));
 const original = {
   windows: usePanelWindows.getState(),
   dialogs: useDialogs.getState(),
@@ -310,4 +315,93 @@ it("unmounting during automatic preparation retires original consent and cannot 
   expect(f.mutation).toHaveBeenCalledOnce();
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(f.refresh).not.toHaveBeenCalled();
+});
+
+it("discovers and mounts the actual selected native factory, then routes edits and shared prompts through its original child", async () => {
+  const f = fixture();
+  const descriptor = {
+    selectionRevision: 4,
+    capabilities: { write: true },
+    view: {
+      pluginId: "selected",
+      runtimeId: "runtime",
+      generation: 3,
+      viewId: "forwards",
+      entry: "index.mjs",
+      sdkVersion: "0.1.0",
+      title: "Selected provider",
+      allowFloating: true,
+    },
+  };
+  const activate = vi.fn();
+  const createView = vi.fn(() => ({
+    component: ({ forwarding }: FrontendViewProps) => (
+      <section>
+        <h3>Actual native selected provider</h3>
+        <button onClick={() => forwarding!.requestEdit("rule")}>Selected edit</button>
+        <button onClick={() => forwarding!.startAll()}>Selected start all</button>
+        {forwarding && <forwarding.Entries />}
+      </section>
+    ),
+  }));
+  const native = vi.fn(
+    async (
+      _command: string,
+      {
+        request,
+      }: { request: { action: string; lease: unknown; request: ForwardingWindowMutation } },
+    ) => {
+      if (request.action === "describeForwardingProvider") return descriptor;
+      if (request.action === "openForwardingProvider")
+        return { ...descriptor.view, token: "selected-native-child" };
+      if (request.action === "forwarding") return f.mutation(request.lease, request.request);
+      return null;
+    },
+  );
+  const provider = createNativePluginViewClient(
+    { windowId: "satellite", document: "document" },
+    { invoke: native as never, load: async () => ({ activate, createView }), report: f.report },
+  );
+  Object.assign(f.client, {
+    pluginViews: () => provider,
+    subscribeForwardingProvider: async () => () => {},
+  });
+  const owner = {
+    client: f.client,
+    target: () => ({ kind: "owned" as const, lease }),
+    check: vi.fn(),
+  };
+  const view = render(
+    <ForwardingReadScope value={f.getData()}>
+      <WindowForwardingSection
+        client={f.client}
+        lease={lease}
+        service={f.service}
+        host={host}
+        owner={owner}
+      />
+    </ForwardingReadScope>,
+  );
+  await screen.findByText("Actual native selected provider");
+  fireEvent.click(screen.getByRole("button", { name: "Selected edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(screen.queryByRole("form")).toBeNull());
+  expect(
+    native.mock.calls.some(
+      ([, { request }]) => request.action === "forwarding" && request.request.operation === "save",
+    ),
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Selected start all" }));
+  await connect();
+  expect(activate).not.toHaveBeenCalled();
+  expect(createView).toHaveBeenCalledOnce();
+  const effects = native.mock.calls
+    .map(([, { request }]) => request)
+    .filter((request) => request.action === "forwarding");
+  expect(effects.some((request) => request.request.operation === "start")).toBe(true);
+  for (const request of effects)
+    expect(request).toMatchObject({ token: "selected-native-child", lease });
+  view.unmount();
+  f.service.dispose();
+  provider.dispose();
 });

@@ -172,6 +172,13 @@ fn target(app: &AppHandle, window: &str, document: &str, target: &Target) -> App
         .forwarding_provider_target(window, document, target, Instant::now())
         .map_err(native::invalid)
 }
+fn descriptor(source: &Source, write: bool) -> Value {
+    json!({
+        "selectionRevision": source.provider_selection().expect("selected source").revision(),
+        "capabilities": { "write": write },
+        "view": source.descriptor(),
+    })
+}
 pub(super) async fn describe(
     app: &AppHandle,
     window: &str,
@@ -188,12 +195,16 @@ pub(super) async fn describe(
     ownership
         .forwarding_provider_target(window, document, &requested, Instant::now())
         .map_err(native::invalid)?;
-    source.with_current(app, || {
-        Ok(json!({
-            "selectionRevision": source.provider_selection().expect("selected source").revision(),
-            "view": source.descriptor(),
-        }))
-    })
+    // Declared permissions are not necessarily granted. Check the optional
+    // write grant separately, then revalidate the exact generation/selection
+    // while projecting metadata. Never recursively acquire Source locks from
+    // inside with_current, and never turn lifecycle errors into read-only hints.
+    let write = match source.with_permissions(app, &["forwards.write"], || Ok(())) {
+        Ok(()) => true,
+        Err(AppError::Validation(message)) if message == "pluginSecurity.permissionDenied" => false,
+        Err(error) => return Err(error),
+    };
+    source.with_current(app, || Ok(descriptor(&source, write)))
 }
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn open(
@@ -285,6 +296,28 @@ mod tests {
             4,
         );
         (ownership, main, satellite, lease, source)
+    }
+    #[test]
+    fn selected_descriptor_exposes_granted_write_hint_but_no_bearer_or_permission_list() {
+        let (_, _, _, _, source) = fixture();
+        for write in [false, true] {
+            let value = descriptor(&source, write);
+            assert_eq!(value["capabilities"]["write"], write);
+            assert_eq!(value["selectionRevision"], 4);
+            assert_eq!(value["view"]["pluginId"], "provider");
+            assert_eq!(value.as_object().unwrap().len(), 3);
+            assert_eq!(value["view"].as_object().unwrap().len(), 8);
+            let wire = value.to_string();
+            for secret in [
+                "private-singleton",
+                "fingerprint",
+                "permissions",
+                "activation",
+                "token",
+            ] {
+                assert!(!wire.contains(secret), "leaked {secret}");
+            }
+        }
     }
     #[test]
     fn provider_binding_is_not_an_ordinary_sidebar_or_permission_to_register_an_adapter() {

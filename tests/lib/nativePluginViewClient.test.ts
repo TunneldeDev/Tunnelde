@@ -276,6 +276,7 @@ it("opens selected forwarding attachments through exact native identity, never a
   const f = fixture();
   const descriptor = {
     selectionRevision: 4,
+    capabilities: { write: true },
     view: {
       pluginId: "sample",
       runtimeId: "runtime:8",
@@ -326,6 +327,7 @@ it("closes a late forwarding-provider acquisition rather than adopting it after 
   );
   const descriptor = {
     selectionRevision: 4,
+    capabilities: { write: true },
     view: { ...session, viewId: "forwards", title: "Provider", allowFloating: true },
   };
   const pending = f.client.openForwardingProvider(target, "host", descriptor);

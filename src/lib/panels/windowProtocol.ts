@@ -36,6 +36,8 @@ export interface NativePluginViewDescriptor {
 /** Selected forwarding module identity; no activation token or write grant. */
 export interface NativeForwardingProviderDescriptor {
   selectionRevision: number;
+  /** Display hint from current grants, never caller-supplied write authority. */
+  capabilities: { write: boolean };
   view: Omit<NativePluginViewDescriptor, "panelId" | "revision">;
 }
 export interface NativePanelSnapshot {

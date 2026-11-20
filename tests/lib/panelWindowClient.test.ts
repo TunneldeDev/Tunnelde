@@ -665,3 +665,64 @@ it("routes forwarding clipboard through its captured native lease without invoki
   await expect(client.forwardingMutation(lease, request)).rejects.toThrow("disposed");
   expect(native.invoke).toHaveBeenCalledOnce();
 });
+it("observes native provider selection/grant/runtime invalidations without forwarding their payloads", async () => {
+  const callbacks: Array<(event: unknown) => void> = [];
+  const stops: ReturnType<typeof vi.fn>[] = [];
+  native.listen.mockImplementation(async (_name, receive) => {
+    callbacks.push(receive);
+    const stop = vi.fn();
+    stops.push(stop);
+    return stop;
+  });
+  const client = createPanelWindowClient(identity);
+  const changed = vi.fn();
+  const stop = await client.subscribeForwardingProvider(changed);
+  expect(native.listen.mock.calls.map(([name]) => name)).toEqual([
+    "ui://panel-windows-changed",
+    "settings://changed",
+    "plugin:security-changed",
+    "plugin://state",
+  ]);
+  for (const callback of callbacks) callback({ payload: { privateSetting: "not-for-the-plugin" } });
+  expect(changed.mock.calls).toEqual([[], [], [], []]);
+  stop();
+  stop();
+  client.dispose();
+  for (const callback of callbacks) callback({ payload: "late" });
+  expect(changed).toHaveBeenCalledTimes(4);
+  for (const release of stops) expect(release).toHaveBeenCalledOnce();
+  expect(native.invoke).not.toHaveBeenCalled();
+});
+it("releases earlier provider observers when a later registration fails", async () => {
+  const release = vi.fn();
+  native.listen
+    .mockResolvedValueOnce(release)
+    .mockRejectedValueOnce(new Error("registration failed"));
+  const client = createPanelWindowClient(identity);
+  await expect(client.subscribeForwardingProvider(vi.fn())).rejects.toThrow("registration failed");
+  expect(release).toHaveBeenCalledOnce();
+  expect(native.listen).toHaveBeenCalledTimes(2);
+  client.dispose();
+  expect(release).toHaveBeenCalledOnce();
+});
+it("does not register more provider observers after disposal and retires a late first registration", async () => {
+  let resolve!: (stop: () => void) => void;
+  let receive!: () => void;
+  native.listen.mockImplementationOnce((_name, callback) => {
+    receive = callback;
+    return new Promise((done) => {
+      resolve = done;
+    });
+  });
+  const release = vi.fn(),
+    changed = vi.fn();
+  const client = createPanelWindowClient(identity);
+  const pending = client.subscribeForwardingProvider(changed);
+  client.dispose();
+  resolve(release);
+  await pending;
+  receive();
+  expect(native.listen).toHaveBeenCalledOnce();
+  expect(release).toHaveBeenCalledOnce();
+  expect(changed).not.toHaveBeenCalled();
+});

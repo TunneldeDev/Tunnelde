@@ -3,19 +3,39 @@ import { createPortal } from "react-dom";
 import { ProviderSurface } from "@/components/layout/ProviderSurface";
 import { createPersistentSurface } from "@/lib/extensions/persistentSurface";
 import { createForwardingContext } from "@/lib/extensions/forwarding/context";
+import type { ForwardingContext } from "@/lib/extensions/forwarding/context";
+import type { FrontendForwarding } from "@/lib/extensions/contracts/forwarding/provider";
 import type { ForwardingController } from "../runtime/useForwardingController";
 
-/** Presentation may omit rows; the host controller and editor remain mounted. */
-export function ForwardingSurface({
-  hostId,
-  title,
-  controller,
-  children,
-}: {
+export interface ForwardingSurfaceProps {
   hostId: string;
   title: string;
   controller: ForwardingController;
   children: ReactNode;
+}
+export type ForwardingSurfaceContext = ForwardingContext & Pick<FrontendForwarding, "Entries">;
+/** Main-document provider selection remains separate from native selection. */
+export function ForwardingSurface(props: ForwardingSurfaceProps) {
+  return (
+    <ForwardingSurfaceBody
+      {...props}
+      renderProvider={(context, visible) => (
+        <ProviderSurface target="forwarding" forwarding={context} visible={visible}>
+          <context.Entries />
+        </ProviderSurface>
+      )}
+    />
+  );
+}
+/** One persistent native rows tree, shared by both provider attachment routes. */
+export function ForwardingSurfaceBody({
+  hostId,
+  title,
+  controller,
+  children,
+  renderProvider,
+}: ForwardingSurfaceProps & {
+  renderProvider(context: ForwardingSurfaceContext, visible: boolean): ReactNode;
 }) {
   const [surface] = useState(createPersistentSurface);
   const Entries = surface.Mount;
@@ -84,11 +104,7 @@ export function ForwardingSurface({
   /* eslint-enable react-hooks/refs */
   return (
     <>
-      <div hidden={!!form}>
-        <ProviderSurface target="forwarding" forwarding={context} visible={!form}>
-          <Entries />
-        </ProviderSurface>
-      </div>
+      <div hidden={!!form}>{renderProvider(context, !form)}</div>
       {createPortal(children, surface.container)}
     </>
   );

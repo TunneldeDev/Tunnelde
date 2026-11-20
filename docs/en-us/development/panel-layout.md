@@ -962,3 +962,24 @@ Results contain rule/session metadata and errors, never credentials. A successfu
 start cannot be replayed by retrying a failed completion callback; opening a fresh
 prompt is required. Partial failures reach the host callback or an error toast.
 This still does not supply a complete satellite renderer or forwarding adapter.
+
+### Shared native forwarding-provider surface
+
+`WindowForwardingSurface` uses the shared persistent rows/editor composition,
+but discovers its provider through the native selection descriptor, not main
+settings/security stores or `frontendRuntime`. The optional write capability is
+an informational hint from current grants, not declared permissions or mutation
+authority. Every effect still uses the original native child and reauthorizes.
+Factory creation never starts another singleton or falls back to a builtin
+mutation when the selected provider fails.
+
+Selection, security, runtime and ownership notifications trigger coalesced
+metadata reads; their payloads are never passed to the plugin. An unchanged
+descriptor preserves the component, attachment and draft. Selection revision
+changes (including ABA), write-capability changes and deselection retire the old
+source. A transient discovery error retains its draft and offers explicit retry.
+Staged views can read; promotion replaces action ownership without remounting the
+child, and captured old-owner callbacks cannot mutate. Late imports, observers
+and attachments are released on retirement. This shared surface is not yet
+`SatelliteApp` admission or complete native-window acceptance; discovery remains
+disabled until the complete adapter set is accepted.

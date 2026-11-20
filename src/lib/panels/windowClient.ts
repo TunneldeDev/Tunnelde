@@ -60,6 +60,39 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       cleanups.add(release);
       return release;
     },
+    /** Metadata invalidations only. Do not forward settings or grant payloads
+     * into the provider module, and do not hydrate main-document stores. */
+    async subscribeForwardingProvider(changed: () => void) {
+      check();
+      let active = true;
+      const stops: (() => void)[] = [];
+      const release = () => {
+        if (!active) return;
+        active = false;
+        cleanups.delete(release);
+        for (const stop of stops.splice(0)) stop();
+      };
+      cleanups.add(release);
+      try {
+        for (const event of [
+          "ui://panel-windows-changed",
+          "settings://changed",
+          "plugin:security-changed",
+          "plugin://state",
+        ]) {
+          if (!active) break;
+          const stop = await listen(event, () => {
+            if (active && !disposed) changed();
+          });
+          if (!active || disposed) stop();
+          else stops.push(stop);
+        }
+      } catch (error) {
+        release();
+        throw error;
+      }
+      return release;
+    },
     async onPanelFocus(focus: (lease: PanelLease) => void) {
       check();
       let active = true;
