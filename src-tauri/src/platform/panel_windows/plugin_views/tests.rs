@@ -800,78 +800,97 @@ async fn cancelled_remote_open_blocks_real_native_handoff_until_close_ack() {
         ssh::files::directory::{self, tests::fixture::Fixture as Sftp, Query},
     };
     use std::sync::{atomic::Ordering, Arc, Mutex};
-    let mut f = Fixture::new();
-    f.owned("remote-view");
-    let policy =
-        crate::plugins::frontend::native::call_policy("mounts.paths.remote.resolve").unwrap();
-    let (_, id) =
-        f.r.native_view_call("main", &f.main, "remote-view", policy, f.now)
-            .unwrap();
-    let registry = Arc::new(Mutex::new(f.r));
-    struct Fence(
-        Arc<Mutex<Ownership>>,
-        String,
-        Option<tokio::sync::oneshot::Sender<()>>,
-    );
-    impl Drop for Fence {
-        fn drop(&mut self) {
-            self.0.lock().unwrap().settle_native_view_call(&self.1);
-            let _ = self.2.take().unwrap().send(());
+    for legacy in [false, true] {
+        let mut f = Fixture::new();
+        f.owned("remote-view");
+        let policy = crate::plugins::frontend::native::call_policy(if legacy {
+            "mounts.browse"
+        } else {
+            "mounts.paths.remote.resolve"
+        })
+        .unwrap();
+        let (_, id) =
+            f.r.native_view_call("main", &f.main, "remote-view", policy, f.now)
+                .unwrap();
+        let registry = Arc::new(Mutex::new(f.r));
+        struct Fence(
+            Arc<Mutex<Ownership>>,
+            String,
+            Option<tokio::sync::oneshot::Sender<()>>,
+        );
+        impl Drop for Fence {
+            fn drop(&mut self) {
+                self.0.lock().unwrap().settle_native_view_call(&self.1);
+                let _ = self.2.take().unwrap().send(());
+            }
         }
-    }
-    let ssh = Sftp::new().await;
-    ssh.seen.hold.store(true, Ordering::SeqCst);
-    ssh.seen.hold_close.store(true, Ordering::SeqCst);
-    let (settled, mut done) = tokio::sync::oneshot::channel();
-    let handle = ssh.handle.clone();
-    let task = tokio::spawn(
-        WorkLifetime::new(Fence(registry.clone(), id, Some(settled))).scope(async move {
-            directory::query(handle, Query::Resolve { path: None }, || Ok(())).await
-        }),
-    );
-    tokio::time::timeout(Duration::from_secs(3), ssh.seen.opened.notified())
-        .await
-        .unwrap();
-    task.abort();
-    assert!(task.await.unwrap_err().is_cancelled());
-    {
-        let mut registry = registry.lock().unwrap();
-        registry
-            .close_native_view("main", &f.main, "remote-view")
+        let ssh = Sftp::new().await;
+        ssh.seen.hold.store(true, Ordering::SeqCst);
+        ssh.seen.hold_close.store(true, Ordering::SeqCst);
+        let (settled, mut done) = tokio::sync::oneshot::channel();
+        let handle = ssh.handle.clone();
+        let task = tokio::spawn(
+            WorkLifetime::new(Fence(registry.clone(), id, Some(settled))).scope(async move {
+                directory::query(
+                    handle,
+                    if legacy {
+                        Query::LegacyBrowse { path: "/".into() }
+                    } else {
+                        Query::Resolve { path: None }
+                    },
+                    || Ok(()),
+                )
+                .await
+            }),
+        );
+        tokio::time::timeout(Duration::from_secs(3), ssh.seen.opened.notified())
+            .await
             .unwrap();
-        assert!(registry.native_view_busy(&f.lease.panel_id));
-        assert!(registry
-            .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
-            .is_err());
-    }
-    ssh.release().await;
-    tokio::time::timeout(Duration::from_secs(3), ssh.seen.close_received.notified())
-        .await
-        .unwrap();
-    assert!(done.try_recv().is_err());
-    assert!(registry.lock().unwrap().native_view_busy(&f.lease.panel_id));
-    ssh.seen.hold_close.store(false, Ordering::SeqCst);
-    ssh.seen.release_close.notify_one();
-    tokio::time::timeout(Duration::from_secs(3), done)
-        .await
-        .unwrap()
-        .unwrap();
-    {
-        let mut registry = registry.lock().unwrap();
-        assert!(!registry.native_view_busy(&f.lease.panel_id));
-        registry
-            .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        {
+            let mut registry = registry.lock().unwrap();
+            registry
+                .close_native_view("main", &f.main, "remote-view")
+                .unwrap();
+            assert!(registry.native_view_busy(&f.lease.panel_id));
+            assert!(registry
+                .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+                .is_err());
+        }
+        ssh.release().await;
+        tokio::time::timeout(Duration::from_secs(3), ssh.seen.close_received.notified())
+            .await
             .unwrap();
+        assert!(done.try_recv().is_err());
+        assert!(registry.lock().unwrap().native_view_busy(&f.lease.panel_id));
+        ssh.seen.hold_close.store(false, Ordering::SeqCst);
+        ssh.seen.release_close.notify_one();
+        tokio::time::timeout(Duration::from_secs(3), done)
+            .await
+            .unwrap()
+            .unwrap();
+        {
+            let mut registry = registry.lock().unwrap();
+            assert!(!registry.native_view_busy(&f.lease.panel_id));
+            registry
+                .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+                .unwrap();
+        }
+        directory::query(ssh.handle.clone(), Query::Resolve { path: None }, || Ok(()))
+            .await
+            .unwrap();
+        assert!(!ssh.handle.is_closed());
     }
-    directory::query(ssh.handle.clone(), Query::Resolve { path: None }, || Ok(()))
-        .await
-        .unwrap();
-    assert!(!ssh.handle.is_closed());
 }
 
 #[test]
 fn remote_mount_queries_are_not_staged_snapshots() {
-    for method in ["mounts.paths.remote.browse", "mounts.paths.remote.resolve"] {
+    for method in [
+        "mounts.paths.remote.browse",
+        "mounts.paths.remote.resolve",
+        "mounts.browse",
+    ] {
         let mut f = Fixture::new();
         f.owned("source");
         let id = f.offer();

@@ -9,6 +9,11 @@ fn browse(offset: usize) -> Query {
         offset,
     }
 }
+fn legacy_browse() -> Query {
+    Query::LegacyBrowse {
+        path: "/home/qa/source".into(),
+    }
+}
 fn cancellation() -> (Cancellation, impl Drop) {
     Cancellation::for_test("cancelled")
 }
@@ -62,6 +67,62 @@ async fn real_sftp_reads_are_directory_only_sorted_paged_and_parent_stays_usable
     let resolved = call(&f, Query::Resolve { path: None }).await.unwrap();
     assert_eq!(resolved, json!({"home":"/home/qa","path":"/home/qa"}));
     assert_eq!(f.seen.handles_closed.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn legacy_browse_preserves_complete_unpaged_listing_and_reuses_parent_ssh() {
+    let f = Fixture::new().await;
+    f.seen.deny_home.store(true, Ordering::SeqCst);
+    let result = call(&f, legacy_browse()).await.unwrap();
+    let object = result.as_object().unwrap();
+    assert_eq!(object.len(), 2, "frozen shape has only path and entries");
+    assert_eq!(result["path"], "/home/qa/source");
+    let entries = result["entries"].as_array().unwrap();
+    assert_eq!(
+        entries.len(),
+        261,
+        "must not silently return a 128-entry page"
+    );
+    assert_eq!(entries[0]["name"], ".hidden");
+    assert_eq!(entries[260]["name"], "dir-259");
+    assert!(entries.iter().all(|entry| entry["isDir"] == true));
+    assert_eq!(f.seen.handles_closed.load(Ordering::SeqCst), 1);
+    assert!(!f.handle.is_closed());
+    f.seen.deny_home.store(false, Ordering::SeqCst);
+    call(&f, Query::Resolve { path: None }).await.unwrap();
+}
+
+#[tokio::test]
+async fn legacy_browse_rejects_nonabsolute_paths_before_ssh_admission() {
+    let f = Fixture::new().await;
+    for path in ["", "relative", "~", "C:/path", "/bad\0path", "/bad\npath"] {
+        assert!(call(&f, Query::LegacyBrowse { path: path.into() })
+            .await
+            .is_err());
+    }
+    assert_eq!(f.seen.opens.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn legacy_listing_bounds_escaped_json_without_truncation_or_pagination_fields() {
+    let entry = |name: String| FileEntry {
+        path: format!("/{name}"),
+        name,
+        is_dir: true,
+        is_hidden: false,
+        size: 0,
+        modified: None,
+        permissions: None,
+    };
+    let result = legacy_listing((0..500).map(|i| entry(i.to_string())).collect(), "/").unwrap();
+    assert_eq!(result["entries"].as_array().unwrap().len(), 500);
+    assert_eq!(result.as_object().unwrap().len(), 2);
+    assert_eq!(
+        legacy_listing(vec![entry("\u{1}".repeat(100000))], "/")
+            .unwrap_err()
+            .to_string(),
+        "mounts.remoteListingTooLarge"
+    );
 }
 #[tokio::test]
 async fn invalid_and_hostile_replies_fail_closed_without_losing_the_parent() {
@@ -210,7 +271,7 @@ async fn subsystem_reject_or_stall_retires_only_the_query_channel() {
 }
 #[tokio::test]
 async fn revoke_during_stat_cannot_deliver_resolved_data_or_begin_listing() {
-    for resolve in [false, true] {
+    for kind in 0..3 {
         let f = Fixture::new().await;
         f.seen.delay_stat.store(true, Ordering::SeqCst);
         let granted = Arc::new(AtomicBool::new(true));
@@ -222,10 +283,10 @@ async fn revoke_during_stat_cannot_deliver_resolved_data_or_begin_listing() {
         let task = tokio::spawn(async move {
             on(
                 handle,
-                if resolve {
-                    Query::Resolve { path: None }
-                } else {
-                    browse(0)
+                match kind {
+                    0 => Query::Resolve { path: None },
+                    1 => browse(0),
+                    _ => legacy_browse(),
                 },
                 move || {
                     if grant.load(Ordering::SeqCst) {

@@ -899,20 +899,21 @@ pub async fn action(
                     state.mounts.list(Some(&plugin_id)).await,
                 )?),
                 "browse" => {
-                    let session_id = params
-                        .get("sessionId")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| AppError::validation("mounts.session.required"))?;
-                    let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
-                    if !path.starts_with('/') || path.contains('\0') {
-                        return Err(AppError::validation("mounts.remotePath.absoluteRequired"));
-                    }
-                    let listing =
-                        crate::ssh::files::remote_list(&app, session_id, Some(path.into())).await?;
-                    Ok(serde_json::to_value(crate::ssh::files::Listing {
-                        path: listing.path,
-                        entries: listing.entries.into_iter().filter(|e| e.is_dir).collect(),
-                    })?)
+                    // Keep the native-command compatibility entry point on the
+                    // same owned read path without recursing through dispatch.
+                    crate::plugins::api::browse_mount(
+                        &crate::plugins::api::HostContext {
+                            app: app.clone(),
+                            id: lease.id.clone(),
+                            fingerprint: lease.fingerprint.clone(),
+                            permissions: lease.permissions.clone(),
+                            generation: lease.generation,
+                            tool_client: None,
+                            tool_request: None,
+                        },
+                        params.clone(),
+                    )
+                    .await
                 }
                 "mount" => Ok(serde_json::to_value(
                     state

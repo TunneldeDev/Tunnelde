@@ -391,7 +391,7 @@ async fn remote_mount_reads_recheck_real_invocation_cancel_and_expiry_after_stat
             let _ = self.0.take().unwrap().send(());
         }
     }
-    for resolve in [false, true] {
+    for kind in 0..3 {
         for expired in [false, true] {
             let fixture = Fixture::new().await;
             fixture.seen.delay_stat.store(true, Ordering::SeqCst);
@@ -409,13 +409,13 @@ async fn remote_mount_reads_recheck_real_invocation_cancel_and_expiry_after_stat
                             let fence = current_invocation_fence().unwrap();
                             directory::query(
                                 handle,
-                                if resolve {
-                                    Query::Resolve { path: None }
-                                } else {
-                                    Query::Browse {
+                                match kind {
+                                    0 => Query::Resolve { path: None },
+                                    1 => Query::Browse {
                                         path: None,
                                         offset: 0,
-                                    }
+                                    },
+                                    _ => Query::LegacyBrowse { path: "/".into() },
                                 },
                                 move || fence.with_live(|| Ok(())),
                             )

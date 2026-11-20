@@ -54,7 +54,8 @@ fn missing() -> AppError {
 }
 struct Authority {
     context: HostContext,
-    target: Target,
+    target: Option<Target>,
+    session: String,
     identity: SessionIdentity,
     handle: Arc<russh::client::Handle<ClientHandler>>,
     origin: Option<Origin>,
@@ -69,10 +70,11 @@ impl Policy for Authority {
                 .security
                 .with_authorized(&lease(&self.context), &["mounts.read"], || {
                     let read = || {
-                        self.target
-                            .recheck(&state.mount_runtime.connection_states())?;
-                        if state.ssh.identity(&self.target.session)? != self.identity
-                            || !Arc::ptr_eq(&state.ssh.handle(&self.target.session)?, &self.handle)
+                        if let Some(target) = &self.target {
+                            target.recheck(&state.mount_runtime.connection_states())?;
+                        }
+                        if state.ssh.identity(&self.session)? != self.identity
+                            || !Arc::ptr_eq(&state.ssh.handle(&self.session)?, &self.handle)
                         {
                             return Err(missing());
                         }
@@ -107,11 +109,38 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
         &state.mount_runtime.connection_states(),
         &field::<String>(&params, "groupId")?,
     )?;
-    let identity = state.ssh.identity(&target.session)?;
-    let handle = state.ssh.handle(&target.session)?;
+    read(context, query, target.session.clone(), Some(target)).await
+}
+
+pub(crate) async fn browse(context: &HostContext, params: Value) -> AppResult<Value> {
+    let session = params
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::validation("mounts.session.required"))?;
+    let query = Query::LegacyBrowse {
+        path: params
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or("/")
+            .into(),
+    };
+    query.validate()?;
+    read(context, query, session.into(), None).await
+}
+
+async fn read(
+    context: &HostContext,
+    query: Query,
+    session: String,
+    target: Option<Target>,
+) -> AppResult<Value> {
+    let state = context.app.state::<AppState>();
+    let identity = state.ssh.identity(&session)?;
+    let handle = state.ssh.handle(&session)?;
     let authority = Authority {
         context: context.clone(),
         target,
+        session,
         identity,
         handle: handle.clone(),
         origin: origin::current(),

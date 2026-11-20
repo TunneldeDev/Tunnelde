@@ -20,6 +20,7 @@ pub(crate) struct Seen {
     pub invalid_name: AtomicBool,
     pub flood: AtomicBool,
     pub stat_is_file: AtomicBool,
+    pub deny_home: AtomicBool,
     pub pending: Mutex<Option<server::ChannelOpenHandle>>,
     pub opened: Notify,
     pub subsystem: Notify,
@@ -130,6 +131,9 @@ impl russh_sftp::server::Handler for Sftp {
         StatusCode::OpUnsupported
     }
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
+        if path == "." && self.seen.deny_home.load(Ordering::SeqCst) {
+            return Err(StatusCode::PermissionDenied);
+        }
         let path = if path == "." { "/home/qa".into() } else { path };
         Ok(Name {
             id,

@@ -19,6 +19,7 @@ use crate::{
     },
     state::AppState,
 };
+pub(crate) use remote_paths::browse;
 use serde_json::{json, Value};
 use std::sync::LazyLock;
 use tauri::Manager;
@@ -133,6 +134,7 @@ pub(in crate::plugins::api) async fn dispatch(
         // discovered main-document plugin. No cleanup or fingerprint scan is
         // a hidden side effect of listing; OS effects retain their own workers.
         "list" => encode(state.mounts.list(Some(&context.id)).await),
+        "browse" => remote_paths::browse(context, params).await,
         "open" => {
             crate::mounts::open_plugin(
                 app.clone(),

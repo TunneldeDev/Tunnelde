@@ -1087,3 +1087,39 @@ argument semantics remain intact. The public v1 request/result contracts do not
 change. `mounts.mount` and `mounts.browse` still need separate native-effect audits;
 neither is admitted by these changes. Ordinary subprocess/OS-opener test seams are
 not physical FUSE or file-manager acceptance, nor complete resource-RPC parity.
+
+### One-off mount directory browsing
+
+`mounts.browse` now uses the same bounded, independent read-only SFTP channel as
+managed directory queries. It binds the original plugin grant, invocation, native
+origin and exact SSH handle; late OPEN and peer CLOSE keep the movement fence until
+actual cleanup, without disconnecting the shared parent connection. The native
+command compatibility entry point shares this path rather than the old unowned
+listing helper. Staged native views cannot initiate this network operation.
+
+The existing `{path, entries}` result remains a complete directory-only listing:
+there is no `nextOffset`, silent first-page truncation or dependency on resolving
+an unrelated home directory. Oversized/hostile replies fail explicitly. The newer
+`mounts.paths.remote.browse` keeps its existing paged result. `mounts.mount` still
+needs separate start/publication/cleanup integration; enabling browse does not
+implicitly admit mount creation or complete native-window parity.
+
+### Beta delivery and remaining rollout
+
+Beta delivery prioritizes working primary flows. Known P0/P1 failures (crashes,
+data loss, connection/resource leaks or authorization failures) block release;
+non-blocking presentation and edge-case issues can follow in patch releases.
+A staged release does not mark the complete native-workspace plan finished.
+
+The initial native move allowlist covers connections, tasks, output, known hosts
+and compatible sidebar plugin factories. Forwarding has real macOS round-trip
+coverage but remains outside public native movement while integration continues.
+Unsupported views stay in their original window rather than losing state.
+`viewFactories.nativeWindows` remains false until general plugin parity is ready.
+
+Remaining rollout: ordinary terminal/SFTP/editor/host/settings and other panel
+adapters; factoryless plugin presentation; background-task providers and full
+file-preview handles; remaining resource APIs including one-off mount creation;
+and physical cross-window dragging across desktop platforms, displays and DPI.
+Continue these as follow-up implementation/acceptance work, without treating them
+as completed or requiring every non-blocking detail before a useful Beta.

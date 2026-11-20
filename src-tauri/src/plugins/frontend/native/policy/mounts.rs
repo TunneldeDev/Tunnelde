@@ -70,7 +70,7 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         // Independent read-only SFTP channels bind the original group/session,
         // carry the admitted effect through library I/O workers and late OPEN,
         // and retire through peer CLOSE without disconnecting the parent SSH.
-        "mounts.paths.remote.browse" | "mounts.paths.remote.resolve" => {
+        "mounts.paths.remote.browse" | "mounts.paths.remote.resolve" | "mounts.browse" => {
             Some(CallPolicy::MountRemotePath)
         }
         // Capture original origin/invocation before waiting, retain bounded
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(ui, 1);
         assert_eq!(probes, 3);
         assert_eq!(force, 1);
-        assert_eq!(remote, 2);
+        assert_eq!(remote, 3);
         assert_eq!(legacy, 3);
         assert_eq!(open, 3);
         assert_eq!(unmount, 1);
@@ -166,7 +166,8 @@ mod tests {
             "mounts.paths.remote.resolve\0",
             "mounts.paths.remote.list",
             "mounts.mount",
-            "mounts.browse",
+            "mounts.browse.extra",
+            "mounts.browse\0",
             "mounts.reveal",
             "mounts.unmount.extra",
             "mounts.unmount\0",

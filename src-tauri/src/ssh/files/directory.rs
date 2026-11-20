@@ -28,19 +28,39 @@ impl<F: Fn() -> AppResult<()> + Send + Sync + 'static> Policy for F {
 }
 #[derive(Clone)]
 pub(crate) enum Query {
-    Resolve { path: Option<String> },
-    Browse { path: Option<String>, offset: usize },
+    Resolve {
+        path: Option<String>,
+    },
+    Browse {
+        path: Option<String>,
+        offset: usize,
+    },
+    /// Frozen one-off RPC: complete directory listing, never a first-page alias.
+    LegacyBrowse {
+        path: String,
+    },
 }
 impl Query {
     fn path(&self) -> Option<&str> {
         match self {
             Self::Resolve { path } | Self::Browse { path, .. } => path.as_deref(),
+            Self::LegacyBrowse { path } => Some(path),
         }
     }
     pub(crate) fn validate(&self) -> AppResult<()> {
+        if let Self::LegacyBrowse { path } = self {
+            if !path.starts_with('/') || path.contains('\0') {
+                return Err(AppError::validation("mounts.remotePath.absoluteRequired"));
+            }
+        }
+        let path_limit = if matches!(self, Self::LegacyBrowse { .. }) {
+            32768
+        } else {
+            2048
+        };
         if self
             .path()
-            .is_some_and(|p| p.len() > 2048 || p.contains(['\0', '\r', '\n']))
+            .is_some_and(|p| p.len() > path_limit || p.contains(['\0', '\r', '\n']))
         {
             return Err(AppError::validation("mounts.remotePath.invalid"));
         }
@@ -162,8 +182,16 @@ async fn read(
     check(policy, cancel)?;
     raw.init().await.map_err(map_sftp)?;
     check(policy, cancel)?;
-    let home = canonical(raw, ".".into()).await?;
-    let requested = requested_directory(&home, query.path())?;
+    // The one-off contract requires an absolute path. Do not make its browse
+    // depend on a server accepting REALPATH(".") for an unrelated home folder.
+    let (home, requested) = match query {
+        Query::LegacyBrowse { path } => (String::new(), path.clone()),
+        _ => {
+            let home = canonical(raw, ".".into()).await?;
+            let requested = requested_directory(&home, query.path())?;
+            (home, requested)
+        }
+    };
     check(policy, cancel)?;
     let path = canonical(raw, requested).await?;
     check(policy, cancel)?;
@@ -177,16 +205,21 @@ async fn read(
     {
         return Err(AppError::validation("plugin.tools.invalidPath"));
     }
-    let Query::Browse { offset, .. } = query else {
+    if matches!(query, Query::Resolve { .. }) {
         return Ok(json!({"home":home,"path":path}));
-    };
+    }
     check(policy, cancel)?;
     let directory = raw.opendir(path.clone()).await.map_err(map_sftp)?.handle;
-    let result = entries(raw, &directory, &path, *offset, policy, cancel).await;
+    let result = entries(raw, &directory, &path, policy, cancel).await;
     // Closing the whole SSH channel still reclaims a handle after timeout or
     // malformed replies. Attempt normal CLOSE before shutting down its worker.
     let close = raw.close(directory).await.map_err(map_sftp);
-    result.and_then(|value| close.map(|_| value))
+    let entries = result.and_then(|value| close.map(|_| value))?;
+    match query {
+        Query::Browse { offset, .. } => page(entries, &path, *offset),
+        Query::LegacyBrowse { .. } => legacy_listing(entries, &path),
+        Query::Resolve { .. } => unreachable!("resolve returned before OPENDIR"),
+    }
 }
 async fn canonical(raw: &RawSftpSession, path: String) -> AppResult<String> {
     let response = raw.realpath(path).await.map_err(map_sftp)?;
@@ -218,10 +251,9 @@ async fn entries(
     raw: &RawSftpSession,
     directory: &str,
     path: &str,
-    offset: usize,
     policy: &impl Policy,
     cancel: &Cancellation,
-) -> AppResult<Value> {
+) -> AppResult<Vec<FileEntry>> {
     let mut result = Vec::<FileEntry>::new();
     let (mut count, mut bytes) = (0usize, 0usize);
     loop {
@@ -279,7 +311,16 @@ async fn entries(
             .cmp(&b.name.to_lowercase())
             .then(a.name.cmp(&b.name))
     });
-    page(result, path, offset)
+    Ok(result)
+}
+fn legacy_listing(entries: Vec<FileEntry>, path: &str) -> AppResult<Value> {
+    // The old contract has no nextOffset. Never silently truncate it or expose
+    // a partial success; bound the escaped JSON, not just decoded SFTP strings.
+    let result = json!({"path":path,"entries":entries});
+    if serde_json::to_vec(&result)?.len() > 1024 * 1024 - 4096 {
+        return Err(AppError::validation("mounts.remoteListingTooLarge"));
+    }
+    Ok(result)
 }
 fn page(entries: Vec<FileEntry>, path: &str, offset: usize) -> AppResult<Value> {
     const RESPONSE_BYTES: usize = 512 * 1024;
