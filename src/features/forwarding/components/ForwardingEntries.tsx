@@ -2,7 +2,6 @@ import { ArrowRight, Laptop, Play, Server, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
-import { copyText } from "@/lib/session/clipboard";
 import { translateError } from "@/lib/api/errors";
 import { endpointAddress, localConnectionAddress } from "../model/endpoint";
 import type { ForwardingController } from "../runtime/useForwardingController";
@@ -10,6 +9,7 @@ import type { ForwardingController } from "../runtime/useForwardingController";
 /** Native rows use host controller actions; presentation does not own IPC or dialogs. */
 export function ForwardingEntries({
   rules,
+  actions,
   failure,
   pendingKind,
   pending,
@@ -21,6 +21,7 @@ export function ForwardingEntries({
   requestRemove,
 }: Pick<
   ForwardingController,
+  | "actions"
   | "rules"
   | "failure"
   | "pendingKind"
@@ -103,7 +104,9 @@ export function ForwardingEntries({
                         {
                           label: t("forward.copyAddress"),
                           onSelect: () =>
-                            copyText(localConnectionAddress(rule.bindHost, rule.bindPort)),
+                            actions.copyAddress(
+                              localConnectionAddress(rule.bindHost, rule.bindPort),
+                            ),
                         },
                       ]
                     : []),

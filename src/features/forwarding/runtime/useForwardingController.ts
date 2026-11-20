@@ -1,14 +1,15 @@
+import { useSsh } from "@/store/ssh";
 import { forwardingGroupsStore, useForwardingGroupsSnapshot } from "../data/groups";
 import { useForwardingCaptureGuard } from "./useForwardingCaptureGuard";
 import { usePanelViewState } from "@/lib/panels/viewState";
 import { forwardDraft, type ForwardDraft } from "../model/viewState";
-import { invoke } from "@tauri-apps/api/core";
+import { useForwardingActions } from "./actionScope";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { translateError } from "@/lib/api/errors";
 import { isIpcError, type Host, type SshConnectRequest } from "@/lib/api/types";
 import type { ConnectionReview } from "@/lib/api/connections/review";
-import { useSsh } from "@/store/ssh";
+import { useForwardingReadModel, useForwardingSessions } from "../data/readScope";
 import { useDialogs } from "@/store/dialogs";
 import type { ForwardInfo, ForwardRule, RevisionedRule } from "../model/contract";
 import { forwardingSavePayload, initialForwardRule } from "../model/payload";
@@ -18,17 +19,12 @@ import type { FrontendForwardingEntry } from "@/lib/extensions/contracts/forward
 import type { SshSession } from "@/lib/api/types";
 
 type ConnectionRequest = { rules: readonly RevisionedRule[]; authority?: ForwardingAuthority };
-const authorizedArgs = async (authority?: ForwardingAuthority) => {
-  if (!authority) return {};
-  const origin = await authority.origin();
-  authority.authorize();
-  return { origin };
-};
-
 /** One host owns its draft, delayed confirmations and independent SSH startup. */
 export function useForwardingController(host: Host) {
   const { t } = useTranslation();
-  const sessions = useSsh((state) => state.sessions);
+  const actions = useForwardingActions();
+  const remoteData = useForwardingReadModel();
+  const sessions = useForwardingSessions();
   const session = sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
   const [connectingRules, setConnectingRules] = useState<ConnectionRequest | null>(null);
   const snapshot = useForwardingSnapshot();
@@ -41,11 +37,15 @@ export function useForwardingController(host: Host) {
     () => (groupSnapshot.entries ?? []).filter((group) => group.hostId === host.id),
     [groupSnapshot.entries, host.id],
   );
+  const currentData = useRef({ snapshot, groupSnapshot, sessions });
+  useLayoutEffect(() => {
+    currentData.current = { snapshot, groupSnapshot, sessions };
+  }, [snapshot, groupSnapshot, sessions]);
   const groupError = groupSnapshot.error ? translateError(groupSnapshot.error) : null;
   const loading =
     (snapshot.entries === null && snapshot.busy) ||
     (groupSnapshot.entries === null && groupSnapshot.busy);
-  const load = forwardingStore.refresh;
+  const load = actions.refresh;
   const isActive = (rule: ForwardInfo) =>
     rule.active && sessions.some((item) => item.id === rule.sessionId);
   const [form, setForm] = usePanelViewState<ForwardDraft | null>(
@@ -105,24 +105,12 @@ export function useForwardingController(host: Host) {
       if (live.current) setPending(null);
     }
   };
-  const rememberSession = (session: SshSession) => {
-    useSsh.getState().acceptSession(session);
-  };
-  const startOne = async (
+  const startOne = (
     rule: RevisionedRule,
     authority?: ForwardingAuthority,
     request?: SshConnectRequest,
     review?: ConnectionReview,
-  ) => {
-    const connected = await invoke<SshSession>("forwarding_start_managed", {
-      id: rule.id,
-      expectedRevision: rule.revision,
-      ...(request ? { request, review } : {}),
-      ...(await authorizedArgs(authority)),
-    });
-    rememberSession(connected);
-    return connected;
-  };
+  ) => actions.start(rule, authority, request, review);
   const startTargets = (targets: readonly RevisionedRule[], authority?: ForwardingAuthority) => {
     if (!targets.length || mutation.current || !live.current) return;
     authority?.authorize();
@@ -165,15 +153,11 @@ export function useForwardingController(host: Host) {
         async () => {
           if (currentForm.current !== draft || (draft.id && !draft.revision))
             throw new Error("forward.changed");
-          const saved = await invoke<RevisionedRule>("forwarding_save", {
-            ...(await authorizedArgs(draftAuthority)),
-            rule: forwardingSavePayload(rule),
-            groupId: rule.groupId ?? null,
-            assignGroup: true,
-            ...(rule.automation ? { automation: rule.automation } : {}),
-            ...(draft.id ? { expectedRevision: draft.revision } : {}),
-          });
-          forwardingStore.saved(saved);
+          const saved = await actions.save(
+            rule,
+            draft.id ? draft.revision : undefined,
+            draftAuthority,
+          );
           if (!live.current) return;
           setForm(null);
           if (start) {
@@ -228,35 +212,17 @@ export function useForwardingController(host: Host) {
       confirmLabel: t("common.delete"),
       danger: true,
       onConfirm: async () => {
-        await run(
-          rule.id,
-          async () =>
-            invoke("forwarding_remove", {
-              id: rule.id,
-              expectedRevision: rule.revision,
-              ...(await authorizedArgs(authority)),
-            }),
-          "remove",
-        );
+        await run(rule.id, () => actions.remove(rule, authority), "remove");
       },
     });
   };
   const stop = (rule: ForwardInfo | FrontendForwardingEntry, authority?: ForwardingAuthority) =>
-    run(
-      rule.id,
-      async () =>
-        invoke("forwarding_stop", {
-          id: rule.id,
-          ...(authority ? { expectedRevision: rule.revision, runtimeId: rule.runtimeId } : {}),
-          ...(await authorizedArgs(authority)),
-        }),
-      "stop",
-    );
+    run(rule.id, () => actions.stop(rule, authority), "stop");
   const requestDisconnect = (authority?: ForwardingAuthority) => {
     authority?.authorize();
-    const targets = useSsh
-      .getState()
-      .sessions.filter((item) => item.hostId === host.id && item.purpose === "forwarding");
+    const targets = sessions.filter(
+      (item) => item.hostId === host.id && item.purpose === "forwarding",
+    );
     if (!targets.length) return;
     confirm({
       title: t("forward.disconnectTitle"),
@@ -266,16 +232,15 @@ export function useForwardingController(host: Host) {
         await run(
           "group",
           async () => {
+            const failures: string[] = [];
             for (const item of targets) {
-              if (!useSsh.getState().sessions.some((current) => current.id === item.id)) continue;
-              if (authority) {
-                await invoke("forwarding_provider_disconnect", {
-                  sessionId: item.id,
-                  ...(await authorizedArgs(authority)),
-                });
-                useSsh.getState().forget(item.id);
-              } else await useSsh.getState().disconnect(item.id);
+              try {
+                await actions.disconnect(host.id, item.id, authority);
+              } catch (cause) {
+                failures.push(translateError(cause));
+              }
             }
+            if (failures.length) throw new Error(failures.join("; "));
           },
           "stop",
         );
@@ -284,11 +249,18 @@ export function useForwardingController(host: Host) {
   };
   const busy = pending !== null;
   return {
+    actions,
     rules,
     groups,
     sessions,
     validate: () =>
-      forwardingStore.getSnapshot() === snapshot && useSsh.getState().sessions === sessions,
+      currentData.current.snapshot === snapshot &&
+      currentData.current.groupSnapshot === groupSnapshot &&
+      currentData.current.sessions === sessions &&
+      (remoteData !== null ||
+        (forwardingStore.getSnapshot() === snapshot &&
+          forwardingGroupsStore.getSnapshot() === groupSnapshot &&
+          useSsh.getState().sessions === sessions)),
     loading,
     session,
     isActive,
@@ -305,7 +277,6 @@ export function useForwardingController(host: Host) {
     refresh: () => {
       setFailure(null);
       void load();
-      forwardingGroupsStore.refresh();
     },
     add: (authority?: ForwardingAuthority) => {
       authority?.authorize();
@@ -344,8 +315,7 @@ export function useForwardingController(host: Host) {
       void load();
       return connected;
     },
-    connected: async (_request: ConnectionRequest, connected: SshSession) => {
-      rememberSession(connected);
+    connected: async (_request: ConnectionRequest, _connected: SshSession) => {
       void load();
     },
   };

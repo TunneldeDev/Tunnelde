@@ -6,7 +6,7 @@ import { ChevronRight, Network, Plus, Server } from "lucide-react";
 import { ForwardingSection } from "./ForwardingSection";
 import { useForwardingSnapshot } from "./data/store";
 import { useHosts } from "@/store/hosts";
-import { useSsh } from "@/store/ssh";
+import { useForwardingSessions } from "./data/readScope";
 import { translateError } from "@/lib/api/errors";
 import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import { useNavigation } from "@/store/navigation";
@@ -20,7 +20,7 @@ export function ForwardingPanel() {
   const hosts = useHosts((state) => state.hosts);
   const hostsLoading = useHosts((state) => state.loading && !state.loaded);
   const openHost = useDialogs((state) => state.openHost);
-  const sessions = useSsh((state) => state.sessions);
+  const sessions = useForwardingSessions();
   const target = useNavigation((state) => state.forwardingTarget);
   const [selection, setSelection] = usePanelViewState<{
     hostId: string | null;

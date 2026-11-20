@@ -636,3 +636,31 @@ invocation-fenced browser launcher as `mounts.dependencies.documentation`, witho
 legacy registry cleanup or dependency probing. Both are committed-only native
 calls. This does not admit other legacy mount aliases or prove physical FUSE or
 OS browser acceptance.
+
+### Forwarding model and service boundaries
+
+The private forwarding read model explicitly projects display-only host metadata,
+rule configuration/revision/runtime markers, groups (including empty groups),
+session IDs/host IDs/purpose and rendered error messages. It does not clone host
+key paths, notes, credentials, proxy settings, plugin grants or arbitrary error
+objects. The coordinator retains the same rule/group readers as local consumers
+only while a destination/transfer needs them; subscribing to the publisher alone
+starts no I/O. Original shared readers fence abandoned responses on release.
+Read-model publication remains subject to the native size and ownership gates.
+
+Rule/group/session hooks can consume an explicit read scope without starting
+local readers or hydrating writable stores. Existing controller, row and group
+components use a complete `ForwardingActions` scope for mutations and clipboard;
+only the main-document implementation owns IPC and committed source updates.
+A rejected scoped service never retries through the built-in implementation.
+Provider continuations remain document-local authority and are reauthorized after
+scope acquisition. Capture action identity and editable fields before that await;
+never serialize provider authority or transient connection credentials as drafts.
+The main implementation refuses satellite effects. Disconnect observes native
+failures, retains failed sessions and continues the remaining captured batch.
+
+These are reusable data/service adapters, not complete native forwarding support.
+Host dialogs, connection review/confirmation origin guards, provider-native
+handles, closed native action transport and actual resource-effect fences still
+need integration and acceptance before adding forwarding to native discovery.
+No satellite renderer or forwarding transfer admission is enabled by this work.

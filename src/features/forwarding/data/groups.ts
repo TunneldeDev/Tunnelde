@@ -1,3 +1,4 @@
+import { useForwardingReadModel, ignoreForwardingSubscription } from "./readScope";
 import { invoke } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
 import { isTauri } from "@/lib/api/ipc";
@@ -16,5 +17,9 @@ export const forwardingGroupsStore = createRetainedListStore(
   },
 );
 export function useForwardingGroupsSnapshot() {
-  return useSyncExternalStore(forwardingGroupsStore.subscribe, forwardingGroupsStore.getSnapshot);
+  const remote = useForwardingReadModel()?.groups;
+  return useSyncExternalStore(
+    remote ? ignoreForwardingSubscription : forwardingGroupsStore.subscribe,
+    remote ? () => remote : forwardingGroupsStore.getSnapshot,
+  );
 }

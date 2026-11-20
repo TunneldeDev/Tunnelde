@@ -1,14 +1,12 @@
-import { forwardingGroupsStore } from "../data/groups";
+import { useForwardingActions } from "../runtime/actionScope";
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { usePanelViewState } from "@/lib/panels/viewState";
 import { useId, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { translateError } from "@/lib/api/errors";
-import { forwardingStore } from "../data/store";
 import type { ForwardGroup } from "../model/contract";
 
 export function ForwardGroupDialog({
@@ -21,6 +19,7 @@ export function ForwardGroupDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const actions = useForwardingActions();
   const nameId = useId();
   const [draft, setDraft] = usePanelViewState(
     "group-name",
@@ -50,8 +49,7 @@ export function ForwardGroupDialog({
       setError(translateError(cause));
     } finally {
       setBusy(false);
-      forwardingStore.refresh();
-      forwardingGroupsStore.refresh();
+      actions.refresh();
     }
   };
   return (
@@ -70,15 +68,7 @@ export function ForwardGroupDialog({
           <Button
             variant="primary"
             disabled={busy || !name.trim()}
-            onClick={() =>
-              void run(() =>
-                invoke("forwarding_group_save", {
-                  hostId,
-                  name: name,
-                  ...(group ? { id: group.id, expectedRevision: group.revision } : {}),
-                }),
-              )
-            }
+            onClick={() => void run(() => actions.saveGroup(hostId, name, group))}
           >
             {t("common.save")}
           </Button>
@@ -101,13 +91,7 @@ export function ForwardGroupDialog({
               name.trim()
             ) {
               event.preventDefault();
-              void run(() =>
-                invoke("forwarding_group_save", {
-                  hostId,
-                  name: name,
-                  ...(group ? { id: group.id, expectedRevision: group.revision } : {}),
-                }),
-              );
+              void run(() => actions.saveGroup(hostId, name, group));
             }
           }}
         />

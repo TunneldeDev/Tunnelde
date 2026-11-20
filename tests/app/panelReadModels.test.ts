@@ -175,3 +175,76 @@ it("projects shared known-host state only to its own model and disposes the coor
   stop();
   expect(useKnownHostsSource.getState().source).toBeNull();
 });
+
+it("publishes retained forwarding projections only to their own model and releases readers after return", async () => {
+  const { usePanelWindows } = await import("@/store/panelWindows");
+  const { forwardingStore } = await import("@/features/forwarding/data/store");
+  const { forwardingGroupsStore } = await import("@/features/forwarding/data/groups");
+  const previous = usePanelWindows.getState();
+  cleanups.push(() => usePanelWindows.setState(previous, true));
+  usePanelWindows.setState({
+    windowId: "main",
+    snapshot: { windows: [], panels: [], transfers: [] },
+  });
+  const control = vi.fn(async (request) =>
+    request.action === "beginModel" ? `publisher-${request.panelId}` : null,
+  );
+  const failure = vi.fn();
+  const stop = startPanelReadModels({ control } as unknown as PanelWindowClient, failure);
+  cleanups.push(stop);
+  await settle();
+  expect(forwardingStore.getSnapshot().entries).toBeNull();
+  usePanelWindows.setState({
+    snapshot: {
+      windows: [],
+      panels: [{ panelId: "forwarding", windowId: "destination", generation: 2 }],
+      transfers: [],
+    },
+  });
+  await settle();
+  expect(forwardingStore.getSnapshot().entries).toEqual([]);
+  expect(forwardingGroupsStore.getSnapshot().entries).toEqual([]);
+  forwardingGroupsStore.accept(() => [
+    { id: "empty-forward-group", hostId: "host", name: "No rules", revision: "g1" },
+  ]);
+  const publications = control.mock.calls
+    .map(([request]) => request)
+    .filter((request) => request.action === "publishModel");
+  const forwarding = publications.filter((request) => request.panelId === "forwarding");
+  expect(forwarding).toContainEqual(
+    expect.objectContaining({
+      publisher: "publisher-forwarding",
+      model: expect.objectContaining({
+        forwarding: expect.objectContaining({
+          groups: expect.objectContaining({
+            entries: [
+              { id: "empty-forward-group", hostId: "host", name: "No rules", revision: "g1" },
+            ],
+          }),
+        }),
+      }),
+    }),
+  );
+  expect(
+    publications
+      .filter((request) => request.panelId !== "forwarding")
+      .every((request) => !JSON.stringify(request).includes("empty-forward-group")),
+  ).toBe(true);
+  await settle();
+  usePanelWindows.setState({
+    snapshot: {
+      windows: [],
+      panels: [{ panelId: "forwarding", windowId: "main", generation: 3 }],
+      transfers: [],
+    },
+  });
+  expect(forwardingStore.getSnapshot().entries).toBeNull();
+  expect(forwardingGroupsStore.getSnapshot().entries).toBeNull();
+  await settle();
+  stop();
+  const count = control.mock.calls.length;
+  useHosts.setState({ hosts: [] });
+  await settle();
+  expect(control).toHaveBeenCalledTimes(count);
+  expect(failure).not.toHaveBeenCalled();
+});

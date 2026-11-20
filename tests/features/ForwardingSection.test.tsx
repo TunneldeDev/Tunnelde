@@ -1,4 +1,12 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -837,4 +845,34 @@ it("shares one group snapshot across host surfaces and keeps empty groups host-s
   expect(
     invokeMock.mock.calls.filter(([command]) => command === "forwarding_groups_list"),
   ).toHaveLength(2);
+});
+
+it("invalidates provider frames immediately when a local rule, group or session source changes before React commits", async () => {
+  const { useForwardingController } =
+    await import("@/features/forwarding/runtime/useForwardingController");
+  const { forwardingStore } = await import("@/features/forwarding/data/store");
+  const { forwardingGroupsStore } = await import("@/features/forwarding/data/groups");
+  const hook = renderHook(() => useForwardingController(host));
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  expect(hook.result.current.validate()).toBe(true);
+  const ruleFrame = hook.result.current;
+  await act(async () => {
+    forwardingStore.accept((entries) => [...entries]);
+    expect(ruleFrame.validate()).toBe(false);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
+  await waitFor(() => expect(hook.result.current.validate()).toBe(true));
+  const groupFrame = hook.result.current;
+  await act(async () => {
+    forwardingGroupsStore.accept((entries) => [...entries]);
+    expect(groupFrame.validate()).toBe(false);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
+  await waitFor(() => expect(hook.result.current.validate()).toBe(true));
+  const sessionFrame = hook.result.current;
+  await act(async () => {
+    useSsh.setState({ sessions: [] });
+    expect(sessionFrame.validate()).toBe(false);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
 });

@@ -1,9 +1,6 @@
-import { forwardingGroupsStore } from "../data/groups";
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { translateError } from "@/lib/api/errors";
-import { forwardingStore } from "../data/store";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
@@ -34,8 +31,7 @@ export function ForwardGroups({
       setError(translateError(cause));
     } finally {
       setBusy(false);
-      forwardingStore.refresh();
-      forwardingGroupsStore.refresh();
+      controller.actions.refresh();
     }
   };
   const groups = [
@@ -81,13 +77,7 @@ export function ForwardGroups({
                         danger: true,
                         disabled: !!rules.length,
                         description: rules.length ? t("forward.groupNotEmpty") : undefined,
-                        onSelect: () =>
-                          void run(() =>
-                            invoke("forwarding_group_remove", {
-                              id: group.id,
-                              expectedRevision: group.revision,
-                            }),
-                          ),
+                        onSelect: () => void run(() => controller.actions.removeGroup(group)),
                       },
                     ]}
                   />

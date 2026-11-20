@@ -1,3 +1,4 @@
+import { useForwardingReadModel, ignoreForwardingSubscription } from "./readScope";
 import { invoke } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
 import { isTauri } from "@/lib/api/ipc";
@@ -37,5 +38,9 @@ export const forwardingStore = createForwardingStore(
   },
 );
 export function useForwardingSnapshot() {
-  return useSyncExternalStore(forwardingStore.subscribe, forwardingStore.getSnapshot);
+  const remote = useForwardingReadModel()?.rules;
+  return useSyncExternalStore(
+    remote ? ignoreForwardingSubscription : forwardingStore.subscribe,
+    remote ? () => remote : forwardingStore.getSnapshot,
+  );
 }
