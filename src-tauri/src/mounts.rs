@@ -14,6 +14,7 @@ pub(crate) mod managed;
 pub(crate) use managed::{open_managed, open_plugin};
 pub(crate) mod adoption;
 mod negotiation;
+pub(crate) mod startup;
 mod transport;
 pub(crate) mod unmount;
 use crate::{
@@ -45,7 +46,7 @@ pub struct MountInfo {
     pub read_only: bool,
     pub cleanup_error: Option<String>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MountRequest {
     pub session_id: String,
@@ -571,21 +572,31 @@ impl MountRegistry {
         ssh: &SshManager,
         owner: &str,
         generation: u64,
-        mut request: MountRequest,
+        request: MountRequest,
+    ) -> AppResult<MountInfo> {
+        self.mount_gated(ssh, owner, generation, request, &startup::Host)
+            .await
+    }
+    async fn mount_gated(
+        &self,
+        ssh: &SshManager,
+        owner: &str,
+        generation: u64,
+        request: MountRequest,
+        gate: &impl startup::Gate,
     ) -> AppResult<MountInfo> {
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {
             return Err(AppError::validation("mounts.operations.cancelled"));
         }
-        validate(&request)?;
+        gate.check()?;
+        // Bind the original authenticated connection before any slow work.
+        // A reconnect under the same ID must not redirect this acquisition.
+        let handle = gate.handle(ssh, &request.session_id)?;
+        let request = startup::prepare_path(request).await?;
+        gate.check()?;
         let dependencies = dependencies().await?;
         if !dependencies.available {
             return Err(AppError::validation("mounts.dependencies.required"));
-        }
-        if !cfg!(windows) {
-            request.mount_point = Path::new(&request.mount_point)
-                .canonicalize()?
-                .to_string_lossy()
-                .into();
         }
         let program = dependencies
             .executable
@@ -595,8 +606,8 @@ impl MountRegistry {
             .ok_or_else(|| AppError::validation("mounts.dependencies.required"))?;
         // Network negotiation must not hold the registry lock: a stalled server
         // must not block unrelated mounts, listings, or revocation cleanup.
-        let handle = ssh.handle(&request.session_id)?;
-        let channel = negotiation::prepare(handle.clone()).await?;
+        gate.check()?;
+        let channel = negotiation::prepare_owned(handle.clone()).await?;
         // Serialize only publication so concurrent negotiations cannot spawn
         // two processes targeting the same drive or directory.
         let mut mounts = self.mounts.lock().await;
@@ -618,6 +629,10 @@ impl MountRegistry {
         }) {
             return Err(AppError::validation("mounts.mountPoint.inUse"));
         }
+        // Admit the effect while holding only short metadata gates; the OS
+        // launch itself occurs outside those locks. Until final delivery wins,
+        // cancellation still requires the owned startup worker to clean up.
+        gate.check()?;
         let mut cmd = command(program);
         cmd.arg(format!("tunnelde:{}", request.remote_path))
             .arg(&request.mount_point)
@@ -633,22 +648,21 @@ impl MountRegistry {
             .stderr(Stdio::null())
             .kill_on_drop(true)
             .spawn()?;
-        let input = child
-            .stdin
-            .take()
-            .ok_or_else(|| AppError::internal("mounts.stdin"))?;
-        let output = child
-            .stdout
-            .take()
-            .ok_or_else(|| AppError::internal("mounts.stdout"))?;
+        let pipes = child.stdin.take().zip(child.stdout.take());
+        let Some((input, output)) = pipes else {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(AppError::internal("mounts.pipes"));
+        };
+        let (channel, release_work) = channel.split().release_work_on_commit();
         let bridge = tokio::spawn(async move {
-            let _ = transport::bridge(channel, input, output).await;
+            let _ = transport::bridge_owned(channel, input, output).await;
         });
         let pending = lifecycle::PendingMount::new(&bridge);
         let info = MountInfo {
             id: uuid::Uuid::new_v4().to_string(),
             owner: owner.into(),
-            session_id: request.session_id,
+            session_id: request.session_id.clone(),
             remote_path: request.remote_path,
             mount_point: request.mount_point,
             read_only: request.read_only,
@@ -675,6 +689,7 @@ impl MountRegistry {
         // the process and bridge. A live process alone is not a mounted filesystem.
         let ready = tokio::time::timeout(std::time::Duration::from_secs(15), async {
             loop {
+                gate.check()?;
                 {
                     let mut mounts = self.mounts.lock().await;
                     let active = mounts
@@ -722,10 +737,25 @@ impl MountRegistry {
         })
         .await
         .unwrap_or_else(|_| Err(AppError::validation("mounts.startTimeout")));
-        if let Err(error) = ready {
-            self.stop_resource(&info).await;
-            return Err(error);
-        }
+        startup::finish(
+            ready,
+            || {
+                if handle.is_closed()
+                    || !std::sync::Arc::ptr_eq(&handle, &ssh.handle(&request.session_id)?)
+                    || self.closed.load(std::sync::atomic::Ordering::Acquire)
+                {
+                    return Err(AppError::validation("mounts.transportClosed"));
+                }
+                Ok(())
+            },
+            gate,
+            self.retire_startup(info.clone()),
+        )
+        .await?;
+        // The registry now owns a long-lived mount. Only pending acquisition
+        // and failed-channel retirement, not its whole mounted lifetime, fence
+        // native panel movement.
+        release_work();
         pending.complete();
         Ok(info)
     }
@@ -916,16 +946,13 @@ pub async fn action(
                     .await
                 }
                 "mount" => Ok(serde_json::to_value(
-                    state
-                        .mounts
-                        .mount(
-                            &state.ssh,
-                            &plugin_id,
-                            lease.generation,
-                            serde_json::from_value(params.clone())
-                                .map_err(|_| AppError::validation("mounts.request.invalid"))?,
-                        )
-                        .await?,
+                    startup::mount_plugin(
+                        app.clone(),
+                        lease.clone(),
+                        serde_json::from_value(params.clone())
+                            .map_err(|_| AppError::validation("mounts.request.invalid"))?,
+                    )
+                    .await?,
                 )?),
                 "unmount" => {
                     let id = params

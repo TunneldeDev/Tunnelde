@@ -1084,8 +1084,8 @@ The unmount alias uses the original admitted lease and the existing exact-origin
 invocation-fenced owned teardown. It retains the registry, nested probes and child
 reaping through settlement. Existing owner/generation checks and the legacy force
 argument semantics remain intact. The public v1 request/result contracts do not
-change. `mounts.mount` and `mounts.browse` still need separate native-effect audits;
-neither is admitted by these changes. Ordinary subprocess/OS-opener test seams are
+change. Mount creation and browsing have separate follow-up integrations described
+below. Ordinary subprocess/OS-opener test seams are
 not physical FUSE or file-manager acceptance, nor complete resource-RPC parity.
 
 ### One-off mount directory browsing
@@ -1100,9 +1100,8 @@ listing helper. Staged native views cannot initiate this network operation.
 The existing `{path, entries}` result remains a complete directory-only listing:
 there is no `nextOffset`, silent first-page truncation or dependency on resolving
 an unrelated home directory. Oversized/hostile replies fail explicitly. The newer
-`mounts.paths.remote.browse` keeps its existing paged result. `mounts.mount` still
-needs separate start/publication/cleanup integration; enabling browse does not
-implicitly admit mount creation or complete native-window parity.
+`mounts.paths.remote.browse` keeps its existing paged result. The subsequent one-off acquisition integration is described below; browsing alone
+does not imply complete native-window parity.
 
 ### Beta delivery and remaining rollout
 
@@ -1120,7 +1119,7 @@ Unsupported views stay in their original window rather than losing state.
 
 Remaining rollout: ordinary terminal/SFTP/editor/host/settings and other panel
 adapters; factoryless plugin presentation; background-task providers and full
-file-preview handles; remaining resource APIs including one-off mount creation;
+file-preview handles; remaining resource APIs;
 and physical cross-window dragging across desktop platforms, displays and DPI.
 Continue these as follow-up implementation/acceptance work, without treating them
 as completed or requiring every non-blocking detail before a useful Beta.
@@ -1134,3 +1133,22 @@ prompt/effect movement fences or general plugin nativeWindows discovery. The
 existing capture/stage/commit path retains drafts and promotes the same restored
 provider tree; unsupported legacy providers can still reject a move without
 retiring the source. Physical cross-platform dragging remains follow-up acceptance.
+
+### Native one-off mount acquisition
+
+`mounts.mount` now has a committed-only native call policy. It keeps the frozen
+request/result shape and original plugin lease, invocation, document/view origin
+and exact authenticated SSH handle. Path preparation and startup use bounded,
+retained workers; filesystem validation does not block the renderer/runtime.
+Failed readiness or final admission awaits cleanup of the exact registered mount.
+An unreceived startup result also owns cleanup, including child reaping and SSH
+channel CLOSE settlement, without disconnecting the borrowed parent session.
+
+Only successful startup publication releases the creating call's channel fence;
+the mount then belongs to the registry and can survive view movement. Dropping a
+failure-path release callback does not release that fence. Existing managed mounts
+share the same owned transport. Real loopback SSH tests cover transport traffic,
+accepted-resource detachment, failed-startup CLOSE and a usable sibling channel;
+ordinary subprocess tests cover lost-result cleanup. These are not a real FUSE
+mount or cross-platform native UI acceptance claim. General native-window parity
+and the other adapters listed above remain follow-up work.

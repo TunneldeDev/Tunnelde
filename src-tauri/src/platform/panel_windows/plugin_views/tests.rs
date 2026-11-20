@@ -580,6 +580,7 @@ fn persistent_data_effects_require_committed_ownership_and_fence_actual_settleme
         CallPolicy::MountLegacy,
         CallPolicy::MountOpen,
         CallPolicy::MountUnmount,
+        CallPolicy::MountCreation,
         CallPolicy::MountDocumentation,
     ] {
         let mut f = Fixture::new();
@@ -945,7 +946,12 @@ fn managed_and_one_off_mount_open_require_committed_native_ownership() {
 
 #[test]
 fn one_off_snapshot_is_staged_but_probes_and_teardown_require_the_exact_committed_document() {
-    for method in ["mounts.list", "mounts.dependencies", "mounts.unmount"] {
+    for method in [
+        "mounts.list",
+        "mounts.dependencies",
+        "mounts.unmount",
+        "mounts.mount",
+    ] {
         let mut f = Fixture::new();
         f.owned("source");
         let id = f.offer();
