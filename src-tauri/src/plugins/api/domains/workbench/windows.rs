@@ -1,6 +1,6 @@
 use crate::{
     error::{AppError, AppResult},
-    platform::panel_windows::public,
+    platform::panel_windows::{public, public_panels},
     plugins::{
         api::{authorize, field, optional, HostContext},
         security::Lease,
@@ -14,6 +14,33 @@ pub(super) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     match method {
+        "workspace.panels.list" | "workspace.panels.observe" => {
+            authorize(context, &["workspace.read"])?;
+            let revision: Option<String> = optional(&params, "revision")?;
+            if revision
+                .as_ref()
+                .is_some_and(|r| r.len() > 128 || r.contains('\0'))
+            {
+                return Err(AppError::validation("plugin.api.invalid:revision"));
+            }
+            public_panels::snapshot(&context.app, revision, method == "workspace.panels.observe")
+                .await
+        }
+        "workspace.panels.setPresentation" | "workspace.panels.close" => {
+            authorize(context, &["workspace.write"])?;
+            public_panels::change(
+                &context.app,
+                Lease {
+                    id: context.id.clone(),
+                    fingerprint: context.fingerprint.clone(),
+                    permissions: context.permissions.clone(),
+                    generation: context.generation,
+                },
+                params,
+                method == "workspace.panels.close",
+            )
+            .await
+        }
         "workspace.windows.list" | "workspace.panels.ownership" => {
             authorize(context, &["workspace.read"])?;
             Ok(public::snapshot(&context.app))

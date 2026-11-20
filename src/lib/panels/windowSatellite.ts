@@ -1,3 +1,4 @@
+import { publishStagedPresentation } from "./presentationRequests";
 import type { PanelWindowClient } from "./windowClient";
 import type { NativePanelSnapshot } from "./windowProtocol";
 import type { WindowViews } from "./windowViews";
@@ -44,8 +45,11 @@ export function startSatelliteViews(
           });
           if (disposed || controller.signal.aborted) return;
           await views.stage(offer, staged.state, controller.signal);
-          if (!disposed && !controller.signal.aborted)
-            await client.control({ action: "acknowledge", id: offer.id });
+          if (!disposed && !controller.signal.aborted) {
+            await publishStagedPresentation(client, offer);
+            if (!disposed && !controller.signal.aborted)
+              await client.control({ action: "acknowledge", id: offer.id });
+          }
         } catch (error) {
           if (!disposed && !controller.signal.aborted) {
             await client.control({ action: "cancel", id: offer.id }).catch(() => {});

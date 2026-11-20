@@ -7,7 +7,8 @@ import { SIDEBAR_VIEWS, sidebarTabId, sidebarViewOf } from "@/lib/session/sideba
 import { pluginSidebars, parsePluginSidebar } from "@/lib/plugins/sidebars";
 import { panelLocation } from "./controller";
 
-/** Layout metadata only; no feature contents, private drafts or arbitrary store fields. */
+/** LOCAL coordinator layout metadata only. Public panel RPC reads the native
+ * source-window projection, never this helper as a satellite representation. */
 export function panelSnapshot() {
   const workspace = useWorkspace.getState();
   const navigation = useNavigation.getState();
@@ -25,14 +26,15 @@ export function panelSnapshot() {
         : location === "floating"
           ? state.open
           : navigation.sidebarVisible && navigation.activeSidebar === view;
+    const available = view !== "filePreview" || useFilePreview.getState().file !== null;
     return {
       id: view,
       windowId: "main",
       presentation: location,
-      visible,
+      visible: visible && available,
       pinned: state.pinned,
       bounds: state.bounds ? { ...state.bounds } : null,
-      available: view !== "filePreview" || useFilePreview.getState().file !== null,
+      available,
       presentations: ["sidebar", "workspace", "floating"] as const,
     };
   });

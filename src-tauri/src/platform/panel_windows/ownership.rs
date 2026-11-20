@@ -43,7 +43,8 @@ struct Document {
     closing: bool,
 }
 pub(super) struct Panel {
-    lease: Lease,
+    pub(super) lease: Lease,
+    pub(super) presentation: Option<super::presentation::LayoutMetadata>,
     blocked: bool,
     // Document-local consent only; unlike admitted effects, retires on reload.
     interactions: HashMap<String, String>,
@@ -57,12 +58,13 @@ pub(super) struct Panel {
     pub(super) model_revision: u64,
     pub(super) native_actions: HashSet<String>,
 }
-struct Transfer {
+pub(super) struct Transfer {
     id: String,
     lease: Lease,
     source_document: String,
-    target_window: String,
-    target_document: String,
+    pub(super) target_window: String,
+    pub(super) target_document: String,
+    pub(super) presentation: Option<super::presentation::LayoutMetadata>,
     state: Value,
     deadline: Instant,
     ready: bool,
@@ -102,7 +104,9 @@ pub(super) struct Ownership {
     windows: HashMap<String, Document>,
     destroying: HashSet<String>,
     pub(super) panels: HashMap<String, Panel>,
-    transfers: HashMap<String, Transfer>,
+    pub(super) transfers: HashMap<String, Transfer>,
+    pub(super) preview_placeholder: Option<super::presentation::LayoutMetadata>,
+    pub(super) presentation_jobs: HashMap<String, super::presentation_jobs::PendingPresentation>,
     drags: HashMap<String, DragGrant>,
 }
 impl Ownership {
@@ -116,6 +120,10 @@ impl Ownership {
             return Err("window limit");
         }
         self.retire_document_actions(window);
+        self.retire_presentation_document(window);
+        if window == MAIN {
+            self.preview_placeholder = None;
+        }
         self.save_pending_source(window);
         self.cancel_window_transfers(window);
         let document = token();
@@ -137,6 +145,7 @@ impl Ownership {
             self.generation += 1;
             panel.lease.generation = self.generation;
             panel.checkpoint_revision = 0;
+            panel.presentation = None;
             panel.interactions.clear();
         }
         Ok(document)
@@ -276,6 +285,7 @@ impl Ownership {
             panel_id.into(),
             Panel {
                 lease: lease.clone(),
+                presentation: None,
                 blocked: false,
                 interactions: HashMap::new(),
                 checkpoint: Value::Null,
@@ -315,6 +325,7 @@ impl Ownership {
     }
     pub fn remove_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<()> {
         self.main(window, document)?;
+        self.remove_presentation_panel(panel_id)?;
         self.retire_panel_actions(panel_id);
         self.retire_panel_moves(panel_id);
         self.panels.remove(panel_id).ok_or("panel not found")?;
@@ -509,6 +520,7 @@ impl Ownership {
                 source_document: document.into(),
                 target_window: target.into(),
                 target_document: destination.id.clone(),
+                presentation: None,
                 state,
                 deadline: now + TRANSFER_TTL,
                 ready: false,
@@ -524,7 +536,7 @@ impl Ownership {
     pub(super) fn move_offer_exists(&self, id: &str, now: Instant) -> bool {
         self.pending(id, now).is_ok()
     }
-    fn pending(&self, id: &str, now: Instant) -> Result<&Transfer> {
+    pub(super) fn pending(&self, id: &str, now: Instant) -> Result<&Transfer> {
         let pending = self
             .transfers
             .get(id)
@@ -596,6 +608,7 @@ impl Ownership {
         panel.lease.generation = self.generation;
         panel.checkpoint_revision = 0;
         panel.checkpoint = pending.state;
+        panel.presentation = pending.presentation;
         let lease = panel.lease.clone();
         self.finish_move(&pending.id, &lease);
         Ok(lease)
@@ -612,6 +625,8 @@ impl Ownership {
     }
     pub fn expire(&mut self, now: Instant) -> Vec<String> {
         self.expire_actions(now);
+        let presentation_ids: Vec<_> = self.presentation_jobs.keys().cloned().collect();
+        self.expire_presentation_jobs(now);
         let move_ids: Vec<_> = self.moves.keys().cloned().collect();
         self.expire_moves(now);
         let mut expired: Vec<_> = self
@@ -624,6 +639,11 @@ impl Ownership {
             self.transfers.remove(id);
         }
         self.drags.retain(|_, grant| grant.deadline > now);
+        expired.extend(
+            presentation_ids
+                .into_iter()
+                .filter(|id| !self.presentation_jobs.contains_key(id)),
+        );
         expired.extend(
             move_ids
                 .into_iter()
@@ -812,6 +832,7 @@ impl Ownership {
         if !self.windows.contains_key(MAIN) {
             return Err("coordinator unavailable");
         }
+        self.retire_presentation_document(window);
         self.save_pending_source(window);
         self.cancel_window_transfers(window);
         self.windows.remove(window);
@@ -828,6 +849,7 @@ impl Ownership {
             self.generation += 1;
             panel.lease.generation = self.generation;
             panel.checkpoint_revision = 0;
+            panel.presentation = None;
             panel.interactions.clear();
             recovered.push(panel.lease.clone());
         }

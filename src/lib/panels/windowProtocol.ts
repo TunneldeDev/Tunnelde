@@ -1,3 +1,5 @@
+import type { PanelPresentation } from "@/store/panelPresentation";
+import type { FloatingRect } from "@/lib/layout/floatingPanel";
 import type { TransferWindowAction } from "@/features/sftp/transferWindowProtocol";
 import type { KnownHostEntry } from "@/lib/api/types";
 /** This is the private native UI transport, not the public plugin API. Caller
@@ -45,7 +47,29 @@ export interface PanelMoveJob {
   lease: PanelLease;
   targetWindow: string;
 }
+export interface PanelLayoutMetadata {
+  presentation: PanelPresentation;
+  visible: boolean;
+  pinned: boolean;
+  bounds: FloatingRect | null;
+  available: boolean;
+  presentations: readonly PanelPresentation[];
+}
+export interface PanelPresentationJob {
+  id: string;
+  lease: PanelLease;
+  operation: { kind: "set"; presentation: PanelPresentation } | { kind: "close" };
+}
 export type PanelWindowCommand =
+  | { action: "publishPresentation"; lease: PanelLease; metadata: PanelLayoutMetadata }
+  | {
+      action: "publishStagedPresentation" | "completePresentation";
+      id: string;
+      metadata: PanelLayoutMetadata;
+    }
+  | { action: "publishUnavailablePreview"; metadata: PanelLayoutMetadata }
+  | { action: "claimPresentations" }
+  | { action: "beginPresentation" | "failPresentation"; id: string }
   | { action: "requestAction"; lease: PanelLease; request: PanelViewAction }
   | { action: "claimActions" | "claimPanelMoves" }
   | { action: "preparePanelMove"; id: string; state: unknown }

@@ -262,3 +262,51 @@ it("delivers target-window focus metadata only and disposes late focus listeners
   expect(unlisten).toHaveBeenCalledTimes(2);
   expect(native.invoke).not.toHaveBeenCalled();
 });
+
+it("preserves late source presentation claims and permits cleanup-only completion after disposal", async () => {
+  let settle!: (value: unknown) => void;
+  native.invoke
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+    )
+    .mockResolvedValue(null);
+  const client = createPanelWindowClient(identity);
+  const pending = client.claimPresentations();
+  client.dispose();
+  const jobs = [
+    {
+      id: "p",
+      lease: { panelId: "tasks", windowId: identity.windowId, generation: 2 },
+      operation: { kind: "close" },
+    },
+  ];
+  settle(jobs);
+  expect(await pending).toEqual(jobs);
+  await expect(client.claimPresentations()).rejects.toThrow("disposed");
+  const metadata = {
+    presentation: "workspace" as const,
+    visible: false,
+    pinned: true,
+    bounds: null,
+    available: true,
+    presentations: ["workspace" as const],
+  };
+  await client.completePresentation("p", metadata);
+  await client.failPresentation("p");
+  expect(native.invoke.mock.calls.slice(-2)).toEqual([
+    [
+      "panel_window_control",
+      {
+        document: identity.document,
+        request: { action: "completePresentation", id: "p", metadata },
+      },
+    ],
+    [
+      "panel_window_control",
+      { document: identity.document, request: { action: "failPresentation", id: "p" } },
+    ],
+  ]);
+});

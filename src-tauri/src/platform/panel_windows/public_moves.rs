@@ -102,6 +102,9 @@ pub(super) fn control(
     now: Instant,
 ) -> AppResult<Value> {
     match request {
+        Command::BeginPresentation { id } => {
+            super::public_panels::begin(app, ownership, window, document, &id, now)
+        }
         Command::ClaimPanelMoves {} => Ok(json!(ownership
             .claim_moves(window, document, now, |o| policy(app, o))
             .map_err(native::invalid)?)),

@@ -685,50 +685,23 @@ describe("plugin dialog and listener lifecycle", () => {
   });
 });
 
-describe("generic panel API", () => {
-  it("authorizes, discovers and moves panels independently of frozen workspace v1", async () => {
+describe("generic panel API native routing", () => {
+  it("never replays native source-window panel methods through coordinator stores", async () => {
     const { panelPresentation } = await import("@/store/panelPresentation");
-    const { useNavigation } = await import("@/store/navigation");
     panelPresentation("connections").setState({ preferred: null, open: false });
-    useNavigation.setState({ activeSidebar: "hosts", sidebarVisible: true });
     const original = pluginWorkspaceSnapshot();
-    const list = (await runPluginWorkspaceRequest(request("workspace.panels.list"))) as {
-      revision: string;
-      panels: { id: string }[];
-    };
-    expect(list.panels.some((panel) => panel.id === "connections")).toBe(true);
+    for (const [method, params] of [
+      ["workspace.panels.list", {}],
+      ["workspace.panels.observe", { revision: "old" }],
+      ["workspace.panels.setPresentation", { panelId: "connections", presentation: "floating" }],
+      ["workspace.panels.close", { panelId: "connections" }],
+    ] as const) {
+      await expect(runPluginWorkspaceRequest(request(method, params))).rejects.toThrow(
+        "unknownMethod",
+      );
+    }
+    expect(panelPresentation("connections").getState().open).toBe(false);
     expect(pluginWorkspaceSnapshot()).toEqual(original);
-    const floating = await runPluginWorkspaceRequest(
-      request("workspace.panels.setPresentation", {
-        panelId: "connections",
-        presentation: "floating",
-      }),
-    );
-    expect(floating).toMatchObject({ id: "connections", presentation: "floating", visible: true });
-    const update = (await runPluginWorkspaceRequest(
-      request("workspace.panels.observe", { revision: list.revision }),
-    )) as { revision: string };
-    expect(update.revision).not.toBe(list.revision);
-    await runPluginWorkspaceRequest(request("workspace.panels.close", { panelId: "connections" }));
-    expect(panelPresentation("connections").getState().open).toBe(false);
-    await expect(
-      runPluginWorkspaceRequest(
-        request("workspace.panels.setPresentation", {
-          panelId: "connections",
-          presentation: "other",
-        }),
-      ),
-    ).rejects.toThrow("invalid:presentation");
-    mocks.invoke.mockRejectedValueOnce(new Error("permission denied"));
-    await expect(
-      runPluginWorkspaceRequest(
-        request("workspace.panels.setPresentation", {
-          panelId: "connections",
-          presentation: "floating",
-        }),
-      ),
-    ).rejects.toThrow("permission denied");
-    expect(panelPresentation("connections").getState().open).toBe(false);
   });
 });
 

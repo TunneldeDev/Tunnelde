@@ -6,6 +6,7 @@ import type { PanelLease } from "@/lib/panels/windowProtocol";
 import {
   installSourcePanelPresentation,
   sourcePanelPresentation,
+  subscribeSourcePanelPresentation,
   startSourcePanelFocus,
 } from "@/lib/panels/sourcePresentation";
 import { createLocalPanelPresentation } from "@/lib/panels/localPresentation";
@@ -158,4 +159,21 @@ it("reveals only the exact current nonstaged owner on native focus and cleans la
   expect(unlisten).toHaveBeenCalledOnce();
   receive(lease);
   expect(failure).not.toHaveBeenCalled();
+});
+
+it("does not let one throwing registry observer strand installation or disposal", () => {
+  const broken = vi.fn(() => {
+    throw new Error("observer failed");
+  });
+  const healthy = vi.fn();
+  stops.push(subscribeSourcePanelPresentation(broken));
+  stops.push(subscribeSourcePanelPresentation(healthy));
+  const f = fixture();
+  const uninstall = installSourcePanelPresentation(f.host);
+  stops.push(uninstall);
+  expect(sourcePanelPresentation()).toBe(f.host);
+  expect(healthy).toHaveBeenCalledOnce();
+  uninstall();
+  expect(sourcePanelPresentation()).toBeNull();
+  expect(healthy).toHaveBeenCalledTimes(2);
 });

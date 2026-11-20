@@ -29,6 +29,7 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
   };
   return {
     read,
+    readStaged: (id) => panelSnapshot().find((panel) => panel.id === id),
     set(id, presentation) {
       const view = local(id);
       if (!["sidebar", "workspace", "floating"].includes(presentation))

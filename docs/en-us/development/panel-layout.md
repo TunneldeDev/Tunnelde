@@ -378,18 +378,60 @@ Install one private presentation adapter per document. The coordinator adapter
 must reject mutations for panels owned by another window; the satellite adapter
 uses only its local workspace and floating slots, never main feature stores or
 resource bootstrap. Expose closed layout metadata and synchronous set/hide/reveal
-operations to the eventual native source router, not arbitrary store access.
+operations to the native source router, not arbitrary store access.
 Satellite supported presentations are workspace/floating; never silently map an
 unsupported sidebar request to another presentation.
 
 A hidden local view retains its original slot, split geometry and portal owner.
 Render a pruned visible layout, not a destructive rewrite of the source layout;
 revealing must restore the same DOM/draft and group. Removing native membership
-still releases the slot and its observers. This private adapter is groundwork,
-not a claim that legacy public panel APIs already route to satellites.
+still releases the slot and its observers. The adapter is document-local; public
+panel APIs route through native ownership, not through a coordinator proxy.
 
 Native focus must reveal the requested panel, not merely raise its window with
 an unrelated active tab. Notify only the native-sampled owner lease after focus;
 recheck document/generation, and let the source reveal only its exact current,
 non-staged lease. Focus never starts resources, restores plugin activation, or
 grants a satellite additional application IPC authority.
+
+### Public panel metadata and admitted presentation effects
+
+`workspace.panels.list/observe/setPresentation/close` are native workbench RPCs.
+Read methods require `workspace.read`, presentation changes `workspace.write`.
+List/observe project closed layout metadata published by each exact owner
+lease/document: window, presentation, visibility, pinning, bounded geometry,
+availability and supported presentations. No view content, credentials, draft
+capsules, plugin tokens or feature models are included. Frozen workspace v1 is
+unchanged. A missing source publication yields `panel.window.viewNotReady`
+(list waits up to two seconds, observe up to ten), not fabricated main metadata.
+An unavailable file-preview catalogue row remains main-only and never visible.
+
+Layout revisions are independent of resource progress. Subscribe before snapshot
+inspection; `workspace://panels-changed` emits only an opaque revision hint.
+Stage the destination's actual metadata before acknowledgement and copy it with
+the new owner on commit, so a completed move cannot report the old source slot.
+Reload/owner changes invalidate old metadata until the exact source republishes.
+
+Set/close reserve a closed source operation with a plugin lease and synchronous
+invocation fence. Only the exact source claims it, once. Native Begin rechecks
+ownership, interactions, policy and cancellation in ownership -> policy ->
+invocation lock order; it is the accepted-effect admission point. Before Begin,
+cancellation frees the reservation and cannot mutate UI. After Begin, the
+accepted synchronous effect is not rolled back by caller cancellation, timeout
+or permission revocation. Its native fence must remain until source completion
+or exact-document loss; never expire it while a delayed Begin reply could still
+change a view which another window has acquired. Cancelling window close does
+not retire a document or free an admitted effect. Panel ID reuse is also blocked
+until the effect settles.
+
+After Begin returns, the executor rechecks its lifetime/adapter and synchronously
+changes only its own layout, without an intervening await. It completes with
+actual metadata (Set must match the requested visible presentation; Close must
+be hidden), or releases the job via a cleanup-only exact-source failure call.
+Late claims, disposal and adapter replacement never mutate retired views.
+Reserve that panel’s publication lane until completion so an older refresh
+cannot overwrite the accepted result; other panels must continue publishing.
+Limit pending operations to 32 globally/eight per plugin, with a 15-second queued
+TTL and a 20-second RPC wait. These are presentation-only operations: hide keeps
+the renderer, slot and drafts, and never stops SSH or other running resources.
+Unsupported source presentations fail explicitly rather than retarget main.

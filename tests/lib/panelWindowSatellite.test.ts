@@ -1,3 +1,6 @@
+vi.mock("@/lib/panels/presentationRequests", () => ({
+  publishStagedPresentation: vi.fn().mockResolvedValue(undefined),
+}));
 import { afterEach, expect, it, vi } from "vitest";
 import { startSatelliteViews } from "@/lib/panels/windowSatellite";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";

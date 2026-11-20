@@ -19,6 +19,7 @@ it("readies a view-only document but never starts main bootstrap or acknowledges
     dispose: vi.fn(),
     onClose: vi.fn().mockResolvedValue(() => {}),
     onPanelFocus: vi.fn().mockResolvedValue(() => {}),
+    claimPresentations: vi.fn().mockResolvedValue([]),
     control: vi.fn().mockResolvedValue(null),
   };
   mock.initialize.mockResolvedValue(client);

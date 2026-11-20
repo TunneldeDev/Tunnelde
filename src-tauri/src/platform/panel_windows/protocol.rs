@@ -15,6 +15,28 @@ use std::time::Instant;
 )]
 pub(crate) enum Command {
     Snapshot {},
+    PublishPresentation {
+        lease: Lease,
+        metadata: super::presentation::LayoutMetadata,
+    },
+    PublishStagedPresentation {
+        id: String,
+        metadata: super::presentation::LayoutMetadata,
+    },
+    PublishUnavailablePreview {
+        metadata: super::presentation::LayoutMetadata,
+    },
+    ClaimPresentations {},
+    BeginPresentation {
+        id: String,
+    },
+    CompletePresentation {
+        id: String,
+        metadata: super::presentation::LayoutMetadata,
+    },
+    FailPresentation {
+        id: String,
+    },
     ClaimPanelMoves {},
     PreparePanelMove {
         id: String,
@@ -124,6 +146,26 @@ impl Ownership {
         // revive a timed-out offer just because its timeout callback ran late.
         self.expire(now);
         match command {
+            Command::BeginPresentation { .. } => Err("native presentation policy required"),
+            Command::ClaimPresentations {} => {
+                Ok(json!(self.claim_presentations(window, document, now)?))
+            }
+            Command::PublishPresentation { lease, metadata } => Ok(json!(
+                self.publish_presentation(window, document, &lease, metadata)?
+            )),
+            Command::PublishStagedPresentation { id, metadata } => Ok(json!(
+                self.publish_staged_presentation(window, document, &id, metadata, now)?
+            )),
+            Command::PublishUnavailablePreview { metadata } => Ok(json!(
+                self.publish_unavailable_preview(window, document, metadata)?
+            )),
+            Command::CompletePresentation { id, metadata } => {
+                super::public_panels::complete(self, window, document, &id, metadata)
+            }
+            Command::FailPresentation { id } => {
+                self.fail_presentation(window, document, &id)?;
+                Ok(Value::Null)
+            }
             Command::ClaimPanelMoves {}
             | Command::PreparePanelMove { .. }
             | Command::FailPanelMove { .. } => Err("native move policy required"),

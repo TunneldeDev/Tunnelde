@@ -5,9 +5,12 @@ mod lifecycle;
 mod moves;
 pub(crate) mod native;
 mod ownership;
+mod presentation;
+mod presentation_jobs;
 mod protocol;
 pub(crate) mod public;
 pub(crate) mod public_moves;
+pub(crate) mod public_panels;
 mod read_models;
 #[cfg(test)]
 mod tests;

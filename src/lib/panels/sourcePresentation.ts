@@ -17,19 +17,42 @@ export interface SourcePanelMetadata {
 }
 export interface SourcePanelPresentation {
   read: () => SourcePanelMetadata[];
+  /** Read the target slot during inert staging; never grants mutation authority. */
+  readStaged: (id: string) => SourcePanelMetadata | undefined;
   set: (id: string, presentation: PanelPresentation) => SourcePanelMetadata;
   close: (id: string) => void;
   reveal: (id: string) => void;
   subscribe: (changed: () => void) => () => void;
 }
 let current: SourcePanelPresentation | null = null;
+const observers = new Set<() => void>();
+const notify = () => {
+  for (const observer of observers) {
+    try {
+      observer();
+    } catch {
+      // A failed observer cannot strand installation/disposal or prevent other
+      // document-scoped executors from seeing the replacement adapter.
+    }
+  }
+};
+export function subscribeSourcePanelPresentation(changed: () => void) {
+  observers.add(changed);
+  return () => {
+    observers.delete(changed);
+  };
+}
 export const sourcePanelPresentation = () => current;
 /** One view adapter, not another application/resource coordinator. */
 export function installSourcePanelPresentation(host: SourcePanelPresentation) {
   if (current) throw new Error("panel.window.alreadyInstalled");
   current = host;
+  notify();
   return () => {
-    if (current === host) current = null;
+    if (current === host) {
+      current = null;
+      notify();
+    }
   };
 }
 

@@ -1,3 +1,4 @@
+import { publishStagedPresentation } from "./presentationRequests";
 import type { PanelWindowClient } from "./windowClient";
 import type { NativePanelSnapshot, PanelTransferOffer } from "./windowProtocol";
 
@@ -72,6 +73,8 @@ export function startPanelWindowCoordinator(
           });
           if (disposed || controller.signal.aborted) return;
           await stage(offer, staged.state, controller.signal);
+          if (disposed || controller.signal.aborted) return;
+          await publishStagedPresentation(client, offer);
           if (disposed || controller.signal.aborted) return;
           // Host rechecks both documents, generation and deadline. Never grant
           // ownership to a view that finished loading after rollback.

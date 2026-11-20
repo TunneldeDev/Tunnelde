@@ -587,7 +587,17 @@
     "readPermission": "workspace.read",
     "writePermission": "workspace.write",
     "events": ["workspace://panels-changed"],
-    "ownership": "One retained renderer per panel in the main window. Presentation changes do not disconnect resources. Metadata only; drafts and feature contents are excluded."
+    "ownership": "One retained renderer per native-owned panel. Presentation operations execute in the current source document; no resources are disconnected and no drafts or feature contents are exposed.",
+    "routing": "current-source-document",
+    "completion": "source-effect-completion",
+    "cancellation": "before-admission-only; accepted synchronous UI effects are not rolled back",
+    "eventPayload": "revision-only-invalidation",
+    "satellitePresentations": ["workspace", "floating"],
+    "limits": {
+      "maximumPending": 32,
+      "maximumPerPlugin": 8,
+      "queuedLifetimeSeconds": 15
+    }
   },
   "nativeWindows": {
     "version": 1,

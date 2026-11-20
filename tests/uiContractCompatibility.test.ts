@@ -231,6 +231,10 @@ describe("public UI contract boundaries", () => {
       "SshConfigPreviewPage",
       "SshConfigPreviewRequest",
       "UiChildResourceOptions",
+      "WorkspacePanelCloseRequest",
+      "WorkspacePanelMetadata",
+      "WorkspacePanelPresentationRequest",
+      "WorkspacePanelsSnapshot",
     ]);
     const widened: string[] = [];
     for (const [name, original] of before) {

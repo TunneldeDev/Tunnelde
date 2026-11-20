@@ -8,6 +8,8 @@ import type {
   PanelActionResult,
   PanelActionJob,
   PanelMoveJob,
+  PanelPresentationJob,
+  PanelLayoutMetadata,
   NativePanelSnapshot,
   PanelWindowCommand,
 } from "./windowProtocol";
@@ -134,6 +136,25 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
             request: { action: "cancelAction", id },
           }).catch(() => {});
       }
+    },
+    async claimPresentations() {
+      check();
+      return invoke<PanelPresentationJob[]>("panel_window_control", {
+        document: identity.document,
+        request: { action: "claimPresentations" },
+      });
+    },
+    completePresentation(id: string, metadata: PanelLayoutMetadata) {
+      return invoke("panel_window_control", {
+        document: identity.document,
+        request: { action: "completePresentation", id, metadata },
+      });
+    },
+    failPresentation(id: string) {
+      return invoke("panel_window_control", {
+        document: identity.document,
+        request: { action: "failPresentation", id },
+      });
     },
     async claimPanelMoves() {
       check();

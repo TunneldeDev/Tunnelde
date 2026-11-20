@@ -9,7 +9,11 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     match method {
-        "workspace.windows.list"
+        "workspace.panels.list"
+        | "workspace.panels.observe"
+        | "workspace.panels.setPresentation"
+        | "workspace.panels.close"
+        | "workspace.windows.list"
         | "workspace.windows.observe"
         | "workspace.windows.create"
         | "workspace.windows.close"

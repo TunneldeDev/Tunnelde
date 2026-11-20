@@ -9,6 +9,7 @@ const epoch = crypto.randomUUID();
 let sequence = 0;
 let serialized = "";
 
+/** Local source-layout observation only; public RPC revisions live natively. */
 export function panelsSnapshot() {
   const panels = panelSnapshot();
   const next = JSON.stringify(panels);

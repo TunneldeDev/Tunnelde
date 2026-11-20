@@ -46,3 +46,28 @@ export interface NativePanelMoveResult {
   windowId: string;
   generation: number;
 }
+
+/** Authoritative source-window presentation metadata, separate from workspace v1. */
+export interface WorkspacePanelMetadata {
+  id: string;
+  windowId: string;
+  presentation: "sidebar" | "workspace" | "floating";
+  visible: boolean;
+  pinned: boolean;
+  bounds: { x: number; y: number; width: number; height: number } | null;
+  available: boolean;
+  /** Inspect this window's supported forms before requesting a change. */
+  presentations: readonly ("sidebar" | "workspace" | "floating")[];
+}
+export interface WorkspacePanelsSnapshot {
+  revision: string;
+  windowId: "main";
+  panels: WorkspacePanelMetadata[];
+}
+export interface WorkspacePanelPresentationRequest {
+  panelId: string;
+  presentation: "sidebar" | "workspace" | "floating";
+}
+export interface WorkspacePanelCloseRequest {
+  panelId: string;
+}

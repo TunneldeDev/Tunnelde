@@ -1,4 +1,7 @@
 import { expect, it, vi } from "vitest";
+vi.mock("@/lib/panels/presentationRequests", () => ({
+  publishStagedPresentation: vi.fn().mockResolvedValue(undefined),
+}));
 import { startPanelWindowCoordinator } from "@/lib/panels/windowCoordinator";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { NativePanelSnapshot, PanelWindowCommand } from "@/lib/panels/windowProtocol";

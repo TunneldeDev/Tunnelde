@@ -38,6 +38,7 @@ export function createLocalPanelPresentation(
   };
   return {
     read,
+    readStaged: (id) => read().find((panel) => panel.id === id),
     set(id, presentation) {
       requirePanel(id);
       if (presentation !== "workspace" && presentation !== "floating")

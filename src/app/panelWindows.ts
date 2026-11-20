@@ -1,3 +1,4 @@
+import { startPresentationRequests } from "@/lib/panels/presentationRequests";
 import { installPanelWindowDrag } from "@/lib/panels/windowDrag";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
@@ -53,6 +54,7 @@ export async function startPanelWindows(signal: AbortSignal) {
   const stop = [
     installSourcePanelPresentation(createMainPanelPresentation()),
     startPanelMoveRequests(current, failure),
+    startPresentationRequests(current, failure),
     startSourcePanelFocus(current, failure),
     installPanelWindowDrag(current, (error) => toast(translateError(error), "error")),
     usePlugins.subscribe(coordinator.refresh),

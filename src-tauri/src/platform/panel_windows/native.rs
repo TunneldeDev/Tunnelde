@@ -20,6 +20,7 @@ pub(super) struct Creation {
 pub(crate) struct Registry {
     pub(super) creations: Mutex<HashMap<String, Creation>>,
     pub(super) public: super::public::PublicWindows,
+    pub(super) public_panels: super::public_panels::PublicPanels,
     ownership: Mutex<Ownership>,
     // Native focus order only; never trust browser screenX/screenY for drops.
     focus: Mutex<Vec<String>>,
@@ -51,6 +52,7 @@ pub(crate) fn registered(app: &AppHandle, window: &str) -> bool {
 }
 pub(crate) fn changed(app: &AppHandle) {
     super::public::snapshot(app);
+    super::public_panels::refresh(app);
     let windows = lock(&app.state::<Registry>()).windows();
     for window in windows {
         if let Some(window) = app.get_webview_window(&window.id) {
@@ -104,6 +106,10 @@ pub(crate) fn panel_window_control(
     let notify = !matches!(
         &request,
         Command::ClaimPanelMoves {}
+            | Command::ClaimPresentations {}
+            | Command::PublishPresentation { .. }
+            | Command::PublishStagedPresentation { .. }
+            | Command::PublishUnavailablePreview { .. }
             | Command::ClaimActions {}
             | Command::ActionResult { .. }
             | Command::Snapshot {}
@@ -120,10 +126,17 @@ pub(crate) fn panel_window_control(
     );
     let notify_failure = matches!(
         &request,
-        Command::ClaimPanelMoves {}
+        Command::BeginPresentation { .. }
+            | Command::ClaimPanelMoves {}
             | Command::PreparePanelMove { .. }
             | Command::FailPanelMove { .. }
             | Command::Commit { .. }
+    );
+    let publishes = matches!(
+        &request,
+        Command::PublishPresentation { .. }
+            | Command::PublishStagedPresentation { .. }
+            | Command::PublishUnavailablePreview { .. }
     );
     let result = super::public_moves::control(
         app,
@@ -133,12 +146,19 @@ pub(crate) fn panel_window_control(
         request,
         Instant::now(),
     );
-    if (notify && result.is_ok()) || (notify_failure && result.is_err()) {
+    if (notify && result.is_ok())
+        || (notify_failure && result.is_err())
+        || (publishes
+            && result
+                .as_ref()
+                .is_ok_and(|v| v == &serde_json::Value::Bool(true)))
+    {
         changed(app);
     } else {
         // Even read/failed dispatches can expire a handoff before the timer.
         // Refresh public availability without feeding private read-model loops.
         super::public::snapshot(app);
+        super::public_panels::refresh(app);
     }
     result
 }

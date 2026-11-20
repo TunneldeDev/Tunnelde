@@ -1,3 +1,4 @@
+import { startPresentationRequests } from "@/lib/panels/presentationRequests";
 import { registerTaskPresentation } from "@/features/tasks/presentation";
 import { TransferBackgroundTask } from "@/features/sftp/TransferBackgroundTask";
 import { KnownHostsList } from "@/features/settings/KnownHostsList";
@@ -324,6 +325,9 @@ export function SatelliteApp() {
         const stopMoves = startPanelMoveRequests(current, (error) =>
           reportError("panels.windows", "pluginMove", error),
         );
+        const stopPresentation = startPresentationRequests(current, (error) =>
+          reportError("panels.windows", "presentation", error),
+        );
         const stopFocus = startSourcePanelFocus(current, (error) =>
           reportError("panels.windows", "focus", error),
         );
@@ -332,6 +336,7 @@ export function SatelliteApp() {
         );
         cleanup = () => {
           stopMoves();
+          stopPresentation();
           stopFocus();
           stopDrag();
           session.dispose();
