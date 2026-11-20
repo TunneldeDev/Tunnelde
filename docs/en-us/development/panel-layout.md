@@ -533,6 +533,13 @@ Launch/reveal occurs outside metadata admission gates; accepted work settles
 without reauthorization after permission loss. Simulated OS openers and ordinary
 subprocesses are not physical FUSE or system-file-manager acceptance.
 
+`mounts.dependencies.documentation` opens only the fixed host-selected platform
+link; it does not scan local FUSE paths or run SSHFS merely to open instructions.
+Both persistent and legacy entry points capture the original origin/request and
+recheck `mounts.read` at browser-launch admission. The bounded actual opener
+retains the native effect through completion, including cancelled delivery, and
+runs outside admission locks. Staged renderers cannot launch it.
+
 This internal transport and its tests do not declare the production plugin panel
 adapter or resource-RPC/native-window parity complete. Keep discovery conservative
 until real adapters, actual effect lifetimes and native acceptance are finished.

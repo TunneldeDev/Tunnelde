@@ -579,6 +579,7 @@ fn persistent_data_effects_require_committed_ownership_and_fence_actual_settleme
         CallPolicy::MountSubmission,
         CallPolicy::MountLegacy,
         CallPolicy::MountOpen,
+        CallPolicy::MountDocumentation,
     ] {
         let mut f = Fixture::new();
         f.owned("source");
@@ -916,4 +917,19 @@ fn managed_mount_open_and_reveal_require_committed_native_ownership() {
             .native_view_call("target", &f.target, "stage", policy, f.now)
             .is_err());
     }
+}
+
+#[test]
+fn mount_documentation_requires_committed_native_ownership() {
+    let mut f = Fixture::new();
+    f.owned("source");
+    let id = f.offer();
+    f.staged(&id, "stage");
+    let policy =
+        crate::plugins::frontend::native::call_policy("mounts.dependencies.documentation").unwrap();
+    assert_eq!(policy, CallPolicy::MountDocumentation);
+    assert!(f
+        .r
+        .native_view_call("target", &f.target, "stage", policy, f.now)
+        .is_err());
 }

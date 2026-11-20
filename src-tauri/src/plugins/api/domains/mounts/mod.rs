@@ -126,11 +126,7 @@ pub(in crate::plugins::api) async fn dispatch(
             encode(result)
         }
         "dependencies.documentation" => {
-            authorize(context, &["mounts.read"])?;
-            crate::commands::open_external(
-                app.clone(),
-                crate::mounts::dependencies().await?.documentation,
-            )?;
+            crate::mounts::documentation::open(app.clone(), lease(context)).await?;
             Ok(Value::Null)
         }
         "paths.remote.browse"

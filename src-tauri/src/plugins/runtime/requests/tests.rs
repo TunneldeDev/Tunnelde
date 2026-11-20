@@ -522,3 +522,28 @@ async fn managed_open_rechecks_original_invocation_before_launch_and_retains_adm
         }
     }
 }
+
+#[tokio::test]
+async fn mount_documentation_fences_original_request_and_retains_an_admitted_browser_launch() {
+    for expire in [false, true] {
+        for before_commit in [false, true] {
+            let registry = Requests::default();
+            registry.reserve("view", "mount-documentation").unwrap();
+            let mut request = registry.claim("view", "mount-documentation").unwrap();
+            let entry = request.entry.clone();
+            let result = request
+                .run_retained(crate::mounts::documentation::tests::invocation(
+                    move || {
+                        if expire {
+                            entry.lock().unwrap().deadline = Instant::now();
+                        } else {
+                            assert!(registry.cancel("view", "mount-documentation"));
+                        }
+                    },
+                    before_commit,
+                ))
+                .await;
+            assert_eq!(result.unwrap_err().to_string(), "plugin.api.cancelled");
+        }
+    }
+}

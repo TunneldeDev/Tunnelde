@@ -2,6 +2,7 @@
 //! unauthenticated local listening sockets are exposed to the mount program.
 #[cfg(all(test, unix))]
 mod dependency_tests;
+pub(crate) mod documentation;
 mod filesystem;
 #[cfg(not(windows))]
 mod helper;
@@ -226,12 +227,12 @@ async fn dependency_report(path: Option<PathBuf>, driver: bool) -> MountDependen
     } else {
         None
     };
-    let (instructions, documentation) = if cfg!(windows) {
-        ("Install WinFsp and SSHFS-Win, then restart Tunnelde. Installation is managed by you; Tunnelde does not install drivers.", "https://github.com/winfsp/sshfs-win")
+    let instructions = if cfg!(windows) {
+        "Install WinFsp and SSHFS-Win, then restart Tunnelde. Installation is managed by you; Tunnelde does not install drivers."
     } else if cfg!(target_os = "macos") {
-        ("Install a compatible macFUSE and SSHFS distribution, approve its system extension if requested, then restart Tunnelde.", "https://github.com/libfuse/sshfs")
+        "Install a compatible macFUSE and SSHFS distribution, approve its system extension if requested, then restart Tunnelde."
     } else {
-        ("Install your distribution's sshfs and FUSE packages. Ensure your user can access /dev/fuse.", "https://github.com/libfuse/sshfs")
+        "Install your distribution's sshfs and FUSE packages. Ensure your user can access /dev/fuse."
     };
     let instructions = if path.is_some() && transport.is_none() {
         format!("{instructions} This SSHFS build does not advertise the required passive/stdin transport; choose a compatible build.")
@@ -243,7 +244,7 @@ async fn dependency_report(path: Option<PathBuf>, driver: bool) -> MountDependen
         executable: path.map(|p| p.to_string_lossy().into()),
         platform: std::env::consts::OS.into(),
         instructions,
-        documentation: documentation.into(),
+        documentation: documentation::url().into(),
         transport,
     }
 }
@@ -942,10 +943,7 @@ pub async fn action(
                     Ok(serde_json::Value::Null)
                 }
                 "documentation" => {
-                    crate::commands::open_external(
-                        app.clone(),
-                        dependencies().await?.documentation,
-                    )?;
+                    documentation::open(app.clone(), lease.clone()).await?;
                     Ok(serde_json::Value::Null)
                 }
                 "open" => {
