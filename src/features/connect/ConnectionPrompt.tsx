@@ -75,7 +75,7 @@ export function ConnectionPrompt({
   const [error, setError] = useState<string | null>(initialError ?? null);
   const reportError = useCallback((cause: unknown) => {
     const message = isIpcError(cause) || cause instanceof Error ? cause.message : null;
-    if (message === "ssh.connectionChanged") {
+    if (message === "ssh.connectionChanged" || message === "forward.changed") {
       setReviewChanged(true);
       setTrusted(false);
       setProbe(null);

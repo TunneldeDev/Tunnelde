@@ -815,3 +815,36 @@ not just RPC delivery. The native reply is `null`, with no key path/bytes; succe
 closes the prompt and future actions prepare a fresh review because authentication
 changed. This prerequisite still does not enable forwarding native discovery or
 replace the remaining prompt/provider/renderer integration and full acceptance.
+
+### Origin-window builtin forwarding prompts
+
+`createForwardingWindowPrompt` supplies every `ConnectionPromptServices` method
+through the closed native gateway. It captures exact rule/lease identity and
+acquires an original interaction before `WindowForwardingConnectDialog` mounts
+the shared interactive prompt. Only display host/jump metadata reaches React;
+route reviews, typed credentials and correlation records remain document-local,
+never layout capsules, model broadcasts, plugin messages or writable host stores.
+Provider hosts/routes reject here until their separate native handles exist.
+
+React starts probe and credential reads concurrently. The adapter serializes
+actual native requests (including independent jump status reads), recovering its
+queue after errors without retrying effects. Successful trust advances the review
+inside that queue before the next request. Editable input is captured at service
+submission, not when a queued job eventually starts. The native host owns SSH
+purpose/grouping; arbitrary SSH parameters are not relayed. `forward.changed`
+clears typed credentials and disables reconnect until the prompt is reopened.
+
+Cancellation bypasses the queue and stays tied to the original correlation and
+interaction; it does not unblock queued work before native test settlement.
+Live-dialog history is bounded64 with no replay/early-cancel eviction. Closing,
+failed preparation, replacement identity, unmount and lifecycle replay retire
+that exact original interaction, including late acquisitions. Local dismissal
+does not wait for IPC; late results/queued writes cannot revive it. Actual native
+workers retain their independent effect fences through settlement. Equivalent
+read-model refreshes must not reacquire consent/restart probes. Nested credential
+forget remains the shared document-local controlled confirmation.
+
+This complete builtin prompt service/UI prerequisite does not itself mount the
+full forwarding renderer or provide provider/disconnect/host-dialog adapters.
+Forwarding transfer discovery and `nativeWindows` remain disabled until those
+and the full ordinary-page/native acceptance requirements are complete.
