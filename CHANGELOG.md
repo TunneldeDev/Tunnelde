@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 终端交接按会话隔离并支持失败恢复，后台恢复不会抢占正在迁移的终端；保留字符集、键盘协议和分包状态的 JSON 快照为终端跨窗接入提供基础。Terminal handoff reserves individual sessions with rollback/retry; background resume cannot steal a pending handoff, and lossless JSON checkpoints prepare the terminal window adapter.
+
 - 原生插件视图可读取已保存主机、发现来源、路由及自身扩展字段的元数据快照；暂存期间仍禁止导入、修改、凭据访问和建立连接。Native plugin views can read saved-host, discovery-source, route and own-field metadata snapshots; staging still forbids host mutations, imports, credentials and connection creation.
 
 - 插件列表支持独立窗体与返回，保留搜索、筛选及分页；详情、安装确认和本地安装草稿由主窗持有，安装操作重新校验目录条目而不接收独立窗提交的下载地址。Plugin lists support native-window roundtrips with search/filter/page state; details, installation confirmation and local-install drafts remain main-owned, with catalogue targets revalidated instead of accepting satellite-supplied download URLs.
