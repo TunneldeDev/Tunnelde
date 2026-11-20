@@ -1,5 +1,7 @@
 //! Reviewed native-view call lifetimes. Names/permissions alone never establish
 //! staging safety or whether dropping a future really cancels native work.
+mod mounts;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CallPolicy {
     Metadata,
@@ -8,6 +10,9 @@ pub(crate) enum CallPolicy {
     OriginUi,
     /// Owned persistent data; all nested I/O is awaited through settlement.
     OwnedData,
+    MountData,
+    /// Fenced through receipt publication; the host owns subsequent steps.
+    MountSubmission,
 }
 impl CallPolicy {
     pub(crate) fn staged(self) -> bool {
@@ -49,7 +54,7 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         | "secrets.get"
         | "secrets.set"
         | "secrets.delete" => Some(CallPolicy::OwnedData),
-        _ => None,
+        _ => mounts::policy(method),
     }
 }
 #[cfg(test)]

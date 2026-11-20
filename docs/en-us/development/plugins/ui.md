@@ -398,6 +398,19 @@ Cancellation suppresses delivery, not already accepted disk/keyring effects.
 Storage-location/recovery consent APIs are **not** implicitly admitted by this
 allowlist and still require separate origin/lifetime integration.
 
+Mount configuration/status and managed operation APIs are also explicitly
+admitted: the 14 shared `rules`/`groups` configuration methods, connection and
+operation status/observe/cancel, plus the 15 managed connect/start/stop/remove
+submission methods. These remain committed-only. Configuration awaits its
+bounded worker and preserves revision checks; observations retain the fence
+through their at-most-five-second wait. Submission retains it through plan
+preparation and receipt publication, **not** the lifetime of the host-managed
+operation. Subsequent steps belong to the approved plugin generation, check
+its authority, and report progress through the shared operation registry; moving
+or closing a view does not disconnect the group's dedicated transport. This is
+not implicit admission of force-unmount consent, path choosers, dependency
+probes or legacy one-off mounts, which still need their own lifetime integration.
+
 The host's scoped view client uses only this closed gateway, reserves cancellation
 tickets before dispatch, cancels outstanding calls on document disposal and cleans
 up late-opened attachments. Module URLs encode each relative segment separately.
