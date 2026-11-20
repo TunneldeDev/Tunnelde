@@ -664,3 +664,12 @@ Host dialogs, connection review/confirmation origin guards, provider-native
 handles, closed native action transport and actual resource-effect fences still
 need integration and acceptance before adding forwarding to native discovery.
 No satellite renderer or forwarding transfer admission is enabled by this work.
+
+Builtin forwarding stop now binds the displayed rule revision and exact runtime
+incarnation, including an explicit inactive snapshot for pending starts/retries.
+The automation admission lock covers registry/DB CAS and pausing; rejection does
+not cancel a newer attempt or change recovery intent. Cleanup is spawned before
+returning its delivery handle and retains the listener's group-connection owner
+until shutdown. Historical callers omitting both tokens retain their existing
+behavior; instance-only requests reject, never fall back to a blind stop. These
+are domain correctness guarantees, not native-window action/origin admission.

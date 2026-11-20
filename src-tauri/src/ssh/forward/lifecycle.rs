@@ -57,7 +57,12 @@ impl ForwardRegistry {
         id: &str,
         identity: &str,
     ) -> AppResult<StoppedForward> {
-        self.take_inner(id, Some(identity), Some((owner, generation)), || Ok(()))
+        self.take_inner(
+            id,
+            StopTarget::Snapshot(Some(identity)),
+            Some((owner, generation)),
+            || Ok(()),
+        )
     }
 }
 

@@ -94,7 +94,9 @@ beforeEach(() => {
         throw { code: "ssh", message: "ssh.passwordRequired" };
       const rule = rows.find((row) => row.id === args.id)!;
       const sessionId = `managed-${rule.groupId ?? rule.id}`;
-      rows = rows.map((r) => (r.id === args.id ? { ...r, active: true, sessionId } : r));
+      rows = rows.map((r) =>
+        r.id === args.id ? { ...r, active: true, sessionId, runtimeId: "runtime" } : r,
+      );
       return {
         id: sessionId,
         hostId: "host",
@@ -107,7 +109,7 @@ beforeEach(() => {
       };
     }
     if (command === "forwarding_stop") {
-      rows = rows.map((r) => ({ ...r, active: false, sessionId: null }));
+      rows = rows.map((r) => ({ ...r, active: false, sessionId: null, runtimeId: null }));
     }
     if (command === "forwarding_remove") {
       if (
@@ -225,7 +227,11 @@ it("starts a saved rule using a dedicated connection, then stops it", async () =
   );
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await screen.findByText("Stopped");
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", { id: "rule" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", {
+    id: "rule",
+    expectedRevision: rows[0]!.revision,
+    runtimeId: "runtime",
+  });
 });
 it("requires confirmation before saving a listener exposed to other devices", async () => {
   await act(async () => {
@@ -452,6 +458,7 @@ it("keeps stopping feedback and actions disabled until the listener is released"
       targetHost: "127.0.0.1",
       targetPort: 80,
       active: true,
+      runtimeId: "runtime",
       sessionId: "current",
       revision: "initial-version",
     },
@@ -664,7 +671,13 @@ it("allows stopping automatic retries even when no SSH connection is active", as
   expect(await screen.findByText("Waiting to retry")).toBeTruthy();
   expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start all" }).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-  await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", { id: "rule" }));
+  await waitFor(() =>
+    expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", {
+      id: "rule",
+      expectedRevision: rows[0]!.revision,
+      runtimeId: rows[0]!.runtimeId ?? null,
+    }),
+  );
   expect(screen.queryByRole("button", { name: "Connect forwarding" })).toBeNull();
 });
 
@@ -875,4 +888,42 @@ it("invalidates provider frames immediately when a local rule, group or session 
     expect(sessionFrame.validate()).toBe(false);
     for (let i = 0; i < 20; i++) await Promise.resolve();
   });
+});
+
+it("reports a stale stop without hiding or stopping the replacement listener", async () => {
+  connect();
+  rows = [{ ...savedRule(), active: true, sessionId: "current", runtimeId: "old-runtime" }];
+  const original = rows[0]!;
+  const implementation = invokeMock.getMockImplementation()!;
+  let release!: () => void;
+  invokeMock.mockImplementation(async (command, args) => {
+    if (command === "forwarding_stop") {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (rows[0]?.runtimeId !== args.runtimeId || rows[0]?.revision !== args.expectedRevision)
+        throw { code: "validation", message: "forward.changed" };
+      throw new Error("a stale stop must never pass CAS");
+    }
+    return implementation(command, args);
+  });
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+  await screen.findByRole("button", { name: "Stopping…" });
+  await act(async () => {
+    rows = [{ ...original, runtimeId: "new-runtime" }];
+    release();
+  });
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    translateError({ code: "validation", message: "forward.changed" }),
+  );
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", {
+    id: original.id,
+    expectedRevision: original.revision,
+    runtimeId: "old-runtime",
+  });
+  expect(rows[0]?.runtimeId).toBe("new-runtime");
+  expect(rows[0]?.active).toBe(true);
+  expect(await screen.findByText("Running")).toBeTruthy();
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Stop" }).disabled).toBe(false);
 });

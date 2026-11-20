@@ -65,6 +65,18 @@ impl Coordinator {
     fn lock(&self) -> std::sync::MutexGuard<'_, Book> {
         self.book.lock().unwrap_or_else(|error| error.into_inner())
     }
+    /// Serialize manual stop with automatic admission. A rejected CAS must not
+    /// pause a newer rule's recovery or cancel its in-flight start ticket.
+    pub(super) fn pause_after<T>(
+        &self,
+        id: &str,
+        stop: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        let mut book = self.lock();
+        let stopped = stop()?;
+        book.pause(id);
+        Ok(stopped)
+    }
 }
 pub(crate) fn changed(app: &AppHandle) {
     let _ = app.emit(
@@ -300,4 +312,71 @@ pub(crate) fn start(app: &AppHandle) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use super::*;
+    fn row() -> Snapshot {
+        Snapshot {
+            id: "rule".into(),
+            revision: "current".into(),
+            options: Options {
+                auto_start: true,
+                auto_retry: true,
+            },
+            session: None,
+            plugin_owned: false,
+            stop_revision: (0, 0),
+        }
+    }
+    #[test]
+    fn failed_cas_does_not_pause_newer_recovery_or_cancel_its_ticket() {
+        let coordinator = Coordinator::default();
+        let now = Instant::now();
+        let ticket = coordinator.lock().manual(&row());
+        let result: AppResult<()> =
+            coordinator.pause_after("rule", || Err(AppError::validation("forward.changed")));
+        assert!(result.is_err());
+        assert!(!*ticket.cancelled.borrow());
+        assert!(coordinator.lock().check(&ticket).is_ok());
+        assert_eq!(
+            coordinator.lock().status("rule", "current").phase,
+            "starting"
+        );
+        coordinator.lock().finish(
+            &ticket,
+            &Err(AppError::Ssh("ssh.disconnected".into())),
+            None,
+            now,
+        );
+        assert_eq!(
+            coordinator
+                .lock()
+                .poll(&[row()], 1, now + Duration::from_secs(120))
+                .len(),
+            1
+        );
+    }
+    #[test]
+    fn successful_stop_pauses_after_effect_and_fences_pending_admission() {
+        let coordinator = Coordinator::default();
+        let ticket = coordinator.lock().manual(&row());
+        let outcome = coordinator
+            .pause_after("rule", || {
+                // The auto/manual admission lock is held across the synchronous
+                // registry/DB CAS. No poll can slip into the effect-to-pause gap.
+                assert!(coordinator.book.try_lock().is_err());
+                assert!(!*ticket.cancelled.borrow());
+                Ok("cleanup already spawned")
+            })
+            .unwrap();
+        assert_eq!(outcome, "cleanup already spawned");
+        assert!(*ticket.cancelled.borrow());
+        assert!(coordinator.lock().check(&ticket).is_err());
+        assert!(coordinator
+            .lock()
+            .poll(&[row()], 1, Instant::now() + Duration::from_secs(120))
+            .is_empty());
+    }
 }

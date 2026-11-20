@@ -12,7 +12,9 @@ pub(crate) mod repository;
 mod runtime;
 pub(crate) mod start;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
-pub(crate) use runtime::{prepare_checked, prepare_managed, start_managed, take_checked};
+pub(crate) use runtime::{
+    prepare_checked, prepare_managed, start_managed, stop_checked, take_checked,
+};
 pub use runtime::{start_checked, stop};
 
 pub(crate) fn registry(app: &AppHandle) -> ForwardRegistry {

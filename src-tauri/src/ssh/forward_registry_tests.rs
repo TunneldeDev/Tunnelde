@@ -150,3 +150,91 @@ async fn retained_stop_cannot_remove_a_replacement_runtime_instance() {
         .unwrap();
     assert!(registry.snapshot().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn exact_inactive_stop_rejects_new_listener_without_invalidating_tickets() {
+    let registry = ForwardRegistry::default();
+    let ticket = registry.ticket("rule", "session").unwrap();
+    let mut current = fixture_entry(None, None);
+    let identity = current.identity.clone();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    current.listener = Some(tokio::spawn(async move {
+        let _listener = listener;
+        std::future::pending::<()>().await;
+    }));
+    registry
+        .active
+        .lock()
+        .unwrap()
+        .insert("rule".into(), current);
+    // A UI showing a pending start must not stop a listener admitted since.
+    assert!(registry.take_snapshot("rule", None, || Ok(())).is_err());
+    assert!(registry.valid_ticket(&ticket));
+    assert_eq!(registry.snapshot().unwrap()["rule"].1, identity);
+    assert!(TcpListener::bind(address).await.is_err());
+    assert!(registry
+        .take_snapshot("rule", Some(&identity), || {
+            Err(AppError::validation("forward.changed"))
+        })
+        .is_err());
+    assert!(registry.valid_ticket(&ticket));
+    registry
+        .take_snapshot("rule", Some(&identity), || Ok(()))
+        .unwrap()
+        .finish()
+        .await
+        .unwrap();
+    assert!(!registry.valid_ticket(&ticket));
+    let _released = TcpListener::bind(address).await.unwrap();
+    let inactive = registry.ticket("rule", "session").unwrap();
+    // Capturing absence still fences any already prepared future admission.
+    registry
+        .take_snapshot("rule", None, || Ok(()))
+        .unwrap()
+        .finish()
+        .await
+        .unwrap();
+    assert!(!registry.valid_ticket(&inactive));
+    assert!(registry.snapshot().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn cancelled_checked_stop_delivery_still_releases_socket_and_connection_lifetime() {
+    let registry = ForwardRegistry::default();
+    struct Lifetime(Arc<AtomicUsize>);
+    impl Drop for Lifetime {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let released = Arc::new(AtomicUsize::new(0));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut entry = fixture_entry(None, None);
+    let identity = entry.identity.clone();
+    entry.lifetime = Some(Arc::new(Lifetime(released.clone())));
+    entry.listener = Some(tokio::spawn(async move {
+        let _listener = listener;
+        std::future::pending::<()>().await;
+    }));
+    registry.active.lock().unwrap().insert("rule".into(), entry);
+    let stopped = registry
+        .take_snapshot("rule", Some(&identity), || Ok(()))
+        .unwrap();
+    // An abandoned JS/RPC response drops this join handle, not native cleanup.
+    drop(stopped);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if released.load(Ordering::SeqCst) == 1 {
+                let _listener = TcpListener::bind(address).await.unwrap();
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(registry.snapshot().unwrap().is_empty());
+    assert_eq!(released.load(Ordering::SeqCst), 1);
+}

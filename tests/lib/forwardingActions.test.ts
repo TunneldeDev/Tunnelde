@@ -256,3 +256,33 @@ it("refuses every local service in a satellite, including the read refresh and c
   expect(invoke).not.toHaveBeenCalled();
   expect(copy).not.toHaveBeenCalled();
 });
+
+it("binds builtin stop to the captured revision and exact runtime or its absence", async () => {
+  const target = row();
+  const stopping = actions.stop(target);
+  target.id = "replacement";
+  target.revision = "two";
+  target.runtimeId = "later";
+  await stopping;
+  expect(invoke).toHaveBeenLastCalledWith("forwarding_stop", {
+    id: "rule",
+    expectedRevision: "one",
+    runtimeId: "runtime",
+  });
+  await actions.stop({ id: "retrying", revision: "three", runtimeId: null });
+  expect(invoke).toHaveBeenLastCalledWith("forwarding_stop", {
+    id: "retrying",
+    expectedRevision: "three",
+    runtimeId: null,
+  });
+  invoke.mockClear();
+  await expect(actions.stop({ id: "rule", revision: "", runtimeId: "runtime" })).rejects.toThrow(
+    "forward.changed",
+  );
+  const authority = { origin: vi.fn(), authorize: vi.fn() } as unknown as ForwardingAuthority;
+  await expect(actions.stop({ id: "rule", revision: "one" }, authority)).rejects.toThrow(
+    "forward.changed",
+  );
+  expect(authority.origin).not.toHaveBeenCalled();
+  expect(invoke).not.toHaveBeenCalled();
+});

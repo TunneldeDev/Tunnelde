@@ -113,7 +113,13 @@ pub async fn forwarding_stop(
         )
         .await;
     }
-    forwarding::stop(&app, &id).await
+    match (expected_revision.as_deref(), runtime_id.as_deref()) {
+        (Some(revision), runtime) => forwarding::stop_checked(&app, &id, revision, runtime).await,
+        // Historical callers that supplied neither token retain their wire
+        // behavior. An instance-only request must never fall back to blind stop.
+        (None, None) => forwarding::stop(&app, &id).await,
+        _ => Err(crate::error::AppError::validation("forward.changed")),
+    }
 }
 
 #[tauri::command]

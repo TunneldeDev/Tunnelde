@@ -98,9 +98,11 @@ export const localForwardingActions: ForwardingActions = Object.freeze<Forwardin
     await invoke("forwarding_remove", { ...target, ...args });
   },
   async stop(rule, authority) {
+    if (!rule.revision || (authority && !rule.runtimeId)) throw new Error("forward.changed");
     const target = {
       id: rule.id,
-      ...(authority ? { expectedRevision: rule.revision, runtimeId: rule.runtimeId } : {}),
+      expectedRevision: rule.revision,
+      runtimeId: rule.runtimeId ?? null,
     };
     const args = await authorizedArgs(authority);
     await invoke("forwarding_stop", { ...target, ...args });

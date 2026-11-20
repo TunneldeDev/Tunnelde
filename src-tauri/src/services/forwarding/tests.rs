@@ -445,3 +445,50 @@ fn automation_preference_failure_rolls_back_rule_and_version() {
         Options::default()
     );
 }
+
+#[tokio::test]
+async fn checked_inactive_stop_requires_current_revision_without_invalidating_rejected_attempts() {
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let first = service.save_checked(rule(host(&db)), None).unwrap();
+    let current = service
+        .save_checked(first.rule.clone(), Some(&first.revision))
+        .unwrap();
+    // A rejection must not increment registry stop revisions either.
+    let before = registry
+        .inspect_automation(|snapshot| snapshot(&first.rule.id))
+        .unwrap()
+        .stop_revision;
+    assert!(service
+        .take_checked(&first.rule.id, &first.revision, None)
+        .is_err());
+    assert!(service
+        .take_checked(&first.rule.id, &current.revision, Some("retired-runtime"))
+        .is_err());
+    let unchanged = registry
+        .inspect_automation(|snapshot| snapshot(&first.rule.id))
+        .unwrap()
+        .stop_revision;
+    assert_eq!(unchanged, before);
+    service
+        .take_checked(&first.rule.id, &current.revision, None)
+        .unwrap()
+        .finish()
+        .await
+        .unwrap();
+    let stopped = registry
+        .inspect_automation(|snapshot| snapshot(&first.rule.id))
+        .unwrap()
+        .stop_revision;
+    assert_ne!(stopped, before);
+    service
+        .remove_checked(&first.rule.id, Some(&current.revision))
+        .unwrap();
+    assert!(service
+        .take_checked(&first.rule.id, &current.revision, None)
+        .is_err());
+}

@@ -191,22 +191,51 @@ pub async fn start_checked(
     }
     result
 }
+impl super::Forwarding<'_> {
+    pub(super) fn take_checked(
+        &self,
+        id: &str,
+        revision: &str,
+        runtime: Option<&str>,
+    ) -> AppResult<crate::ssh::forward::StoppedForward> {
+        // Registry -> DB, matching start admission and conditional edits. Both
+        // rule revision and listener incarnation must still be current under
+        // the same registry lock before invalidating tickets or taking a socket.
+        self.registry.take_snapshot(id, runtime, || {
+            if !self
+                .rule(id)?
+                .is_some_and(|entry| entry.revision == revision)
+            {
+                return Err(AppError::validation("forward.changed"));
+            }
+            Ok(())
+        })
+    }
+}
 pub(crate) fn take_checked(
     app: &AppHandle,
     id: &str,
     revision: &str,
     runtime: &str,
 ) -> AppResult<crate::ssh::forward::StoppedForward> {
+    service(&app.state::<AppState>()).take_checked(id, revision, Some(runtime))
+}
+pub(crate) async fn stop_checked(
+    app: &AppHandle,
+    id: &str,
+    revision: &str,
+    runtime: Option<&str>,
+) -> AppResult<()> {
     let state = app.state::<AppState>();
-    state.forwards.take_checked(id, Some(runtime), || {
-        if !service(&state)
-            .rule(id)?
-            .is_some_and(|entry| entry.revision == revision)
-        {
-            return Err(AppError::validation("forward.changed"));
-        }
-        Ok(())
-    })
+    // Automation -> registry -> DB. Do not pause before CAS validation and do
+    // not release automation between taking the listener and pausing recovery.
+    let stopping = state
+        .forward_automation
+        .pause_after(id, || service(&state).take_checked(id, revision, runtime))?;
+    super::automation::changed(app);
+    // take_checked already spawned cleanup, so cancelling delivery cannot
+    // abandon the taken listener or its group-connection lifetime.
+    stopping.finish().await
 }
 pub async fn stop(app: &AppHandle, id: &str) -> AppResult<()> {
     super::automation::pause(app, id);

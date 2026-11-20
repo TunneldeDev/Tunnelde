@@ -140,6 +140,10 @@ impl Drop for ActiveForward {
         }
     }
 }
+enum StopTarget<'a> {
+    Any,
+    Snapshot(Option<&'a str>),
+}
 pub struct ForwardRegistry {
     active: Mutex<HashMap<String, ActiveForward>>,
     revisions: Mutex<HashMap<String, u64>>,
@@ -303,12 +307,26 @@ impl ForwardRegistry {
         expected: Option<&str>,
         check: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<StoppedForward> {
-        self.take_inner(id, expected, None, check)
+        let target = match expected {
+            Some(runtime) => StopTarget::Snapshot(Some(runtime)),
+            None => StopTarget::Any,
+        };
+        self.take_inner(id, target, None, check)
+    }
+    /// Exact displayed runtime, including the absence of a listener while an
+    /// automatic start/retry is pending. None here never means "any instance".
+    pub(crate) fn take_snapshot(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<StoppedForward> {
+        self.take_inner(id, StopTarget::Snapshot(expected), None, check)
     }
     fn take_inner(
         &self,
         id: &str,
-        expected: Option<&str>,
+        expected: StopTarget<'_>,
         owner: Option<(&str, u64)>,
         check: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<StoppedForward> {
@@ -324,10 +342,10 @@ impl ForwardRegistry {
         }) {
             return Err(AppError::validation("plugin.resources.unavailable"));
         }
-        if expected
-            .is_some_and(|expected| active.get(id).is_none_or(|item| item.identity != expected))
-        {
-            return Err(AppError::validation("forward.changed"));
+        if let StopTarget::Snapshot(expected) = expected {
+            if active.get(id).map(|item| item.identity.as_str()) != expected {
+                return Err(AppError::validation("forward.changed"));
+            }
         }
         self.invalidate(format!("rule:{id}"));
         let item = active.remove(id);
