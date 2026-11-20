@@ -84,6 +84,13 @@ export interface PanelPresentationJob {
   operation: { kind: "set"; presentation: PanelPresentation } | { kind: "close" };
 }
 export type PanelWindowCommand =
+  | { action: "publishPreviewResource"; resource: { id: string; ticket: string } | null }
+  | {
+      action: "openPreviewHandle";
+      target: { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
+      resourceId: string;
+    }
+  | { action: "closePreviewHandle"; id: string }
   | { action: "beginPluginModel"; panelId: string; revision: string }
   | { action: "publishPresentation"; lease: PanelLease; metadata: PanelLayoutMetadata }
   | {

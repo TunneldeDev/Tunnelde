@@ -1,10 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import type { FilePreviewInfo, PluginFilePreview } from "@/lib/api/types";
+import type { PluginFilePreview } from "@/lib/api/types";
 import { translateError } from "@/lib/api/errors";
-import { createProviderPreviewResource } from "@/lib/files/resources/preview";
+import type { PreviewReadSource } from "./preview/readSource";
+import { usePreviewReadSource } from "./preview/usePreviewReadSource";
 import type { PreviewFile } from "@/store/filePreview";
 import { fileName } from "@/store/editors";
 import { MediaPreview } from "./MediaPreview";
@@ -15,6 +16,7 @@ const PdfPreview = lazy(() => import("./PdfPreview"));
 export function ProviderPreview({
   file,
   provider,
+  source,
   onReady,
   onReadError,
   onDecodeError,
@@ -22,70 +24,34 @@ export function ProviderPreview({
 }: {
   file: PreviewFile;
   provider: PluginFilePreview;
+  source: PreviewReadSource;
   onReady: () => void;
   onReadError: () => void;
   onDecodeError: () => void;
   onRetry: () => void;
 }) {
   const { t } = useTranslation();
-  const [view, setView] = useState<{
-    file: PreviewFile;
-    providerId: string;
-    renderer: PluginFilePreview["renderer"];
-    resource: ReturnType<typeof createProviderPreviewResource>;
-    info?: FilePreviewInfo;
-    content?: string | null;
-    encoding?: string;
-    failure?: { cause: unknown };
-  } | null>(null);
+  const view = usePreviewReadSource(source);
   useEffect(() => {
-    const resource = createProviderPreviewResource(file.path, file.source, {
-      id: provider.id,
-      renderer: provider.renderer,
-    });
-    const request = {
-      file,
-      providerId: provider.id,
-      renderer: provider.renderer,
-      resource,
-    };
-    let active = true;
-    void resource.ready.then(
-      (result) => {
-        if (active) {
-          setView({ ...request, ...result });
-          if (provider.renderer === "text" || provider.renderer === "markdown") onReady();
-        }
-      },
-      (cause) => {
-        if (active) {
-          setView({ ...request, failure: { cause } });
-          onReadError();
-        }
-      },
-    );
-    return () => {
-      active = false;
-      resource.dispose();
-    };
-  }, [file, provider.id, provider.renderer, onReady, onReadError]);
-  const current =
-    view?.file === file && view.providerId === provider.id && view.renderer === provider.renderer
-      ? view
-      : null;
-  const { info, content, encoding, failure } = current ?? {};
+    if (view.status === "error" && view.stage === "read") onReadError();
+    else if (
+      view.status === "ready" &&
+      (provider.renderer === "text" || provider.renderer === "markdown")
+    )
+      onReady();
+  }, [view, provider.renderer, onReady, onReadError]);
+  const { info, content, encoding } = view.status === "ready" ? view.value : {};
   const fail = useCallback(
     (cause: unknown) => {
-      current?.resource.dispose();
+      source.fail(cause);
       onDecodeError();
-      setView((value) => (value && value === current ? { ...value, failure: { cause } } : value));
     },
-    [current, onDecodeError],
+    [source, onDecodeError],
   );
-  if (failure)
+  if (view.status === "error")
     return (
       <div className="file-preview__empty">
-        <p role="alert">{translateError(failure.cause)}</p>
+        <p role="alert">{translateError(view.cause)}</p>
         <Button variant="secondary" onClick={onRetry}>
           {t("common.retry")}
         </Button>

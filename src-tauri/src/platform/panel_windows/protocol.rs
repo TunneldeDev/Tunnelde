@@ -14,6 +14,16 @@ use std::time::Instant;
     deny_unknown_fields
 )]
 pub(crate) enum Command {
+    PublishPreviewResource {
+        resource: Option<super::preview::Resource>,
+    },
+    OpenPreviewHandle {
+        target: super::plugin_views::Target,
+        resource_id: String,
+    },
+    ClosePreviewHandle {
+        id: String,
+    },
     Snapshot {},
     BeginPluginModel {
         panel_id: String,
@@ -150,6 +160,23 @@ impl Ownership {
         // revive a timed-out offer just because its timeout callback ran late.
         self.expire(now);
         match command {
+            Command::PublishPreviewResource { resource } => Ok(json!(
+                self.publish_preview_resource(window, document, resource)?
+            )),
+            Command::OpenPreviewHandle {
+                target,
+                resource_id,
+            } => Ok(json!(self.open_preview_handle(
+                window,
+                document,
+                target,
+                &resource_id,
+                now
+            )?)),
+            Command::ClosePreviewHandle { id } => {
+                self.close_preview_handle(window, document, &id)?;
+                Ok(Value::Null)
+            }
             Command::BeginPresentation { .. } => Err("native presentation policy required"),
             Command::ClaimPresentations {} => {
                 Ok(json!(self.claim_presentations(window, document, now)?))

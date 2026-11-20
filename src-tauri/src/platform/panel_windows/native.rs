@@ -115,6 +115,7 @@ pub(crate) fn panel_window_control(
             | Command::PublishPresentation { .. }
             | Command::PublishStagedPresentation { .. }
             | Command::PublishUnavailablePreview { .. }
+            | Command::PublishPreviewResource { .. }
             | Command::ClaimActions {}
             | Command::ActionResult { .. }
             | Command::Snapshot {}
@@ -129,6 +130,8 @@ pub(crate) fn panel_window_control(
             | Command::IssueDrag { .. }
             | Command::AcceptDrag { .. }
             | Command::CancelDrag { .. }
+            | Command::OpenPreviewHandle { .. }
+            | Command::ClosePreviewHandle { .. }
     );
     let notify_failure = matches!(
         &request,
@@ -143,6 +146,7 @@ pub(crate) fn panel_window_control(
         Command::PublishPresentation { .. }
             | Command::PublishStagedPresentation { .. }
             | Command::PublishUnavailablePreview { .. }
+            | Command::PublishPreviewResource { .. }
     );
     let result = super::public_moves::control(
         app,

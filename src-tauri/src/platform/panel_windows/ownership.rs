@@ -120,6 +120,7 @@ pub(super) struct Ownership {
     drags: HashMap<String, DragGrant>,
     pub(super) native_views: super::plugin_views::Views,
     pub(super) forwarding_tests: super::forwarding::diagnostics::Registry,
+    pub(super) preview_resources: super::preview::Resources,
 }
 impl Ownership {
     /// The native builder registers a window before a WebView exists. Only the
@@ -680,6 +681,7 @@ impl Ownership {
         panel.presentation = pending.presentation;
         let lease = panel.lease.clone();
         self.promote_native_views(&pending.id, &lease, &pending.target_document);
+        self.promote_preview_handles(&pending.id, &lease, &pending.target_document);
         self.finish_move(&pending.id, &lease);
         Ok(lease)
     }
