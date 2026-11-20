@@ -33,6 +33,11 @@ export interface NativePluginViewDescriptor {
   title: string;
   allowFloating: boolean;
 }
+/** Selected forwarding module identity; no activation token or write grant. */
+export interface NativeForwardingProviderDescriptor {
+  selectionRevision: number;
+  view: Omit<NativePluginViewDescriptor, "panelId" | "revision">;
+}
 export interface NativePanelSnapshot {
   pluginViews?: NativePluginViewDescriptor[];
   /** Unknown effects after coordinator document loss; counts only, no requests. */

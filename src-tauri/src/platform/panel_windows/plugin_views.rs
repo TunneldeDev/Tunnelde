@@ -25,6 +25,7 @@ struct View {
     plugin: PluginLease,
     panel_id: String,
     authority: Authority,
+    provider: Option<provider::Binding>,
 }
 #[derive(Default)]
 pub(super) struct Views {
@@ -76,6 +77,20 @@ impl Ownership {
         let (window, document) = caller;
         let panel_id =
             self.native_view_target(window, document, &target, &plugin.id, view_id, now)?;
+        self.insert_native_view(caller, target, plugin, token, panel_id, None, now)
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn insert_native_view(
+        &mut self,
+        caller: (&str, &str),
+        target: Target,
+        plugin: PluginLease,
+        token: String,
+        panel_id: String,
+        provider: Option<provider::Binding>,
+        now: Instant,
+    ) -> Result<()> {
+        let (window, document) = caller;
         if self.native_views.bindings.len() >= MAX_VIEWS
             || self.native_views.bindings.contains_key(&token)
         {
@@ -96,6 +111,7 @@ impl Ownership {
                 plugin,
                 panel_id,
                 authority,
+                provider,
             },
         );
         Ok(())
@@ -261,10 +277,10 @@ impl Ownership {
             }
         }
     }
-    pub(super) fn prune_native_views(
+    fn prune_native_views(
         &mut self,
         now: Instant,
-        live: impl Fn(&str, &PluginLease) -> bool,
+        live: impl Fn(&str, &PluginLease, Option<&provider::Binding>) -> bool,
     ) -> Vec<String> {
         let expired: Vec<_> = self
             .native_views
@@ -273,7 +289,7 @@ impl Ownership {
             .filter(|(token, view)| {
                 self.native_view(&view.window, &view.document, token, now)
                     .is_err()
-                    || !live(token, &view.plugin)
+                    || !live(token, &view.plugin, view.provider.as_ref())
             })
             .map(|(token, _)| token.clone())
             .collect();
@@ -302,6 +318,7 @@ pub(crate) mod gateway;
 pub(crate) mod origin;
 #[cfg(not(windows))]
 pub(crate) mod pickers;
+mod provider;
 #[cfg(test)]
 mod tests;
 pub(crate) mod ui;

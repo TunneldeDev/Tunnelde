@@ -895,3 +895,27 @@ window/document/lease before OS access, outside ownership locks. An admitted OS
 write retains the native effect through settlement even if IPC delivery is lost;
 it cannot be rolled back by later document retirement. This primitive alone does
 not admit a complete forwarding view or provider adapter.
+
+### Selected forwarding-provider attachments
+
+The private native plugin-view gateway can describe the selected forwarding
+provider and attach a scoped child to an exact owned forwarding lease or staged
+offer. Selection comes from host settings, not caller-supplied activation tokens.
+The descriptor contains module identity and a selection revision, never the
+singleton activation credential. Opening reuses that running activation; it does
+not start a plugin or run `activate` again. `allowFloating: false` is respected.
+
+The child is bound to the native caller document, panel, builtin host, selected
+view/runtime and selection epoch. Switching away and back cannot revive an old
+descriptor or child. Module loading, call admission, origin checks and UI replies
+recheck the binding; host removal, permission loss, runtime retirement and native
+document/offer invalidation revoke access. Exact handoff promotes the staged child
+using the existing view lifecycle, while admitted effects retain their independent
+settlement fence. Closing a child never closes the singleton or a replacement child.
+
+This is attachment infrastructure, not a forwarding mutation authority or a
+complete provider renderer. A native child cannot use the raw main-document
+`forwarding_provider_open` bridge. Provider actions/prompt integration still need
+their own exact-origin native services before the forwarding adapter is admitted
+for discovery; an attachment does not register an ordinary sidebar adapter or
+enable native-window discovery.

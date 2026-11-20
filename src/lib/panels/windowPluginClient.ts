@@ -4,11 +4,26 @@ import type { FrontendModule } from "@/lib/extensions/uiSdk";
 import type { FrontendViewTransport } from "@/lib/extensions/runtime/views/frontend";
 import { ResourceScopeClosed } from "@/lib/extensions/runtime/scopes/errors";
 import { callScopedRequest } from "@/lib/extensions/runtime/requests/frontend";
-import type { NativePanelIdentity, NativePluginViewDescriptor, PanelLease } from "./windowProtocol";
+import type {
+  NativePanelIdentity,
+  NativePluginViewDescriptor,
+  NativeForwardingProviderDescriptor,
+  PanelLease,
+} from "./windowProtocol";
 
 export type NativePluginViewTarget =
   { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
 type Request =
+  | { action: "describeForwardingProvider"; target: NativePluginViewTarget }
+  | {
+      action: "openForwardingProvider";
+      target: NativePluginViewTarget;
+      hostId: string;
+      pluginId: string;
+      runtimeId: string;
+      viewId: string;
+      selectionRevision: number;
+    }
   | {
       action: "unregisterAdapter";
       panelId: string;
@@ -58,12 +73,22 @@ export function createNativePluginViewClient(
     if (disposed || (token !== undefined && !tokens.has(token))) throw new ResourceScopeClosed();
   };
   const request = <T>(request: Request) =>
-    native<T>("panel_window_plugin_view", { document, request });
+    native<T>("panel_window_plugin_view", { document, request: structuredClone(request) });
   const close = async (token: string) => {
     if (!tokens.delete(token)) return;
     // Cleanup remains possible after disposal and does not touch background
     // runtime resources, subscriptions or private Bus membership.
     await request({ action: "close", token });
+  };
+  const acceptSession = async (session: FrontendSession) => {
+    if (!session || typeof session.token !== "string" || !session.token)
+      throw new ResourceScopeClosed();
+    tokens.add(session.token);
+    if (disposed) {
+      await close(session.token);
+      throw new ResourceScopeClosed();
+    }
+    return session;
   };
   const transport: FrontendViewTransport = {
     close,
@@ -149,6 +174,32 @@ export function createNativePluginViewClient(
       check();
       return changed;
     },
+    async describeForwardingProvider(target: NativePluginViewTarget) {
+      check();
+      const value = await request<NativeForwardingProviderDescriptor | null>({
+        action: "describeForwardingProvider",
+        target,
+      });
+      check();
+      return value;
+    },
+    async openForwardingProvider(
+      target: NativePluginViewTarget,
+      hostId: string,
+      descriptor: NativeForwardingProviderDescriptor,
+    ) {
+      check();
+      const session = await request<FrontendSession>({
+        action: "openForwardingProvider",
+        target,
+        hostId,
+        pluginId: descriptor.view.pluginId,
+        runtimeId: descriptor.view.runtimeId,
+        viewId: descriptor.view.viewId,
+        selectionRevision: descriptor.selectionRevision,
+      });
+      return acceptSession(session);
+    },
     async open(
       target: NativePluginViewTarget,
       pluginId: string,
@@ -163,14 +214,7 @@ export function createNativePluginViewClient(
         runtimeId,
         viewId,
       });
-      if (!session || typeof session.token !== "string" || !session.token)
-        throw new ResourceScopeClosed();
-      tokens.add(session.token);
-      if (disposed) {
-        await close(session.token);
-        throw new ResourceScopeClosed();
-      }
-      return session;
+      return acceptSession(session);
     },
     dispose() {
       if (disposed) return;

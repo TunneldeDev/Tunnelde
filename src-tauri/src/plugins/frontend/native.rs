@@ -1,6 +1,7 @@
 //! Private half of the document/panel gateway. Never serialize activation
 //! credentials or accept them from a satellite. No second runtime is started.
 mod policy;
+mod provider;
 use super::{authorized, FrontendSession, Registry, UI_SDK_VERSION};
 use crate::{
     error::{AppError, AppResult},
@@ -8,6 +9,7 @@ use crate::{
     state::AppState,
 };
 pub(crate) use policy::{call_policy, CallPolicy};
+pub(crate) use provider::{selected_forwarding_source, ProviderSelection};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
@@ -35,12 +37,22 @@ pub(crate) struct Source {
     runtime_id: String,
     title: String,
     allow_floating: bool,
+    provider: Option<ProviderSelection>,
 }
 pub(crate) async fn source(
     app: &AppHandle,
     plugin: &str,
     runtime: &str,
     view: &str,
+) -> AppResult<Source> {
+    source_for(app, plugin, runtime, view, None).await
+}
+async fn source_for(
+    app: &AppHandle,
+    plugin: &str,
+    runtime: &str,
+    view: &str,
+    provider: Option<ProviderSelection>,
 ) -> AppResult<Source> {
     let state = app.state::<AppState>();
     let lease = state.plugins.invocation_lease(plugin, runtime)?;
@@ -57,8 +69,10 @@ pub(crate) async fn source(
         .find(|v| {
             v.id == view
                 && v.kind.as_deref() == Some("component")
-                && v.location.as_deref() == Some("sidebar")
-                && v.provider.is_none()
+                && match &provider {
+                    None => v.location.as_deref() == Some("sidebar") && v.provider.is_none(),
+                    Some(_) => v.provider.as_deref() == Some("forwarding"),
+                }
         })
         .ok_or_else(|| AppError::validation("plugin.frontend.undeclaredContribution"))?;
     let entry = owner
@@ -88,6 +102,7 @@ pub(crate) async fn source(
         runtime_id: runtime.into(),
         title: contribution.title.clone(),
         allow_floating: contribution.allow_floating != Some(false),
+        provider,
     })
 }
 impl Source {
@@ -95,6 +110,7 @@ impl Source {
         self.lease == other.lease
             && self.activation == other.activation
             && self.descriptor() == other.descriptor()
+            && self.provider == other.provider
     }
     pub(crate) fn descriptor(&self) -> ViewDescriptor {
         ViewDescriptor {
@@ -129,11 +145,47 @@ impl Source {
         {
             return Err(AppError::validation("plugin.notRunning"));
         }
-        app.state::<AppState>().plugins.security.with_authorized(
-            &module.lease,
-            &["ui.trusted"],
-            operation,
-        )
+        self.with_policy(app, operation)
+    }
+    pub(crate) fn provider_selection(&self) -> Option<&ProviderSelection> {
+        self.provider.as_ref()
+    }
+    fn with_policy<T>(
+        &self,
+        app: &AppHandle,
+        operation: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        let state = app.state::<AppState>();
+        let permissions: &[&str] = if self.provider.is_some() {
+            &["ui.trusted", "hosts.read", "forwards.read"]
+        } else {
+            &["ui.trusted"]
+        };
+        state
+            .plugins
+            .security
+            .with_authorized(&self.lease, permissions, || {
+                if let Some(provider) = &self.provider {
+                    let settings = state.settings.read().unwrap_or_else(|e| e.into_inner());
+                    provider.check(
+                        &settings,
+                        state
+                            .ui_provider_revision
+                            .load(std::sync::atomic::Ordering::SeqCst),
+                        &self.lease.id,
+                        &self.view_id,
+                    )?;
+                    operation()
+                } else {
+                    operation()
+                }
+            })
+    }
+    #[cfg(test)]
+    pub(crate) fn test_forwarding_source(lease: Lease, revision: u64) -> Self {
+        let mut source = Self::test_source(lease, "runtime", "forwards", true, "private-singleton");
+        source.provider = Some(ProviderSelection::test_selection(revision));
+        source
     }
     #[cfg(test)]
     pub(crate) fn test_source(
@@ -151,6 +203,7 @@ impl Source {
             runtime_id: runtime.into(),
             title: "Sample files".into(),
             allow_floating: floating,
+            provider: None,
         }
     }
 }
@@ -189,7 +242,7 @@ pub(crate) fn open(app: &AppHandle, source: Source) -> AppResult<FrontendSession
             if *lease != source.lease {
                 return Err(AppError::validation("plugin.frontend.expired"));
             }
-            authorized(&state.plugins.security, lease)?;
+            source.with_policy(app, || Ok(()))?;
             if !state.plugins.security.is_ready(lease)? {
                 return Err(AppError::validation("plugin.notRunning"));
             }

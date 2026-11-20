@@ -223,6 +223,7 @@ impl Ownership {
         pending: &Pending,
         deliver: impl FnOnce() -> AppResult<T>,
     ) -> AppResult<T> {
+        self.native_provider_current(app, &pending.window, &pending.document, &pending.token)?;
         let owner = self
             .native_view_resource(
                 &pending.window,

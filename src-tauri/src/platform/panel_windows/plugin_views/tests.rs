@@ -86,7 +86,7 @@ impl Fixture {
         self.r.native_view_owner(w, d, token, self.now)
     }
     fn prune(&mut self) -> Vec<String> {
-        self.r.prune_native_views(self.now, |_, _| true)
+        self.r.prune_native_views(self.now, |_, _, _| true)
     }
 }
 #[test]
@@ -328,7 +328,7 @@ fn runtime_retirement_uses_captured_generation_and_does_not_release_running_call
     f.r.settle_native_view_call(&id);
     assert!(f.r.retire_native_views("sample", 5).is_empty());
     assert_eq!(
-        f.r.prune_native_views(f.now, |token, _| token != "new"),
+        f.r.prune_native_views(f.now, |token, _, _| token != "new"),
         ["new"]
     );
 }

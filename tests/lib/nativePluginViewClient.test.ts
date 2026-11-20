@@ -271,3 +271,70 @@ it("withdraws only the exact public owner tuple without spreading descriptor met
   satellite.dispose();
   main.dispose();
 });
+
+it("opens selected forwarding attachments through exact native identity, never a singleton or caller-supplied permissions", async () => {
+  const f = fixture();
+  const descriptor = {
+    selectionRevision: 4,
+    view: {
+      pluginId: "sample",
+      runtimeId: "runtime:8",
+      viewId: "forwards",
+      generation: 8,
+      entry: "index.mjs",
+      sdkVersion: "0.1.0",
+      title: "Forwarding",
+      allowFloating: true,
+    },
+  };
+  f.invoke.mockResolvedValueOnce(descriptor).mockResolvedValueOnce(session);
+  const owned = {
+    kind: "owned" as const,
+    lease: { panelId: "forwarding", windowId: "satellite", generation: 2 },
+  };
+  expect(await f.client.describeForwardingProvider(owned)).toBe(descriptor);
+  const pending = f.client.openForwardingProvider(owned, "host", descriptor);
+  owned.lease.generation = 3;
+  descriptor.selectionRevision = 9;
+  expect(await pending).toEqual(session);
+  expect(f.invoke).toHaveBeenLastCalledWith("panel_window_plugin_view", {
+    document: identity.document,
+    request: {
+      action: "openForwardingProvider",
+      target: {
+        kind: "owned",
+        lease: { panelId: "forwarding", windowId: "satellite", generation: 2 },
+      },
+      hostId: "host",
+      pluginId: "sample",
+      runtimeId: "runtime:8",
+      viewId: "forwards",
+      selectionRevision: 4,
+    },
+  });
+  expect(await f.client.transport.call(session.token, "api.describe", {})).toEqual({ ok: true });
+  f.client.dispose();
+});
+it("closes a late forwarding-provider acquisition rather than adopting it after disposal", async () => {
+  const f = fixture();
+  let finish!: (value: unknown) => void;
+  f.invoke.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const descriptor = {
+    selectionRevision: 4,
+    view: { ...session, viewId: "forwards", title: "Provider", allowFloating: true },
+  };
+  const pending = f.client.openForwardingProvider(target, "host", descriptor);
+  f.client.dispose();
+  finish(session);
+  await expect(pending).rejects.toThrow();
+  expect(f.invoke.mock.calls.map(([, args]) => args.request.action)).toEqual([
+    "openForwardingProvider",
+    "close",
+  ]);
+  await expect(f.client.describeForwardingProvider(target)).rejects.toThrow();
+});

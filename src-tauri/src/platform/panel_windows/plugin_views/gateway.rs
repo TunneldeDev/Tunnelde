@@ -19,6 +19,17 @@ use tauri::{AppHandle, Manager, WebviewWindow};
     deny_unknown_fields
 )]
 pub(crate) enum Request {
+    DescribeForwardingProvider {
+        target: Target,
+    },
+    OpenForwardingProvider {
+        target: Target,
+        host_id: String,
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+        selection_revision: u64,
+    },
     UnregisterAdapter {
         panel_id: String,
         runtime_id: String,
@@ -70,11 +81,13 @@ impl Drop for AcceptedCall {
     }
 }
 fn current(
+    app: &AppHandle,
     ownership: &Ownership,
     window: &str,
     document: &str,
     token: &str,
 ) -> AppResult<crate::plugins::security::Lease> {
+    ownership.native_provider_current(app, window, document, token)?;
     ownership
         .native_view_owner(window, document, token, Instant::now())
         .map_err(native::invalid)
@@ -95,6 +108,30 @@ pub(crate) async fn panel_window_plugin_view(
         .authorize(window.label(), &document)
         .map_err(native::invalid)?;
     match request {
+        Request::DescribeForwardingProvider { target } => {
+            super::provider::describe(app, window.label(), &document, target).await
+        }
+        Request::OpenForwardingProvider {
+            target,
+            host_id,
+            plugin_id,
+            runtime_id,
+            view_id,
+            selection_revision,
+        } => {
+            super::provider::open(
+                app,
+                window.label(),
+                &document,
+                target,
+                host_id,
+                plugin_id,
+                runtime_id,
+                view_id,
+                selection_revision,
+            )
+            .await
+        }
         Request::UnregisterAdapter {
             panel_id,
             runtime_id,
@@ -214,7 +251,7 @@ pub(crate) async fn panel_window_plugin_view(
         }
         Request::PrepareCall { token } => {
             let ownership = native::lock(&registry);
-            let owner = current(&ownership, window.label(), &document, &token)?;
+            let owner = current(app, &ownership, window.label(), &document, &token)?;
             Ok(json!(frontend::prepare(app, &token, &owner)?))
         }
         Request::Call {
@@ -227,7 +264,7 @@ pub(crate) async fn panel_window_plugin_view(
                 .ok_or_else(|| AppError::validation("plugin.frontend.nativeMethodUnavailable"))?;
             let (call, id, owner) = {
                 let mut ownership = native::lock(&registry);
-                let owner = current(&ownership, window.label(), &document, &token)?;
+                let owner = current(app, &ownership, window.label(), &document, &token)?;
                 let call = frontend::claim(app, &token, &owner, &request_id, policy)?;
                 let (_, id) = frontend::with_owner(app, &token, &owner, || {
                     ownership
@@ -249,6 +286,7 @@ pub(crate) async fn panel_window_plugin_view(
                 crate::services::operations::WorkLifetime::new(accepted)
                     .scope(async move {
                         current(
+                            &app,
                             &native::lock(&app.state::<native::Registry>()),
                             &label,
                             &document,
@@ -263,6 +301,7 @@ pub(crate) async fn panel_window_plugin_view(
                         );
                         let result = origin::scope(origin, call.run(&app, &method, params)).await?;
                         current(
+                            &app,
                             &native::lock(&app.state::<native::Registry>()),
                             &label,
                             &document,
@@ -279,7 +318,7 @@ pub(crate) async fn panel_window_plugin_view(
             let ownership = native::lock(&registry);
             // Cleanup is tied to the exact issuing document too. Token theft
             // must not allow another window to cancel this view's requests.
-            current(&ownership, window.label(), &document, &token)?;
+            current(app, &ownership, window.label(), &document, &token)?;
             Ok(json!(frontend::cancel(app, &token, &request_id)))
         }
         Request::Close { token } => {
@@ -299,10 +338,12 @@ pub(crate) fn prune(app: &AppHandle) -> bool {
         let mut ownership = native::lock(&registry);
         let changed =
             ownership.retire_plugin_adapters(|source| source.with_current(app, || Ok(())).is_err());
-        let tokens = ownership.prune_native_views(Instant::now(), |token, owner| {
-            frontend::with_owner(app, token, owner, || Ok(())).is_ok()
+        let tokens = ownership.prune_native_views(Instant::now(), |token, owner, provider| {
+            provider.is_none_or(|binding| binding.check(app).is_ok())
+                && frontend::with_owner(app, token, owner, || Ok(())).is_ok()
         });
         ownership.prune_view_ui(app);
+        let changed = changed || !tokens.is_empty();
         (tokens, changed)
     };
     frontend::close(app, tokens);
@@ -334,6 +375,6 @@ pub(crate) fn read_asset<T>(
     let registry = app.state::<native::Registry>();
     let ownership = native::lock(&registry);
     let document = ownership.document(window)?;
-    current(&ownership, window, document, token).ok()?;
+    current(app, &ownership, window, document, token).ok()?;
     Some(read())
 }

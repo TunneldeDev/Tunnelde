@@ -42,6 +42,7 @@ impl Origin {
         operation()
     }
     pub(super) fn authorize(&self, ownership: &Ownership) -> AppResult<()> {
+        ownership.native_provider_current(&self.app, &self.window, &self.document, &self.token)?;
         let plugin = ownership
             .native_view_resource(
                 &self.window,
