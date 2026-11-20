@@ -66,7 +66,7 @@ fn any_mount_in_table(table: &str, mount_point: &str) -> bool {
 pub(super) async fn filesystem_present(mount_point: &str) -> AppResult<bool> {
     #[cfg(target_os = "linux")]
     {
-        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+        let table = filesystem::mount_table().await?;
         Ok(any_mount_in_table(&table, mount_point))
     }
     #[cfg(target_os = "macos")]

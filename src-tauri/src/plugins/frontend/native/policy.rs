@@ -21,6 +21,8 @@ pub(crate) enum CallPolicy {
     MountRemotePath,
     /// Owned legacy conversion/metadata workers retain origin and actual effect.
     MountLegacy,
+    /// Registry/group reservations survive nested FS timeouts and OS launch.
+    MountOpen,
     /// Exact-origin destructive consent followed by an owned force-stop transaction.
     MountForceUnmount,
     /// Fenced through receipt publication; the host owns subsequent steps.

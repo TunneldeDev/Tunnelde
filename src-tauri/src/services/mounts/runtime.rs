@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedMutexGuard};
 
 pub(crate) mod force;
+pub(crate) mod open;
 mod recovery;
 pub(super) use recovery::retryable;
 pub(crate) use recovery::{launch, shutdown};

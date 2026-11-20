@@ -212,20 +212,22 @@ pub(in crate::plugins::api) async fn dispatch(
         "runtime.open" | "runtime.reveal" => {
             let id: String = field(&params, "id")?;
             let runtime_id: String = field(&params, "runtimeId")?;
-            let status = state
-                .mount_runtime
-                .rule_states()
-                .into_iter()
-                .find(|s| s.rule_id == id && s.runtime_id.as_deref() == Some(&runtime_id))
+            let states = state.mount_runtime.rule_states();
+            let target = runtime::force::Target::capture(&states, &id, &runtime_id)?;
+            let gate = state.mount_runtime.gate(&target.group)?;
+            target.recheck(&state.mount_runtime.rule_states())?;
+            let session = states
+                .iter()
+                .find(|s| s.rule_id == id)
+                .and_then(|s| s.session_id.clone())
                 .ok_or_else(repository::changed)?;
-            let session = status.session_id.ok_or_else(repository::changed)?;
             crate::mounts::open_managed(
                 app.clone(),
                 runtime_id,
                 session,
                 optional(&params, "path")?,
                 method == "runtime.reveal",
-                Authority(Some(lease(context))),
+                runtime::open::policy(app, Authority(Some(lease(context))), target, gate),
             )
             .await?;
             Ok(Value::Null)

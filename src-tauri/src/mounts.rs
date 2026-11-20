@@ -2,10 +2,14 @@
 //! unauthenticated local listening sockets are exposed to the mount program.
 #[cfg(all(test, unix))]
 mod dependency_tests;
+mod filesystem;
 #[cfg(not(windows))]
 mod helper;
 mod lifecycle;
-mod managed;
+#[cfg(target_os = "macos")]
+use filesystem::mac_mount_device;
+use filesystem::{cancellable_open, resolve_mounted_target};
+pub(crate) mod managed;
 pub(crate) use managed::open_managed;
 pub(crate) mod adoption;
 mod negotiation;
@@ -91,89 +95,6 @@ fn mounted_relative_path(root: &str, target: &str) -> AppResult<PathBuf> {
     Ok(path[base.len()..].iter().collect())
 }
 
-/// Resolve both paths on a blocking worker: a stalled FUSE filesystem must not
-/// freeze the async runtime, and a symlink must never escape the mounted root.
-async fn resolve_mounted_target(root: PathBuf, relative: PathBuf) -> AppResult<PathBuf> {
-    // Timed-out OS filesystem calls cannot be forcibly interrupted. Keep their
-    // permits until they actually return so repeated clicks cannot spawn an
-    // unbounded number of blocked threads.
-    static RESOLVERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
-        std::sync::OnceLock::new();
-    let permit = RESOLVERS
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
-    let job = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        let canonical_root = root.canonicalize()?;
-        let target = root.join(relative).canonicalize()?;
-        if !target.starts_with(&canonical_root) {
-            return Err(AppError::validation("mounts.remotePath.outsideMount"));
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use std::os::unix::fs::MetadataExt;
-            if canonical_root.metadata()?.dev() != target.metadata()?.dev() {
-                return Err(AppError::validation("mounts.remotePath.outsideMount"));
-            }
-        }
-        Ok(target)
-    });
-    tokio::time::timeout(std::time::Duration::from_secs(5), job)
-        .await
-        .map_err(|_| AppError::validation("mounts.pathTimeout"))?
-        .map_err(|error| AppError::Internal(error.to_string()))?
-}
-
-/// A blocking filesystem call cannot be cancelled. Tell its worker when the
-/// awaiting operation is dropped so it can avoid launching a late window.
-async fn cancellable_open(
-    action: impl FnOnce(std::sync::Arc<std::sync::atomic::AtomicBool>) -> AppResult<()> + Send + 'static,
-) -> AppResult<()> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    struct CancelOnDrop(std::sync::Arc<AtomicBool>);
-    impl Drop for CancelOnDrop {
-        fn drop(&mut self) {
-            self.0.store(false, Ordering::Release);
-        }
-    }
-    static OPENERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
-        std::sync::OnceLock::new();
-    let permit = OPENERS
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
-    let allowed = std::sync::Arc::new(AtomicBool::new(true));
-    let _cancel = CancelOnDrop(allowed.clone());
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        action(allowed)
-    })
-    .await
-    .map_err(|error| AppError::Internal(error.to_string()))?
-}
-
-#[cfg(target_os = "macos")]
-async fn mac_mount_device(path: PathBuf) -> AppResult<u64> {
-    use std::os::unix::fs::MetadataExt;
-    static PROBES: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
-        std::sync::OnceLock::new();
-    let permit = PROBES
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
-    let job = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        Ok::<_, std::io::Error>(path.metadata()?.dev())
-    });
-    Ok(tokio::time::timeout(std::time::Duration::from_secs(5), job)
-        .await
-        .map_err(|_| AppError::validation("mounts.pathTimeout"))?
-        .map_err(|error| AppError::Internal(error.to_string()))??)
-}
 struct ActiveMount {
     info: MountInfo,
     generation: u64,
@@ -196,7 +117,7 @@ impl ActiveMount {
         }
         #[cfg(target_os = "linux")]
         {
-            let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+            let table = filesystem::mount_table().await?;
             Ok(self.mount_id.is_some()
                 && mount_id_in_table(&table, &self.info.mount_point) == self.mount_id)
         }
@@ -480,7 +401,7 @@ async fn mount_visible(mount_point: &str) -> AppResult<bool> {
     }
     #[cfg(target_os = "linux")]
     {
-        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+        let table = filesystem::mount_table().await?;
         return Ok(mounted_in_table(&table, mount_point));
     }
     #[cfg(target_os = "macos")]
@@ -767,7 +688,7 @@ impl MountRegistry {
                     let mapping = windows_device_mapping(&info.mount_point);
                     #[cfg(target_os = "linux")]
                     let mapping = {
-                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+                        let table = filesystem::mount_table().await?;
                         mount_id_in_table(&table, &info.mount_point)
                     };
                     #[cfg(target_os = "macos")]
@@ -1075,7 +996,7 @@ pub async fn action(
                             .await?;
                     #[cfg(target_os = "linux")]
                     {
-                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+                        let table = filesystem::mount_table().await?;
                         if nested_mount_on_path(&table, Path::new(&record.mount_point), &target) {
                             return Err(AppError::validation("mounts.remotePath.outsideMount"));
                         }

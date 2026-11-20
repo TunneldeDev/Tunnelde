@@ -41,20 +41,20 @@ impl Policy for PluginPolicy {
             .with_authorized(&self.lease, &["mounts.write"], effect)
     }
 }
-struct Admission<P> {
+pub(super) struct Admission<P> {
     policy: P,
     origin: Option<crate::platform::panel_windows::plugin_views::origin::Origin>,
     invocation: Option<crate::plugins::InvocationFence>,
 }
 impl<P: Policy> Admission<P> {
-    fn capture(policy: P) -> Self {
+    pub(super) fn capture(policy: P) -> Self {
         Self {
             policy,
             origin: crate::platform::panel_windows::plugin_views::origin::current(),
             invocation: crate::plugins::current_invocation_fence(),
         }
     }
-    fn with_current<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+    pub(super) fn with_current<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
         let run = || {
             self.policy.with_authorized(|| match &self.invocation {
                 Some(invocation) => invocation.with_live(effect),
@@ -66,7 +66,7 @@ impl<P: Policy> Admission<P> {
             None => run(),
         }
     }
-    fn commit(&self, cancel: &Cancellation) -> AppResult<()> {
+    pub(super) fn commit(&self, cancel: &Cancellation) -> AppResult<()> {
         self.with_current(|| self.policy.commit(|| cancel.commit()))
     }
 }

@@ -497,3 +497,28 @@ async fn legacy_conversion_fences_cancel_and_expiry_but_finishes_already_committ
         }
     }
 }
+
+#[tokio::test]
+async fn managed_open_rechecks_original_invocation_before_launch_and_retains_admitted_os_work() {
+    for expire in [false, true] {
+        for before_commit in [false, true] {
+            let registry = Requests::default();
+            registry.reserve("view", "mount-open").unwrap();
+            let mut request = registry.claim("view", "mount-open").unwrap();
+            let entry = request.entry.clone();
+            let result = request
+                .run_retained(crate::mounts::managed::tests::invocation(
+                    move || {
+                        if expire {
+                            entry.lock().unwrap().deadline = Instant::now();
+                        } else {
+                            assert!(registry.cancel("view", "mount-open"));
+                        }
+                    },
+                    before_commit,
+                ))
+                .await;
+            assert_eq!(result.unwrap_err().to_string(), "plugin.api.cancelled");
+        }
+    }
+}

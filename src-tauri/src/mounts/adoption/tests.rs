@@ -6,7 +6,7 @@ use std::sync::{
 };
 use tokio::sync::oneshot;
 
-async fn fixture() -> Arc<MountRegistry> {
+pub(crate) async fn fixture() -> Arc<MountRegistry> {
     let mut cmd = if cfg!(windows) {
         let mut cmd = command("powershell.exe");
         cmd.args([
@@ -60,7 +60,7 @@ async fn fixture() -> Arc<MountRegistry> {
     );
     registry
 }
-async fn cleanup(registry: &MountRegistry) {
+pub(crate) async fn cleanup(registry: &MountRegistry) {
     let mut mounts = registry.mounts.lock().await;
     if let Some(active) = mounts.get_mut("legacy") {
         lifecycle::settle_process(active).await.unwrap();

@@ -522,6 +522,17 @@ ownership. The legacy user's SSH session is borrowed, never registered as a
 host-owned dedicated connection, disconnected by group connection release, or
 mistaken for a group connection by recovery.
 
+`mounts.runtime.open/reveal` recheck the original origin, invocation, write grant
+and exact rule revision/group/runtime/session at OS-launch admission. Registry and
+group reservations span probes, canonical containment and launch, preventing an
+unmount/replacement from overtaking a stale snapshot. Nested filesystem timeouts
+end delivery only: actual workers retain those reservations and the inherited
+native effect until the call returns. macOS device queries, canonical resolution,
+compatibility opens and bounded Linux mount-table reads share retained workers.
+Launch/reveal occurs outside metadata admission gates; accepted work settles
+without reauthorization after permission loss. Simulated OS openers and ordinary
+subprocesses are not physical FUSE or system-file-manager acceptance.
+
 This internal transport and its tests do not declare the production plugin panel
 adapter or resource-RPC/native-window parity complete. Keep discovery conservative
 until real adapters, actual effect lifetimes and native acceptance are finished.
