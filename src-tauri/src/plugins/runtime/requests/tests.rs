@@ -349,3 +349,31 @@ async fn retained_unmount_worker_rechecks_the_original_invocation_after_awaiting
         assert_eq!(result.unwrap_err().to_string(), "plugin.api.cancelled");
     }
 }
+
+#[tokio::test]
+async fn force_stop_rejects_cancelled_or_expired_admission_but_always_settles_admitted_host_intent()
+{
+    for expire in [false, true] {
+        for before_commit in [false, true] {
+            let registry = Requests::default();
+            registry.reserve("view", "force").unwrap();
+            let mut request = registry.claim("view", "force").unwrap();
+            let entry = request.entry.clone();
+            let result = request
+                .run_retained(crate::mounts::unmount::tests::force_invocation(
+                    move || {
+                        if expire {
+                            entry.lock().unwrap().deadline = Instant::now();
+                        } else {
+                            assert!(registry.cancel("view", "force"));
+                        }
+                    },
+                    before_commit,
+                ))
+                .await;
+            // Result delivery is cancelled in both cases; the helper asserts
+            // original intent before admission and settled stop intent after it.
+            assert_eq!(result.unwrap_err().to_string(), "plugin.api.cancelled");
+        }
+    }
+}

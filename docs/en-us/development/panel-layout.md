@@ -489,6 +489,28 @@ Existing user dialogs are never replaced; messages are shown once and acknowledg
 Advisory refresh plus bounded polling withdraws expired prompts if an event was
 missed. Disposal rejects active consent and ignores late UI replies.
 
+`mounts.runtime.requestForceUnmount` is a separately audited, committed-only
+native call. Its host-private `__mounts.forceUnmount` prompt always uses danger
+styling and defaults focus to Cancel; public `ui.confirm` parameters cannot select
+this route. The pending consent keeps `mounts.write`, the exact origin and the
+original invocation attached through reply. Consent binds rule/group/revision/
+runtime/session identity; acceptance rechecks it under the group gate and again
+at effect admission after filesystem probes. Never reuse consent for a replacement.
+
+The retained unmount policy commits `desired:false` atomically with cancellation
+admission under metadata-only origin, policy, invocation and runtime gates (in
+that order). Notifications happen after those gates are released. Before admission,
+cancellation, revocation or identity changes leave the original intent intact.
+After admission, the worker owns the group gate through dismount, process reaping
+and host-state settlement, even if result delivery expires or permissions change.
+Success clears the runtime/session; failure retains the exact cleanup reservation
+with `cleanupRequired` and `desired:false`, so recovery cannot remount it. Final
+bookkeeping is completion of an admitted effect, not another plugin-authorized
+write. The frontend consent host registers its exact callback before publishing
+a dialog, tolerates synchronous accept/dismiss/replacement/disposal and never
+closes a later unrelated dialog. Unit subprocess fixtures are not physical FUSE
+acceptance; keep that distinction in verification reports.
+
 This internal transport and its tests do not declare the production plugin panel
 adapter or resource-RPC/native-window parity complete. Keep discovery conservative
 until real adapters, actual effect lifetimes and native acceptance are finished.

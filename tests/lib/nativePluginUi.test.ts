@@ -236,3 +236,78 @@ it("removes a late subscription after disposal without polling again", async () 
   await vi.advanceTimersByTimeAsync(2000);
   expect(client.listPluginUi.mock.calls.length).toBe(before);
 });
+it("renders host-only force consent with danger styling and Cancel as default", async () => {
+  const f = fixture();
+  await settle();
+  f.set([{ ...confirm(), method: "__mounts.forceUnmount" }]);
+  await settle();
+  expect(useDialogs.getState().dialog).toMatchObject({
+    kind: "confirm",
+    danger: true,
+    focusCancel: true,
+    confirmLabel: "Force unmount",
+  });
+  useDialogs.getState().close();
+  await settle();
+  expect(f.client.replyPluginUi).toHaveBeenCalledExactlyOnceWith("one", false, undefined);
+});
+it.each(["ui.confirm", "__mounts.forceUnmount"] as const)(
+  "%s settles synchronous acceptance, dismissal, replacement and disposal exactly once",
+  async (method) => {
+    for (const action of ["accept", "dismiss", "replace", "dispose"] as const) {
+      const f = fixture();
+      await settle();
+      let old: (() => void | Promise<void>) | undefined;
+      const unsubscribe = useDialogs.subscribe(({ dialog }) => {
+        if (dialog.kind !== "confirm" || old) return;
+        old = dialog.onConfirm;
+        if (action === "accept") void dialog.onConfirm();
+        if (action === "dismiss") useDialogs.getState().close();
+        if (action === "replace") useDialogs.getState().openGroup();
+        if (action === "dispose") f.stop();
+      });
+      f.set([{ ...confirm(), method }]);
+      await settle();
+      unsubscribe();
+      expect(old).toBeDefined();
+      expect(f.client.replyPluginUi).toHaveBeenCalledExactlyOnceWith(
+        "one",
+        action === "accept",
+        undefined,
+      );
+      expect(useDialogs.getState().dialog.kind).toBe(action === "replace" ? "group" : "none");
+      // Even a captured callback cannot approve dismissed, replaced or disposed UI.
+      await old?.();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(f.client.replyPluginUi).toHaveBeenCalledOnce();
+      f.stop();
+      useDialogs.getState().close();
+    }
+  },
+);
+it("stops processing a fetched batch when a synchronous subscriber disposes the host", async () => {
+  const f = fixture();
+  await settle();
+  let stopped = false;
+  const unsubscribe = useDialogs.subscribe(({ dialog }) => {
+    if (dialog.kind === "confirm" && !stopped) {
+      stopped = true;
+      f.stop();
+    }
+  });
+  f.set([
+    confirm(),
+    {
+      id: "late-message",
+      pluginId: "sample",
+      method: "ui.showMessage",
+      message: "Late",
+      kind: "info",
+    },
+  ]);
+  await settle();
+  unsubscribe();
+  expect(toast).not.toHaveBeenCalled();
+  expect(useDialogs.getState().dialog.kind).toBe("none");
+  expect(f.client.replyPluginUi).toHaveBeenCalledExactlyOnceWith("one", false, undefined);
+});

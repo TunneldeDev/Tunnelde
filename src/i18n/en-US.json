@@ -2269,6 +2269,7 @@
     "helperBusy": "Too many mount helpers are running. Wait for cleanup and retry.",
     "helperFailed": "The mount helper could not complete.",
     "helperOutputTooLarge": "The mount helper returned too much output. No mount state was inferred.",
+    "forceUnmountConfirm": "Force unmount",
     "unmountTimeout": "Unmounting timed out. Close files using this directory and retry.",
     "processExited": "The SSHFS process stopped. Unmount this entry before reconnecting.",
     "transportClosed": "The SSHFS connection closed. Unmount this entry before reconnecting.",

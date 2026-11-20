@@ -741,3 +741,55 @@ it("validates all split IDs before applying one atomic plugin layout resize", as
   expect(useWorkspace.getState().layout).toMatchObject({ ratio: 0.6, first: { ratio: 0.7 } });
   stop();
 });
+it("uses destructive/default-cancel UX for the host force-unmount route only", async () => {
+  const pending = runPluginWorkspaceRequest(
+    request("__mounts.forceUnmount", { message: "Force unmount?" }),
+  );
+  await settle();
+  expect(useDialogs.getState().dialog).toMatchObject({
+    kind: "confirm",
+    danger: true,
+    focusCancel: true,
+    confirmLabel: "mounts.forceUnmountConfirm",
+  });
+  useDialogs.getState().close();
+  await expect(pending).resolves.toBe(false);
+  const ordinary = runPluginWorkspaceRequest(
+    request("ui.confirm", { message: "Ordinary?", danger: true, focusCancel: true }),
+  );
+  await settle();
+  expect(useDialogs.getState().dialog).toMatchObject({
+    danger: false,
+    focusCancel: false,
+    confirmLabel: "pluginApi.confirm",
+  });
+  useDialogs.getState().close();
+  await expect(ordinary).resolves.toBe(false);
+});
+it.each(["ui.confirm", "__mounts.forceUnmount"])(
+  "%s handles synchronous acceptance, dismissal, replacement, cancellation and disposal",
+  async (method) => {
+    for (const action of ["accept", "dismiss", "replace", "cancel", "dispose"] as const) {
+      const stop = await wirePluginWorkspaceBridge();
+      let old: (() => void | Promise<void>) | undefined;
+      const unsubscribe = useDialogs.subscribe(({ dialog }) => {
+        if (dialog.kind !== "confirm" || old) return;
+        old = dialog.onConfirm;
+        if (action === "accept") void dialog.onConfirm();
+        if (action === "dismiss") useDialogs.getState().close();
+        if (action === "replace") useDialogs.getState().openGroup();
+        if (action === "cancel") emit("plugin://workspace-cancelled", { requestId: "request-one" });
+        if (action === "dispose") stop();
+      });
+      const pending = runPluginWorkspaceRequest(request(method, { message: "Continue?" }));
+      await expect(pending).resolves.toBe(action === "accept");
+      unsubscribe();
+      expect(useDialogs.getState().dialog.kind).toBe(action === "replace" ? "group" : "none");
+      await old?.();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(useDialogs.getState().dialog.kind).toBe(action === "replace" ? "group" : "none");
+      stop();
+      useDialogs.getState().close();
+    }
+  },
+);

@@ -20,12 +20,19 @@ use tokio::sync::oneshot;
 pub(crate) enum Content {
     #[serde(rename = "ui.confirm")]
     Confirm { message: String },
+    // Host-internal route only: not a public RPC method or plugin-controlled
+    // ui.confirm option. It always renders destructive/default-cancel UX.
+    #[serde(rename = "__mounts.forceUnmount")]
+    ForceUnmount { message: String },
     #[serde(rename = "ui.showMessage")]
     Message { message: String, kind: String },
 }
 impl Content {
     fn parse(method: &str, params: &Value) -> AppResult<Self> {
-        if !matches!(method, "ui.confirm" | "ui.showMessage") {
+        if !matches!(
+            method,
+            "ui.confirm" | "ui.showMessage" | "__mounts.forceUnmount"
+        ) {
             return Err(AppError::validation(
                 "plugin.frontend.nativeMethodUnavailable",
             ));
@@ -35,7 +42,7 @@ impl Content {
             .get("message")
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
-        let limit = if method == "ui.confirm" {
+        let limit = if method != "ui.showMessage" {
             220 * 1024
         } else {
             4000
@@ -45,6 +52,9 @@ impl Content {
         }
         match method {
             "ui.confirm" => Ok(Self::Confirm {
+                message: message.into(),
+            }),
+            "__mounts.forceUnmount" => Ok(Self::ForceUnmount {
                 message: message.into(),
             }),
             "ui.showMessage" => {
@@ -68,7 +78,7 @@ impl Content {
         }
     }
     fn confirm(&self) -> bool {
-        matches!(self, Self::Confirm { .. })
+        matches!(self, Self::Confirm { .. } | Self::ForceUnmount { .. })
     }
     fn response(&self, value: Value, error: Option<String>) -> AppResult<Value> {
         if let Some(error) = error {
@@ -415,6 +425,39 @@ mod tests {
             json!({
                 "id":"prompt-id", "pluginId":"sample", "method":"ui.confirm", "message":"Question"
             })
+        );
+    }
+    #[test]
+    fn force_unmount_is_a_private_host_variant_and_requires_a_boolean_answer() {
+        let content =
+            Content::parse("__mounts.forceUnmount", &json!({"message":"Force?"})).unwrap();
+        assert!(content.confirm());
+        assert!(matches!(content, Content::ForceUnmount { .. }));
+        assert_eq!(
+            serde_json::to_value(&content).unwrap(),
+            json!({"method":"__mounts.forceUnmount","message":"Force?"})
+        );
+        for answer in [true, false] {
+            assert_eq!(
+                content.response(json!(answer), None).unwrap(),
+                json!(answer)
+            );
+        }
+        for invalid in [Value::Null, json!("true"), json!({"confirmed":true})] {
+            assert!(content.response(invalid, None).is_err());
+        }
+        assert!(content
+            .response(json!(true), Some("dialog.busy".into()))
+            .is_err());
+        assert!(crate::plugins::api::method_info("__mounts.forceUnmount").is_none());
+        let public = Content::parse(
+            "ui.confirm",
+            &json!({"message":"Ordinary", "method":"__mounts.forceUnmount", "danger":true}),
+        )
+        .unwrap();
+        assert!(matches!(public, Content::Confirm { .. }));
+        assert!(
+            Content::parse("__mounts.forceUnmount.extra", &json!({"message":"Force?"})).is_err()
         );
     }
 }

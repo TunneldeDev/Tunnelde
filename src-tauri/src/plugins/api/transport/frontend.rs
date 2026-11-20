@@ -113,6 +113,7 @@ pub(in crate::plugins::api) async fn frontend_request_with_permissions(
                 if matches!(
                     method,
                     "ui.confirm"
+                        | "__mounts.forceUnmount"
                         | "__frontend.command"
                         | "storage.locations.schedule"
                         | "storage.locations.cancel"

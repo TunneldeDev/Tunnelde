@@ -8,6 +8,17 @@ use tokio::sync::OwnedMutexGuard;
 /// perform filesystem I/O. Callers retain their own policy lock through commit.
 pub(crate) trait Policy: Send + Sync + 'static {
     fn with_authorized<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T>;
+    /// Metadata-only stop intent may be committed alongside effect admission.
+    /// Called only inside with_authorized and the original origin/request gates.
+    /// Implementations must not reenter those gates or perform I/O.
+    fn commit(&self, effect: impl FnOnce() -> AppResult<()>) -> AppResult<()> {
+        effect()
+    }
+    /// Notification after releasing origin/policy/invocation metadata locks.
+    fn admitted(&self) {}
+    /// Host bookkeeping for an admitted transaction, not result delivery. This
+    /// must survive cancellation or permission loss after effect admission.
+    fn settled(&self, _result: &AppResult<()>) {}
 }
 impl<F: Fn() -> AppResult<()> + Send + Sync + 'static> Policy for F {
     fn with_authorized<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
@@ -56,7 +67,7 @@ impl<P: Policy> Admission<P> {
         }
     }
     fn commit(&self, cancel: &Cancellation) -> AppResult<()> {
-        self.with_current(|| cancel.commit())
+        self.with_current(|| self.policy.commit(|| cancel.commit()))
     }
 }
 
@@ -120,7 +131,9 @@ async fn run_with_budget<P: Policy, E: Effects>(
 ) -> AppResult<()> {
     budget
         .asynchronous(move |cancel| async move {
-            transaction(mounts, &request, &admission, &cancel, &effects).await
+            let result = transaction(mounts, &request, &admission, &cancel, &effects).await;
+            admission.policy.settled(&result);
+            result
         })
         .await
 }
@@ -156,6 +169,7 @@ async fn transaction<P: Policy, E: Effects>(
     // Once accepted, dismount + owned worker cleanup must settle even if the
     // requester disappears. No later lookup can adopt/replace this locked record.
     admission.commit(cancel)?;
+    admission.policy.admitted();
     let _volume_lock = if present {
         effects.dismount(active, *force).await?
     } else {

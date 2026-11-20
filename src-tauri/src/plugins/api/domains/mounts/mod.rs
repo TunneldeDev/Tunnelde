@@ -1,4 +1,5 @@
 //! Mount RPCs share host-owned configuration, transports and operation receipts.
+mod force;
 mod legacy;
 mod paths;
 mod plans;
@@ -228,43 +229,7 @@ pub(in crate::plugins::api) async fn dispatch(
             .await?;
             Ok(Value::Null)
         }
-        "runtime.requestForceUnmount" => {
-            let id: String = field(&params, "id")?;
-            let runtime_id: String = field(&params, "runtimeId")?;
-            let current = state
-                .mount_runtime
-                .rule_states()
-                .into_iter()
-                .find(|s| s.rule_id == id && s.runtime_id.as_deref() == Some(&runtime_id))
-                .ok_or_else(repository::changed)?;
-            let confirmed=crate::plugins::api::frontend_request(context,"ui.confirm",json!({"message":if state.locale().starts_with("zh"){"强制卸载可能丢失尚未写入的文件内容。是否继续？"}else{"Force unmount may discard pending file writes. Continue?"}})).await?;
-            if confirmed != true {
-                return Ok(json!({"confirmed":false}));
-            }
-            let _gate = state.mount_runtime.gate(&current.group_id)?;
-            let authority = Authority(Some(lease(context)));
-            authority.check(app)?;
-            if !state
-                .mount_runtime
-                .rule_states()
-                .iter()
-                .any(|s| s.rule_id == id && s.runtime_id.as_deref() == Some(&runtime_id))
-            {
-                return Err(repository::changed());
-            }
-            state
-                .mounts
-                .unmount_checked(
-                    runtime::OWNER,
-                    &runtime_id,
-                    true,
-                    Some(0),
-                    authority.unmount_policy(app),
-                )
-                .await?;
-            runtime::stop(app, &id, Some(&runtime_id), &authority).await?;
-            Ok(json!({"confirmed":true}))
-        }
+        "runtime.requestForceUnmount" => force::call(context, params).await,
         name if plans::owns(name) => plans::call(context, name, params).await,
         _ => {
             crate::mounts::action(

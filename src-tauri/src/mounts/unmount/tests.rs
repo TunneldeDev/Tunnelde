@@ -506,3 +506,205 @@ async fn failed_dismount_keeps_the_owned_record_and_live_transport_for_safe_retr
     drop(mounts);
     cleanup(&registry).await;
 }
+
+#[tokio::test]
+async fn force_stop_keeps_group_and_host_intent_until_cleanup_after_caller_and_grant_are_gone() {
+    use crate::services::mounts::runtime::{force::tests::worker_policy, Coordinator};
+    let (registry, settled) = registry().await;
+    let mounts = registry.mounts.clone().lock_owned().await;
+    let runtime = Arc::new(Coordinator::default());
+    let granted = Arc::new(AtomicBool::new(true));
+    let policy = worker_policy(
+        runtime.clone(),
+        granted.clone(),
+        runtime.gate("group").unwrap(),
+    );
+    let (budget, _) = budget();
+    let (gate, ready, release) = Gate::new();
+    let (fence, completed) = oneshot::channel();
+    let effects = Simulated {
+        probe: None,
+        dismount: Some(gate),
+        writes: Arc::new(AtomicBool::new(false)),
+        matches: true,
+    };
+    let caller = tokio::spawn(WorkLifetime::new(Fence(Some(fence))).scope(async move {
+        run_with_budget(
+            &budget,
+            mounts,
+            Request {
+                force: true,
+                ..request()
+            },
+            Admission::capture(policy),
+            effects,
+        )
+        .await
+    }));
+    ready.await.unwrap();
+    assert!(!runtime.rule_states()[0].desired);
+    granted.store(false, Ordering::Release);
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    assert!(runtime.gate("group").is_err());
+    assert!(registry.mounts.try_lock().is_err());
+    assert!(!settled.load(Ordering::Acquire));
+    release.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), completed)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(runtime.gate("group").is_ok());
+    let state = &runtime.rule_states()[0];
+    assert_eq!(state.phase, "stopped");
+    assert!(!state.desired);
+    assert!(state.runtime_id.is_none() && state.session_id.is_none());
+    assert!(registry.mounts.lock().await.is_empty());
+    assert!(settled.load(Ordering::Acquire));
+}
+#[tokio::test]
+async fn force_stop_rejected_before_admission_preserves_intent_and_original_worker() {
+    use crate::services::mounts::runtime::{force::tests::worker_policy, Coordinator};
+    for revoke in [false, true] {
+        let (registry, settled) = registry().await;
+        let mounts = registry.mounts.clone().lock_owned().await;
+        let runtime = Arc::new(Coordinator::default());
+        let granted = Arc::new(AtomicBool::new(true));
+        let policy = worker_policy(
+            runtime.clone(),
+            granted.clone(),
+            runtime.gate("group").unwrap(),
+        );
+        let (budget, _) = budget();
+        let (gate, ready, release) = Gate::new();
+        let (fence, completed) = oneshot::channel();
+        let writes = Arc::new(AtomicBool::new(false));
+        let effects = Simulated {
+            probe: Some(gate),
+            dismount: None,
+            writes: writes.clone(),
+            matches: true,
+        };
+        let caller = tokio::spawn(WorkLifetime::new(Fence(Some(fence))).scope(async move {
+            run_with_budget(
+                &budget,
+                mounts,
+                Request {
+                    force: true,
+                    ..request()
+                },
+                Admission::capture(policy),
+                effects,
+            )
+            .await
+        }));
+        ready.await.unwrap();
+        if revoke {
+            granted.store(false, Ordering::Release);
+        } else {
+            caller.abort();
+            assert!(caller.await.unwrap_err().is_cancelled());
+        }
+        release.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(10), completed)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(runtime.gate("group").is_ok());
+        assert!(runtime.rule_states()[0].desired);
+        assert_eq!(
+            runtime.rule_states()[0].runtime_id.as_deref(),
+            Some("mount")
+        );
+        assert!(!writes.load(Ordering::Acquire) && !settled.load(Ordering::Acquire));
+        cleanup(&registry).await;
+    }
+}
+#[tokio::test]
+async fn force_stop_failure_keeps_reservation_but_never_requests_automatic_remount() {
+    use crate::services::mounts::runtime::{force::tests::worker_policy, Coordinator};
+    let (registry, settled) = registry().await;
+    let runtime = Arc::new(Coordinator::default());
+    let granted = Arc::new(AtomicBool::new(true));
+    let policy = worker_policy(runtime.clone(), granted, runtime.gate("group").unwrap());
+    let (budget, _) = budget();
+    let result = run_with_budget(
+        &budget,
+        registry.mounts.clone().lock_owned().await,
+        Request {
+            force: true,
+            ..request()
+        },
+        Admission::capture(policy),
+        FailedDismount,
+    )
+    .await;
+    assert_eq!(result.unwrap_err().to_string(), "mounts.busy");
+    assert!(runtime.gate("group").is_ok());
+    let state = &runtime.rule_states()[0];
+    assert_eq!(state.phase, "cleanupRequired");
+    assert!(!state.desired);
+    assert_eq!(state.runtime_id.as_deref(), Some("mount"));
+    assert_eq!(state.session_id.as_deref(), Some("session"));
+    assert!(state.error.is_some());
+    assert!(!settled.load(Ordering::Acquire));
+    cleanup(&registry).await;
+}
+
+pub(crate) async fn force_invocation(cancel: impl FnOnce(), before_commit: bool) -> AppResult<()> {
+    use crate::services::mounts::runtime::{force::tests::worker_policy, Coordinator};
+    let (registry, settled) = registry().await;
+    let mounts = registry.mounts.clone().lock_owned().await;
+    let runtime = Arc::new(Coordinator::default());
+    let policy = worker_policy(
+        runtime.clone(),
+        Arc::new(AtomicBool::new(true)),
+        runtime.gate("group").unwrap(),
+    );
+    let (budget, _) = budget();
+    let (gate, ready, release) = Gate::new();
+    let writes = Arc::new(AtomicBool::new(false));
+    let (probe, dismount) = if before_commit {
+        (Some(gate), None)
+    } else {
+        (None, Some(gate))
+    };
+    let effects = Simulated {
+        probe,
+        dismount,
+        writes: writes.clone(),
+        matches: true,
+    };
+    let admission = Admission::capture(policy);
+    assert!(admission.invocation.is_some());
+    let task = tokio::spawn(async move {
+        run_with_budget(
+            &budget,
+            mounts,
+            Request {
+                force: true,
+                ..request()
+            },
+            admission,
+            effects,
+        )
+        .await
+    });
+    ready.await.unwrap();
+    cancel();
+    release.send(()).unwrap();
+    let outcome = task.await.unwrap();
+    if before_commit {
+        assert_eq!(outcome.unwrap_err().to_string(), "plugin.api.cancelled");
+        assert!(runtime.rule_states()[0].desired);
+        assert!(!writes.load(Ordering::Acquire) && !settled.load(Ordering::Acquire));
+        cleanup(&registry).await;
+    } else {
+        outcome.unwrap();
+        assert_eq!(runtime.rule_states()[0].phase, "stopped");
+        assert!(!runtime.rule_states()[0].desired);
+        assert!(registry.mounts.lock().await.is_empty());
+        assert!(settled.load(Ordering::Acquire));
+    }
+    Ok(())
+}

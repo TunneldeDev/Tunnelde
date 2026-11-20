@@ -61,8 +61,13 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         "mounts.dependencies.get" | "mounts.dependencies.refresh" => {
             Some(CallPolicy::MountDependencyProbe)
         }
-        // Remote paths, force-unmount consent, dependency documentation and legacy
-        // one-off transports have separate native work/UI lifetimes to audit.
+        // Host-only destructive consent keeps mounts.write attached to the
+        // exact origin, then rechecks instance identity at transaction admission.
+        // The owned worker retains group/registry gates and host stop intent
+        // through actual cleanup even after cancellation or permission loss.
+        "mounts.runtime.requestForceUnmount" => Some(CallPolicy::MountForceUnmount),
+        // Remote paths, dependency documentation and legacy one-off transports
+        // have separate native work/UI lifetimes to audit.
         _ => None,
     }
 }
@@ -78,6 +83,7 @@ mod tests {
         let mut paths = 0;
         let mut ui = 0;
         let mut probes = 0;
+        let mut force = 0;
         for method in crate::plugins::api::METHODS
             .iter()
             .filter(|m| m.name.starts_with("mounts."))
@@ -98,6 +104,7 @@ mod tests {
                     CallPolicy::MountPathData => paths += 1,
                     CallPolicy::OriginUi => ui += 1,
                     CallPolicy::MountDependencyProbe => probes += 1,
+                    CallPolicy::MountForceUnmount => force += 1,
                     other => panic!("unexpected mount policy {other:?}"),
                 }
             }
@@ -108,8 +115,11 @@ mod tests {
         assert_eq!(paths, 2);
         assert_eq!(ui, 1);
         assert_eq!(probes, 2);
+        assert_eq!(force, 1);
         for method in [
-            "mounts.runtime.requestForceUnmount",
+            "mounts.runtime.requestForceUnmount.extra",
+            "mounts.runtime.requestForceUnmount\0",
+            "__mounts.forceUnmount",
             "mounts.mount",
             "mounts.unmount",
             "mounts.legacy.convert",

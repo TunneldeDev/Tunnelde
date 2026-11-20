@@ -17,6 +17,8 @@ pub(crate) enum CallPolicy {
     MountPathData,
     /// OS dependency probes retain their worker through process kill and reap.
     MountDependencyProbe,
+    /// Exact-origin destructive consent followed by an owned force-stop transaction.
+    MountForceUnmount,
     /// Fenced through receipt publication; the host owns subsequent steps.
     MountSubmission,
 }

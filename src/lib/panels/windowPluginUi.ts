@@ -1,10 +1,11 @@
 import i18n from "@/i18n/i18n";
-import { useDialogs, type DialogState } from "@/store/dialogs";
+import { useDialogs } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
 import type { PanelWindowClient } from "./windowClient";
 
 export type NativePluginUiPrompt = { id: string; pluginId: string; message: string } & (
-  { method: "ui.confirm" } | { method: "ui.showMessage"; kind: "info" | "success" | "error" }
+  | { method: "ui.confirm" | "__mounts.forceUnmount" }
+  | { method: "ui.showMessage"; kind: "info" | "success" | "error" }
 );
 type UiClient = Pick<PanelWindowClient, "listPluginUi" | "replyPluginUi" | "subscribe">;
 
@@ -15,7 +16,7 @@ export function startNativePluginUi(client: UiClient, failure: (error: unknown) 
     running = false,
     queued = false;
   let unlisten: (() => void) | undefined;
-  let active: { id: string; dialog: DialogState; stop: () => void } | undefined;
+  let active: { id: string; accept: () => Promise<void>; stop: () => void } | undefined;
   const seen = new Set<string>();
   const replying = new Set<string>();
   const reply = async (id: string, value: boolean | null, error?: string) => {
@@ -35,33 +36,48 @@ export function startNativePluginUi(client: UiClient, failure: (error: unknown) 
     const current = active;
     active = undefined;
     current?.stop();
-    if (current && useDialogs.getState().dialog === current.dialog) useDialogs.getState().close();
+    const dialog = useDialogs.getState().dialog;
+    if (current && dialog.kind === "confirm" && dialog.onConfirm === current.accept)
+      useDialogs.getState().close();
   };
   const confirm = (prompt: NativePluginUiPrompt) => {
     if (useDialogs.getState().dialog.kind !== "none") {
       void reply(prompt.id, false, "dialog.busy");
       return;
     }
+    const entry = { id: prompt.id, accept: () => settle(true), stop: () => {} };
+    active = entry;
+    let finished = false;
+    const accept = entry.accept;
     const settle = async (value: boolean) => {
-      if (active?.id !== prompt.id) return;
+      if (finished || active !== entry) return;
+      finished = true;
       dismiss();
+      const current = useDialogs.getState().dialog;
+      if (current.kind === "confirm" && current.onConfirm === accept) useDialogs.getState().close();
       await reply(prompt.id, value);
     };
+    const force = prompt.method === "__mounts.forceUnmount";
     useDialogs.getState().confirm({
       title: i18n.t("pluginApi.confirmTitle", { name: prompt.pluginId }),
       body: prompt.message,
       preformatted: true,
-      confirmLabel: i18n.t("pluginApi.confirm"),
-      onConfirm: () => settle(true),
+      danger: force,
+      focusCancel: force,
+      confirmLabel: i18n.t(force ? "mounts.forceUnmountConfirm" : "pluginApi.confirm"),
+      onConfirm: accept,
     });
+    // Publishing a Zustand dialog invokes subscribers synchronously. They may
+    // accept, dismiss, replace or dispose the host before confirm() returns.
+    if (finished || disposed || active !== entry) return;
     const dialog = useDialogs.getState().dialog;
-    active = {
-      id: prompt.id,
-      dialog,
-      stop: useDialogs.subscribe((state) => {
-        if (state.dialog !== dialog) void settle(false);
-      }),
-    };
+    if (dialog.kind !== "confirm" || dialog.onConfirm !== accept) {
+      void settle(false);
+      return;
+    }
+    entry.stop = useDialogs.subscribe((state) => {
+      if (state.dialog !== dialog) void settle(false);
+    });
   };
   const refresh = () => {
     if (disposed) return;
@@ -78,9 +94,10 @@ export function startNativePluginUi(client: UiClient, failure: (error: unknown) 
           if (active && !ids.has(active.id)) dismiss();
           for (const id of seen) if (!ids.has(id) && !replying.has(id)) seen.delete(id);
           for (const prompt of prompts) {
+            if (disposed) break;
             if (seen.has(prompt.id)) continue;
             seen.add(prompt.id);
-            if (prompt.method === "ui.confirm") confirm(prompt);
+            if (prompt.method !== "ui.showMessage") confirm(prompt);
             else {
               toast(
                 `${i18n.t("pluginApi.messageTitle", { name: prompt.pluginId })}: ${prompt.message}`,

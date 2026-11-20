@@ -748,3 +748,43 @@ async fn timed_out_path_worker_blocks_handoff_after_view_close_until_actual_sett
         .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
         .is_ok());
 }
+
+#[test]
+fn force_unmount_is_denied_while_staged_and_its_admitted_fence_blocks_handoff() {
+    let mut f = Fixture::new();
+    f.owned("source");
+    let id = f.offer();
+    f.staged(&id, "stage");
+    assert!(f
+        .r
+        .native_view_call(
+            "target",
+            &f.target,
+            "stage",
+            CallPolicy::MountForceUnmount,
+            f.now
+        )
+        .is_err());
+    let lease = f.commit(&id);
+    let (_, call) =
+        f.r.native_view_call(
+            "target",
+            &f.target,
+            "stage",
+            CallPolicy::MountForceUnmount,
+            f.now,
+        )
+        .unwrap();
+    assert!(f
+        .r
+        .prepare("target", &f.target, &lease, "main", Value::Null, f.now)
+        .is_err());
+    assert!(f.r.begin_close("target", &f.target).is_err());
+    // Closing the token is not permission to release an accepted native effect.
+    f.r.close_native_view("target", &f.target, "stage").unwrap();
+    assert!(f.r.native_view_busy(&lease.panel_id));
+    f.r.settle_native_view_call(&call);
+    assert!(!f.r.native_view_busy(&lease.panel_id));
+    f.r.prepare("target", &f.target, &lease, "main", Value::Null, f.now)
+        .unwrap();
+}

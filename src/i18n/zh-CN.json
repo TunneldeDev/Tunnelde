@@ -2269,6 +2269,7 @@
     "helperBusy": "正在运行的挂载辅助进程过多，请等待清理完成后重试。",
     "helperFailed": "挂载辅助进程未能完成。",
     "helperOutputTooLarge": "挂载辅助进程返回的内容过多，未据此判断挂载状态。",
+    "forceUnmountConfirm": "强制卸载",
     "unmountTimeout": "卸载超时，请关闭使用此目录的文件后重试。",
     "processExited": "SSHFS 进程已退出，请先卸载此记录再重新连接。",
     "transportClosed": "SSHFS 连接已断开，请先卸载此记录再重新连接。",
