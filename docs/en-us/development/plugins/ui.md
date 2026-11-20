@@ -437,10 +437,25 @@ retirement invalidate approval, cancel pending handoffs and erase the old capsul
 under a fresh panel generation, without releasing unsettled effect fences. A new
 admission waits for those effects to settle. Unadmitted presentation reservations
 are cancelled; an admitted UI effect retains its fence and exact issuing-document
-cleanup even after the panel generation changes. This admission infrastructure alone does not yet enable the production renderer/menu.
+cleanup even after the panel generation changes.
+
+The production coordinator now synchronizes those explicit factory approvals
+before publishing its window snapshot. Both the main ordinary-sidebar renderer
+and the satellite render through the same `NativePluginPanel`, scoped native
+client and `createView` loader from the initial mount, not a renderer swap after
+movement. A staged destination restores its real factory capsule before ACK;
+commit retains that same tree, controller and attachment. A retired approval
+rejects readiness and removes the old tree. If its panel was in a satellite,
+native reclaims the now-unrenderable lease to the main window, so it cannot
+strand an empty, uncloseable satellite. Only appearance/language/platform is
+projected for these panels, under an approval-revision-bound model producer;
+plugin data still goes through its own authorized APIs. Satellite titles use
+the approved display descriptor without hydrating a plugin store. Legacy
+registered renderers and factories without capture/restore are not silently
+claimed as lossless; their explicit state-loss UX remains separate work.
 
 This is not yet the public independent-window renderer capability. The allowlist
 is explicit, never inferred from read permissions or get/list names. Full resource
-RPC, provider handles, origin-window dialogs and production panel integration
-remain required; `nativeWindows: false` remains accurate until those paths are
+RPC, provider handles, origin-window dialogs and the remaining ordinary-page
+adapters/acceptance remain required; `nativeWindows: false` remains accurate until those paths are
 integrated and verified.

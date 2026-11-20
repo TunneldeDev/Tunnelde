@@ -305,3 +305,49 @@ async fn retirement_cancels_unadmitted_presentation_reservations_without_leaving
         .register_plugin_adapter("main", &main, source(5, "next", true))
         .is_ok());
 }
+
+#[test]
+fn plugin_model_publishers_are_revision_bound_and_retirement_reclaims_unrenderable_satellites() {
+    let (mut r, main, target) = setup();
+    let id = "plugin:sample:files";
+    let (descriptor, _) = r
+        .register_plugin_adapter("main", &main, source(4, "runtime", true))
+        .unwrap();
+    assert!(r
+        .begin_plugin_model("target", &target, id, &descriptor.revision)
+        .is_err());
+    assert!(r
+        .begin_plugin_model("main", &main, id, "old-approval")
+        .is_err());
+    let publisher = r
+        .begin_plugin_model("main", &main, id, &descriptor.revision)
+        .unwrap();
+    r.publish_model("main", &main, id, &publisher, 1, json!({"appearance":{}}))
+        .unwrap();
+    let lease = r.leases().remove(0);
+    let now = Instant::now();
+    let offer = r
+        .prepare("main", &main, &lease, "target", Value::Null, now)
+        .unwrap();
+    r.acknowledge("target", &target, &offer.id, now).unwrap();
+    let moved = r.commit("main", &main, &offer.id, now).unwrap();
+    assert_eq!(
+        r.read_model("target", &target, &moved).unwrap(),
+        json!({"appearance":{}})
+    );
+    r.retire_plugin_adapters(|_| true);
+    let reclaimed = r.leases().remove(0);
+    assert_eq!(reclaimed.window_id, "main");
+    assert_ne!(reclaimed.generation, moved.generation);
+    assert_eq!(
+        r.read_model("main", &main, &reclaimed).unwrap(),
+        Value::Null
+    );
+    assert!(r
+        .begin_plugin_model("main", &main, id, &descriptor.revision)
+        .is_err());
+    assert!(r
+        .publish_model("main", &main, id, &publisher, 2, json!({"late":true}))
+        .is_err());
+    assert!(r.leases().iter().all(|lease| lease.window_id != "target"));
+}

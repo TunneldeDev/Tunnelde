@@ -1,3 +1,4 @@
+import { startPluginPanelAppearance } from "./pluginPanelAppearance";
 import {
   createKnownHostsSource,
   installKnownHostsSource,
@@ -169,6 +170,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       publish("knownHosts");
     };
   const cleanups = [
+    startPluginPanelAppearance(client, appearance, failure),
     useSsh.subscribe(() => {
       connections();
       publish("output");

@@ -270,3 +270,55 @@ it("reconciles a cancelled acknowledged offer without a false error or a lost qu
   expect(f.control.mock.calls.filter(([r]) => r.action === "commit")).toHaveLength(1);
   coordinator.dispose();
 });
+
+it("synchronizes plugin adapters only after panel registration and publishes a fresh approved snapshot", async () => {
+  const f = fixture();
+  const synchronize = vi.fn(async (snapshot: NativePanelSnapshot) => {
+    expect(snapshot.panels.some((panel) => panel.panelId === "plugin:sample:files")).toBe(true);
+    f.setSnapshot({ ...snapshot, pluginViews: [{ panelId: "plugin:sample:files" } as never] });
+  });
+  const c = startPanelWindowCoordinator(f.client, {
+    panelIds: () => ["plugin:sample:files"],
+    receive: f.receive,
+    synchronize,
+    failure: f.failure,
+  });
+  await c.ready;
+  expect(synchronize).toHaveBeenCalledOnce();
+  expect(f.receive).toHaveBeenCalledWith(
+    expect.objectContaining({ pluginViews: [{ panelId: "plugin:sample:files" }] }),
+  );
+  expect(f.failure).not.toHaveBeenCalled();
+  c.dispose();
+});
+
+it("drains a queued contribution-removal invalidation after an in-flight adapter review fails", async () => {
+  const f = fixture();
+  let fail!: (error: unknown) => void;
+  const synchronize = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    )
+    .mockResolvedValue(undefined);
+  let ids = ["plugin:sample:files"];
+  const c = startPanelWindowCoordinator(f.client, {
+    panelIds: () => ids,
+    receive: f.receive,
+    synchronize,
+    failure: f.failure,
+  });
+  await vi.waitFor(() => expect(synchronize).toHaveBeenCalledOnce());
+  ids = [];
+  f.changed();
+  fail(new Error("plugin.notFound"));
+  await c.ready;
+  expect(f.failure).toHaveBeenCalledOnce();
+  expect(synchronize).toHaveBeenCalledTimes(2);
+  expect(f.snapshot().panels).toEqual([]);
+  expect(f.receive).toHaveBeenLastCalledWith(expect.objectContaining({ panels: [] }));
+  c.dispose();
+});

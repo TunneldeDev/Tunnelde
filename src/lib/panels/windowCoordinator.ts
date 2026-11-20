@@ -9,11 +9,13 @@ export function startPanelWindowCoordinator(
   {
     panelIds,
     receive,
+    synchronize,
     stage,
     failure,
   }: {
     panelIds: () => readonly string[];
     receive: (snapshot: NativePanelSnapshot) => void;
+    synchronize?: (snapshot: NativePanelSnapshot) => Promise<void>;
     stage?: (offer: PanelTransferOffer, state: unknown, signal: AbortSignal) => Promise<void>;
     failure: (error: unknown) => void;
   },
@@ -40,6 +42,12 @@ export function startPanelWindowCoordinator(
     }
     snapshot = await client.snapshot();
     if (disposed) return;
+    if (synchronize) {
+      await synchronize(snapshot);
+      if (disposed) return;
+      snapshot = await client.snapshot();
+      if (disposed) return;
+    }
     const pendingIds = new Set(snapshot.transfers.map(({ offer }) => offer.id));
     for (const [id, controller] of staging) {
       if (pendingIds.has(id)) continue;
@@ -100,10 +108,15 @@ export function startPanelWindowCoordinator(
       try {
         while (queued && !disposed) {
           queued = false;
-          await reconcile();
+          try {
+            await reconcile();
+          } catch (error) {
+            // A contribution can retire during source review. Do not discard
+            // an invalidation already queued by its removal/replacement while
+            // this reconciliation was awaiting native admission.
+            if (!disposed) failure(error);
+          }
         }
-      } catch (error) {
-        if (!disposed) failure(error);
       } finally {
         running = false;
       }

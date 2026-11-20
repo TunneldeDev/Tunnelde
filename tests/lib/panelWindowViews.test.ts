@@ -258,3 +258,76 @@ it("captures caret before inert blurs a moving source, not after asynchronous st
   views.setMoving("connections", false, lease);
   expect((await views.captureAsync("connections")).dom.focus).toBeNull();
 });
+
+it("opts in only explicitly approved plugin descriptors and preserves the same descriptor/controller through commit", async () => {
+  const { views } = fixture();
+  const plugin = {
+    panelId: "plugin:sample:files",
+    revision: "a1",
+    pluginId: "sample",
+    runtimeId: "r1",
+    generation: 4,
+    viewId: "files",
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+    title: "Sample",
+    allowFloating: true,
+  };
+  await views.reconcile({ ...snapshot(), pluginViews: [plugin] });
+  const offer = {
+    id: "plugin-offer",
+    lease: { panelId: plugin.panelId, windowId: "source", generation: 3 },
+    targetWindow: "main",
+  };
+  const staged = views.stage(offer, null, new AbortController().signal);
+  const record = useWindowViews.getState().entries.get(plugin.panelId)!;
+  expect(record.plugin).toBe(plugin);
+  views.rendered(offer.id);
+  await staged;
+  await views.reconcile({
+    ...snapshot([{ ...offer.lease, windowId: "main", generation: 5 }]),
+    pluginViews: [{ ...plugin }],
+  });
+  const promoted = useWindowViews.getState().entries.get(plugin.panelId)!;
+  expect(promoted.plugin).toBe(plugin);
+  expect(promoted.key).toBe(record.key);
+  expect(promoted.controller).toBe(record.controller);
+  expect(promoted.staged).toBe(false);
+  await views.reconcile({
+    ...snapshot([{ ...offer.lease, windowId: "main", generation: 6 }]),
+    pluginViews: [{ ...plugin, revision: "replacement" }],
+  });
+  expect(() => record.controller.capture()).toThrow("disposed");
+  expect(useWindowViews.getState().entries.get(plugin.panelId)!.plugin!.revision).toBe(
+    "replacement",
+  );
+});
+it("withdrawal immediately rejects staged readiness and cannot retain an unapproved factory tree", async () => {
+  const { views } = fixture();
+  const plugin = {
+    panelId: "plugin:sample:files",
+    revision: "a1",
+    pluginId: "sample",
+    runtimeId: "r1",
+    generation: 4,
+    viewId: "files",
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+    title: "Sample",
+    allowFloating: true,
+  };
+  await views.reconcile({ ...snapshot(), pluginViews: [plugin] });
+  const offer = {
+    id: "retired-offer",
+    lease: { panelId: plugin.panelId, windowId: "source", generation: 3 },
+    targetWindow: "main",
+  };
+  const staged = views.stage(offer, null, new AbortController().signal);
+  const rejected = expect(staged).rejects.toThrow("cancelled");
+  await views.reconcile({ ...snapshot([], [{ offer, ready: false }]), pluginViews: [] });
+  await rejected;
+  expect(useWindowViews.getState().entries.has(plugin.panelId)).toBe(false);
+  await expect(views.stage(offer, null, new AbortController().signal)).rejects.toThrow(
+    "unsupportedView",
+  );
+});

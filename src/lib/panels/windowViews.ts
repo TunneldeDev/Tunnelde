@@ -1,16 +1,35 @@
+import { usePanelWindows } from "@/store/panelWindows";
 import { create } from "zustand";
 import type { PanelWindowClient } from "./windowClient";
-import type { NativePanelSnapshot, PanelLease, PanelTransferOffer } from "./windowProtocol";
+import type {
+  NativePanelSnapshot,
+  NativePluginViewDescriptor,
+  PanelLease,
+  PanelTransferOffer,
+} from "./windowProtocol";
 import { createPanelViewState, parsePanelViewCapsule, type PanelViewState } from "./viewState";
 import { parsePanelDomState, type PanelDomState } from "./domState";
 
 // Adapters are deliberately opt-in. Never acknowledge a view we cannot render.
-export const transferablePanel = (id: string) =>
-  id === "connections" || id === "tasks" || id === "output" || id === "knownHosts";
+export const pluginPanelDescriptor = (id: string, snapshot: NativePanelSnapshot) =>
+  snapshot.pluginViews?.find(
+    (view) =>
+      view.panelId === id &&
+      view.allowFloating &&
+      !!view.revision &&
+      id === `plugin:${view.pluginId}:${view.viewId}`,
+  );
+export const transferablePanel = (id: string, snapshot = usePanelWindows.getState().snapshot) =>
+  id === "connections" ||
+  id === "tasks" ||
+  id === "output" ||
+  id === "knownHosts" ||
+  !!pluginPanelDescriptor(id, snapshot);
 export interface WindowViewRecord {
   key: string;
   panelId: string;
   controller: PanelViewState;
+  plugin?: NativePluginViewDescriptor;
   dom?: PanelDomState;
   staged: boolean;
   moving?: boolean;
@@ -36,6 +55,7 @@ function parseTransfer(value: unknown) {
  * here, and capsules never go into persisted workspace/presentation stores. */
 export function createWindowViews(client: PanelWindowClient) {
   const records = new Map<string, WindowViewRecord>();
+  let descriptors: NativePanelSnapshot = { windows: [], panels: [], transfers: [] };
   const roots = new Map<string, () => PanelDomState>();
   const ready = new Map<string, (failure?: { error: unknown }) => void>();
   const revisions = new Map<string, number>();
@@ -45,8 +65,13 @@ export function createWindowViews(client: PanelWindowClient) {
     if (!disposed) useWindowViews.setState({ entries: new Map(records) });
   };
   const remove = (id: string) => {
-    records.get(id)?.controller.dispose();
+    const record = records.get(id);
+    record?.controller.dispose();
     records.delete(id);
+    if (record?.staged)
+      ready.get(record.key)?.({
+        error: new Error(disposed ? "panel.window.disposed" : "panel.window.cancelled"),
+      });
     roots.delete(id);
     for (const key of revisions.keys()) if (key.startsWith(`${id}:`)) revisions.delete(key);
   };
@@ -56,6 +81,7 @@ export function createWindowViews(client: PanelWindowClient) {
       key,
       panelId,
       controller: createPanelViewState(parsed.view),
+      plugin: pluginPanelDescriptor(panelId, descriptors),
       dom: parsed.dom,
       staged,
     };
@@ -114,8 +140,9 @@ export function createWindowViews(client: PanelWindowClient) {
     close: undefined as (() => Promise<void>) | undefined,
     async reconcile(snapshot: NativePanelSnapshot) {
       const currentEpoch = ++epoch;
+      descriptors = snapshot;
       const owned = snapshot.panels.filter(
-        (lease) => lease.windowId === client.windowId && transferablePanel(lease.panelId),
+        (lease) => lease.windowId === client.windowId && transferablePanel(lease.panelId, snapshot),
       );
       const incoming = new Set(
         snapshot.transfers
@@ -124,8 +151,9 @@ export function createWindowViews(client: PanelWindowClient) {
       );
       for (const [id, record] of records) {
         if (
-          !owned.some((lease) => lease.panelId === id) &&
-          !(record.staged && incoming.has(record.key))
+          record.plugin?.revision !== pluginPanelDescriptor(id, snapshot)?.revision ||
+          (!owned.some((lease) => lease.panelId === id) &&
+            !(record.staged && incoming.has(record.key)))
         )
           remove(id);
       }
@@ -147,7 +175,7 @@ export function createWindowViews(client: PanelWindowClient) {
     },
     stage(offer: PanelTransferOffer, state: unknown, signal: AbortSignal): Promise<void> {
       if (disposed || signal.aborted) return Promise.reject(new Error("panel.window.disposed"));
-      if (!transferablePanel(offer.lease.panelId))
+      if (!transferablePanel(offer.lease.panelId, descriptors))
         return Promise.reject(new Error("panel.window.unsupportedView"));
       const existing = records.get(offer.lease.panelId);
       if (existing) return Promise.reject(new Error("panel.window.duplicateView"));

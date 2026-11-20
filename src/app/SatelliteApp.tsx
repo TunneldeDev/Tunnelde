@@ -1,3 +1,4 @@
+import { NativePluginPanel } from "@/components/layout/NativePluginPanel";
 import { disconnectConnectionBatch } from "@/lib/session/connectionBatch";
 import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
 import { ConfirmDialogHost } from "@/components/ui/overlay/ConfirmDialogHost";
@@ -129,6 +130,22 @@ function useNativeReadModel<T extends WindowModelAppearance>({
   }, [model, presented]);
   return model;
 }
+function PluginView(props: NativeViewProps) {
+  const model = useNativeReadModel<WindowModelAppearance>(props);
+  if (!model || !props.record.plugin) return null;
+  return (
+    <NativePanelView panelId={props.record.panelId}>
+      <WorkbenchPanel
+        view={props.record.panelId as SidebarView}
+        location="workspace"
+        visible={!props.record.staged}
+      >
+        <NativePluginPanel panelId={props.record.panelId} visible={!props.record.staged} />
+      </WorkbenchPanel>
+    </NativePanelView>
+  );
+}
+
 function ConnectionView(props: NativeViewProps) {
   const { client, record } = props;
   const model = useNativeReadModel<ConnectionWindowModel>(props);
@@ -413,9 +430,11 @@ export function SatelliteApp() {
                 <TaskView client={client} record={record} presented={presented} />
               ) : record.panelId === "output" ? (
                 <OutputView client={client} record={record} presented={presented} />
-              ) : (
+              ) : record.panelId === "connections" ? (
                 <ConnectionView client={client} record={record} presented={presented} />
-              ),
+              ) : record.plugin ? (
+                <PluginView client={client} record={record} presented={presented} />
+              ) : null,
           }))}
         />
       )}

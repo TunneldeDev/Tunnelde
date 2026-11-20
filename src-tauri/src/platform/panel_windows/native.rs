@@ -122,6 +122,7 @@ pub(crate) fn panel_window_control(
             | Command::Staged { .. }
             | Command::ReadModel { .. }
             | Command::BeginModel { .. }
+            | Command::BeginPluginModel { .. }
             | Command::StagedModel { .. }
             | Command::Checkpoint { .. }
             | Command::IssueDrag { .. }

@@ -1,3 +1,5 @@
+import { NativePluginPanel } from "@/components/layout/NativePluginPanel";
+import { usePanelWindows } from "@/store/panelWindows";
 import { Component, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
@@ -42,6 +44,9 @@ export function PluginComponentView({
   const restricted = usePluginSecurity((state) => state.state.restricted);
   useSyncExternalStore(frontendRuntime.subscribe, frontendRuntime.revision);
   const token = frontendRuntime.token(pluginId);
+  const nativeAvailable = usePanelWindows((state) => state.available);
+  const nativeFactory =
+    nativeAvailable && frontendRuntime.factoryOwner(pluginId, viewId, plugin?.fingerprint);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +88,8 @@ export function PluginComponentView({
         <PluginRestrictedAction />
       ) : error ? (
         fallback(error)
+      ) : nativeFactory ? (
+        <NativePluginPanel panelId={`plugin:${pluginId}:${viewId}`} visible={visible} />
       ) : View ? (
         <ViewBoundary
           key={`${pluginId}:${viewId}:${token ?? "none"}`}

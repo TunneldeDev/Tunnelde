@@ -1,3 +1,4 @@
+import { usePanelWindows } from "@/store/panelWindows";
 import type { BuiltinSidebarView, SidebarView } from "@/store/navigation";
 import { parsePluginSidebar, pluginSidebars } from "@/lib/plugins/sidebars";
 import { usePlugins } from "@/store/plugins";
@@ -38,6 +39,7 @@ export function sidebarTitle(view: SidebarView): string {
   if (view in SIDEBAR_LABELS) return SIDEBAR_LABELS[view as BuiltinSidebarView];
   return (
     pluginSidebars(usePlugins.getState().items).find((item) => item.view === view)?.title ??
+    usePanelWindows.getState().snapshot.pluginViews?.find((item) => item.panelId === view)?.title ??
     parsePluginSidebar(view)?.viewId ??
     view
   );

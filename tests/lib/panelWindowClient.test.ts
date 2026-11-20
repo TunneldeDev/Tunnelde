@@ -342,3 +342,28 @@ it("rejects an in-flight consent list after its document client is disposed", as
   finish([{ id: "expired", method: "ui.confirm", pluginId: "sample", message: "Question" }]);
   await expect(pending).rejects.toThrow("disposed");
 });
+
+it("shares one native attachment client per document and closes children on document disposal", async () => {
+  const client = createPanelWindowClient(identity);
+  const first = client.pluginViews(vi.fn());
+  expect(client.pluginViews(vi.fn())).toBe(first);
+  native.invoke.mockResolvedValueOnce({
+    token: "child",
+    pluginId: "p",
+    generation: 1,
+    runtimeId: "r",
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+  });
+  await first.open({ kind: "staged", id: "offer" }, "p", "r", "view");
+  client.dispose();
+  client.dispose();
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_plugin_view", {
+    document: identity.document,
+    request: { action: "close", token: "child" },
+  });
+  expect(
+    native.invoke.mock.calls.filter(([, args]) => args.request.action === "close"),
+  ).toHaveLength(1);
+  expect(() => client.pluginViews(vi.fn())).toThrow("disposed");
+});

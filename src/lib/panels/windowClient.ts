@@ -1,3 +1,4 @@
+import { createNativePluginViewClient } from "./windowPluginClient";
 import type { NativePluginUiPrompt } from "./windowPluginUi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -19,6 +20,7 @@ import type {
  * plugin messages; every mutation still checks the host's lease generation. */
 export function createPanelWindowClient(identity: NativePanelIdentity) {
   let disposed = false;
+  let pluginViews: ReturnType<typeof createNativePluginViewClient> | undefined;
   const cleanups = new Set<() => void>();
   const check = () => {
     if (disposed) throw new Error("panel.window.disposed");
@@ -34,6 +36,11 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
   };
   return {
     windowId: identity.windowId,
+    /** One attachment client per document; never expose its document identity. */
+    pluginViews(report: (error: unknown) => void) {
+      check();
+      return (pluginViews ??= createNativePluginViewClient(identity, { report }));
+    },
     control,
     snapshot: () => control<NativePanelSnapshot>({ action: "snapshot" }),
     async subscribe(changed: () => void) {
@@ -237,6 +244,7 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
     },
     dispose() {
       disposed = true;
+      pluginViews?.dispose();
       for (const cleanup of cleanups) cleanup();
       cleanups.clear();
     },

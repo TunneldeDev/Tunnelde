@@ -1,3 +1,5 @@
+import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
+import { synchronizePluginAdapters } from "@/lib/panels/pluginAdapters";
 import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
 import { startPresentationRequests } from "@/lib/panels/presentationRequests";
 import { installPanelWindowDrag } from "@/lib/panels/windowDrag";
@@ -45,6 +47,15 @@ export async function startPanelWindows(signal: AbortSignal) {
       ),
       ...pluginSidebars(usePlugins.getState().items).map((item) => item.view),
     ],
+    synchronize: (snapshot) =>
+      synchronizePluginAdapters(
+        current.pluginViews(failure),
+        snapshot,
+        pluginSidebars(usePlugins.getState().items).flatMap((item) => {
+          const owner = frontendRuntime.factoryOwner(item.pluginId, item.id);
+          return owner ? [{ panelId: item.view, viewId: item.id, owner }] : [];
+        }),
+      ),
     receive: (snapshot) => {
       usePanelWindows.setState({ windowId: current.windowId, available: true, snapshot });
       void views.reconcile(snapshot).catch(failure);
@@ -60,6 +71,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     startSourcePanelFocus(current, failure),
     installPanelWindowDrag(current, (error) => toast(translateError(error), "error")),
     usePlugins.subscribe(coordinator.refresh),
+    frontendRuntime.subscribe(coordinator.refresh),
     useFilePreview.subscribe(coordinator.refresh),
   ];
   let stopModels = () => {};

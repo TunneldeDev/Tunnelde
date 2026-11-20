@@ -373,6 +373,10 @@ impl Ownership {
         if let Some(panel) = self.panels.get_mut(panel_id) {
             self.generation += 1;
             panel.lease.generation = self.generation;
+            // A retired adapter cannot strand an unrenderable panel in a
+            // satellite whose normal close protocol needs a live capture tree.
+            panel.lease.window_id = MAIN.into();
+            panel.interactions.clear();
             panel.checkpoint = Value::Null;
             panel.checkpoint_revision = 0;
             panel.presentation = None;

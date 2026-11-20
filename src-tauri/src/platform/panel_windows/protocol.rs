@@ -15,6 +15,10 @@ use std::time::Instant;
 )]
 pub(crate) enum Command {
     Snapshot {},
+    BeginPluginModel {
+        panel_id: String,
+        revision: String,
+    },
     PublishPresentation {
         lease: Lease,
         metadata: super::presentation::LayoutMetadata,
@@ -169,6 +173,9 @@ impl Ownership {
             Command::ClaimPanelMoves {}
             | Command::PreparePanelMove { .. }
             | Command::FailPanelMove { .. } => Err("native move policy required"),
+            Command::BeginPluginModel { panel_id, revision } => Ok(json!(
+                self.begin_plugin_model(window, document, &panel_id, &revision)?
+            )),
             Command::Snapshot {} => Ok(
                 json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters()}),
             ),

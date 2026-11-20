@@ -123,6 +123,24 @@ impl Ownership {
         }
         !ids.is_empty()
     }
+    pub(in crate::platform::panel_windows) fn begin_plugin_model(
+        &mut self,
+        window: &str,
+        document: &str,
+        panel_id: &str,
+        revision: &str,
+    ) -> Result<String, &'static str> {
+        self.main(window, document)?;
+        if !self
+            .native_views
+            .adapters
+            .get(panel_id)
+            .is_some_and(|a| a.descriptor.revision == revision)
+        {
+            return Err("plugin.frontend.adapterChanged");
+        }
+        self.begin_model(window, document, panel_id)
+    }
     pub(in crate::platform::panel_windows) fn remove_plugin_adapter(&mut self, panel_id: &str) {
         self.native_views.adapters.remove(panel_id);
     }
