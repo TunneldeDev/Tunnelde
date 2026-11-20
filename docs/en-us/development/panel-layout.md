@@ -1061,3 +1061,29 @@ one. The check used explicit first-party prepare/commit, not an OS pointer drag.
 It does not cover no-factory legacy views, FUSE continuity, Windows/Linux pointer
 release, mixed DPI or the remaining page/provider adapters. Full parity acceptance
 is still required before enabling native-window discovery or public movement.
+
+### One-off mount snapshots and resource controls
+
+The native-view gateway explicitly admits four existing compatibility RPCs:
+`mounts.list`, `mounts.dependencies`, `mounts.open` and `mounts.unmount`. These
+names do not enable a general `mounts.*` relay. Listing is a pure, plugin-owned
+registry snapshot and can run during staged rendering; it does not fingerprint
+packages, reap processes or probe filesystems. Dependency detection shares the
+reviewed retained probe/kill/reap path and remains committed-only.
+
+Opening a one-off mount now uses the same retained registry transaction as managed
+opening, rather than listing a mount and later opening an unreserved path. Its
+original plugin ID/generation must still own the exact record, and live transport,
+mount identity and canonical containment are checked before launch admission.
+Converted, replaced, unhealthy or another plugin's mount cannot be opened. The
+registry reservation spans slow probes and the actual OS opener; closing a view,
+cancelling delivery or retiring a grant cannot release an already admitted effect.
+No terminal SSH session is disconnected or adopted by opening its mount.
+
+The unmount alias uses the original admitted lease and the existing exact-origin,
+invocation-fenced owned teardown. It retains the registry, nested probes and child
+reaping through settlement. Existing owner/generation checks and the legacy force
+argument semantics remain intact. The public v1 request/result contracts do not
+change. `mounts.mount` and `mounts.browse` still need separate native-effect audits;
+neither is admitted by these changes. Ordinary subprocess/OS-opener test seams are
+not physical FUSE or file-manager acceptance, nor complete resource-RPC parity.

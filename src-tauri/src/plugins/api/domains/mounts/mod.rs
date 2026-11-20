@@ -120,13 +120,47 @@ pub(in crate::plugins::api) async fn dispatch(
         "legacy.list" | "legacy.convert" | "legacy.dismiss" => {
             legacy::call(context, method, params).await
         }
-        "dependencies.get" | "dependencies.refresh" => {
+        "dependencies.get" | "dependencies.refresh" | "dependencies" => {
             let result = crate::mounts::dependencies().await?;
             authorize(context, &["mounts.read"])?;
             encode(result)
         }
         "dependencies.documentation" | "documentation" => {
             crate::mounts::documentation::open(app.clone(), lease(context)).await?;
+            Ok(Value::Null)
+        }
+        // Legacy public aliases use the ORIGINAL admitted lease, not a newly
+        // discovered main-document plugin. No cleanup or fingerprint scan is
+        // a hidden side effect of listing; OS effects retain their own workers.
+        "list" => encode(state.mounts.list(Some(&context.id)).await),
+        "open" => {
+            crate::mounts::open_plugin(
+                app.clone(),
+                context.id.clone(),
+                context.generation,
+                field(&params, "id")?,
+                crate::mounts::unmount::PluginPolicy {
+                    app: app.clone(),
+                    lease: lease(context),
+                },
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "unmount" => {
+            state
+                .mounts
+                .unmount_checked(
+                    &context.id,
+                    &field::<String>(&params, "id")?,
+                    optional(&params, "force")?.unwrap_or(false),
+                    Some(context.generation),
+                    crate::mounts::unmount::PluginPolicy {
+                        app: app.clone(),
+                        lease: lease(context),
+                    },
+                )
+                .await?;
             Ok(Value::Null)
         }
         "paths.remote.browse"

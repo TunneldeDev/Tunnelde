@@ -579,6 +579,7 @@ fn persistent_data_effects_require_committed_ownership_and_fence_actual_settleme
         CallPolicy::MountSubmission,
         CallPolicy::MountLegacy,
         CallPolicy::MountOpen,
+        CallPolicy::MountUnmount,
         CallPolicy::MountDocumentation,
     ] {
         let mut f = Fixture::new();
@@ -904,8 +905,12 @@ fn legacy_mount_queries_and_mutations_never_run_from_staged_views() {
 }
 
 #[test]
-fn managed_mount_open_and_reveal_require_committed_native_ownership() {
-    for method in ["mounts.runtime.open", "mounts.runtime.reveal"] {
+fn managed_and_one_off_mount_open_require_committed_native_ownership() {
+    for method in [
+        "mounts.runtime.open",
+        "mounts.runtime.reveal",
+        "mounts.open",
+    ] {
         let mut f = Fixture::new();
         f.owned("source");
         let id = f.offer();
@@ -917,6 +922,102 @@ fn managed_mount_open_and_reveal_require_committed_native_ownership() {
             .native_view_call("target", &f.target, "stage", policy, f.now)
             .is_err());
     }
+}
+
+#[test]
+fn one_off_snapshot_is_staged_but_probes_and_teardown_require_the_exact_committed_document() {
+    for method in ["mounts.list", "mounts.dependencies", "mounts.unmount"] {
+        let mut f = Fixture::new();
+        f.owned("source");
+        let id = f.offer();
+        f.staged(&id, "stage");
+        let policy = crate::plugins::frontend::native::call_policy(method).unwrap();
+        let result =
+            f.r.native_view_call("target", &f.target, "stage", policy, f.now);
+        if method == "mounts.list" {
+            let (_, call) = result.unwrap();
+            f.r.settle_native_view_call(&call);
+        } else {
+            assert!(result.is_err());
+        }
+        let lease = f.commit(&id);
+        assert!(f
+            .r
+            .native_view_call("other", &f.other, "stage", policy, f.now)
+            .is_err());
+        assert!(f
+            .r
+            .native_view_call("target", &f.other, "stage", policy, f.now)
+            .is_err());
+        let (_, call) =
+            f.r.native_view_call("target", &f.target, "stage", policy, f.now)
+                .unwrap();
+        f.r.close_native_view("target", &f.target, "stage").unwrap();
+        assert!(f.r.native_view_busy(&lease.panel_id));
+        f.r.settle_native_view_call(&call);
+        assert!(!f.r.native_view_busy(&lease.panel_id));
+    }
+}
+
+#[tokio::test]
+async fn one_off_open_blocks_actual_native_handoff_until_its_admitted_os_worker_finishes() {
+    use crate::services::operations::WorkLifetime;
+    use std::sync::{Arc, Mutex};
+    let mut f = Fixture::new();
+    f.owned("mount-view");
+    let policy = crate::plugins::frontend::native::call_policy("mounts.open").unwrap();
+    let (_, id) =
+        f.r.native_view_call("main", &f.main, "mount-view", policy, f.now)
+            .unwrap();
+    let registry = Arc::new(Mutex::new(f.r));
+    struct Fence(
+        Arc<Mutex<Ownership>>,
+        String,
+        Option<tokio::sync::oneshot::Sender<()>>,
+    );
+    impl Drop for Fence {
+        fn drop(&mut self) {
+            self.0.lock().unwrap().settle_native_view_call(&self.1);
+            let _ = self.2.take().unwrap().send(());
+        }
+    }
+    let (work, ready, release, mounts) = crate::mounts::managed::tests::pending_plugin_open(
+        f.plugin.id.clone(),
+        f.plugin.generation,
+    )
+    .await;
+    let (settled, mut done) = tokio::sync::oneshot::channel();
+    let task =
+        tokio::spawn(WorkLifetime::new(Fence(registry.clone(), id, Some(settled))).scope(work));
+    ready.await.unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    {
+        let mut state = registry.lock().unwrap();
+        state
+            .close_native_view("main", &f.main, "mount-view")
+            .unwrap();
+        assert!(state.native_view_busy(&f.lease.panel_id));
+        assert!(state
+            .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+            .is_err());
+    }
+    assert!(crate::mounts::managed::tests::registry_reserved(&mounts));
+    assert!(done.try_recv().is_err());
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), done)
+        .await
+        .unwrap()
+        .unwrap();
+    {
+        let mut state = registry.lock().unwrap();
+        assert!(!state.native_view_busy(&f.lease.panel_id));
+        state
+            .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+            .unwrap();
+    }
+    assert_eq!(mounts.list(Some(&f.plugin.id)).await.len(), 1);
+    crate::mounts::adoption::tests::cleanup(&mounts).await;
 }
 
 #[test]

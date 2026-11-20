@@ -158,8 +158,20 @@ async fn setup() -> (
 fn request() -> Request {
     Request {
         id: "legacy".into(),
-        session: "user-terminal".into(),
+        owner: OWNER.into(),
+        generation: 0,
+        session: Some("user-terminal".into()),
         path: Some("/source/file".into()),
+        reveal: false,
+    }
+}
+fn plugin_request() -> Request {
+    Request {
+        id: "legacy".into(),
+        owner: "contributor".into(),
+        generation: 7,
+        session: None,
+        path: None,
         reveal: false,
     }
 }
@@ -339,7 +351,7 @@ async fn wrong_owner_generation_session_or_dead_mount_never_launches() {
         match mismatch {
             0 => mount.info.owner = "other-plugin".into(),
             1 => mount.generation = 1,
-            2 => requested.session = "replaced-session".into(),
+            2 => requested.session = Some("replaced-session".into()),
             3 => mount.info.cleanup_error = Some("mounts.busy".into()),
             4 => {
                 mount.child.kill().await.unwrap();
@@ -360,4 +372,149 @@ async fn wrong_owner_generation_session_or_dead_mount_never_launches() {
         assert!(runtime.gate("group").is_ok());
         cleanup(&registry).await;
     }
+}
+
+#[tokio::test]
+async fn legacy_open_binds_the_original_plugin_generation_and_rejects_converted_or_unhealthy_mounts(
+) {
+    for mismatch in 0..5 {
+        let registry = fixture().await;
+        let mut mounts = registry.mounts.clone().lock_owned().await;
+        let mount = mounts.get_mut("legacy").unwrap();
+        match mismatch {
+            0 => {}
+            1 => mount.info.owner = "other-plugin".into(),
+            2 => mount.generation += 1,
+            3 => {
+                mount.info.owner = OWNER.into();
+                mount.generation = 0;
+            }
+            _ => mount.info.cleanup_error = Some("cleanup required".into()),
+        }
+        let opened = Arc::new(AtomicBool::new(false));
+        let result = run(
+            &budget(),
+            mounts,
+            plugin_request(),
+            Admission::capture(|| Ok(())),
+            effects(None, None, opened.clone()),
+        )
+        .await;
+        assert_eq!(result.is_ok(), mismatch == 0);
+        assert_eq!(opened.load(Ordering::Acquire), mismatch == 0);
+        let mut mounts = registry.mounts.lock().await;
+        let mount = mounts.get_mut("legacy").unwrap();
+        assert!(mount.child.try_wait().unwrap().is_none());
+        assert!(!mount.bridge.is_finished());
+        assert_eq!(mount.info.session_id, "user-terminal");
+        drop(mounts);
+        cleanup(&registry).await;
+    }
+}
+
+#[tokio::test]
+async fn legacy_open_outer_abort_keeps_the_registry_reserved_through_the_actual_probe() {
+    let registry = fixture().await;
+    let mounts = registry.mounts.clone().lock_owned().await;
+    let (gate, ready, release) = Gate::new();
+    let (settled, mut done) = oneshot::channel();
+    let opened = Arc::new(AtomicBool::new(false));
+    let effects = effects(Some(gate), None, opened.clone());
+    let task = tokio::spawn(WorkLifetime::new(Fence(Some(settled))).scope(async move {
+        run(
+            &budget(),
+            mounts,
+            plugin_request(),
+            Admission::capture(|| Ok(())),
+            effects,
+        )
+        .await
+    }));
+    ready.await.unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    assert!(registry.mounts.try_lock().is_err());
+    assert!(done.try_recv().is_err());
+    release.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), done)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!opened.load(Ordering::Acquire));
+    assert_eq!(registry.list(Some("contributor")).await.len(), 1);
+    cleanup(&registry).await;
+}
+
+pub(crate) async fn plugin_invocation(cancel: impl FnOnce(), before_commit: bool) -> AppResult<()> {
+    assert!(crate::plugins::current_invocation_fence().is_some());
+    let admission = Admission::capture(|| Ok(()));
+    let registry = fixture().await;
+    let mounts = registry.mounts.clone().lock_owned().await;
+    let (gate, ready, release) = Gate::new();
+    let opened = Arc::new(AtomicBool::new(false));
+    let effects = if before_commit {
+        effects(Some(gate), None, opened.clone())
+    } else {
+        effects(None, Some(gate), opened.clone())
+    };
+    let task =
+        tokio::spawn(
+            async move { run(&budget(), mounts, plugin_request(), admission, effects).await },
+        );
+    ready.await.unwrap();
+    cancel();
+    assert!(registry.mounts.try_lock().is_err());
+    release.send(()).unwrap();
+    let result = task.await.unwrap();
+    if before_commit {
+        assert_eq!(result.unwrap_err().to_string(), "plugin.api.cancelled");
+    } else {
+        result.unwrap();
+    }
+    assert_eq!(opened.load(Ordering::Acquire), !before_commit);
+    let mounts = registry.mounts.lock().await;
+    assert_eq!(mounts["legacy"].info.owner, "contributor");
+    assert_eq!(mounts["legacy"].generation, 7);
+    drop(mounts);
+    cleanup(&registry).await;
+    Ok(())
+}
+
+/// Real owned mount registry and retained OS-worker seam, not a FUSE fixture.
+pub(crate) async fn pending_plugin_open(
+    owner: String,
+    generation: u64,
+) -> (
+    impl std::future::Future<Output = AppResult<()>> + Send,
+    oneshot::Receiver<()>,
+    std::sync::mpsc::Sender<()>,
+    Arc<MountRegistry>,
+) {
+    let registry = fixture().await;
+    let mounts = registry.mounts.clone().lock_owned().await;
+    let (gate, ready, release) = Gate::new();
+    let mut mounts = mounts;
+    let mount = mounts.get_mut("legacy").unwrap();
+    mount.info.owner = owner.clone();
+    mount.generation = generation;
+    let request = Request {
+        owner,
+        generation,
+        ..plugin_request()
+    };
+    let work = async move {
+        run(
+            &budget(),
+            mounts,
+            request,
+            Admission::capture(|| Ok(())),
+            effects(None, Some(gate), Arc::new(AtomicBool::new(false))),
+        )
+        .await
+    };
+    (work, ready, release, registry)
+}
+
+pub(crate) fn registry_reserved(registry: &MountRegistry) -> bool {
+    registry.mounts.try_lock().is_err()
 }

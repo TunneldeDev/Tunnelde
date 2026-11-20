@@ -23,6 +23,8 @@ pub(crate) enum CallPolicy {
     MountLegacy,
     /// Registry/group reservations survive nested FS timeouts and OS launch.
     MountOpen,
+    /// One-off plugin-owned teardown retains registry/probes/process reaping.
+    MountUnmount,
     /// Fixed host documentation URL with original read-grant launch admission.
     MountDocumentation,
     /// Exact-origin destructive consent followed by an owned force-stop transaction.

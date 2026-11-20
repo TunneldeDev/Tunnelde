@@ -1,5 +1,5 @@
-//! Opening a managed mount is an owned registry transaction, not an unreserved
-//! snapshot followed by a late OS launch. No original SSH session is owned here.
+//! Opening a mount is an owned registry transaction, not an unreserved snapshot
+//! followed by a late OS launch. No original SSH session is owned here.
 use super::*;
 use crate::services::{
     mounts::runtime::OWNER,
@@ -16,7 +16,11 @@ const ERRORS: Errors = Errors {
 };
 struct Request {
     id: String,
-    session: String,
+    owner: String,
+    generation: u64,
+    // Persistent callers bind the displayed session too. The legacy ID-only
+    // API binds its exact owner/generation under the same held registry lock.
+    session: Option<String>,
     path: Option<String>,
     reveal: bool,
 }
@@ -29,6 +33,44 @@ pub(crate) async fn open_managed(
     reveal: bool,
     policy: impl Policy,
 ) -> AppResult<()> {
+    open(
+        app,
+        Request {
+            id,
+            owner: OWNER.into(),
+            generation: 0,
+            session: Some(session),
+            path,
+            reveal,
+        },
+        policy,
+    )
+    .await
+}
+
+pub(crate) async fn open_plugin(
+    app: AppHandle,
+    owner: String,
+    generation: u64,
+    id: String,
+    policy: impl Policy,
+) -> AppResult<()> {
+    open(
+        app,
+        Request {
+            id,
+            owner,
+            generation,
+            session: None,
+            path: None,
+            reveal: false,
+        },
+        policy,
+    )
+    .await
+}
+
+async fn open(app: AppHandle, request: Request, policy: impl Policy) -> AppResult<()> {
     // Capture the original task-local gates BEFORE waiting or spawning.
     let admission = Admission::capture(policy);
     let mounts = app
@@ -39,19 +81,7 @@ pub(crate) async fn open_managed(
         .lock_owned()
         .await;
     static WORKERS: LazyLock<Budget> = LazyLock::new(|| Budget::new(4, ERRORS));
-    run(
-        &WORKERS,
-        mounts,
-        Request {
-            id,
-            session,
-            path,
-            reveal,
-        },
-        admission,
-        SystemEffects(app),
-    )
-    .await
+    run(&WORKERS, mounts, request, admission, SystemEffects(app)).await
 }
 async fn run<P: Policy, E: Effects>(
     budget: &Budget,
@@ -97,10 +127,13 @@ fn active<'a>(
     let mount = mounts
         .get_mut(&request.id)
         .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
-    if mount.info.owner != OWNER || mount.generation != 0 {
+    if mount.info.owner != request.owner || mount.generation != request.generation {
         return Err(AppError::validation("mounts.notOwned"));
     }
-    if mount.info.session_id != request.session
+    if request
+        .session
+        .as_ref()
+        .is_some_and(|session| mount.info.session_id != *session)
         || mount.info.cleanup_error.is_some()
         || mount.bridge.is_finished()
         || mount.child.try_wait()?.is_some()

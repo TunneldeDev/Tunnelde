@@ -19,7 +19,8 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         | "mounts.connections.list"
         | "mounts.connections.get"
         | "mounts.operations.list"
-        | "mounts.operations.get" => Some(CallPolicy::StagedData),
+        | "mounts.operations.get"
+        | "mounts.list" => Some(CallPolicy::StagedData),
         // Configuration writes await their bounded worker, preserving existing
         // CAS/group/permission gates. Observers may wait five seconds and are
         // committed-only: a staged view must not run a continuous polling loop.
@@ -58,7 +59,7 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         // Windows uses the exact-origin confirmation queue; other desktops
         // retain their OS picker callback and parent window until settlement.
         "mounts.paths.local.pick" => Some(CallPolicy::OriginUi),
-        "mounts.dependencies.get" | "mounts.dependencies.refresh" => {
+        "mounts.dependencies.get" | "mounts.dependencies.refresh" | "mounts.dependencies" => {
             Some(CallPolicy::MountDependencyProbe)
         }
         // Host-only destructive consent keeps mounts.write attached to the
@@ -83,7 +84,12 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         // mount probes, while a retained transaction owns registry/group guards.
         // A nested filesystem timeout keeps those guards through real return;
         // an accepted OS launch finishes outside metadata policy locks.
-        "mounts.runtime.open" | "mounts.runtime.reveal" => Some(CallPolicy::MountOpen),
+        "mounts.runtime.open" | "mounts.runtime.reveal" | "mounts.open" => {
+            Some(CallPolicy::MountOpen)
+        }
+        // The original invocation/origin is captured before the registry wait;
+        // the exact plugin generation, probes and admitted cleanup are retained.
+        "mounts.unmount" => Some(CallPolicy::MountUnmount),
         // A fixed host link bypasses dependency scans, rechecks original gates
         // at admission and retains its actual browser opener through settlement.
         "mounts.dependencies.documentation" | "mounts.documentation" => {
@@ -108,6 +114,7 @@ mod tests {
         let mut remote = 0;
         let mut legacy = 0;
         let mut open = 0;
+        let mut unmount = 0;
         let mut documentation = 0;
         for method in crate::plugins::api::METHODS
             .iter()
@@ -133,21 +140,23 @@ mod tests {
                     CallPolicy::MountRemotePath => remote += 1,
                     CallPolicy::MountLegacy => legacy += 1,
                     CallPolicy::MountOpen => open += 1,
+                    CallPolicy::MountUnmount => unmount += 1,
                     CallPolicy::MountDocumentation => documentation += 1,
                     other => panic!("unexpected mount policy {other:?}"),
                 }
             }
         }
         assert_eq!(data, 9);
-        assert_eq!(snapshots, 13);
+        assert_eq!(snapshots, 14);
         assert_eq!(submissions, 15);
         assert_eq!(paths, 2);
         assert_eq!(ui, 1);
-        assert_eq!(probes, 2);
+        assert_eq!(probes, 3);
         assert_eq!(force, 1);
         assert_eq!(remote, 2);
         assert_eq!(legacy, 3);
-        assert_eq!(open, 2);
+        assert_eq!(open, 3);
+        assert_eq!(unmount, 1);
         assert_eq!(documentation, 2);
         for method in [
             "mounts.runtime.requestForceUnmount.extra",
@@ -157,7 +166,13 @@ mod tests {
             "mounts.paths.remote.resolve\0",
             "mounts.paths.remote.list",
             "mounts.mount",
-            "mounts.unmount",
+            "mounts.browse",
+            "mounts.reveal",
+            "mounts.unmount.extra",
+            "mounts.unmount\0",
+            "mounts.open.extra",
+            "mounts.listAll",
+            "mounts.dependencies\0",
             "mounts.legacy.convert.extra",
             "mounts.legacy.listAll",
             "mounts.legacy.dismiss\0",

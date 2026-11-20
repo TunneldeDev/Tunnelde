@@ -11,7 +11,7 @@ mod lifecycle;
 use filesystem::mac_mount_device;
 use filesystem::{cancellable_open, resolve_mounted_target};
 pub(crate) mod managed;
-pub(crate) use managed::open_managed;
+pub(crate) use managed::{open_managed, open_plugin};
 pub(crate) mod adoption;
 mod negotiation;
 mod transport;
@@ -958,14 +958,17 @@ pub async fn action(
                         .get("id")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| AppError::validation("mounts.id.required"))?;
-                    let record = state
-                        .mounts
-                        .list(Some(&plugin_id))
-                        .await
-                        .into_iter()
-                        .find(|m| m.id == id)
-                        .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
-                    crate::commands::open_local_path(app.clone(), record.mount_point)?;
+                    open_plugin(
+                        app.clone(),
+                        plugin_id.clone(),
+                        lease.generation,
+                        id.to_owned(),
+                        unmount::PluginPolicy {
+                            app: app.clone(),
+                            lease: lease.clone(),
+                        },
+                    )
+                    .await?;
                     Ok(serde_json::Value::Null)
                 }
                 "reveal" => {
