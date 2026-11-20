@@ -88,6 +88,6 @@ CodeMirror 宿主负责选择、光标、撤销/重做、输入法组合、行�
 插件 token 不会替换文档文本或提供标记；装饰类使用宿主定义的 `cm-editor-token-*` 词汇，
 强制颜色模式保持可读的系统文本。
 
-附带的 [`syntax-basic` 示例](../../../../examples/plugins/syntax-basic/README.md) 是面向常见源码文件的
+Tunnelde-hub 中的 [`syntax-basic` 示例](https://github.com/TunneldeDev/Tunnelde-hub/tree/main/examples/syntax-basic) 是面向常见源码文件的
 轻量分词器，不是完整语言解析器或语言服务器。需要精确语义的生产插件应使用真正的解析器实现
 相同的受限语义 token 协议。
