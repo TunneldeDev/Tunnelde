@@ -1,3 +1,4 @@
+import type { PluginListCommand } from "@/features/plugins/panel/model";
 import type { HostPanelWindowAction } from "@/features/hosts/panel/protocol";
 import type { PreviewWindowAction } from "@/features/sftp/preview/windowActions";
 import type { PanelPresentation } from "@/store/panelPresentation";
@@ -54,6 +55,7 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | { kind: "plugins"; command: PluginListCommand }
   | HostPanelWindowAction
   | PreviewWindowAction
   | TransferWindowAction

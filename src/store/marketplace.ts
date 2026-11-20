@@ -49,7 +49,10 @@ export function newerVersion(candidate: string, installed: string): boolean {
   return false;
 }
 
-export function boundTo(plugin: PluginInfo, source: MarketSource): boolean {
+export function boundTo(
+  plugin: Pick<PluginInfo, "sourceId" | "sourceUrl">,
+  source: MarketSource,
+): boolean {
   return plugin.sourceId === source.id && plugin.sourceUrl === source.url;
 }
 

@@ -1155,7 +1155,7 @@ non-blocking presentation and edge-case issues can follow in patch releases.
 A staged release does not mark the complete native-workspace plan finished.
 
 The native move allowlist covers connections, tasks, output, known hosts,
-forwarding, hosts, docked file previews and compatible sidebar plugin factories. Forwarding uses the shared
+forwarding, hosts, plugin lists, docked file previews and compatible sidebar plugin factories. Forwarding uses the shared
 production renderer, original-window prompts and preserved provider view state;
 its real macOS round-trip coverage also retained the original managed SSH session.
 Unsupported views stay in their original window rather than losing state.
@@ -1268,3 +1268,19 @@ macOS acceptance covered actual builtin and factory-provider window roundtrips,
 search/collapse, favorite writes, table/sort actions, main-owned export-dialog
 opening, singleton activation count and isolated plugin/host/session cleanup.
 It is not real SSH, physical pointer drag or cross-platform acceptance.
+
+### Native plugin-list presentation
+
+The plugin browser has one shared renderer and an explicit metadata-only model.
+No runtime IDs, fingerprints, grants, frontend module descriptors, download URLs,
+archive hashes, readmes or Node runtime configuration are published. Source URLs
+and installed paths remain intentional display hints. Search, tag, scope and page
+use the view capsule; the main store remains compatible with detail-page navigation.
+
+Native commands accept closed operations and opaque catalogue/installed-entry
+incarnation markers. Main re-resolves after revealing itself and at installation
+confirmation; changed/removed entries and cross-source installs are rejected.
+The actual archive URL/hash and installation authorization stay main-owned.
+Local installation dialogs live outside the movable browser, so moving the list
+does not discard an archive inspection or install draft. Detail/settings actions
+reveal main; this adapter does not claim native detail-page/settings support.

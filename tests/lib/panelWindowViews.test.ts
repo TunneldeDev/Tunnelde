@@ -36,7 +36,7 @@ it("preserves forwarding state through the publicly admitted capture/stage/commi
   expect(renderablePanel("forwarding")).toBe(true);
   expect(transferablePanel("forwarding")).toBe(true);
   expect(renderablePanel("hosts")).toBe(true);
-  expect(renderablePanel("plugins")).toBe(false);
+  expect(renderablePanel("plugins")).toBe(true);
   await views.reconcile(snapshot([original]));
   const source = useWindowViews.getState().entries.get("forwarding")!;
   expect(source.lease).toEqual(original);

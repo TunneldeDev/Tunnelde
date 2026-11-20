@@ -21,7 +21,12 @@ import { pluginTags, togglePluginTag } from "@/lib/plugins/discovery";
 import { openPluginAction } from "@/lib/plugins/actions";
 import { supportsManifestVersion } from "@/lib/plugins/activation/compatibility";
 
-export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
+export function requestMarketInstall(
+  entry: MarketEntry,
+  source: MarketSource,
+  update: boolean,
+  validate?: () => void,
+) {
   const t = i18n.t.bind(i18n);
   useDialogs.getState().confirm({
     title: t(update ? "market.update" : "market.installConfirm", { name: entry.name }),
@@ -42,6 +47,7 @@ export function requestMarketInstall(entry: MarketEntry, source: MarketSource, u
     ),
     confirmLabel: t(update ? "market.update" : "plugins.install"),
     onConfirm: () => {
+      validate?.();
       void useMarketplace.getState().install(entry, source, update);
     },
   });

@@ -1,3 +1,4 @@
+import { executePluginListCommand } from "@/features/plugins/panel/actions";
 import { executeHostPanelCommand } from "@/features/hosts/panel/execute";
 import { executePreviewWindowAction } from "@/features/sftp/preview/windowActions";
 import { createTransferWindowActions } from "@/features/sftp/transferWindowActions";
@@ -20,6 +21,8 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request, lease }) => {
       switch (request.kind) {
+        case "plugins":
+          return executePluginListCommand(request.command, () => client.show());
         case "hosts":
           return executeHostPanelCommand(request.command, () => client.show());
         case "preview":

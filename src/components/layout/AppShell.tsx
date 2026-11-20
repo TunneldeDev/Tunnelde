@@ -1,3 +1,4 @@
+import { PluginPanelDialogs } from "@/features/plugins/panel/PluginPanelDialogs";
 import { HostPanelDialogs } from "@/features/hosts/panel/HostPanelDialogs";
 import { SplitGeometryScope } from "@/components/ui/layout/SplitGeometry";
 import { subscribePanels } from "@/lib/panels/observation";
@@ -335,6 +336,7 @@ export function AppShell() {
         )}
         <ToastHost />
         <HostPanelDialogs />
+        <PluginPanelDialogs />
         <DialogHost />
         <ShortcutConflictDialog />
         <ContextMenuHost />

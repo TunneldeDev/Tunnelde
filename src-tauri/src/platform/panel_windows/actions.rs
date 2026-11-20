@@ -1,6 +1,7 @@
 //! Closed, bounded resource-action relay to the singleton main document. Only
 //! requests are queued, never callbacks or arbitrary application command names.
 mod hosts;
+mod plugins;
 use super::ownership::{Lease, Ownership, MAIN};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,6 +17,9 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Plugins {
+        command: plugins::PluginCommand,
+    },
     Hosts {
         command: hosts::HostCommand,
     },
@@ -218,6 +222,7 @@ impl TransferPrompt {
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
+            Self::Plugins { .. } => "plugins",
             Self::Hosts { .. } => "hosts",
             Self::Preview { .. } => "filePreview",
             Self::RefreshKnownHosts {} | Self::ForgetKnownHost { .. } => "knownHosts",
@@ -234,6 +239,7 @@ impl ViewAction {
     fn validate(&self) -> Result<(), &'static str> {
         let bounded = |s: &str, max| !s.is_empty() && s.len() <= max;
         let valid = match self {
+            Self::Plugins { command } => command.valid(),
             Self::Hosts { command } => command.valid(),
             Self::Preview {
                 id,
