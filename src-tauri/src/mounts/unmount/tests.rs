@@ -713,3 +713,101 @@ pub(crate) async fn force_invocation(cancel: impl FnOnce(), before_commit: bool)
     }
     Ok(())
 }
+
+type ProbeGate = (oneshot::Sender<()>, std::sync::mpsc::Receiver<()>);
+struct StalledProbe {
+    gate: std::sync::Mutex<Option<ProbeGate>>,
+    present: bool,
+    writes: Arc<AtomicBool>,
+}
+impl StalledProbe {
+    async fn stall(&self) -> AppResult<()> {
+        let (entered, wait) = self.gate.lock().unwrap().take().unwrap();
+        let budget = Budget::new(
+            1,
+            Errors {
+                domain: "test.unmount.probe",
+                busy: "busy",
+                cancelled: "cancelled",
+                failed: "failed",
+            },
+        );
+        filesystem::bounded(&budget, std::time::Duration::from_secs(1), move |cancel| {
+            entered.send(()).unwrap();
+            wait.recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            cancel.check()
+        })
+        .await
+    }
+}
+impl Effects for StalledProbe {
+    async fn present(&self, _: &ActiveMount) -> AppResult<bool> {
+        if self.present {
+            self.stall().await?;
+        }
+        Ok(true)
+    }
+    async fn matches(&self, _: &ActiveMount) -> AppResult<bool> {
+        if !self.present {
+            self.stall().await?;
+        }
+        Ok(true)
+    }
+    async fn dismount(&self, _: &ActiveMount, _: bool) -> AppResult<Option<std::fs::File>> {
+        self.writes.store(true, Ordering::SeqCst);
+        Ok(None)
+    }
+}
+
+#[tokio::test]
+async fn nested_probe_timeout_retains_registry_group_and_native_fence_until_actual_worker_return() {
+    for present in [false, true] {
+        let (registry, settled) = registry().await;
+        let registry = Arc::new(registry);
+        let mounts = registry.mounts.clone().lock_owned().await;
+        let group = Arc::new(Mutex::new(()));
+        let group_guard = group.clone().lock_owned().await;
+        let admission = Admission::capture(move || {
+            let _keep_group = &group_guard;
+            Ok(())
+        });
+        let (budget, _) = budget();
+        let (entered, ready) = oneshot::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let (completed, mut done) = oneshot::channel();
+        let writes = Arc::new(AtomicBool::new(false));
+        let effects = StalledProbe {
+            gate: std::sync::Mutex::new(Some((entered, wait))),
+            present,
+            writes: writes.clone(),
+        };
+        let task = tokio::spawn(WorkLifetime::new(Fence(Some(completed))).scope(async move {
+            run_with_budget(&budget, mounts, request(), admission, effects).await
+        }));
+        ready.await.unwrap();
+        assert_eq!(
+            task.await.unwrap().unwrap_err().to_string(),
+            "mounts.pathTimeout"
+        );
+        assert!(registry.mounts.try_lock().is_err());
+        assert!(group.try_lock().is_err());
+        assert!(done.try_recv().is_err());
+        assert!(!writes.load(Ordering::SeqCst));
+        assert!(!settled.load(Ordering::SeqCst));
+        release.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), done)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(group.try_lock().is_ok());
+        {
+            let mut mounts = registry.mounts.lock().await;
+            let active = mounts.get_mut("mount").unwrap();
+            assert!(active.child.try_wait().unwrap().is_none());
+            assert!(!active.bridge.is_finished());
+        }
+        assert!(!writes.load(Ordering::SeqCst));
+        cleanup(&registry).await;
+    }
+}

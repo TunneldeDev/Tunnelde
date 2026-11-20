@@ -1,6 +1,6 @@
 //! One owned mount transaction survives delivery cancellation through cleanup.
 use super::*;
-use crate::services::operations::{Budget, Cancellation, Errors};
+use crate::services::operations::{Budget, Cancellation, Errors, WorkLifetime};
 use std::{sync::Arc, sync::LazyLock};
 use tokio::sync::OwnedMutexGuard;
 
@@ -131,14 +131,30 @@ async fn run_with_budget<P: Policy, E: Effects>(
 ) -> AppResult<()> {
     budget
         .asynchronous(move |cancel| async move {
-            let result = transaction(mounts, &request, &admission, &cancel, &effects).await;
-            admission.policy.settled(&result);
-            result
+            // Nested filesystem probes may time out delivery while their actual
+            // workers remain blocked. Keep exact registry/group reservations in
+            // that inherited lifetime too, not merely the native effect fence.
+            let reservation = Arc::new(tokio::sync::Mutex::new(mounts));
+            let admission = Arc::new(admission);
+            let lifetime = WorkLifetime::new((
+                reservation.clone(),
+                admission.clone(),
+                WorkLifetime::current(),
+            ));
+            lifetime
+                .scope(async move {
+                    let mut mounts = reservation.lock_owned().await;
+                    let result =
+                        transaction(&mut mounts, &request, &admission, &cancel, &effects).await;
+                    admission.policy.settled(&result);
+                    result
+                })
+                .await
         })
         .await
 }
 async fn transaction<P: Policy, E: Effects>(
-    mut mounts: OwnedMutexGuard<HashMap<String, ActiveMount>>,
+    mounts: &mut HashMap<String, ActiveMount>,
     request: &Request,
     admission: &Admission<P>,
     cancel: &Cancellation,

@@ -527,7 +527,10 @@ and exact rule revision/group/runtime/session at OS-launch admission. Registry a
 group reservations span probes, canonical containment and launch, preventing an
 unmount/replacement from overtaking a stale snapshot. Nested filesystem timeouts
 end delivery only: actual workers retain those reservations and the inherited
-native effect until the call returns. macOS device queries, canonical resolution,
+native effect until the call returns. Unmount presence/identity probes retain the
+same registry/group reservations after a nested probe timeout, before any
+dismount is admitted; a retry cannot overtake the still-running old probe.
+macOS device queries, canonical resolution,
 compatibility opens and bounded Linux mount-table reads share retained workers.
 Launch/reveal occurs outside metadata admission gates; accepted work settles
 without reauthorization after permission loss. Simulated OS openers and ordinary
