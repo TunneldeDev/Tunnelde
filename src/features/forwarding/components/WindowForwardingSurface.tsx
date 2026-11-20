@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { translateError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
 import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
+import { useFactorySelection } from "@/lib/extensions/runtime/views/useFactorySelection";
 import { Button } from "@/components/ui/form/Button";
 import {
   ForwardingSurfaceBody,
@@ -62,9 +63,15 @@ function SelectedProvider({
   const snapshot = useSyncExternalStore(selection.subscribe, selection.snapshot);
   const [renderFailure, setRenderFailure] = useState<{ id: string; cause: unknown } | null>(null);
   const discoveryFailed = snapshot.error !== null;
+  const selectionError = useFactorySelection(
+    true,
+    snapshot.source?.descriptor.view ?? null,
+    snapshot.loading,
+  );
   const cause =
     snapshot.error ??
-    (renderFailure?.id === snapshot.source?.id ? renderFailure?.cause : undefined);
+    (renderFailure?.id === snapshot.source?.id ? renderFailure?.cause : undefined) ??
+    selectionError;
   usePanelReadiness("forwarding.selection", !snapshot.loading && cause === undefined, cause);
   useEffect(() => selection.start(), [selection]);
   const source = snapshot.source;

@@ -26,6 +26,7 @@ import type { FrontendHistory } from "@/lib/extensions/contracts/history/provide
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
 import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
+import { useFactorySelection } from "@/lib/extensions/runtime/views/useFactorySelection";
 import type { HistoryContext } from "@/lib/extensions/history/context";
 import type { FilePreviewContext } from "@/lib/extensions/files/preview/context";
 import type { FrontendFilePreview } from "@/lib/extensions/contracts/files/preview/provider";
@@ -215,6 +216,11 @@ export function ProviderSurface({
   );
   const [renderedLease, setRenderedLease] = useState<object | null>(null);
   const mounted = useCallback(() => setRenderedLease(accessLease), [accessLease]);
+  const selectionError = useFactorySelection(
+    target === "forwarding",
+    selected ? { pluginId: selected.plugin.id, viewId: selected.view.id } : null,
+    !!selection && (!active || renderedLease !== accessLease),
+  );
   const readinessError = selection
     ? failed
       ? (failure.error ?? new Error("plugin.frontend.viewUnavailable"))
@@ -227,7 +233,7 @@ export function ProviderSurface({
   usePanelReadiness(
     target === "forwarding" ? "forwarding.selection" : null,
     !selection || (active && !!token && renderedLease === accessLease),
-    readinessError,
+    readinessError ?? selectionError,
   );
   useLayoutEffect(() => {
     accessLease.activate();

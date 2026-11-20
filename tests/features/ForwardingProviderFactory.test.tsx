@@ -390,6 +390,92 @@ it("never reactivates a no-createView legacy module in the destination or discar
   }
 });
 
+it.each(["main", "native"])(
+  "rejects a captured provider replaced by builtin selection before %s destination mount",
+  async (destination) => {
+    const f = fixture(),
+      source = f.state();
+    const main = render(f.tree(source));
+    await screen.findByLabelText("Provider draft");
+    await source.waitReady(new AbortController().signal);
+    fireEvent.change(screen.getByLabelText("Provider draft"), {
+      target: { value: "must not silently disappear" },
+    });
+    const capsule = await source.captureAsync();
+    main.unmount();
+    if (destination === "main") {
+      useSettings.setState((state) => ({ settings: { ...state.settings, uiProviders: {} } }));
+    } else {
+      f.invoke.mockImplementation(async () => null);
+    }
+    const target = f.state(capsule);
+    render(f.tree(target, destination === "native"));
+    await screen.findByText("No forwarding rules yet");
+    await expect(target.waitReady(new AbortController().signal)).rejects.toThrow(
+      "viewStateUnavailable",
+    );
+    await expect(target.captureAsync()).rejects.toThrow("viewStateUnavailable");
+    expect(f.createView).toHaveBeenCalledOnce();
+  },
+);
+
+it("allows an explicit user deselection after the matching main provider draft has restored", async () => {
+  const f = fixture(),
+    source = f.state();
+  const first = render(f.tree(source));
+  await screen.findByLabelText("Provider draft");
+  await source.waitReady(new AbortController().signal);
+  fireEvent.change(screen.getByLabelText("Provider draft"), {
+    target: { value: "restored first" },
+  });
+  const capsule = await source.captureAsync();
+  first.unmount();
+  const restored = f.state(capsule);
+  render(f.tree(restored));
+  await screen.findByLabelText("Provider draft");
+  await restored.waitReady(new AbortController().signal);
+  expect(screen.getByLabelText("Provider draft")).toHaveProperty("value", "restored first");
+  act(() =>
+    useSettings.setState((state) => ({ settings: { ...state.settings, uiProviders: {} } })),
+  );
+  expect(screen.getByText("No forwarding rules yet")).toBeTruthy();
+  expect(screen.queryByLabelText("Provider draft")).toBeNull();
+  await restored.waitReady(new AbortController().signal);
+  expect(JSON.stringify(await restored.captureAsync())).not.toContain("restored first");
+  expect(f.activate).toHaveBeenCalledOnce();
+});
+
+it("keeps the restore obligation when a matching main shell is deselected before its child opens", async () => {
+  const f = fixture(),
+    source = f.state();
+  const first = render(f.tree(source));
+  await screen.findByLabelText("Provider draft");
+  await source.waitReady(new AbortController().signal);
+  const capsule = await source.captureAsync();
+  first.unmount();
+  const session = await f.transport.openView!("singleton-activation", "forwards", "fixture");
+  const child = deferred<FrontendSession>();
+  vi.mocked(f.transport.openView!).mockClear().mockReturnValue(child.promise);
+  const target = f.state(capsule);
+  render(f.tree(target));
+  const originalWait = expect(target.waitReady(new AbortController().signal)).rejects.toThrow();
+  await waitFor(() => expect(f.transport.openView).toHaveBeenCalledOnce());
+  expect(screen.queryByLabelText("Provider draft")).toBeNull();
+  act(() =>
+    useSettings.setState((state) => ({ settings: { ...state.settings, uiProviders: {} } })),
+  );
+  await originalWait;
+  await expect(target.waitReady(new AbortController().signal)).rejects.toThrow(
+    "viewStateUnavailable",
+  );
+  await act(async () => {
+    child.resolve(session);
+  });
+  expect(screen.queryByLabelText("Provider draft")).toBeNull();
+  await expect(target.captureAsync()).rejects.toThrow("viewStateUnavailable");
+  expect(f.createView).toHaveBeenCalledOnce();
+});
+
 it("keeps registered renderers intact and requires exact source-instance consent before a factory reset", async () => {
   const f = fixture(true),
     source = f.state();

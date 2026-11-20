@@ -1028,3 +1028,10 @@ another singleton activation. A module with no factory is still not remotely
 renderable: destination staging rejects it and preserves the original source.
 Full no-factory legacy presentation and real native handoff acceptance remain
 required; this source compatibility guard does not claim to complete them.
+
+A captured provider identity is also required during initial destination
+selection. Deselection between capture and discovery cannot silently admit builtin
+rows while discarding `plugin.factory`; the destination rejects and leaves the
+source available. This obligation clears only when the matching selection has
+committed its renderer (whose own factory binding still owns restoration/readiness),
+so subsequent explicit user deselection of an already restored view remains valid.
