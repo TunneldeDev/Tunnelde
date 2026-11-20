@@ -266,9 +266,13 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           };
         },
         resume: async () => {
+          if (disposed) return;
+          // Keep input/resize frozen until stream reattachment succeeds. A
+          // failed rollback must not let users type blindly into a detached PTY.
+          if (!ended) await api.sshAttach(sessionId);
+          if (disposed) return;
           checkpointing.current = false;
-          if (!disposed && !ended) await api.sshAttach(sessionId);
-          if (!disposed) terminalBridge.update({ status: ended ? "closed" : "ready" });
+          terminalBridge.update({ status: ended ? "closed" : "ready" });
           runtime?.requestLayout();
         },
       });

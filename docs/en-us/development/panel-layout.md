@@ -1301,3 +1301,29 @@ column/decorations publication, credentials and connection APIs are not admitted
 by this change. General `viewFactories.nativeWindows` remains false. Existing
 reader cancellation/revocation tests and native policy/lifetime tests are not a
 claim of actual SSH/FUSE or cross-platform UI acceptance.
+
+### Terminal session handoff foundation
+
+`beginTerminalHandoff` atomically reserves only the requested, deduplicated
+sessions before asynchronous preparation. Reservations cover all preparations,
+including cancellation: a late detach cannot run after rollback. Check
+`isCurrent()` before native ownership transfer, then `commit()` only after the
+destination owns the stream. A committed source must never reattach, even if it
+has already unmounted. Idempotent rollback retries only failed original
+participants, not replacements registered under the same ID. Background suspension
+owns a separate batch; resume notifications cannot steal another pending handoff.
+
+The private terminal JSON codec explicitly maps undefined character sets, tab
+stops and private modes to reversible null fields, including charset-array holes.
+Restore supplies xterm's undefined values rather than JSON nulls. Version, shape,
+byte, node and depth checks run before teardown/restore; oversized snapshots are
+refused, never truncated. Panel transport is limited to 1 MiB; background retains
+the existing 64 MiB budget and native aggregate limit. Background snapshot v2 uses
+this codec and still reads v1. Screen/input drafts remain ephemeral in memory,
+never in preferences, logs, the plugin bus or public discovery.
+
+This batch integrates background restoration and exercises the actual distributed
+xterm parser across JSON, Unicode packet boundaries, alternate buffers, charsets
+and keyboard modes. It does not enable terminal native windows. Document/panel-
+leased native PTY endpoints, main-owned actions/shared resource handles, the page
+adapter and real SSH window acceptance remain required.

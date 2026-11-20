@@ -1,3 +1,7 @@
+import {
+  beginTerminalHandoff,
+  resumeTerminalCheckpoints,
+} from "@/features/terminal/terminalCheckpoint";
 import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,6 +25,7 @@ const {
     historyRecord: vi.fn(),
     historyList: vi.fn(),
     sshAttach: vi.fn(),
+    sshDetach: vi.fn(),
     sshDisconnect: vi.fn(),
     clipboardReadText: vi.fn(),
     clipboardWriteText: vi.fn(),
@@ -170,6 +175,7 @@ beforeEach(() => {
   apiMock.historyRecord.mockResolvedValue(undefined);
   apiMock.historyList.mockReset().mockResolvedValue([]);
   apiMock.sshAttach.mockResolvedValue(undefined);
+  apiMock.sshDetach.mockResolvedValue(0);
   apiMock.sshDisconnect.mockResolvedValue(undefined);
   apiMock.clipboardReadText.mockResolvedValue("pasted\ntext");
   apiMock.clipboardWriteText.mockResolvedValue(undefined);
@@ -1183,4 +1189,25 @@ it("allows per-binding terminal passthrough after accepting a paste", async () =
   expect(keyboard[0]!(event)).toBe(true);
   expect(event.defaultPrevented).toBe(false);
   await waitFor(() => expect(instances[0]!.paste).toHaveBeenCalled());
+});
+
+it("keeps input frozen while checkpoint rollback cannot reattach, then recovers on retry", async () => {
+  const view = render(<TerminalPage sessionId="s1" active={true} />);
+  await waitFor(() => expect(apiMock.sshAttach).toHaveBeenCalledOnce());
+  // This renderer stub intentionally lacks a real buffer. Preparation fails
+  // after detach; the first reattach also fails, exercising retained recovery.
+  instances[0]!.write.mockImplementation((_text: string, parsed?: () => void) => parsed?.());
+  apiMock.sshAttach.mockRejectedValueOnce(new Error("temporarily unavailable"));
+  try {
+    await expect(beginTerminalHandoff(["s1"])).rejects.toThrow();
+    apiMock.sshWrite.mockClear();
+    inputs[0]!("hidden input");
+    expect(apiMock.sshWrite).not.toHaveBeenCalled();
+    await resumeTerminalCheckpoints();
+    inputs[0]!("visible again");
+    expect(apiMock.sshWrite).toHaveBeenCalledWith("s1", encodeBase64("visible again"));
+  } finally {
+    await resumeTerminalCheckpoints();
+    view.unmount();
+  }
 });
