@@ -7,6 +7,8 @@ import type { PreviewReadSource } from "./readSource";
 export interface PreviewOwner {
   readonly context: FilePreviewContext;
   readonly source: PreviewReadSource;
+  readonly onReady?: () => void;
+  readonly onDecodeError?: () => void;
   readonly providers: readonly Pick<PluginFilePreview, "id" | "name" | "renderer">[];
 }
 export function createPreviewOwners() {

@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 停靠的文件预览支持移入独立窗体并返回，保留受支持的插件草稿、PDF 页码/缩放和媒体位置，复用原文件资源；修复元数据更新抢夺文本焦点及异步正文就绪被错误取消。Docked file previews support explicit native-window roundtrips with supported provider drafts, PDF page/zoom and media position preserved on the original resource; fix metadata-driven text focus resets and retired async readiness cancelling replacement renderers.
+
 - 预览元数据与读取状态由宿主独立持有，正文暂时移除不会使插件观察丢失；补齐文本、PDF 和媒体的视图状态捕获，为完整跨窗口预览继续铺设基础。Preview metadata/read state survives an absent renderer; text, PDF and media state capture prepares the remaining native preview adapter.
 
 - 文件预览资源由独立宿主持有，移除正文不会重新读取远程文件或关闭媒体票据；增加绑定文档与面板实例的只读窗口句柄，为后续预览跨窗适配提供基础。Preview reads outlive renderer bodies; private document/panel-scoped read handles prepare native preview handoff without reopening remote files or exposing the underlying ticket.

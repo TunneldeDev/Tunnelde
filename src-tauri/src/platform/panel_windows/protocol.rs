@@ -14,6 +14,10 @@ use std::time::Instant;
     deny_unknown_fields
 )]
 pub(crate) enum Command {
+    RequestCoordinatorPreviewAction {
+        lease: Lease,
+        request: ViewAction,
+    },
     PublishPreviewResource {
         resource: Option<super::preview::Resource>,
     },
@@ -160,6 +164,9 @@ impl Ownership {
         // revive a timed-out offer just because its timeout callback ran late.
         self.expire(now);
         match command {
+            Command::RequestCoordinatorPreviewAction { lease, request } => Ok(json!(
+                self.request_coordinator_preview_action(window, document, &lease, request, now)?
+            )),
             Command::PublishPreviewResource { resource } => Ok(json!(
                 self.publish_preview_resource(window, document, resource)?
             )),

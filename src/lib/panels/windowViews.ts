@@ -27,6 +27,7 @@ export const transferablePanel = (id: string, snapshot = usePanelWindows.getStat
   id === "output" ||
   id === "knownHosts" ||
   id === "forwarding" ||
+  id === "filePreview" ||
   !!pluginPanelDescriptor(id, snapshot);
 /** Rendering and movement remain explicit opt-ins. The native allowlist is the
  * independent authority; never infer support from the existence of a renderer. */

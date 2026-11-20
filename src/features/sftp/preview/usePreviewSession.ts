@@ -1,3 +1,4 @@
+import { usePanelWindows } from "@/store/panelWindows";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PluginFilePreview } from "@/lib/api/types";
 import type {
@@ -119,7 +120,17 @@ export function usePreviewSession(
     validateTarget() {
       if (useFilePreview.getState().file !== file || useFilePreview.getState().id !== id)
         throw new Error("plugin.filePreview.changed");
-      if (useFilePreview.getState().presentation === "docked" && !previewPanelOpen())
+      const windows = usePanelWindows.getState();
+      const remoteOwned =
+        windows.available &&
+        windows.snapshot.panels.some(
+          (panel) => panel.panelId === "filePreview" && panel.windowId !== "main",
+        );
+      if (
+        useFilePreview.getState().presentation === "docked" &&
+        !previewPanelOpen() &&
+        !remoteOwned
+      )
         throw new Error("plugin.filePreview.changed");
     },
     validate() {

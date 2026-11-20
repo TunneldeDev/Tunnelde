@@ -1,3 +1,9 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { useWindowViews, windowViews, renderablePanel } from "@/lib/panels/windowViews";
+import { usePanelWindows } from "@/store/panelWindows";
+import { usePreviewReadSource } from "./preview/usePreviewReadSource";
+import { previewWindowData } from "./preview/windowModel";
+import { NativePreviewContent } from "./preview/NativePreviewContent";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarPortal } from "@/components/layout/SidebarDock";
@@ -35,19 +41,28 @@ export function FilePreview() {
   const panel = useWorkspace((state) => state.tabs.find((tab) => tab.id === "sidebar:filePreview"));
   const sidebarVisible = useNavigation((state) => state.sidebarVisible);
   const activeSidebar = useNavigation((state) => state.activeSidebar);
+  const nativeAvailable = usePanelWindows((state) => state.available);
+  const nativeTarget = usePanelWindows(
+    (state) =>
+      state.snapshot.panels.some(
+        (panel) => panel.panelId === "filePreview" && panel.windowId !== "main",
+      ) || state.snapshot.transfers.some(({ offer }) => offer.lease.panelId === "filePreview"),
+  );
+  const preserveNative = nativeAvailable && renderablePanel("filePreview") && nativeTarget;
   const panelOpen = panel ? !panel.hidden : sidebarVisible && activeSidebar === "filePreview";
   useEffect(() => {
     const current = useFilePreview.getState();
     if (
       file &&
+      !preserveNative &&
       current.file === file &&
       current.id === id &&
       current.presentation === "docked" &&
       !previewPanelOpen()
     )
       current.close();
-  }, [file, id, presentation, panel, sidebarVisible, activeSidebar]);
-  return file && (presentation === "quickLook" || panelOpen) ? (
+  }, [file, id, presentation, panel, sidebarVisible, activeSidebar, preserveNative]);
+  return file && (presentation === "quickLook" || panelOpen || preserveNative) ? (
     <Preview key={id} id={id!} file={file} presentation={presentation} />
   ) : (
     <SidebarPortal view="filePreview">
@@ -93,13 +108,45 @@ function Preview({
     onDecodeError,
   } = usePreviewSession(file, id, providers, presentation);
   const readSource = usePreviewReadOwner(file, kind, attemptId, provider);
-  usePreviewOwner({ context, source: readSource, providers });
+  usePreviewOwner({ context, source: readSource, providers, onReady, onDecodeError });
   const text = kind === "text" || kind === "markdown";
   const session = useSsh((state) =>
     state.sessions.find(
       (session) => file.source.kind === "remote" && session.id === file.source.sessionId,
     ),
   );
+  const nativeAvailable = usePanelWindows((state) => state.available);
+  const record = useWindowViews((state) => state.entries.get("filePreview"));
+  const read = usePreviewReadSource(readSource);
+  useEffect(() => {
+    if (read.status === "error") {
+      if (read.stage === "read") onReadError();
+      else onDecodeError();
+    }
+  }, [read, onReadError, onDecodeError]);
+  // The coordinator/read owner above survives an absent NativePanelView body.
+  // The actual renderer is an ordinary descendant of its capture/lease scopes.
+  if (presentation === "docked" && nativeAvailable && renderablePanel("filePreview")) {
+    const client = windowViews()?.client;
+    const data = previewWindowData({ context, source: readSource, providers });
+    const mainUrl =
+      read.status === "ready" && read.value.info
+        ? convertFileSrc(read.value.info.id, "preview")
+        : undefined;
+    return (
+      <SidebarPortal view="filePreview">
+        {record && client ? (
+          <NativePreviewContent
+            key={record.key}
+            client={client}
+            record={record}
+            data={data}
+            mainUrl={mainUrl}
+          />
+        ) : null}
+      </SidebarPortal>
+    );
+  }
   return (
     <PreviewFrame
       title={`${t("sftp.preview")} · ${fileName(file.path)}`}

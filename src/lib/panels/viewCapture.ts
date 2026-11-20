@@ -136,16 +136,24 @@ export function createPanelCaptures<T>(
           async (work) => {
             for (;;) {
               const generation = membership;
+              const selected = [...fields];
               const results = await Promise.allSettled(
-                [...fields.values()].map(async (field) => field.ready?.(work)),
+                selected.map(async ([, field]) => field.ready?.(work)),
               );
               check();
               if (work.aborted) throw new Error("panel.window.cancelled");
+              // StrictMode and async factories may retire a spinner/readiness
+              // binding while this wait is in flight. Its cancellation is not
+              // failure of the replacement renderer. Re-read membership first;
+              // the SAME overall deadline still bounds churn and all live errors.
+              const removedFailure = results.some(
+                (result, index) =>
+                  result.status === "rejected" && !fields.get(selected[index]![0])?.ready,
+              );
+              if (generation !== membership && !removedFailure) continue;
               const failed = results.find((result) => result.status === "rejected");
               if (failed?.status === "rejected") throw failed.reason;
-              // A real async renderer can register child fields at commit. Wait
-              // for the new membership too, within the SAME overall deadline.
-              if (generation === membership) return;
+              return;
             }
           },
           { signal, timeoutMs: 15_000 },
