@@ -461,3 +461,19 @@ it("real capture errors do not offer consent, even with the same translated mess
     expect.objectContaining({ action: "beginInteraction" }),
   );
 });
+
+it("labels checkpoint and move captures so resource adapters cannot suspend on periodic saves", async () => {
+  const { views } = fixture();
+  await views.reconcile(snapshot([lease]));
+  const record = useWindowViews.getState().entries.get(lease.panelId)!;
+  const capture = vi.fn(
+    async (_signal: AbortSignal, options?: PanelCaptureOptions) => options?.intent ?? "unspecified",
+  );
+  record.controller.registerAsync("intent", capture);
+  views.registerRoot(lease.panelId, () => dom);
+  await views.checkpoint(lease.panelId);
+  expect(capture).toHaveBeenLastCalledWith(expect.any(AbortSignal), { intent: "checkpoint" });
+  const moved = await views.captureForMove(lease.panelId);
+  expect(moved.view.fields.intent).toBe("move");
+  expect(capture).toHaveBeenLastCalledWith(expect.any(AbortSignal), { intent: "move" });
+});

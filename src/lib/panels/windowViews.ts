@@ -252,7 +252,7 @@ export function createWindowViews(client: PanelWindowClient) {
       const key = `${panelId}:${record.lease.generation}`;
       const revision = (revisions.get(key) ?? 0) + 1;
       revisions.set(key, revision);
-      const state = await captureAsync(panelId);
+      const state = await captureAsync(panelId, undefined, { intent: "checkpoint" });
       if (disposed || records.get(panelId)?.controller !== record.controller) return;
       await client.control({ action: "checkpoint", lease: record.lease, revision, state });
     },
@@ -275,7 +275,7 @@ export function createWindowViews(client: PanelWindowClient) {
         );
       };
       try {
-        return await captureAsync(panelId, signal);
+        return await captureAsync(panelId, signal, { intent: "move" });
       } catch (error) {
         // A failed/oversized/timed-out real capture is NEVER a reset offer.
         if (!(error instanceof PanelStateLossRequired) || !valid()) throw error;
@@ -291,6 +291,7 @@ export function createWindowViews(client: PanelWindowClient) {
         // This exact binding only, for this retry only. A replacement renderer
         // or newly registered captureless child requires fresh consent.
         const captured = await captureAsync(panelId, signal, {
+          intent: "move",
           consentedStateLoss: new Set(error.views),
         });
         // Lost drafts cannot safely inherit caret/scroll offsets from a

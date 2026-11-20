@@ -705,6 +705,10 @@ async fn pump_terminal(
     let (mut reader, writer) = channel.split();
     let mut output = TerminalOutput::new(startup);
     let mut presentation: Option<super::terminal_presentation::Output> = None;
+    // A remote shell may exit between source detach and destination attach.
+    // Retain its final bytes across the bounded handoff instead of dropping the
+    // actor immediately. No further SSH reads/writes occur after remote close.
+    let mut closed_deadline = None;
     let mut deliver = |sequence, bytes: &[u8]| {
         emit(sequence, bytes);
         true
@@ -713,15 +717,25 @@ async fn pump_terminal(
         tokio::select! {
             // Until both frontend listeners exist, SSH's channel queue/window
             // buffers output without losing a prompt's first ANSI bytes.
-            incoming = reader.wait(), if output.can_read() => {
+            incoming = reader.wait(), if closed_deadline.is_none() && output.can_read() => {
                 match incoming {
                     Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => output.try_receive(&data, &mut |sequence, bytes| {
                         if let Some(sink) = &presentation { sink(sequence, bytes) } else { deliver(sequence, bytes) }
                     }),
-                    Some(ChannelMsg::Close) | None => break,
+                    Some(ChannelMsg::Close) | None => {
+                        if output.attached() { break; }
+                        closed_deadline = Some(tokio::time::Instant::now() + Duration::from_secs(60));
+                    }
                     _ => {}
                 }
             }
+            _ = async {
+                if let Some(deadline) = closed_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => break,
             message = outgoing.recv() => {
                 match message {
                     Some(WriterMsg::Attach) => {
@@ -746,6 +760,7 @@ async fn pump_terminal(
                                     }
                                 }
                                 Operation::Detach => Ok(Some(output.detach())),
+                                Operation::Write(_) | Operation::Resize { .. } if closed_deadline.is_some() => Err(AppError::validation("ssh.sessionMissing")),
                                 Operation::Write(bytes) => writer.data_bytes(bytes).await.map(|_| None).map_err(map_ssh_error),
                                 Operation::Resize { cols, rows } => writer.window_change(cols, rows, 0, 0).await.map(|_| None).map_err(map_ssh_error),
                             }
@@ -757,10 +772,10 @@ async fn pump_terminal(
                         let _ = reply.send(output.detach());
                     }
                     Some(WriterMsg::Data(bytes)) => {
-                        if writer.data_bytes(bytes).await.is_err() { break; }
+                        if closed_deadline.is_none() && writer.data_bytes(bytes).await.is_err() { break; }
                     }
                     Some(WriterMsg::Resize { cols, rows }) => {
-                        let _ = writer.window_change(cols, rows, 0, 0).await;
+                        if closed_deadline.is_none() { let _ = writer.window_change(cols, rows, 0, 0).await; }
                     }
                     Some(WriterMsg::Close) | None => {
                         let _ = writer.eof().await;
@@ -769,6 +784,12 @@ async fn pump_terminal(
                     }
                 }
             }
+        }
+        // Attach replays the FIFO before marking it attached. Once the final
+        // bytes have reached the current owner, normal session cleanup can
+        // publish closed and release the SSH transport exactly as before.
+        if closed_deadline.is_some() && output.attached() {
+            break;
         }
     }
 }
@@ -1147,6 +1168,10 @@ mod tests {
             session: &mut Session,
         ) -> Result<(), Self::Error> {
             session.data(channel, data.to_vec())?;
+            if data == b"qa:exit-after-output" {
+                session.eof(channel)?;
+                session.close(channel)?;
+            }
             Ok(())
         }
     }
@@ -1590,6 +1615,83 @@ mod tests {
         task.await.unwrap();
         server.abort();
     }
+    #[tokio::test]
+    async fn remote_shell_exit_during_detach_retains_final_bytes_until_scoped_attach() {
+        use super::super::terminal_presentation::{Authorization, Endpoint, Operation};
+        let (client, _, server) = server(false, false).await;
+        let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
+        let (tx, rx) = mpsc::channel(16);
+        let endpoint = Endpoint {
+            session_id: "closed-handoff".into(),
+            writer: tx.clone(),
+        };
+        let (legacy, mut legacy_rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(async move {
+            pump_terminal(channel, rx, startup, |sequence, bytes| {
+                legacy.send((sequence, bytes.to_vec())).unwrap();
+            })
+            .await;
+        });
+        tx.send(WriterMsg::Attach).await.unwrap();
+        assert_eq!(legacy_rx.recv().await.unwrap(), (1, PROMPT.to_vec()));
+        let (reply, detached) = oneshot::channel();
+        tx.send(WriterMsg::Detach(reply)).await.unwrap();
+        assert_eq!(detached.await.unwrap(), 1);
+        tx.send(WriterMsg::Data(b"qa:exit-after-output".to_vec()))
+            .await
+            .unwrap();
+        // Synchronize via native actor requests, rather than assuming one sleep
+        // is enough for SSH data/close processing on every CI platform.
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let result = endpoint
+                    .request(
+                        Authorization {
+                            current: Arc::new(|| true),
+                            retention: Box::new(()),
+                        },
+                        Operation::Resize { cols: 80, rows: 24 },
+                    )
+                    .await;
+                if result.is_err() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("remote close was never observed");
+        assert!(!task.is_finished(), "detached close dropped its output");
+        assert!(
+            !client.is_closed(),
+            "handoff reconnected or destroyed transport"
+        );
+        assert!(legacy_rx.try_recv().is_err());
+        let (scoped, mut scoped_rx) = mpsc::unbounded_channel();
+        endpoint
+            .request(
+                Authorization {
+                    current: Arc::new(|| true),
+                    retention: Box::new(()),
+                },
+                Operation::Attach(Arc::new(move |sequence, bytes| {
+                    scoped.send((sequence, bytes.to_vec())).is_ok()
+                })),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            scoped_rx.recv().await.unwrap(),
+            (2, b"qa:exit-after-output".to_vec())
+        );
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(scoped_rx.try_recv().is_err());
+        server.abort();
+    }
+
     #[tokio::test]
     async fn native_terminal_handoff_retains_original_ssh_and_replays_only_to_the_current_sink() {
         use super::super::terminal_presentation::{Authorization, Endpoint, Operation};

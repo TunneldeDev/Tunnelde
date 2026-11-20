@@ -1,3 +1,4 @@
+import type { TerminalViewServices } from "./terminalViewServices";
 import {
   bindShortcutProvider,
   consumeShortcutRelease,
@@ -10,7 +11,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { Clock, FolderTree, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
@@ -26,6 +27,7 @@ import { recordTerminalCommand } from "@/lib/session/history";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import {
   bindTerminalSettings,
+  localTerminalSettings,
   terminalOptions,
   waitForCurrentTerminalFont,
 } from "./terminalRuntime";
@@ -55,15 +57,55 @@ interface TerminalPageProps {
 }
 
 export function TerminalPage({ sessionId, active }: TerminalPageProps) {
-  const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
-  const disconnect = useSsh((state) => state.disconnect);
-  const openSftp = useWorkspace((state) => state.openSftp);
-  const openHistory = useWorkspace((state) => state.openHistory);
-  const monoFont = useSettings((state) => state.settings.monoFont);
-  const recordTerminalHistory = useSettings((state) => state.settings.recordTerminalHistory);
-  const updateSettings = useSettings((state) => state.update);
   const disconnecting = useSsh((state) => state.disconnectingSessionIds.includes(sessionId));
+  return (
+    <TerminalPageView
+      sessionId={sessionId}
+      active={active}
+      services={{
+        native: isTauri(),
+        session,
+        disconnecting,
+        settings: localTerminalSettings,
+        io: api,
+        events,
+        disconnect: (id) => useSsh.getState().disconnect(id),
+        openSftp: (session) => {
+          useWorkspace.getState().openSftp(session);
+        },
+        openHistory: (session) => {
+          useWorkspace.getState().openHistory(session);
+        },
+        updateFont: (monoFont) => useSettings.getState().update({ monoFont }),
+        recordCommand: recordTerminalCommand,
+        copy: copyText,
+        dialogOpen: () => useDialogs.getState().dialog.kind !== "none",
+        releaseOnFailure: true,
+        checkpoints: { take: takeTerminalCheckpoint, register: registerTerminalCheckpoint },
+      }}
+    />
+  );
+}
+
+/** Shared production renderer. A satellite supplies read-only data and scoped
+ * services here; it never starts writable stores, SSH bootstrap or autoconnect. */
+export function TerminalPageView({
+  sessionId,
+  active,
+  services,
+}: TerminalPageProps & { services: TerminalViewServices }) {
+  const { t } = useTranslation();
+  const serviceRef = useRef(services);
+  useEffect(() => {
+    serviceRef.current = services;
+  }, [services]);
+  const session = services.session;
+  const disconnecting = services.disconnecting;
+  const preferences = useSyncExternalStore(services.settings.subscribe, services.settings.read);
+  const monoFont = preferences.monoFont;
+  const recordTerminalHistory = preferences.recordTerminalHistory;
+  const Surface = services.Surface ?? TerminalSurface;
   const activeRef = useRef(active);
 
   useEffect(() => {
@@ -96,7 +138,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     if (
       !activeRef.current ||
       document.querySelector("[role='dialog']") ||
-      useDialogs.getState().dialog.kind !== "none"
+      serviceRef.current.dialogOpen()
     ) {
       return;
     }
@@ -125,13 +167,15 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     }
     const previous = lastSize.current;
     if (
-      isTauri() &&
+      serviceRef.current.native &&
       (previous.sessionId !== sessionId ||
         previous.cols !== terminal.cols ||
         previous.rows !== terminal.rows)
     ) {
       lastSize.current = { sessionId, cols: terminal.cols, rows: terminal.rows };
-      void api.sshResize(sessionId, terminal.cols, terminal.rows).catch(() => undefined);
+      void serviceRef.current.io
+        .sshResize(sessionId, terminal.cols, terminal.rows)
+        .catch(() => undefined);
     }
   }, [sessionId]);
 
@@ -198,14 +242,14 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     let observer: ResizeObserver | null = null;
 
     const start = async () => {
-      await waitForCurrentTerminalFont(() => disposed);
+      await waitForCurrentTerminalFont(() => disposed, serviceRef.current.settings);
       if (disposed) {
         return;
       }
 
       // Preferences may change while the first font is still loading.
-      const settings = useSettings.getState().settings;
-      const checkpoint = takeTerminalCheckpoint(sessionId);
+      const settings = serviceRef.current.settings.read();
+      const checkpoint = serviceRef.current.checkpoints.take(sessionId);
       if (checkpoint) {
         checkpointing.current = true;
         sequence = checkpoint.sequence;
@@ -222,7 +266,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       instance.open(element);
       terminalRef.current = instance;
       fitRef.current = addon;
-      runtime = bindTerminalSettings(instance, fit);
+      runtime = bindTerminalSettings(instance, fit, { source: serviceRef.current.settings });
       const serializer = new SerializeAddon();
       instance.loadAddon(serializer);
       if (checkpoint) {
@@ -236,11 +280,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         instance.scrollToLine(checkpoint.viewportY);
         checkpointing.current = false;
       }
-      unregisterCheckpoint = registerTerminalCheckpoint(sessionId, {
+      unregisterCheckpoint = serviceRef.current.checkpoints.register(sessionId, {
         prepare: async () => {
           checkpointing.current = true;
           terminalBridge.update({ status: "suspended" });
-          const barrier = ended ? sequence : await api.sshDetach(sessionId);
+          const barrier = ended ? sequence : await serviceRef.current.io.sshDetach(sessionId);
           await waitForSequence(barrier);
           // write callbacks run after xterm has parsed every preceding packet.
           await new Promise<void>((resolve, reject) => {
@@ -269,7 +313,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           if (disposed) return;
           // Keep input/resize frozen until stream reattachment succeeds. A
           // failed rollback must not let users type blindly into a detached PTY.
-          if (!ended) await api.sshAttach(sessionId);
+          if (!ended) await serviceRef.current.io.sshAttach(sessionId);
           if (disposed) return;
           checkpointing.current = false;
           terminalBridge.update({ status: ended ? "closed" : "ready" });
@@ -277,20 +321,22 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         },
       });
       const writeClipboard = (text: string) =>
-        isTauri() ? api.clipboardWriteText(text) : navigator.clipboard.writeText(text);
+        serviceRef.current.native
+          ? serviceRef.current.io.clipboardWriteText(text)
+          : navigator.clipboard.writeText(text);
       applicationClipboard = bindTerminalClipboard(
         instance,
         element,
         () =>
           !ended &&
           activeRef.current &&
-          useSettings.getState().settings.terminalApplicationClipboard,
+          serviceRef.current.settings.read().terminalApplicationClipboard,
         writeClipboard,
         () => toast(t("menu.copyFailed"), "error"),
       );
       const copy = () => {
         if (!disposed && instance.hasSelection()) {
-          copyText(instance.getSelection());
+          serviceRef.current.copy(instance.getSelection());
           instance.focus();
         }
       };
@@ -298,7 +344,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         if (disposed || ended) {
           return;
         }
-        void (isTauri() ? api.clipboardReadText() : navigator.clipboard.readText()).then(
+        void (
+          serviceRef.current.native
+            ? serviceRef.current.io.clipboardReadText()
+            : navigator.clipboard.readText()
+        ).then(
           (text) => {
             if (!disposed && !ended) {
               // xterm preserves bracketed-paste mode and normalizes newlines.
@@ -334,9 +384,9 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           return;
         }
         window.clearTimeout(selectionTimer);
-        if (!useSettings.getState().settings.terminalCopyOnSelect) return;
+        if (!serviceRef.current.settings.read().terminalCopyOnSelect) return;
         selectionTimer = window.setTimeout(() => {
-          if (disposed || !useSettings.getState().settings.terminalCopyOnSelect) return;
+          if (disposed || !serviceRef.current.settings.read().terminalCopyOnSelect) return;
           if (text === copiedSelection) return;
           copiedSelection = text;
           // Selection changes must not steal focus or flood success notifications.
@@ -387,7 +437,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
               paste();
               return true;
             }
-            const settings = useSettings.getState().settings;
+            const settings = serviceRef.current.settings.read();
             const customized =
               Object.hasOwn(settings.keyboardShortcuts, id) ||
               Object.keys(settings.shortcutRules?.[id] ?? {}).some((binding) =>
@@ -440,7 +490,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
             : executeShortcutCandidates(
                 event,
                 terminalCandidates(event),
-                useSettings.getState().settings.shortcutRules,
+                serviceRef.current.settings.read().shortcutRules,
               );
         return !result.consumed;
       });
@@ -454,14 +504,14 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       }
 
       dataListener = instance.onData((data) => {
-        if (!isTauri() || disposed || ended || checkpointing.current) {
+        if (!serviceRef.current.native || disposed || ended || checkpointing.current) {
           return;
         }
-        void api.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
+        void serviceRef.current.io.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
 
         // Raw terminal input includes password prompts and program responses.
         // Capturing it requires an explicit user opt-in, separate from SSH I/O.
-        if (!useSettings.getState().settings.recordTerminalHistory) {
+        if (!serviceRef.current.settings.read().recordTerminalHistory) {
           capture.current = { text: "", escape: 0 };
           return;
         }
@@ -471,9 +521,9 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           if (command.startsWith(" ")) {
             continue;
           }
-          const hostId = useSsh.getState().sessions.find((item) => item.id === sessionId)?.hostId;
+          const hostId = serviceRef.current.session?.hostId;
           if (hostId) {
-            void recordTerminalCommand(hostId, command).catch(() => undefined);
+            void serviceRef.current.recordCommand(hostId, command).catch(() => undefined);
           }
         }
       });
@@ -483,7 +533,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     const started = start();
 
     // Listeners precede attach; restored screen/modes must precede new output.
-    if (isTauri()) {
+    if (serviceRef.current.native) {
       const retain = (unlisten: UnlistenFn) => {
         if (disposed || registrationFailed) {
           unlisten();
@@ -496,6 +546,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           return;
         }
         registrationFailed = true;
+        serviceRef.current.failed?.(error);
         ended = true;
         terminalBridge.update({ status: "closed" });
         setClosed(true);
@@ -504,9 +555,10 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         toast(message, "error");
         write(new TextEncoder().encode(`\r\n[${message}]\r\n`));
         // Keep the failed terminal visible, but release its remote PTY.
-        void api.sshDisconnect(sessionId).catch(() => undefined);
+        if (serviceRef.current.releaseOnFailure)
+          void serviceRef.current.io.sshDisconnect(sessionId).catch(() => undefined);
       };
-      const dataReady = events
+      const dataReady = serviceRef.current.events
         .onSshData((payload) => {
           if (!disposed && payload.sessionId === sessionId) {
             if (payload.sequence <= sequence) return;
@@ -521,7 +573,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           throw error;
         });
 
-      const closedReady = events
+      const closedReady = serviceRef.current.events
         .onSshClosed((payload) => {
           if (disposed || payload.sessionId !== sessionId) {
             return;
@@ -539,8 +591,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         });
       void Promise.all([dataReady, closedReady, started])
         .then(async () => {
+          if (!disposed && !registrationFailed) {
+            serviceRef.current.rendered?.();
+          }
           if (!disposed && !registrationFailed && !ended) {
-            await api.sshAttach(sessionId);
+            await serviceRef.current.io.sshAttach(sessionId);
             if (!disposed) terminalBridge.update({ status: ended ? "closed" : "ready" });
           }
         })
@@ -560,12 +615,18 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     });
 
     void started.catch((error) => {
-      if (!disposed) toast(translateError(error), "error");
+      if (!disposed) {
+        serviceRef.current.failed?.(error);
+        toast(translateError(error), "error");
+      }
     });
-    if (!isTauri())
+    if (!serviceRef.current.native)
       void started.then(
         () => {
-          if (!disposed) terminalBridge.update({ status: "ready" });
+          if (!disposed) {
+            serviceRef.current.rendered?.();
+            terminalBridge.update({ status: "ready" });
+          }
         },
         () => terminalBridge.update({ status: "closed" }),
       );
@@ -617,14 +678,14 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           className="terminal-font-select"
           value={monoFont}
           options={MONO_FONT_OPTIONS}
-          onChange={(value) => void updateSettings({ monoFont: value as MonoFont })}
+          onChange={(value) => void services.updateFont(value as MonoFont)}
         />
         <IconButton
           label={t("history.title")}
           disabled={!session || closed}
           onClick={() => {
             if (session) {
-              openHistory(session);
+              services.openHistory(session);
             }
           }}
         >
@@ -635,7 +696,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           disabled={!session || closed}
           onClick={() => {
             if (session) {
-              openSftp(session);
+              services.openSftp(session);
             }
           }}
         >
@@ -645,13 +706,13 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           label={t("terminal.disconnect")}
           disabled={!session || closed || disconnecting}
           onClick={() => {
-            void disconnect(sessionId);
+            void services.disconnect(sessionId);
           }}
         >
           <X size={15} />
         </IconButton>
       </header>
-      <TerminalSurface bridge={bridge?.sessionId === sessionId ? bridge : null} visible={active}>
+      <Surface bridge={bridge?.sessionId === sessionId ? bridge : null} visible={active}>
         <div
           className="terminal-host"
           onContextMenu={(event) => {
@@ -661,7 +722,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
             if (!actions) {
               return;
             }
-            const mode = useSettings.getState().settings.terminalRightClick;
+            const mode = serviceRef.current.settings.read().terminalRightClick;
             if (!event.shiftKey && mode !== "menu") {
               useContextMenu.getState().close();
               if (mode === "copyPaste" && actions.hasSelection()) actions.copyAndClear();
@@ -689,7 +750,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         >
           <div className="terminal-surface" ref={containerRef} />
         </div>
-      </TerminalSurface>
+      </Surface>
     </div>
   );
 }

@@ -9,5 +9,8 @@ export class PanelStateLossRequired extends Error {
   }
 }
 export interface PanelCaptureOptions {
+  /** A periodic checkpoint is not permission to suspend a live resource.
+   * Only an explicit move may retain a detach/ownership-transfer barrier. */
+  readonly intent?: "checkpoint" | "move";
   readonly consentedStateLoss?: ReadonlySet<PanelStateLoss>;
 }

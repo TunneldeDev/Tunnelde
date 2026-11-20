@@ -1360,3 +1360,27 @@ replay and retained connection. This is not actual native-window or user remote-
 server acceptance. Terminal page/settings/provider/resource lifetime integration
 remains pending; the terminal window entry stays hidden and general nativeWindows
 support is not claimed.
+
+### Terminal renderer services and close replay
+
+`TerminalPageView` is the shared production renderer. Its coordinator wrapper
+supplies local services; a window adapter must supply its own read-only terminal
+preference source, exact-scoped I/O/event listeners, checkpoint registry and
+main-owned UI actions. The explicit preference projection excludes provider
+grants, proxy profiles and unrelated writable settings. Parser readiness is
+reported after font loading, checkpoint restoration and listener registration,
+before attachment; a staged adapter may wait for committed ownership in attach.
+View/lease failure must not disconnect the original PTY.
+
+Panel captures carry `checkpoint` versus `move` intent. They cannot share an
+in-flight capture across intents: periodic input/scroll saves never authorize a
+resource detach to remain held for transfer. Legacy unspecified captures retain
+checkpoint semantics. An adapter must still implement commit/rollback of an
+actual move; this distinction alone does not enable terminal native windows.
+
+When a remote shell closes while detached, its actor retains queued final bytes
+for up to 60 seconds, covering the bounded native handoff. It refuses new remote
+input/resize, accepts authorized replay attachment, then performs normal session
+cleanup only after successful drain. A rejected sink retains bytes until a valid
+attach or expiry; explicit user close still tears down immediately. This is a
+bounded in-memory handoff buffer, not persistent terminal-history storage.

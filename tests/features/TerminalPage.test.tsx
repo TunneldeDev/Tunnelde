@@ -145,7 +145,11 @@ vi.mock("@xterm/xterm", () => ({
 }));
 
 import "@/i18n/i18n";
-import { TerminalPage } from "@/features/terminal/TerminalPage";
+import { TerminalPage, TerminalPageView } from "@/features/terminal/TerminalPage";
+import {
+  terminalPreferenceProjection,
+  type TerminalViewServices,
+} from "@/features/terminal/terminalViewServices";
 import { TerminalPreview } from "@/features/terminal/TerminalPreview";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { encodeBase64 } from "@/lib/text/base64";
@@ -1210,4 +1214,145 @@ it("keeps input frozen while checkpoint rollback cannot reattach, then recovers 
     await resumeTerminalCheckpoints();
     view.unmount();
   }
+});
+
+function scopedServices(): TerminalViewServices {
+  const settings = terminalPreferenceProjection({ ...DEFAULT_SETTINGS, monoFontSize: 19 });
+  return {
+    native: true,
+    session: {
+      id: "satellite",
+      hostId: "host",
+      title: "Scoped PTY",
+      address: "example:22",
+      cols: 80,
+      rows: 24,
+      connectedAt: 0,
+    },
+    disconnecting: false,
+    settings: { read: () => settings, subscribe: vi.fn(() => vi.fn()) },
+    io: {
+      sshAttach: vi.fn().mockResolvedValue(undefined),
+      sshDetach: vi.fn().mockResolvedValue(0),
+      sshWrite: vi.fn().mockResolvedValue(undefined),
+      sshResize: vi.fn().mockResolvedValue(undefined),
+      sshDisconnect: vi.fn().mockResolvedValue(undefined),
+      clipboardReadText: vi.fn().mockResolvedValue("scoped clipboard"),
+      clipboardWriteText: vi.fn().mockResolvedValue(undefined),
+    },
+    events: {
+      onSshData: vi.fn().mockResolvedValue(vi.fn()),
+      onSshClosed: vi.fn().mockResolvedValue(vi.fn()),
+    },
+    disconnect: vi.fn().mockResolvedValue(undefined),
+    openSftp: vi.fn(),
+    openHistory: vi.fn(),
+    updateFont: vi.fn().mockResolvedValue(undefined),
+    recordCommand: vi.fn().mockResolvedValue(undefined),
+    copy: vi.fn(),
+    dialogOpen: () => false,
+    releaseOnFailure: false,
+    checkpoints: { take: vi.fn(), register: vi.fn(() => vi.fn()) },
+    rendered: vi.fn(),
+    failed: vi.fn(),
+    Surface: ({ children }) => <>{children}</>,
+  };
+}
+
+it("renders a scoped PTY without reading main session/settings or using main I/O", async () => {
+  const services = scopedServices();
+  const view = render(<TerminalPageView sessionId="satellite" active services={services} />);
+  await waitFor(() => expect(services.io.sshAttach).toHaveBeenCalledWith("satellite"));
+  expect(screen.getByText("Scoped PTY")).toBeTruthy();
+  expect(instances[0]!.options.fontSize).toBe(19);
+  inputs[0]!("owned input");
+  expect(services.io.sshWrite).toHaveBeenCalledWith("satellite", encodeBase64("owned input"));
+  expect(apiMock.sshWrite).not.toHaveBeenCalled();
+  expect(apiMock.sshAttach).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  expect(services.openSftp).toHaveBeenCalledWith(services.session);
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+  expect(services.disconnect).toHaveBeenCalledWith("satellite");
+  view.unmount();
+});
+
+it("reports parser readiness before ownership-gated attach finishes", async () => {
+  const services = scopedServices();
+  let attached!: () => void;
+  vi.mocked(services.io.sshAttach).mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        attached = resolve;
+      }),
+  );
+  const view = render(
+    <TerminalPageView sessionId="satellite" active={false} services={services} />,
+  );
+  await waitFor(() => expect(services.rendered).toHaveBeenCalledOnce());
+  expect(services.checkpoints.take).toHaveBeenCalledWith("satellite");
+  expect(services.checkpoints.register).toHaveBeenCalledWith(
+    "satellite",
+    expect.objectContaining({ prepare: expect.any(Function), resume: expect.any(Function) }),
+  );
+  expect(services.io.sshAttach).toHaveBeenCalledOnce();
+  await act(async () => attached());
+  view.unmount();
+});
+
+it("does not destroy the original PTY on scoped view/lease failure", async () => {
+  const services = scopedServices();
+  const error = new Error("panel.window.staleOwner");
+  vi.mocked(services.io.sshAttach).mockRejectedValue(error);
+  const view = render(
+    <TerminalPageView sessionId="satellite" active={false} services={services} />,
+  );
+  await waitFor(() => expect(services.failed).toHaveBeenCalledWith(error));
+  inputs[0]!("rejected input");
+  expect(services.io.sshWrite).not.toHaveBeenCalled();
+  expect(services.io.sshDisconnect).not.toHaveBeenCalled();
+  expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
+  view.unmount();
+});
+
+it("keeps terminal checkpoints and subscriptions document scoped", async () => {
+  const services = scopedServices();
+  const unregister = vi.fn();
+  vi.mocked(services.checkpoints.register).mockReturnValue(unregister);
+  const view = render(
+    <TerminalPageView sessionId="satellite" active={false} services={services} />,
+  );
+  await waitFor(() => expect(services.io.sshAttach).toHaveBeenCalledOnce());
+  await expect(beginTerminalHandoff(["satellite"])).rejects.toThrow("checkpointBusy");
+  view.unmount();
+  expect(unregister).toHaveBeenCalledOnce();
+});
+
+it("updates only from the injected read-only terminal preferences", async () => {
+  const services = scopedServices();
+  let value = terminalPreferenceProjection({ ...DEFAULT_SETTINGS, monoFontSize: 19 });
+  const listeners = new Set<() => void>();
+  services.settings = {
+    read: () => value,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+  const view = render(
+    <TerminalPageView sessionId="satellite" active={false} services={services} />,
+  );
+  await waitFor(() => expect(services.io.sshAttach).toHaveBeenCalledOnce());
+  act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monoFontSize: 30 } }));
+  expect(instances[0]!.options.fontSize).toBe(19);
+  await act(async () => {
+    value = { ...value, monoFontSize: 22, terminalCursorBlink: false };
+    for (const listener of listeners) listener();
+  });
+  expect(instances[0]!.options.fontSize).toBe(22);
+  expect(instances[0]!.options.cursorBlink).toBe(false);
+  expect(services.io.sshAttach).toHaveBeenCalledOnce();
+  view.unmount();
+  expect(listeners.size).toBe(0);
 });

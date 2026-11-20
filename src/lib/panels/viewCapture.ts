@@ -44,7 +44,8 @@ export function createPanelCaptures<T>(
   let membership = 0,
     revision = 0,
     pending: Promise<T> | undefined,
-    pendingOptions: PanelCaptureOptions["consentedStateLoss"];
+    pendingOptions: PanelCaptureOptions["consentedStateLoss"],
+    pendingIntent: PanelCaptureOptions["intent"];
   const check = (size = true) => {
     if (scope.signal.aborted) throw new Error("panel.viewState.disposed");
     if (size && fields.size > maxFields) throw new Error("panel.viewState.tooManyFields");
@@ -81,10 +82,15 @@ export function createPanelCaptures<T>(
     async captureAsync(signal?: AbortSignal, options?: PanelCaptureOptions): Promise<T> {
       if (signal?.aborted) return Promise.reject(new Error("panel.window.cancelled"));
       check();
-      if (pending && pendingOptions !== options?.consentedStateLoss)
+      if (
+        pending &&
+        (pendingOptions !== options?.consentedStateLoss ||
+          pendingIntent !== (options?.intent ?? "checkpoint"))
+      )
         throw new Error("panel.window.moveInProgress");
       if (!pending) {
         pendingOptions = options?.consentedStateLoss;
+        pendingIntent = options?.intent ?? "checkpoint";
         const capturedRevision = revision;
         const selected = [...fields];
         pending = scope.run(
