@@ -54,7 +54,10 @@ export function FloatingWorkspaceLayer() {
   }, [panes, tabs, plugins]);
   const active = useWorkspace((state) => state.activePaneId);
   return panes
-    .filter((pane) => pane.floating)
+    .filter(
+      (pane) =>
+        pane.floating && pane.tabIds.some((id) => tabs.some((tab) => tab.id === id && !tab.hidden)),
+    )
     .map((pane) => (
       <div
         className="workbench-floating-slot"

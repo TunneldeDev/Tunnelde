@@ -62,3 +62,33 @@ it("reparents the same page/input into the shared frame and back without remount
   expect(input).toHaveProperty("value", "unsent command");
   expect(counters).toEqual({ mounts: 1, disposals: 0 });
 });
+it("does not render a blank floating frame when its last remaining sidebar is collapsed", () => {
+  useWorkspace.setState({
+    tabs: [
+      {
+        id: "sidebar:output",
+        kind: "sidebar",
+        title: "Output",
+        hostId: null,
+        pinned: false,
+        hidden: true,
+      },
+    ],
+    panes: [
+      { id: "main", tabIds: [], activeId: null },
+      {
+        id: "float",
+        tabIds: ["sidebar:output"],
+        activeId: null,
+        floating: { bounds: null, returnPaneId: "main", order: 1 },
+      },
+    ],
+    activePaneId: "main",
+    activeId: null,
+  });
+  render(<FloatingWorkspaceLayer />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(useWorkspace.getState().panes.find((p) => p.id === "float")?.tabIds).toEqual([
+    "sidebar:output",
+  ]);
+});
