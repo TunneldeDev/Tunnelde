@@ -15,7 +15,7 @@ import {
 } from "../runtime/confirmationScope";
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 
-type Props = { client: PanelWindowClient; lease: PanelLease; children: ReactNode };
+type Props = { client: PanelWindowClient; lease?: PanelLease; children: ReactNode };
 type Entry = {
   scope: ReturnType<typeof createPanelWindowInteraction>;
   options: ForwardingConfirmation;
@@ -25,17 +25,18 @@ type Entry = {
 /** Every confirmation stays inside its original native document. Nothing here
  * enters shared dialogs, layout drafts, read models or plugin messages. */
 export function WindowForwardingConfirmationScope(props: Props) {
-  const { lease } = props;
-  return (
-    <OriginalScope
-      key={JSON.stringify([lease.panelId, lease.windowId, lease.generation])}
-      {...props}
-    />
-  );
+  return <OriginalScope {...props} />;
 }
 function OriginalScope({ client, lease, children }: Props) {
   const { t } = useTranslation();
-  const [binding] = useState(() => ({ ...lease }));
+  const panelId = lease?.panelId,
+    windowId = lease?.windowId,
+    generation = lease?.generation;
+  const binding = useMemo(
+    () =>
+      panelId && windowId && generation !== undefined ? { panelId, windowId, generation } : null,
+    [panelId, windowId, generation],
+  );
   const [view, setView] = useState<{ entry: Entry; id?: string; error?: string } | null>(null);
   const current = useRef<Entry | null>(null);
   const owner = useMemo(() => ({ client, binding }), [client, binding]);
@@ -56,6 +57,7 @@ function OriginalScope({ client, lease, children }: Props) {
   const confirm = useMemo<ForwardingConfirm>(
     () => (options) => {
       if (live.current !== owner) throw new Error("panel.window.disposed");
+      if (!binding) throw new Error("panel.window.staleOwner");
       // A second request cannot replace/borrow consent from an already visible
       // dialog or silently discard an acquisition still pending in native code.
       if (current.current) return;

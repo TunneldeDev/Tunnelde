@@ -56,6 +56,7 @@ export type PanelViewAction =
   | { kind: "output"; operation: "refresh" | "clear" | "openLatest" | "openDirectory" }
   | { kind: "copyOutput"; text: string }
   | { kind: "refreshKnownHosts" }
+  | { kind: "refreshForwarding" }
   | { kind: "forgetKnownHost"; entry: KnownHostEntry };
 export type PanelActionResult =
   { status: "done"; value: unknown } | { status: "failed"; message: string };

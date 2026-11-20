@@ -1,4 +1,6 @@
 import { createTransferWindowActions } from "@/features/sftp/transferWindowActions";
+import { forwardingStore } from "@/features/forwarding/data/store";
+import { forwardingGroupsStore } from "@/features/forwarding/data/groups";
 import { useKnownHostsSource } from "@/features/settings/knownHosts/source";
 import { useOutputSource } from "@/features/output/source";
 import { api } from "@/lib/api/ipc";
@@ -16,6 +18,10 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request, lease }) => {
       switch (request.kind) {
+        case "refreshForwarding":
+          forwardingStore.refresh();
+          forwardingGroupsStore.refresh();
+          return null;
         case "transfer":
         case "transferResume":
         case "transferPrompt":

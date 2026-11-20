@@ -33,6 +33,7 @@ pub(crate) enum ViewAction {
         command: TransferPrompt,
     },
     RefreshKnownHosts {},
+    RefreshForwarding {},
     ForgetKnownHost {
         entry: crate::db::known_hosts::KnownHostEntry,
     },
@@ -179,6 +180,7 @@ impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
             Self::RefreshKnownHosts {} | Self::ForgetKnownHost { .. } => "knownHosts",
+            Self::RefreshForwarding {} => "forwarding",
             Self::Task { .. }
             | Self::ClearTasks {}
             | Self::Transfer { .. }
@@ -227,7 +229,7 @@ impl ViewAction {
                 action_id,
             } => bounded(key, 1024) && bounded(ticket, 128) && bounded(action_id, 128),
             Self::Disconnect { session_id } => bounded(session_id, 128),
-            Self::RefreshKnownHosts {} => true,
+            Self::RefreshKnownHosts {} | Self::RefreshForwarding {} => true,
             Self::ForgetKnownHost { entry } => {
                 bounded(&entry.host, 4096)
                     && (1..=65535).contains(&entry.port)

@@ -1,4 +1,5 @@
 import { NativePluginPanel } from "@/components/layout/NativePluginPanel";
+import { WindowForwardingPanel } from "@/features/forwarding/components/WindowForwardingPanel";
 import { disconnectConnectionBatch } from "@/lib/session/connectionBatch";
 import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
 import { ConfirmDialogHost } from "@/components/ui/overlay/ConfirmDialogHost";
@@ -40,6 +41,7 @@ import type {
   TaskWindowModel,
   OutputWindowModel,
   KnownHostsWindowModel,
+  ForwardingWindowModel,
   WindowModelAppearance,
 } from "./panelReadModels";
 import { TaskModelScope, type ClearTasksResult } from "@/lib/panels/taskModel";
@@ -296,6 +298,23 @@ function KnownHostsView(props: NativeViewProps) {
   );
 }
 
+function ForwardingView(props: NativeViewProps) {
+  const model = useNativeReadModel<ForwardingWindowModel>(props);
+  if (!model) return null;
+  return (
+    <NativePanelView panelId={props.record.panelId}>
+      <WorkbenchPanel view="forwarding" location="workspace" visible={!props.record.staged}>
+        <WindowForwardingPanel
+          key={props.record.key}
+          client={props.client}
+          record={props.record}
+          data={model.forwarding}
+        />
+      </WorkbenchPanel>
+    </NativePanelView>
+  );
+}
+
 /** Separate document entry: never run main resource bootstrap, persistence,
  * plugin background activation, task aggregation or autoconnect in a satellite. */
 export function SatelliteApp() {
@@ -430,6 +449,8 @@ export function SatelliteApp() {
                 <TaskView client={client} record={record} presented={presented} />
               ) : record.panelId === "output" ? (
                 <OutputView client={client} record={record} presented={presented} />
+              ) : record.panelId === "forwarding" ? (
+                <ForwardingView client={client} record={record} presented={presented} />
               ) : record.panelId === "connections" ? (
                 <ConnectionView client={client} record={record} presented={presented} />
               ) : record.plugin ? (

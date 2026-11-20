@@ -983,3 +983,19 @@ child, and captured old-owner callbacks cannot mutate. Late imports, observers
 and attachments are released on retirement. This shared surface is not yet
 `SatelliteApp` admission or complete native-window acceptance; discovery remains
 disabled until the complete adapter set is accepted.
+
+`WindowForwardingPanel` is the view-only production composition used by the
+satellite renderer. It consumes the coordinator's explicit forwarding model and
+does not subscribe to main host, SSH, navigation or dialog stores. Its stable
+display owner survives staged promotion, while committed lease effects acquire
+fresh action services; transfers, interruptions and replaced records freeze old
+callbacks. Confirmation ownership changes no longer key/remount the content tree.
+Provider drafts and native editor fields participate in the existing ephemeral
+panel capture contract; credentials and original action tokens do not.
+
+Manual refresh uses a closed, no-argument `refreshForwarding` relay, scoped to
+the exact forwarding panel, to invalidate the actual singleton rule/group readers.
+Refreshing a satellite display copy alone would not reload backend data. The
+renderer route is implemented separately from transfer/discovery admission;
+forwarding remains outside the transferable adapter allowlist pending complete
+state/readiness and real native handoff acceptance.

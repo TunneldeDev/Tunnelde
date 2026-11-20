@@ -85,7 +85,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
       mutation.current ||
       !!connectingRules ||
       (!!form && !!draftAuthority) ||
-      useDialogs.getState().dialog.kind === "confirm",
+      (!remoteData && useDialogs.getState().dialog.kind === "confirm"),
   );
   const failure =
     operationFailure ??

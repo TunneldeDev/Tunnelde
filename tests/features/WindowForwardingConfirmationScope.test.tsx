@@ -1,6 +1,6 @@
 import "@/i18n/i18n";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createPanelViewState, PanelViewStateScope } from "@/lib/panels/viewState";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WindowForwardingConfirmationScope } from "@/features/forwarding/components/WindowForwardingConfirmationScope";
@@ -322,4 +322,55 @@ it("blocks capture during original confirmation but never checkpoints its approv
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(JSON.stringify(controller.capture())).not.toContain("original-1");
   expect(actions.remove).not.toHaveBeenCalled();
+});
+
+it("preserves the content tree and its draft across ownership changes while retiring captured confirmation callbacks", async () => {
+  const f = fixture();
+  const mounted = vi.fn(),
+    unmounted = vi.fn();
+  let retained!: ForwardingConfirm;
+  function Content() {
+    const [draft, setDraft] = useState("seed");
+    retained = useForwardingConfirm();
+    useEffect(() => {
+      mounted();
+      return unmounted;
+    }, []);
+    return (
+      <input aria-label="Retained draft" value={draft} onChange={(e) => setDraft(e.target.value)} />
+    );
+  }
+  const tree = (generation: number) => (
+    <WindowForwardingConfirmationScope client={f.client} lease={{ ...lease, generation }}>
+      <Content />
+    </WindowForwardingConfirmationScope>
+  );
+  const view = render(tree(7));
+  fireEvent.change(screen.getByLabelText("Retained draft"), { target: { value: "unsaved work" } });
+  const original = retained;
+  act(() =>
+    original({ title: "Old review", body: "Old", confirmLabel: "Approve", onConfirm: vi.fn() }),
+  );
+  await screen.findByRole("dialog");
+  view.rerender(tree(8));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByLabelText("Retained draft")).toHaveProperty("value", "unsaved work");
+  expect(mounted).toHaveBeenCalledOnce();
+  expect(unmounted).not.toHaveBeenCalled();
+  expect(() =>
+    original({ title: "Expired", body: "Expired", confirmLabel: "Approve", onConfirm: vi.fn() }),
+  ).toThrow("disposed");
+  act(() =>
+    retained({ title: "New review", body: "New", confirmLabel: "Approve", onConfirm: vi.fn() }),
+  );
+  await screen.findByText("New review");
+  expect(f.control).toHaveBeenCalledWith({
+    action: "beginInteraction",
+    lease: { ...lease, generation: 8 },
+  });
+  view.unmount();
+  await waitFor(() =>
+    expect(f.control).toHaveBeenCalledWith({ action: "endInteraction", lease, id: "original-1" }),
+  );
+  expect(unmounted).toHaveBeenCalledOnce();
 });

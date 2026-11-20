@@ -843,3 +843,64 @@ fn maximum_combined_plugin_panel_identity_is_preserved_without_truncation() {
     assert_eq!(second.panel_id, other);
     assert_ne!(first.panel_id, second.panel_id);
 }
+
+#[test]
+fn forwarding_refresh_is_closed_exact_panel_scoped_and_holds_the_relay_fence() {
+    use super::actions::{ActionResult, ViewAction};
+    let mut f = Fixture::new();
+    let forwarding = f.registry.add_panel(MAIN, &f.main, "forwarding").unwrap();
+    assert!(f
+        .registry
+        .request_action(
+            MAIN,
+            &f.main,
+            &f.lease,
+            ViewAction::RefreshForwarding {},
+            f.now
+        )
+        .is_err());
+    for forged in [
+        json!({"kind":"refreshForwarding","command":"invoke"}),
+        json!({"kind":"refreshForwarding","hostId":"foreign"}),
+    ] {
+        assert!(serde_json::from_value::<ViewAction>(forged).is_err());
+    }
+    let id = f
+        .registry
+        .request_action(
+            MAIN,
+            &f.main,
+            &forwarding,
+            ViewAction::RefreshForwarding {},
+            f.now,
+        )
+        .unwrap();
+    assert!(f.registry.panels["forwarding"].native_actions.contains(&id));
+    assert!(f
+        .registry
+        .claim_actions("panel-one", &f.satellite, f.now)
+        .is_err());
+    let jobs = f.registry.claim_actions(MAIN, &f.main, f.now).unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].id, id);
+    assert!(f
+        .registry
+        .claim_actions(MAIN, &f.main, f.now)
+        .unwrap()
+        .is_empty());
+    f.registry
+        .complete_action(
+            MAIN,
+            &f.main,
+            &id,
+            ActionResult::Done {
+                value: serde_json::Value::Null,
+            },
+            f.now,
+        )
+        .unwrap();
+    assert!(f.registry.panels["forwarding"].native_actions.is_empty());
+    f.registry
+        .remove_panel(MAIN, &f.main, "forwarding")
+        .unwrap();
+}
