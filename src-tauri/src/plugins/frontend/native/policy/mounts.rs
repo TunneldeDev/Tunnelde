@@ -51,6 +51,10 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         | "mounts.runtime.stopAll"
         | "mounts.runtime.restart"
         | "mounts.runtime.retry" => Some(CallPolicy::MountSubmission),
+        // These can canonicalize or enumerate slow FUSE paths. Their Budget
+        // workers inherit the admitted effect lifetime, including after an
+        // inner timeout, caller cancellation and unreceived-result cleanup.
+        "mounts.paths.local.validate" | "mounts.paths.conflicts" => Some(CallPolicy::MountPathData),
         // Path choosers, force-unmount consent, dependency probes and legacy
         // one-off transports have separate native work/UI lifetimes to audit.
         _ => None,
@@ -65,6 +69,7 @@ mod tests {
         let mut data = 0;
         let mut snapshots = 0;
         let mut submissions = 0;
+        let mut paths = 0;
         for method in crate::plugins::api::METHODS
             .iter()
             .filter(|m| m.name.starts_with("mounts."))
@@ -82,6 +87,7 @@ mod tests {
                     CallPolicy::MountData => data += 1,
                     CallPolicy::StagedData => snapshots += 1,
                     CallPolicy::MountSubmission => submissions += 1,
+                    CallPolicy::MountPathData => paths += 1,
                     other => panic!("unexpected mount policy {other:?}"),
                 }
             }
@@ -89,6 +95,7 @@ mod tests {
         assert_eq!(data, 9);
         assert_eq!(snapshots, 13);
         assert_eq!(submissions, 15);
+        assert_eq!(paths, 2);
         for method in [
             "mounts.paths.local.pick",
             "mounts.runtime.requestForceUnmount",

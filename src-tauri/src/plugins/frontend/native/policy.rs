@@ -13,6 +13,8 @@ pub(crate) enum CallPolicy {
     /// Explicitly audited snapshot-only queries needed before staged render.
     StagedData,
     MountData,
+    /// Filesystem queries retain the fence through timed-out FUSE workers.
+    MountPathData,
     /// Fenced through receipt publication; the host owns subsequent steps.
     MountSubmission,
 }

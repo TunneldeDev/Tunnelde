@@ -302,12 +302,30 @@ impl NativeCall {
             tool_client: None,
             tool_request: None,
         };
-        let work = crate::plugins::api::dispatch(&context, method, params);
+        // The domain dispatcher contains every resource future. Do not inline
+        // its large state machine through request/origin/effect scopes: native
+        // Tokio workers have bounded stacks, including in debug builds.
+        let work = Box::pin(crate::plugins::api::dispatch(&context, method, params));
         let result = if self.policy.retained() {
             self.lifetime.run_retained(work).await?
         } else {
             self.lifetime.run(work).await?
         };
         with_owner(app, &self.token, &self.owner, || Ok(result))
+    }
+}
+
+#[cfg(test)]
+mod future_size_tests {
+    use super::*;
+    #[test]
+    fn native_request_future_stays_bounded_when_wrapped_in_origin_and_effect_scopes() {
+        fn size<F: std::future::Future>(
+            _: impl FnOnce(NativeCall, &'static AppHandle, &'static str, Value) -> F,
+        ) -> usize {
+            std::mem::size_of::<F>()
+        }
+        let size = size(NativeCall::run);
+        assert!(size < 16 * 1024, "native request future is {size} bytes");
     }
 }

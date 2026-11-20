@@ -670,3 +670,81 @@ fn audited_staged_snapshots_fence_commit_and_cannot_outlive_cancelled_offer() {
     f.r.settle_native_view_call(&call);
     f.commit(&next);
 }
+
+#[tokio::test]
+async fn timed_out_path_worker_blocks_handoff_after_view_close_until_actual_settlement() {
+    use crate::services::operations::{Budget, Errors, WorkLifetime};
+    use std::sync::{Arc, Mutex};
+    let mut f = Fixture::new();
+    f.owned("path-view");
+    let policy = crate::plugins::frontend::native::call_policy("mounts.paths.conflicts").unwrap();
+    let (_, id) =
+        f.r.native_view_call("main", &f.main, "path-view", policy, f.now)
+            .unwrap();
+    let registry = Arc::new(Mutex::new(f.r));
+    struct Fence(
+        Arc<Mutex<Ownership>>,
+        String,
+        Option<tokio::sync::oneshot::Sender<()>>,
+    );
+    impl Drop for Fence {
+        fn drop(&mut self) {
+            self.0.lock().unwrap().settle_native_view_call(&self.1);
+            if let Some(sender) = self.2.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+    let (settled, mut done) = tokio::sync::oneshot::channel();
+    let lifetime = WorkLifetime::new(Fence(registry.clone(), id, Some(settled)));
+    let (started, ready) = tokio::sync::oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let (expire, expired) = tokio::sync::oneshot::channel();
+    let caller = tokio::spawn(lifetime.scope(async move {
+        let budget = Budget::new(
+            1,
+            Errors {
+                domain: "native-path-test",
+                busy: "busy",
+                cancelled: "cancelled",
+                failed: "failed",
+            },
+        );
+        let work = budget.blocking(move |_| {
+            started.send(()).unwrap();
+            wait.recv_timeout(Duration::from_secs(5)).unwrap();
+            Ok(())
+        });
+        tokio::pin!(work);
+        let result = tokio::select! {
+            result = &mut work => Ok(result),
+            _ = expired => tokio::time::timeout(Duration::ZERO, work).await,
+        };
+        assert!(result.is_err());
+    }));
+    ready.await.unwrap();
+    expire.send(()).unwrap();
+    caller.await.unwrap();
+    {
+        let mut r = registry.lock().unwrap();
+        r.close_native_view("main", &f.main, "path-view").unwrap();
+        assert!(r.native_view_busy(&f.lease.panel_id));
+        assert!(r
+            .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+            .is_err());
+    }
+    assert!(matches!(
+        done.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+    ));
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), done)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut r = registry.lock().unwrap();
+    assert!(!r.native_view_busy(&f.lease.panel_id));
+    assert!(r
+        .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+        .is_ok());
+}

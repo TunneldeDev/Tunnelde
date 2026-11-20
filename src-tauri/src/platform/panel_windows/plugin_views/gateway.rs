@@ -246,28 +246,31 @@ pub(crate) async fn panel_window_plugin_view(
             // The fence lives INSIDE it until actual settlement, even if the
             // originating document disappears or its caller stops waiting.
             tauri::async_runtime::spawn(async move {
-                let _accepted = accepted;
-                current(
-                    &native::lock(&app.state::<native::Registry>()),
-                    &label,
-                    &document,
-                    &token,
-                )?;
-                let origin = origin::Origin::new(
-                    app.clone(),
-                    label.clone(),
-                    document.clone(),
-                    token.clone(),
-                    owner,
-                );
-                let result = origin::scope(origin, call.run(&app, &method, params)).await?;
-                current(
-                    &native::lock(&app.state::<native::Registry>()),
-                    &label,
-                    &document,
-                    &token,
-                )?;
-                Ok(result)
+                crate::services::operations::WorkLifetime::new(accepted)
+                    .scope(async move {
+                        current(
+                            &native::lock(&app.state::<native::Registry>()),
+                            &label,
+                            &document,
+                            &token,
+                        )?;
+                        let origin = origin::Origin::new(
+                            app.clone(),
+                            label.clone(),
+                            document.clone(),
+                            token.clone(),
+                            owner,
+                        );
+                        let result = origin::scope(origin, call.run(&app, &method, params)).await?;
+                        current(
+                            &native::lock(&app.state::<native::Registry>()),
+                            &label,
+                            &document,
+                            &token,
+                        )?;
+                        Ok(result)
+                    })
+                    .await
             })
             .await
             .map_err(|_| AppError::internal("plugin.frontend.nativeCallFailed"))?

@@ -415,7 +415,12 @@ preparation and receipt publication, **not** the lifetime of the host-managed
 operation. Subsequent steps belong to the approved plugin generation, check
 its authority, and report progress through the shared operation registry; moving
 or closing a view does not disconnect the group's dedicated transport. This is
-not implicit admission of force-unmount consent, path choosers, dependency
+also explicit admission of committed-only `mounts.paths.local.validate` and
+`mounts.paths.conflicts`. An accepted call's private effect guard propagates
+through nested Budget workers and unreceived result cleanup: a timed-out FUSE
+filesystem query cannot release the panel's move fence before the actual worker
+settles. Caller cancellation still prevents response delivery. This is not
+implicit admission of force-unmount consent, path choosers, dependency
 probes or legacy one-off mounts, which still need their own lifetime integration.
 
 The host's scoped view client uses only this closed gateway, reserves cancellation
