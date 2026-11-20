@@ -1,7 +1,10 @@
 import "@/i18n/i18n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createPreviewOwners, type PreviewOwner } from "@/features/sftp/preview/owner";
-import { startPreviewWindowPublication } from "@/features/sftp/preview/windowPublication";
+import {
+  startPreviewWindowPublication,
+  usePreviewPublication,
+} from "@/features/sftp/preview/windowPublication";
 import { previewWindowData } from "@/features/sftp/preview/windowModel";
 import type { PreviewReadSnapshot } from "@/features/sftp/preview/readSource";
 import type { FilePreviewContext } from "@/lib/extensions/files/preview/context";
@@ -285,4 +288,27 @@ it("reacquires the model publisher when a panel registration changes without a v
     ),
   ).toHaveLength(1);
   expect(state.failure).not.toHaveBeenCalled();
+});
+
+it("does not unlock main provider discovery before the native model publication acknowledgement", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const f = setup({
+    control: async (request) => {
+      if (request.action === "beginModel") return "publisher";
+      if (request.action === "publishModel") await pending;
+      return null;
+    },
+  });
+  f.mounted.publish(fixture().owner);
+  await settle();
+  expect(f.control.mock.calls.some(([request]) => request.action === "publishModel")).toBe(true);
+  expect(usePreviewPublication.getState().attemptId).toBeNull();
+  release();
+  await settle();
+  expect(usePreviewPublication.getState().attemptId).toBe("attempt-one");
+  f.publication.dispose();
+  expect(usePreviewPublication.getState().attemptId).toBeNull();
 });

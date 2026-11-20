@@ -28,11 +28,13 @@ export function PreviewRenderer({
   onReady,
   onDecodeError,
   onRetry,
+  active = true,
 }: {
   file: PreviewFile;
   renderer: FilePreviewRenderer;
   read: PreviewRenderRead;
   url?: string;
+  active?: boolean;
   onReady?(): void;
   onDecodeError?(cause: unknown): void;
   onRetry?(): void;
@@ -94,6 +96,7 @@ export function PreviewRenderer({
     );
   return (
     <MediaPreview
+      active={active}
       kind={renderer}
       url={url}
       name={fileName(file.path)}

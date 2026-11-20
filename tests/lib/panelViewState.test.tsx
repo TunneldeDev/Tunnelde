@@ -208,3 +208,65 @@ it("rejects oversized capture rather than crashing rendering or truncating live 
   view.unmount();
   expect(controller.capture().fields).toEqual({});
 });
+it("rechecks replacement readiness after a retired async child cancels its in-flight wait", async () => {
+  const state = createPanelViewState();
+  let reject!: (cause: unknown) => void;
+  const old = new Promise<void>((_resolve, fail) => {
+    reject = fail;
+  });
+  const remove = state.register(
+    "renderer",
+    () => null,
+    undefined,
+    () => old,
+  );
+  const pending = state.waitReady(new AbortController().signal);
+  await Promise.resolve();
+  remove();
+  let release!: () => void;
+  const replacement = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  state.register(
+    "renderer",
+    () => null,
+    undefined,
+    () => replacement,
+  );
+  reject(new Error("panel.window.cancelled"));
+  let completed = false;
+  void pending.then(() => {
+    completed = true;
+  });
+  await Promise.resolve();
+  expect(completed).toBe(false);
+  release();
+  await pending;
+  expect(completed).toBe(true);
+  state.dispose();
+});
+it("does not swallow the replacement renderer's actual readiness failure", async () => {
+  const state = createPanelViewState();
+  let reject!: (cause: unknown) => void;
+  const remove = state.register(
+    "renderer",
+    () => null,
+    undefined,
+    () =>
+      new Promise((_done, fail) => {
+        reject = fail;
+      }),
+  );
+  const pending = state.waitReady(new AbortController().signal);
+  await Promise.resolve();
+  remove();
+  state.register(
+    "renderer",
+    () => null,
+    undefined,
+    () => Promise.reject(new Error("actual decode failure")),
+  );
+  reject(new Error("panel.window.cancelled"));
+  await expect(pending).rejects.toThrow("actual decode failure");
+  state.dispose();
+});

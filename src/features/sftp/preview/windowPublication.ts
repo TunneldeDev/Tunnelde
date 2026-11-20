@@ -1,9 +1,15 @@
+import { create } from "zustand";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import { usePanelWindows } from "@/store/panelWindows";
 import type { WindowModelAppearance } from "@/app/panelReadModels";
 import { previewOwners, type createPreviewOwners } from "./owner";
 import { previewWindowData, type PreviewWindowData } from "./windowModel";
 
+/** Private publication acknowledgement, not file data or plugin state. Main
+ * must not discover an endpoint-scoped child before its model exists natively. */
+export const usePreviewPublication = create<{ attemptId: string | null }>(() => ({
+  attemptId: null,
+}));
 // Serial across coordinator restarts, including late IPC and teardown.
 let writerTail: Promise<unknown> = Promise.resolve();
 let activeWriter: object | undefined;
@@ -21,6 +27,7 @@ export function startPreviewWindowPublication(
 ) {
   const identity = {};
   activeWriter = identity;
+  usePreviewPublication.setState({ attemptId: null });
   let disposed = false,
     running = false,
     queued = false;
@@ -114,6 +121,10 @@ export function startPreviewWindowPublication(
             revision: ++revision,
             model,
           });
+          if (!disposed && activeWriter === identity)
+            usePreviewPublication.setState({
+              attemptId: model.preview?.snapshot.attemptId ?? null,
+            });
         }
       } catch (error) {
         // A close/reopen can remove the panel while begin/publish is in flight.
@@ -151,6 +162,7 @@ export function startPreviewWindowPublication(
     dispose() {
       if (disposed) return;
       disposed = true;
+      if (activeWriter === identity) usePreviewPublication.setState({ attemptId: null });
       stopOwners();
       stopPanels();
       stopSource?.();

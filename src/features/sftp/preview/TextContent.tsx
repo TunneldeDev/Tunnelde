@@ -35,7 +35,7 @@ export function TextContent({
     if (!textarea.current.closest("[inert]")) textarea.current.focus();
     textarea.current.setSelectionRange(offset, offset);
     textarea.current.scrollTop = Math.max(0, line * 20 - 100);
-  }, [content, file, renderMarkdown]);
+  }, [content, file.path, file.line, file.column, renderMarkdown]);
   return (
     <>
       {markdown || encoding ? (

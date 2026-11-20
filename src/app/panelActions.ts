@@ -1,3 +1,4 @@
+import { executePreviewWindowAction } from "@/features/sftp/preview/windowActions";
 import { createTransferWindowActions } from "@/features/sftp/transferWindowActions";
 import { forwardingStore } from "@/features/forwarding/data/store";
 import { forwardingGroupsStore } from "@/features/forwarding/data/groups";
@@ -18,6 +19,8 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request, lease }) => {
       switch (request.kind) {
+        case "preview":
+          return executePreviewWindowAction(lease, request);
         case "refreshForwarding":
           forwardingStore.refresh();
           forwardingGroupsStore.refresh();

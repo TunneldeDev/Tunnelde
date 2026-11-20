@@ -8,16 +8,18 @@ export function MediaPreview({
   name,
   onError,
   onReady,
+  active = true,
 }: {
   kind: "image" | "audio" | "video";
   url: string;
   name: string;
   onError: () => void;
   onReady?: () => void;
+  active?: boolean;
 }) {
   const { t } = useTranslation();
   const mediaRef = useRef<HTMLMediaElement | null>(null);
-  const restore = usePreviewMediaState(mediaRef);
+  const restore = usePreviewMediaState(mediaRef, active);
   useEffect(() => {
     const element = mediaRef.current;
     if (!element) return;

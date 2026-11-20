@@ -33,17 +33,18 @@ function descriptorKey(descriptor: NativeForwardingProviderDescriptor | null) {
   ]);
 }
 /** Native metadata owns selection; JS never starts a singleton or consults main stores. */
-export function createWindowProviderSource(
+export function createWindowProviderSource<Descriptor extends NativeForwardingProviderDescriptor>(
   owner: WindowProviderOwner,
   report: (error: unknown) => void,
   adapter: {
+    key?(descriptor: Descriptor | null): string | null;
     describe(
       client: ReturnType<typeof createNativePluginViewClient>,
       target: NativePluginViewTarget,
-    ): Promise<NativeForwardingProviderDescriptor | null>;
+    ): Promise<Descriptor | null>;
     open(
       client: ReturnType<typeof createNativePluginViewClient>,
-      descriptor: NativeForwardingProviderDescriptor,
+      descriptor: Descriptor,
       signal: AbortSignal,
       state: { value: unknown } | undefined,
       check: () => void,
@@ -54,7 +55,7 @@ export function createWindowProviderSource(
   const listeners = new Set<() => void>();
   type Source = {
     id: string;
-    descriptor: NativeForwardingProviderDescriptor;
+    descriptor: Descriptor;
     View: ReturnType<typeof createFrontendFactoryComponent>;
     check(mutation: boolean): void;
     retire(): void;
@@ -102,7 +103,7 @@ export function createWindowProviderSource(
               reset = false;
               owner.check(false);
               const target = structuredClone(owner.target());
-              let descriptor: NativeForwardingProviderDescriptor | null;
+              let descriptor: Descriptor | null;
               try {
                 descriptor = await adapter.describe(client, target);
               } catch (error) {
@@ -127,7 +128,8 @@ export function createWindowProviderSource(
               }
               if (
                 force ||
-                descriptorKey(current?.descriptor ?? null) !== descriptorKey(descriptor)
+                (adapter.key ?? descriptorKey)(current?.descriptor ?? null) !==
+                  (adapter.key ?? descriptorKey)(descriptor)
               ) {
                 current?.retire();
                 current = null;

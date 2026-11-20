@@ -1,3 +1,4 @@
+import type { PreviewWindowAction } from "@/features/sftp/preview/windowActions";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { FrontendSession } from "@/lib/extensions/frontendRuntime";
 import type { FrontendModule } from "@/lib/extensions/uiSdk";
@@ -9,12 +10,27 @@ import type {
   NativePanelIdentity,
   NativePluginViewDescriptor,
   NativeForwardingProviderDescriptor,
+  NativePreviewProviderDescriptor,
   PanelLease,
 } from "./windowProtocol";
 
 export type NativePluginViewTarget =
   { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
 type Request =
+  | { action: "describePreviewProvider"; target: NativePluginViewTarget }
+  | {
+      action: "openPreviewProvider";
+      target: NativePluginViewTarget;
+      pluginId: string;
+      runtimeId: string;
+      viewId: string;
+      selectionRevision: number;
+      sourceKind: "local" | "remote";
+    }
+  | ({ action: "submitPreviewProviderAction"; token: string; lease: PanelLease } & Omit<
+      PreviewWindowAction,
+      "kind"
+    >)
   | { action: "forwarding"; token: string; lease: PanelLease; request: ForwardingWindowMutation }
   | { action: "describeTasksProvider"; target: NativePluginViewTarget }
   | {
@@ -202,6 +218,48 @@ export function createNativePluginViewClient(
       });
       check();
       return changed;
+    },
+    async describePreviewProvider(target: NativePluginViewTarget) {
+      check();
+      const value = await request<NativePreviewProviderDescriptor | null>({
+        action: "describePreviewProvider",
+        target,
+      });
+      check();
+      return value;
+    },
+    async openPreviewProvider(
+      target: NativePluginViewTarget,
+      descriptor: NativePreviewProviderDescriptor,
+    ) {
+      check();
+      return acceptSession(
+        await request<FrontendSession>({
+          action: "openPreviewProvider",
+          target,
+          pluginId: descriptor.view.pluginId,
+          runtimeId: descriptor.view.runtimeId,
+          viewId: descriptor.view.viewId,
+          selectionRevision: descriptor.selectionRevision,
+          sourceKind: descriptor.sourceKind,
+        }),
+      );
+    },
+    async submitPreviewProviderAction(
+      token: string,
+      lease: PanelLease,
+      value: PreviewWindowAction,
+    ) {
+      check(token);
+      return request<string>({
+        action: "submitPreviewProviderAction",
+        token,
+        lease,
+        id: value.id,
+        attemptId: value.attemptId,
+        revision: value.revision,
+        command: value.command,
+      });
     },
     async describeTasksProvider(target: NativePluginViewTarget) {
       check();

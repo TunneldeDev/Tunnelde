@@ -1,3 +1,4 @@
+import type { PreviewWindowAction } from "@/features/sftp/preview/windowActions";
 import type { PanelPresentation } from "@/store/panelPresentation";
 import type { FloatingRect } from "@/lib/layout/floatingPanel";
 import type { TransferWindowAction } from "@/features/sftp/transferWindowProtocol";
@@ -40,6 +41,9 @@ export interface NativeForwardingProviderDescriptor {
   capabilities: { write: boolean };
   view: Omit<NativePluginViewDescriptor, "panelId" | "revision">;
 }
+export interface NativePreviewProviderDescriptor extends NativeForwardingProviderDescriptor {
+  sourceKind: "local" | "remote";
+}
 export interface NativePanelSnapshot {
   pluginViews?: NativePluginViewDescriptor[];
   /** Unknown effects after coordinator document loss; counts only, no requests. */
@@ -49,6 +53,7 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | PreviewWindowAction
   | TransferWindowAction
   | { kind: "task"; key: string; ticket: string; actionId: string }
   | { kind: "clearTasks" }
@@ -84,6 +89,7 @@ export interface PanelPresentationJob {
   operation: { kind: "set"; presentation: PanelPresentation } | { kind: "close" };
 }
 export type PanelWindowCommand =
+  | { action: "requestCoordinatorPreviewAction"; lease: PanelLease; request: PreviewWindowAction }
   | { action: "publishPreviewResource"; resource: { id: string; ticket: string } | null }
   | {
       action: "openPreviewHandle";

@@ -153,7 +153,7 @@ require window-aware adapters. Do not
 advertise those capabilities or widen gateway permissions to hide an incomplete adapter.
 The public plugin workspace v1 contract remains unchanged.
 
-### Preview resources and window handles (adapter in progress)
+### Preview resources and window handles
 
 `createPreviewReadSource` moves read/decode/native-ticket lifetime above renderer
 bodies. Displays subscribe to immutable results; subscription/unmount does not
@@ -171,9 +171,9 @@ old handles. Closing a display never closes its host-owned file; late admission
 replies still need cleanup. Bounded handles stay out of public metadata, plugin
 APIs, the Bus and view capsules.
 
-This is groundwork for complete renderer/provider handoff, not an opt-in for
-`filePreview` movement or proof of PDF-page/playback/native-preview acceptance.
-The public preview v1 contract remains unchanged.
+The docked `filePreview` adapter now uses this mechanism for explicit native
+window handoff; see the acceptance scope below. The public preview v1 contract
+remains unchanged.
 
 ### Background-task interface providers
 
@@ -1219,7 +1219,32 @@ Restored media is paused and cannot autoplay during staging. The shared display
 renderer now consumes supplied data/services without acquiring file resources;
 its readiness stays pending for spinners and waits for real content/load/render.
 
-These are coordinator/state foundations, not full filePreview movement admission.
-Satellite renderer/provider factories, exact-owner actions, commit-aware playback
-ownership and actual native protocol/UI roundtrips remain required before enabling
-the preview adapter. Component/unit tests are not native acceptance evidence.
+### Native preview presentation
+
+Docked previews opt into the same explicit new-window/return flow as other native
+panels. Main retains the source and publishes the endpoint model before admitting
+a presentation child; a private acknowledgement prevents discovery from racing an
+absent model. Satellites render the injected text/media/PDF data through scoped
+read-only handles. `createView` restores provider drafts without singleton replay;
+the same provider Body and staged handle survive promotion. Temporary frozen
+selection discovery cannot unmount a retained draft. Readiness retries retired
+bindings only if live replacement bindings exist; removing a pending renderer
+still rejects the original wait rather than acknowledging an empty panel.
+
+Every effect rechecks the preview ID, attempt, revision and native lease at main.
+Provider actions require `ui.trusted`, `filePreview.read` and the host-selected
+`fs.read`/`sftp.read` endpoint grant; mutations also require `filePreview.write`.
+Providers cannot forge renderer ready/decode/edit reports. A successful close/edit
+may receive only its empty acknowledgement after self-removal, never data from a
+replacement lease or reloaded document. Media stages paused, captures playback
+intent, and attempts resume only after commit/rollback; OS autoplay policy may
+still require the user's Play gesture.
+
+macOS acceptance used the production SatelliteApp and preview body for four actual
+local roundtrips (text, image, PDF, audio), unchanged source/ticket identity,
+provider drafts, PDF page/zoom, paused audio position, native provider retry and
+isolated plugin/session cleanup. It is not remote-SFTP, physical pointer dragging,
+cross-platform or FUSE acceptance. Quick Look remains main-local: returning a
+satellite directly into Quick Look is explicitly unsupported; return to main first.
+Local Quick Look/panel state continuity and broader workspace rollout remain
+follow-ups, not reasons to claim general `nativeWindows` support.

@@ -22,11 +22,19 @@ impl ProviderSelection {
             target: "backgroundTasks",
         }
     }
+    #[cfg(test)]
+    pub(crate) fn test_preview_selection(revision: u64) -> Self {
+        Self {
+            revision,
+            target: "filePreview",
+        }
+    }
     pub(crate) fn target(&self) -> &'static str {
         self.target
     }
     pub(crate) fn permissions(&self) -> &'static [&'static str] {
         match self.target {
+            "filePreview" => &["ui.trusted", "filePreview.read"],
             "backgroundTasks" => &["ui.trusted", "backgroundTasks.read"],
             _ => &["ui.trusted", "hosts.read", "forwards.read"],
         }
@@ -66,6 +74,14 @@ pub(crate) async fn selected_tasks_source(app: &AppHandle) -> AppResult<Option<S
     tokio::time::timeout(
         std::time::Duration::from_secs(15),
         resolve(app, "backgroundTasks"),
+    )
+    .await
+    .map_err(|_| AppError::validation("plugin.timeout"))?
+}
+pub(crate) async fn selected_preview_source(app: &AppHandle) -> AppResult<Option<Source>> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        resolve(app, "filePreview"),
     )
     .await
     .map_err(|_| AppError::validation("plugin.timeout"))?
@@ -153,6 +169,39 @@ mod tests {
         settings.ui_providers.remove("forwarding");
         assert!(original
             .check(&settings, 5, "selected", "forwards")
+            .is_err());
+    }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn preview_selection_uses_its_own_read_grant_and_revision() {
+        let selected = ProviderSelection::test_preview_selection(4);
+        assert_eq!(selected.permissions(), &["ui.trusted", "filePreview.read"]);
+        let mut settings = crate::settings::Settings::default();
+        let value =
+            serde_json::from_value(json!({"pluginId":"preview-ui", "viewId":"preview"})).unwrap();
+        settings
+            .ui_providers
+            .insert("backgroundTasks".into(), value);
+        assert!(selected
+            .check(&settings, 4, "preview-ui", "preview")
+            .is_err());
+        settings.ui_providers.insert(
+            "filePreview".into(),
+            settings.ui_providers["backgroundTasks"].clone(),
+        );
+        assert!(selected
+            .check(&settings, 4, "preview-ui", "preview")
+            .is_ok());
+        assert!(selected
+            .check(&settings, 5, "preview-ui", "preview")
+            .is_err());
+        assert!(selected
+            .check(&settings, 6, "preview-ui", "preview")
             .is_err());
     }
 }

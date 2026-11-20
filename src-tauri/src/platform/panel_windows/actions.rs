@@ -15,6 +15,12 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Preview {
+        id: String,
+        attempt_id: String,
+        revision: String,
+        command: PreviewCommand,
+    },
     Transfer {
         key: String,
         ticket: String,
@@ -52,6 +58,35 @@ pub(crate) enum ViewAction {
     Disconnect {
         session_id: String,
     },
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(
+    tag = "operation",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum PreviewCommand {
+    Ready {},
+    DecodeError {},
+    Close {},
+    Retry {},
+    Dock {},
+    Undock {},
+    Edit {},
+    SelectProvider { provider_id: String },
+}
+impl PreviewCommand {
+    pub(super) fn provider_action(&self) -> bool {
+        matches!(
+            self,
+            Self::Close {}
+                | Self::Retry {}
+                | Self::Dock {}
+                | Self::Undock {}
+                | Self::SelectProvider { .. }
+        )
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,6 +214,7 @@ impl TransferPrompt {
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
+            Self::Preview { .. } => "filePreview",
             Self::RefreshKnownHosts {} | Self::ForgetKnownHost { .. } => "knownHosts",
             Self::RefreshForwarding {} => "forwarding",
             Self::Task { .. }
@@ -193,6 +229,22 @@ impl ViewAction {
     fn validate(&self) -> Result<(), &'static str> {
         let bounded = |s: &str, max| !s.is_empty() && s.len() <= max;
         let valid = match self {
+            Self::Preview {
+                id,
+                attempt_id,
+                revision,
+                command,
+            } => {
+                [id, attempt_id, revision]
+                    .iter()
+                    .all(|value| uuid::Uuid::parse_str(value).is_ok())
+                    && match command {
+                        PreviewCommand::SelectProvider { provider_id } => {
+                            bounded(provider_id, 129) && !provider_id.contains('\0')
+                        }
+                        _ => true,
+                    }
+            }
             Self::Transfer {
                 key,
                 ticket,
@@ -265,6 +317,7 @@ pub(super) struct PendingAction {
     source_document: String,
     coordinator_document: String,
     request: ViewAction,
+    coordinator_receiver: bool,
     claimed: bool,
     result: Option<ActionResult>,
     deadline: Instant,
@@ -330,11 +383,32 @@ impl Ownership {
                 source_document: document.into(),
                 coordinator_document,
                 request,
+                coordinator_receiver: false,
                 claimed: false,
                 result: None,
                 deadline: now + QUEUE_TTL,
             },
         );
+        Ok(id)
+    }
+    pub(super) fn request_coordinator_preview_action(
+        &mut self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+        request: ViewAction,
+        now: Instant,
+    ) -> Result<String, &'static str> {
+        self.main(window, document)?;
+        if !matches!(&request, ViewAction::Preview { command, .. } if command.provider_action()) {
+            return Err("invalid panel action");
+        }
+        let source = self
+            .document(&lease.window_id)
+            .ok_or("source unavailable")?
+            .to_owned();
+        let id = self.request_action(&lease.window_id, &source, lease, request, now)?;
+        self.actions.get_mut(&id).unwrap().coordinator_receiver = true;
         Ok(id)
     }
     pub fn claim_actions(
@@ -421,12 +495,31 @@ impl Ownership {
         self.expire_actions(now);
         self.authorize(window, document)?;
         let job = self.actions.get(id).ok_or("panel action expired")?;
-        if job.lease.window_id != window || job.source_document != document {
+        if job.coordinator_receiver {
+            self.main(window, document)?;
+            if job.coordinator_document != document {
+                return Err("invalid action owner");
+            }
+        } else if job.lease.window_id != window || job.source_document != document {
             return Err("invalid action owner");
         }
         // Revoking/removing a panel or promoting a new lease also retires old
         // replies. A still-registered document alone is not result authority.
-        self.owned(window, document, &job.lease)?;
+        let closed_preview = matches!(
+            &job.request,
+            ViewAction::Preview {
+                command: PreviewCommand::Close {} | PreviewCommand::Edit {},
+                ..
+            }
+        ) && matches!(&job.result, Some(ActionResult::Done { value }) if value.is_null())
+            && !self.panels.contains_key(&job.lease.panel_id)
+            && self.document(&job.lease.window_id) == Some(job.source_document.as_str());
+        // A successful close/edit may have removed its own panel before the
+        // originating document polls. Admit only its empty acknowledgement,
+        // never a payload, replacement lease or reloaded document's reply.
+        if !closed_preview {
+            self.owned(&job.lease.window_id, &job.source_document, &job.lease)?;
+        }
         let result = job.result.clone();
         if result.is_some() {
             self.drop_action(id);
@@ -1044,5 +1137,211 @@ mod tests {
             .registry
             .prepare(MAIN, &f.main, &connection, "other", Value::Null, f.now)
             .is_ok());
+    }
+    fn preview_fixture() -> Fixture {
+        let mut f = Fixture::new();
+        let initial = f.registry.add_panel(MAIN, &f.main, "filePreview").unwrap();
+        let offer = f
+            .registry
+            .prepare(MAIN, &f.main, &initial, "source", Value::Null, f.now)
+            .unwrap();
+        f.registry
+            .acknowledge("source", &f.source, &offer.id, f.now)
+            .unwrap();
+        f.lease = f.registry.commit(MAIN, &f.main, &offer.id, f.now).unwrap();
+        f
+    }
+    fn preview_request(command: PreviewCommand) -> ViewAction {
+        ViewAction::Preview {
+            id: uuid::Uuid::new_v4().to_string(),
+            attempt_id: uuid::Uuid::new_v4().to_string(),
+            revision: uuid::Uuid::new_v4().to_string(),
+            command,
+        }
+    }
+    #[test]
+    fn coordinator_preview_actions_use_real_source_authority_but_main_receives() {
+        let mut f = preview_fixture();
+        let request = preview_request(PreviewCommand::Retry {});
+        assert!(f
+            .registry
+            .request_coordinator_preview_action(
+                "source",
+                &f.source,
+                &f.lease,
+                request.clone(),
+                f.now
+            )
+            .is_err());
+        for invalid in [
+            preview_request(PreviewCommand::Ready {}),
+            preview_request(PreviewCommand::Edit {}),
+            ViewAction::ClearTasks {},
+        ] {
+            assert!(f
+                .registry
+                .request_coordinator_preview_action(MAIN, &f.main, &f.lease, invalid, f.now)
+                .is_err());
+        }
+        let id = f
+            .registry
+            .request_coordinator_preview_action(MAIN, &f.main, &f.lease, request, f.now)
+            .unwrap();
+        assert!(f
+            .registry
+            .prepare("source", &f.source, &f.lease, "other", Value::Null, f.now)
+            .is_err());
+        let jobs = f.registry.claim_actions(MAIN, &f.main, f.now).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].lease, f.lease);
+        f.finish(&id);
+        assert!(f
+            .registry
+            .action_result("source", &f.source, &id, f.now)
+            .is_err());
+        assert!(f
+            .registry
+            .action_result("other", &f.other, &id, f.now)
+            .is_err());
+        assert!(matches!(
+            f.registry.action_result(MAIN, &f.main, &id, f.now),
+            Ok(Some(ActionResult::Done { .. }))
+        ));
+        assert!(f.registry.action_result(MAIN, &f.main, &id, f.now).is_err());
+    }
+    #[test]
+    fn coordinator_preview_actions_cannot_bypass_transfer_or_source_reload() {
+        let mut f = preview_fixture();
+        let offer = f
+            .registry
+            .prepare("source", &f.source, &f.lease, "other", Value::Null, f.now)
+            .unwrap();
+        assert!(f
+            .registry
+            .request_coordinator_preview_action(
+                MAIN,
+                &f.main,
+                &f.lease,
+                preview_request(PreviewCommand::Retry {}),
+                f.now
+            )
+            .is_err());
+        f.registry.cancel("source", &f.source, &offer.id).unwrap();
+        let id = f
+            .registry
+            .request_coordinator_preview_action(
+                MAIN,
+                &f.main,
+                &f.lease,
+                preview_request(PreviewCommand::Retry {}),
+                f.now,
+            )
+            .unwrap();
+        f.registry.register("source").unwrap();
+        assert!(f
+            .registry
+            .claim_actions(MAIN, &f.main, f.now)
+            .unwrap()
+            .is_empty());
+        assert!(f.registry.action_result(MAIN, &f.main, &id, f.now).is_err());
+    }
+    #[test]
+    fn preview_close_receipt_survives_only_its_own_removal_not_replacement_or_reload() {
+        for mode in ["close", "edit", "retry", "payload", "replacement", "reload"] {
+            let mut f = preview_fixture();
+            let command = match mode {
+                "edit" => PreviewCommand::Edit {},
+                "retry" => PreviewCommand::Retry {},
+                _ => PreviewCommand::Close {},
+            };
+            let id = f
+                .registry
+                .request_action(
+                    "source",
+                    &f.source,
+                    &f.lease,
+                    preview_request(command),
+                    f.now,
+                )
+                .unwrap();
+            f.registry.claim_actions(MAIN, &f.main, f.now).unwrap();
+            f.registry
+                .remove_panel(MAIN, &f.main, "filePreview")
+                .unwrap();
+            let value = if mode == "payload" {
+                json!({"private":"not a close acknowledgement"})
+            } else {
+                Value::Null
+            };
+            f.registry
+                .complete_action(MAIN, &f.main, &id, ActionResult::Done { value }, f.now)
+                .unwrap();
+            if mode == "replacement" {
+                f.registry.add_panel(MAIN, &f.main, "filePreview").unwrap();
+            }
+            if mode == "reload" {
+                f.registry.register("source").unwrap();
+            }
+            let result = f.registry.action_result("source", &f.source, &id, f.now);
+            assert_eq!(result.is_ok(), matches!(mode, "close" | "edit"), "{mode}");
+        }
+    }
+    #[test]
+    fn preview_action_grammar_is_closed_bounded_and_exact_panel_scoped() {
+        let mut f = preview_fixture();
+        let valid = serde_json::to_value(preview_request(PreviewCommand::Retry {})).unwrap();
+        for invalid in [
+            json!({"command":{"operation":"invoke"}}),
+            json!({"command":{"operation":"close","path":"arbitrary"}}),
+            json!({"rawTicket":"secret"}),
+        ] {
+            let mut value = valid.clone();
+            for (key, item) in invalid.as_object().unwrap() {
+                value[key] = item.clone();
+            }
+            assert!(serde_json::from_value::<ViewAction>(value).is_err());
+        }
+        for field in ["id", "attemptId", "revision"] {
+            let mut value = valid.clone();
+            value[field] = json!("not-a-uuid");
+            assert!(f
+                .registry
+                .request_action(
+                    "source",
+                    &f.source,
+                    &f.lease,
+                    serde_json::from_value(value).unwrap(),
+                    f.now
+                )
+                .is_err());
+        }
+        assert!(f
+            .registry
+            .request_action(
+                "source",
+                &f.source,
+                &f.lease,
+                preview_request(PreviewCommand::SelectProvider {
+                    provider_id: "p".repeat(130)
+                }),
+                f.now
+            )
+            .is_err());
+        let tasks = f
+            .registry
+            .leases()
+            .into_iter()
+            .find(|p| p.panel_id == "tasks")
+            .unwrap();
+        assert!(f
+            .registry
+            .request_action(
+                "source",
+                &f.source,
+                &tasks,
+                preview_request(PreviewCommand::Retry {}),
+                f.now
+            )
+            .is_err());
     }
 }

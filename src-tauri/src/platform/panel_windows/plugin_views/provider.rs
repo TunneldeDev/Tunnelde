@@ -141,6 +141,10 @@ impl Ownership {
         if let Some(binding) = &view.provider {
             binding.check(app)?;
         }
+        if let Some(source) = &view.preview_provider {
+            let (_, permission) = self.preview_provider_endpoint()?;
+            source.with_permissions(app, &[permission], || Ok(()))?;
+        }
         if let Some(source) = &view.tasks_provider {
             source.with_current(app, || Ok(()))?;
         }

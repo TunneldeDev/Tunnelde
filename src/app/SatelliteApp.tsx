@@ -1,3 +1,6 @@
+import { NativePreviewContent } from "@/features/sftp/preview/NativePreviewContent";
+import type { PreviewWindowModel } from "@/features/sftp/preview/windowPublication";
+import "@/features/sftp/preview/previewPanel.css";
 import { createWindowProviderOwner } from "@/lib/panels/windowProviderOwner";
 import { useLayoutEffect } from "react";
 import { NativePluginPanel } from "@/components/layout/NativePluginPanel";
@@ -320,6 +323,23 @@ function KnownHostsView(props: NativeViewProps) {
   );
 }
 
+function PreviewView(props: NativeViewProps) {
+  const model = useNativeReadModel<PreviewWindowModel>(props);
+  if (!model?.preview) return null;
+  return (
+    <NativePanelView panelId="filePreview">
+      <WorkbenchPanel view="filePreview" location="workspace" visible={!props.record.staged}>
+        <NativePreviewContent
+          key={props.record.key}
+          client={props.client}
+          record={props.record}
+          data={model.preview}
+        />
+      </WorkbenchPanel>
+    </NativePanelView>
+  );
+}
+
 function ForwardingView(props: NativeViewProps) {
   const model = useNativeReadModel<ForwardingWindowModel>(props);
   if (!model) return null;
@@ -367,7 +387,8 @@ export function SatelliteApp() {
             shown.current = true;
           });
       })
-      .catch(() => {
+      .catch((error) => {
+        reportError("panels.windows", "satellite.initialize", error);
         if (!disposed) setFailed(true);
       });
     return () => {
@@ -390,6 +411,7 @@ export function SatelliteApp() {
           receive: (snapshot) =>
             usePanelWindows.setState({ windowId: current.windowId, available: true, snapshot }),
           failure: (error) => {
+            reportError("panels.windows", "satellite.session", error);
             if (!disposed) {
               setFailed(true);
               toast(translateError(error), "error");
@@ -426,7 +448,8 @@ export function SatelliteApp() {
         setClient(current);
         await session.ready;
       })
-      .catch(() => {
+      .catch((error) => {
+        reportError("panels.windows", "satellite.initialize", error);
         if (!disposed) setFailed(true);
       });
     return () => {
@@ -465,7 +488,9 @@ export function SatelliteApp() {
             id: record.panelId as SidebarView,
             key: record.key,
             content:
-              record.panelId === "knownHosts" ? (
+              record.panelId === "filePreview" ? (
+                <PreviewView client={client} record={record} presented={presented} />
+              ) : record.panelId === "knownHosts" ? (
                 <KnownHostsView client={client} record={record} presented={presented} />
               ) : record.panelId === "tasks" ? (
                 <TaskView client={client} record={record} presented={presented} />

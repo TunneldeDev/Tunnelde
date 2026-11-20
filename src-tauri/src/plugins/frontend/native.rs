@@ -9,7 +9,9 @@ use crate::{
     state::AppState,
 };
 pub(crate) use policy::{call_policy, CallPolicy};
-pub(crate) use provider::{selected_forwarding_source, selected_tasks_source, ProviderSelection};
+pub(crate) use provider::{
+    selected_forwarding_source, selected_preview_source, selected_tasks_source, ProviderSelection,
+};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
@@ -192,6 +194,12 @@ impl Source {
                     operation()
                 }
             })
+    }
+    #[cfg(test)]
+    pub(crate) fn test_preview_source(lease: Lease, revision: u64) -> Self {
+        let mut source = Self::test_source(lease, "runtime", "preview", true, "private-singleton");
+        source.provider = Some(ProviderSelection::test_preview_selection(revision));
+        source
     }
     #[cfg(test)]
     pub(crate) fn test_tasks_source(lease: Lease, revision: u64) -> Self {

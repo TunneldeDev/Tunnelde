@@ -55,7 +55,9 @@ page durable; put temporary plans, screenshots and handoff notes in `.tmp/`.
   only after the work is merged and no longer needed.
 - Merge PRs individually after complete CI on their exact head, preserving a PR
   record and the linear development history. Update/retest remaining PRs against
-  the new base. Resolve P0–P2 findings before merging; do not bypass failed checks.
+  the new base. Resolve known P0/P1 failures before merging/releasing; track nonblocking
+  P2 polish for subsequent versions instead of delaying usable primary flows.
+  Do not bypass failed checks.
 - Publish a beta after roughly one to three coherent features and a final
   acceptance beta after the requested scope is complete. Use the automated
   immutable release snapshot workflow; verify platform builds, release assets,

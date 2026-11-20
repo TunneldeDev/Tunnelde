@@ -1,3 +1,6 @@
+import { usePanelWindows } from "@/store/panelWindows";
+import { windowViews, renderablePanel } from "@/lib/panels/windowViews";
+import type { PreviewCommand } from "@/features/sftp/preview/windowActions";
 import { liveFilePreview } from "@/lib/files/preview/registry";
 import { useFilePreview } from "@/store/filePreview";
 import { integer, invalid, object, path, token } from "./validation";
@@ -13,6 +16,35 @@ export function runFilePreviewAction(input: unknown) {
   if (!fields) throw invalid();
   const request = object(input, fields);
   const preview = liveFilePreview(token(request.id), token(request.revision));
+  const windows = usePanelWindows.getState();
+  const client = windowViews()?.client;
+  if (
+    windows.available &&
+    renderablePanel("filePreview") &&
+    useFilePreview.getState().presentation === "docked"
+  ) {
+    const lease = windows.snapshot.panels.find((panel) => panel.panelId === "filePreview");
+    if (!client || client.windowId !== "main" || !lease) throw new Error("panel.window.staleOwner");
+    const command: PreviewCommand =
+      request.action === "selectProvider"
+        ? { operation: "selectProvider", providerId: token(request.providerId, 129) }
+        : { operation: request.action as "close" | "retry" | "dock" | "undock" };
+    return (async () => {
+      const receipt = await client.control<string>({
+        action: "requestCoordinatorPreviewAction",
+        lease,
+        request: {
+          kind: "preview",
+          id: preview.snapshot.id,
+          attemptId: preview.snapshot.attemptId,
+          revision: preview.snapshot.revision,
+          command,
+        },
+      });
+      await client.receiveAction(receipt);
+      return { schemaVersion: 1 as const, accepted: true as const };
+    })();
+  }
   if (request.action === "close") preview.close();
   else if (request.action === "retry") preview.retry();
   else if (request.action === "dock") preview.dock();

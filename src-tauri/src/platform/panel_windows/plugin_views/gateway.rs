@@ -19,6 +19,25 @@ use tauri::{AppHandle, Manager, WebviewWindow};
     deny_unknown_fields
 )]
 pub(crate) enum Request {
+    DescribePreviewProvider {
+        target: Target,
+    },
+    OpenPreviewProvider {
+        target: Target,
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+        selection_revision: u64,
+        source_kind: String,
+    },
+    SubmitPreviewProviderAction {
+        token: String,
+        lease: super::super::ownership::Lease,
+        id: String,
+        attempt_id: String,
+        revision: String,
+        command: super::super::actions::PreviewCommand,
+    },
     Forwarding {
         token: String,
         lease: super::super::ownership::Lease,
@@ -130,6 +149,54 @@ pub(crate) async fn panel_window_plugin_view(
         .authorize(window.label(), &document)
         .map_err(native::invalid)?;
     match request {
+        Request::DescribePreviewProvider { target } => {
+            super::preview_provider::describe(app, window.label(), &document, target).await
+        }
+        Request::OpenPreviewProvider {
+            target,
+            plugin_id,
+            runtime_id,
+            view_id,
+            selection_revision,
+            source_kind,
+        } => {
+            super::preview_provider::open(
+                app,
+                (window.label(), &document),
+                target,
+                super::preview_provider::Selection {
+                    plugin: plugin_id,
+                    runtime: runtime_id,
+                    view: view_id,
+                    revision: selection_revision,
+                    source_kind,
+                },
+            )
+            .await
+        }
+        Request::SubmitPreviewProviderAction {
+            token,
+            lease,
+            id,
+            attempt_id,
+            revision,
+            command,
+        } => {
+            let id = super::preview_provider::submit(
+                app,
+                (window.label(), &document),
+                &lease,
+                &token,
+                super::super::actions::ViewAction::Preview {
+                    id,
+                    attempt_id,
+                    revision,
+                    command,
+                },
+            )?;
+            native::changed(app);
+            Ok(json!(id))
+        }
         Request::Forwarding {
             token,
             lease,

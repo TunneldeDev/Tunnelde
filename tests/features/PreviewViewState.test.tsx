@@ -87,7 +87,9 @@ it.each(["audio", "video"] as const)(
     const capsule = first.capture();
     expect(capsule).toMatchObject({
       fields: {
-        "preview:media": { fields: { media: { time: 42, volume: 0.3, muted: true, rate: 1.5 } } },
+        "preview:media": {
+          fields: { media: { time: 42, volume: 0.3, muted: true, rate: 1.5, playing: false } },
+        },
       },
     });
     expect(JSON.stringify(capsule)).not.toContain("private-handle");
@@ -109,3 +111,75 @@ it.each(["audio", "video"] as const)(
     expect(play).not.toHaveBeenCalled();
   },
 );
+it("freezes a playing source, stages silently and resumes only after commit or rollback", () => {
+  const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(function (
+    this: HTMLMediaElement,
+  ) {
+    Object.defineProperty(this, "paused", { value: true, configurable: true });
+  });
+  vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+  const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(async function (
+    this: HTMLMediaElement,
+  ) {
+    Object.defineProperty(this, "paused", { value: false, configurable: true });
+  });
+  const source = createPanelViewState();
+  const tree = (controller: typeof source, active: boolean) => (
+    <PanelViewStateScope controller={controller}>
+      <PreviewBody attemptId="playback">
+        <MediaPreview
+          kind="audio"
+          url="preview://localhost/private"
+          name="playing audio"
+          active={active}
+          onError={vi.fn()}
+        />
+      </PreviewBody>
+    </PanelViewStateScope>
+  );
+  const ui = render(tree(source, true));
+  const player = screen.getByLabelText("playing audio") as HTMLMediaElement;
+  fireEvent.loadedMetadata(player);
+  Object.defineProperty(player, "paused", { value: false, configurable: true });
+  player.currentTime = 8;
+  ui.rerender(tree(source, false));
+  expect(pause).toHaveBeenCalled();
+  const capsule = source.capture();
+  expect(capsule).toMatchObject({
+    fields: { "preview:playback": { fields: { media: { time: 8, playing: true } } } },
+  });
+  ui.rerender(tree(source, true));
+  expect(play).toHaveBeenCalledOnce(); // cancelled move returns the same player
+  ui.unmount();
+  play.mockClear();
+  const destination = createPanelViewState(capsule);
+  const remote = render(tree(destination, false));
+  const staged = screen.getByLabelText("playing audio") as HTMLMediaElement;
+  fireEvent.loadedMetadata(staged);
+  expect(staged.currentTime).toBe(8);
+  expect(play).not.toHaveBeenCalled();
+  expect(destination.capture()).toMatchObject({
+    fields: { "preview:playback": { fields: { media: { playing: true } } } },
+  });
+  remote.rerender(tree(destination, true));
+  expect(play).toHaveBeenCalledOnce();
+});
+it("keeps caret, scroll and another control's focus when native metadata recreates the file object", () => {
+  const tree = (target: PreviewFile) => (
+    <>
+      <input aria-label="Provider draft" />
+      <TextContent file={target} content="first\nsecond\nthird" markdown={false} />
+    </>
+  );
+  const ui = render(tree(file));
+  const text = screen.getByRole("textbox", { name: "Preview file" }) as HTMLTextAreaElement;
+  text.setSelectionRange(4, 9);
+  text.scrollTop = 37;
+  const draft = screen.getByRole("textbox", { name: "Provider draft" });
+  draft.focus();
+  ui.rerender(tree({ ...file, source: { ...file.source } }));
+  expect(document.activeElement).toBe(draft);
+  expect(text.selectionStart).toBe(4);
+  expect(text.selectionEnd).toBe(9);
+  expect(text.scrollTop).toBe(37);
+});

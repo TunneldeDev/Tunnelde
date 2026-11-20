@@ -27,6 +27,7 @@ struct View {
     authority: Authority,
     provider: Option<provider::Binding>,
     tasks_provider: Option<crate::plugins::frontend::native::Source>,
+    preview_provider: Option<crate::plugins::frontend::native::Source>,
 }
 #[derive(Default)]
 pub(super) struct Views {
@@ -114,6 +115,7 @@ impl Ownership {
                 authority,
                 provider,
                 tasks_provider: None,
+                preview_provider: None,
             },
         );
         Ok(())
@@ -320,6 +322,7 @@ pub(crate) mod gateway;
 pub(crate) mod origin;
 #[cfg(not(windows))]
 pub(crate) mod pickers;
+mod preview_provider;
 mod provider;
 mod task_provider;
 pub(super) use provider::ForwardingAuthority;
