@@ -311,7 +311,7 @@ impl ForwardRegistry {
             Some(runtime) => StopTarget::Snapshot(Some(runtime)),
             None => StopTarget::Any,
         };
-        self.take_inner(id, target, None, check)
+        self.take_inner(id, target, None, || check().map(|()| false))
     }
     /// Exact displayed runtime, including the absence of a listener while an
     /// automatic start/retry is pending. None here never means "any instance".
@@ -321,20 +321,32 @@ impl ForwardRegistry {
         expected: Option<&str>,
         check: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<StoppedForward> {
-        self.take_inner(id, StopTarget::Snapshot(expected), None, check)
+        self.take_inner(id, StopTarget::Snapshot(expected), None, || {
+            check().map(|()| false)
+        })
+    }
+    /// Delete exactly the reviewed listener (or reviewed absence) and metadata
+    /// in one registry transaction. A stale runtime must not reach persistence.
+    /// Cleanup is spawned before returning and remains awaitable by its owner.
+    pub(crate) fn remove_snapshot(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+        commit: impl FnOnce() -> AppResult<bool>,
+    ) -> AppResult<StoppedForward> {
+        self.take_inner(id, StopTarget::Snapshot(expected), None, commit)
     }
     fn take_inner(
         &self,
         id: &str,
         expected: StopTarget<'_>,
         owner: Option<(&str, u64)>,
-        check: impl FnOnce() -> AppResult<()>,
+        commit: impl FnOnce() -> AppResult<bool>,
     ) -> AppResult<StoppedForward> {
         let mut active = self
             .active
             .lock()
             .map_err(|_| AppError::internal("forward.lock"))?;
-        check()?;
         if owner.is_some_and(|(owner, generation)| {
             active.get(id).is_none_or(|item| {
                 item.owner.as_deref() != Some(owner) || item.generation != Some(generation)
@@ -347,10 +359,13 @@ impl ForwardRegistry {
                 return Err(AppError::validation("forward.changed"));
             }
         }
+        // All runtime preconditions precede persistence. Reversing these two
+        // steps could delete a rule before rejecting its replacement listener.
+        let changed = commit()?;
         self.invalidate(format!("rule:{id}"));
         let item = active.remove(id);
         drop(active);
-        if item.is_some() {
+        if changed || item.is_some() {
             self.publish();
         }
         // Spawn before returning so caller cancellation cannot interrupt cleanup.

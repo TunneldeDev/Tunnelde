@@ -13,7 +13,8 @@ mod runtime;
 pub(crate) mod start;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
 pub(crate) use runtime::{
-    prepare_checked, prepare_managed, start_managed, stop_checked, take_checked, take_manual_stop,
+    prepare_checked, prepare_managed, start_managed, stop_checked, take_checked,
+    take_manual_remove, take_manual_stop,
 };
 pub use runtime::{start_checked, stop};
 

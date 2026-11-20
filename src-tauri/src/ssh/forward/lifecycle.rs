@@ -61,7 +61,7 @@ impl ForwardRegistry {
             id,
             StopTarget::Snapshot(Some(identity)),
             Some((owner, generation)),
-            || Ok(()),
+            || Ok(false),
         )
     }
 }

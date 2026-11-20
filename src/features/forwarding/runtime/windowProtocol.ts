@@ -2,7 +2,7 @@ import type { ForwardAutomation } from "../model/contract";
 import type { forwardingSavePayload } from "../model/payload";
 
 /** Private builtin-only grammar. No provider origin/handle, credentials, raw
- * command name or caller-selected window. Connection/removal adapters remain
+ * command name or caller-selected window. Connection/provider adapters remain
  * separate work; this is not a complete ForwardingActions implementation. */
 export type ForwardingWindowMutation =
   | {
@@ -15,6 +15,14 @@ export type ForwardingWindowMutation =
       interaction?: string;
     }
   | { operation: "stop"; id: string; revision: string; runtimeId: string | null }
+  | {
+      operation: "remove";
+      id: string;
+      revision: string;
+      runtimeId: string | null;
+      /** Original deletion-confirmation interaction, never a later replacement. */
+      interaction: string;
+    }
   | {
       operation: "saveGroup";
       hostId: string;

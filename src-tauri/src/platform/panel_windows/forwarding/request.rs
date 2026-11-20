@@ -21,6 +21,12 @@ pub(crate) enum Request {
         revision: String,
         runtime_id: Option<String>,
     },
+    Remove {
+        id: String,
+        revision: String,
+        runtime_id: Option<String>,
+        interaction: String,
+    },
     SaveGroup {
         host_id: String,
         name: String,
@@ -47,6 +53,7 @@ impl Request {
             {
                 interaction.as_deref()
             }
+            Self::Remove { interaction, .. } => Some(interaction),
             _ => None,
         }
     }
@@ -76,6 +83,17 @@ impl Request {
                 revision,
                 runtime_id,
             } => bounded(id, 128) && bounded(revision, 256) && optional(runtime_id, 128),
+            Self::Remove {
+                id,
+                revision,
+                runtime_id,
+                interaction,
+            } => {
+                bounded(id, 128)
+                    && bounded(revision, 256)
+                    && optional(runtime_id, 128)
+                    && bounded(interaction, 128)
+            }
             Self::SaveGroup {
                 host_id,
                 name,

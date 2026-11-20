@@ -167,3 +167,74 @@ fn unready_source_never_gets_resource_admission_and_discovery_stays_closed() {
         .begin_forwarding("main", &main, &lease, &stop())
         .is_ok());
 }
+
+#[test]
+fn deletion_requires_original_live_confirmation_and_keeps_native_fence_until_settlement() {
+    let mut registry = Ownership::default();
+    let main = registry.register("main").unwrap();
+    registry.ready("main", &main).unwrap();
+    let lease = registry.add_panel("main", &main, "forwarding").unwrap();
+    let confirmation = registry.begin_interaction("main", &main, &lease).unwrap();
+    let wire = json!({"operation":"remove","id":"rule","revision":"one","runtimeId":"runtime","interaction":confirmation});
+    let request: Request = serde_json::from_value(wire.clone()).unwrap();
+    assert!(request.validate().is_ok());
+    for field in ["id", "revision", "runtimeId", "interaction"] {
+        let mut invalid = wire.clone();
+        invalid[field] = json!("");
+        assert!(serde_json::from_value::<Request>(invalid)
+            .unwrap()
+            .validate()
+            .is_err());
+    }
+    let mut missing = wire.clone();
+    missing.as_object_mut().unwrap().remove("interaction");
+    assert!(serde_json::from_value::<Request>(missing).is_err());
+    for (field, value) in [
+        ("origin", json!({"token":"provider"})),
+        ("sessionId", json!("ssh")),
+        ("window", json!("main")),
+    ] {
+        let mut forged = wire.clone();
+        forged[field] = value;
+        assert!(serde_json::from_value::<Request>(forged).is_err());
+    }
+    let id = registry
+        .begin_forwarding("main", &main, &lease, &request)
+        .unwrap();
+    assert!(registry
+        .forwarding_current("main", &main, &lease, &request)
+        .is_ok());
+    registry
+        .end_interaction("main", &main, &lease, &confirmation)
+        .unwrap();
+    let later = registry.begin_interaction("main", &main, &lease).unwrap();
+    assert_ne!(later, confirmation);
+    // A replacement confirmation in the same document cannot approve the old
+    // request after a dialog cancellation/target change.
+    assert!(registry
+        .forwarding_current("main", &main, &lease, &request)
+        .is_err());
+    registry
+        .end_interaction("main", &main, &lease, &later)
+        .unwrap();
+    let replacement = registry.register("main").unwrap();
+    registry.ready("main", &replacement).unwrap();
+    assert!(registry
+        .forwarding_current("main", &main, &lease, &request)
+        .is_err());
+    // If deletion already committed, response cancellation/reload must not
+    // allow another action, panel removal or transfer before socket cleanup.
+    assert!(registry
+        .remove_panel("main", &replacement, "forwarding")
+        .is_err());
+    let current = registry.panels["forwarding"].lease.clone();
+    assert!(registry
+        .begin_forwarding("main", &replacement, &current, &stop())
+        .is_err());
+    registry.finish_native_action("forwarding", "wrong-operation");
+    assert!(registry.panels["forwarding"].native_actions.contains(&id));
+    registry.finish_native_action("forwarding", &id);
+    registry
+        .remove_panel("main", &replacement, "forwarding")
+        .unwrap();
+}

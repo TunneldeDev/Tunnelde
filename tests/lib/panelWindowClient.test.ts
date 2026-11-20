@@ -406,3 +406,32 @@ it("preserves native forwarding rejection rather than retrying an ordinary forwa
   expect(native.invoke).toHaveBeenCalledTimes(1);
   client.dispose();
 });
+
+it("captures exact deletion target and original confirmation before native delivery", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 2 };
+  const request = {
+    operation: "remove" as const,
+    id: "reviewed-rule",
+    revision: "reviewed-revision",
+    runtimeId: "reviewed-runtime",
+    interaction: "original-confirmation",
+  };
+  native.invoke.mockResolvedValueOnce(null);
+  const pending = client.forwardingMutation(lease, request);
+  request.runtimeId = "replacement-runtime";
+  request.interaction = "replacement-confirmation";
+  await pending;
+  expect(native.invoke).toHaveBeenCalledExactlyOnceWith("panel_window_forwarding", {
+    document: identity.document,
+    lease,
+    request: {
+      operation: "remove",
+      id: "reviewed-rule",
+      revision: "reviewed-revision",
+      runtimeId: "reviewed-runtime",
+      interaction: "original-confirmation",
+    },
+  });
+  client.dispose();
+});

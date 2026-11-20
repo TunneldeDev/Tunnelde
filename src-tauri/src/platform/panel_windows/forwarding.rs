@@ -74,7 +74,7 @@ impl Effect {
         {
             return Err(native::invalid("panel action expired"));
         }
-        // Ownership -> automation (stop only) -> registry -> DB. No awaits,
+        // Ownership -> automation (stop/removal) -> registry -> DB. No awaits,
         // native UI or calls back into ownership inside this transaction.
         run()
     }
@@ -163,6 +163,19 @@ fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
             runtime_id,
         } => {
             return Ok(Prepared::Stop(domain::take_manual_stop(
+                app,
+                id,
+                revision,
+                runtime_id.as_deref(),
+            )?));
+        }
+        Request::Remove {
+            id,
+            revision,
+            runtime_id,
+            ..
+        } => {
+            return Ok(Prepared::Stop(domain::take_manual_remove(
                 app,
                 id,
                 revision,
