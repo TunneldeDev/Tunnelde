@@ -122,6 +122,10 @@ export async function openFrontendView({
       await scope.run(() => restore.call(instance, restored.value), { timeoutMs: 15_000 });
       live();
     }
+    // The outer panel wait can time out before plugin JavaScript settles.
+    // Charge actual factory work independently so repeated moves/checkpoints
+    // cannot accumulate capture callbacks on one uncooperative view.
+    const captures = scope.child({ limit: 1 });
     return {
       component: instance.component,
       resources: scope,
@@ -129,7 +133,7 @@ export async function openFrontendView({
       captureState: async () => {
         live();
         if (!capture) throw new Error("plugin.frontend.viewStateUnavailable");
-        const value = await scope.run(() => capture.call(instance), { timeoutMs: 15_000 });
+        const value = await captures.run(() => capture.call(instance), { timeoutMs: 15_000 });
         live();
         return cloneState(value);
       },

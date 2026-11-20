@@ -1,3 +1,4 @@
+import { PanelViewBoundary } from "@/lib/panels/viewBoundary";
 import { PanelInteractionScope } from "@/lib/panels/interaction";
 import { Button } from "@/components/ui/form/Button";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
@@ -27,6 +28,9 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
   );
   const restored = useRef(false);
   const lastDom = useRef(record.dom);
+  const committed = useRef(false);
+  const focusRestored = useRef(false);
+  const focusWhenReady = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     const element = root.current,
       views = windowViews();
@@ -36,9 +40,15 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
       if (record.dom) restorePanelDomState(element, record.dom);
       restored.current = true;
     };
-    restore();
+    const lifetime = new AbortController();
+    let ready = false;
+    const focus = () => {
+      if (!ready || !committed.current || focusRestored.current || lifetime.signal.aborted) return;
+      if (record.dom) restorePanelDomState(element, record.dom, { focus: true });
+      focusRestored.current = true;
+    };
+    focusWhenReady.current = focus;
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(restore);
-    observer?.observe(element);
     const unregister = views.registerRoot(record.panelId, () => {
       if ((!restored.current || !element.getBoundingClientRect().width) && lastDom.current)
         return lastDom.current;
@@ -46,25 +56,45 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
     });
     // Child layout effects have restored explicit React state. Hidden native
     // windows must not wait for rAF: WKWebView can suspend it before first show.
-    element.getBoundingClientRect();
-    views.rendered(record.key);
+    const rendered = () => {
+      if (lifetime.signal.aborted) return;
+      ready = true;
+      restore();
+      focus();
+      observer?.observe(element);
+      element.getBoundingClientRect();
+      views.rendered(record.key);
+    };
+    if (record.controller.hasReadiness())
+      void record.controller.waitReady(lifetime.signal).then(rendered, (error) => {
+        if (!lifetime.signal.aborted) views.renderFailed(record.key, error);
+      });
+    else rendered();
     return () => {
+      lifetime.abort();
+      if (focusWhenReady.current === focus) focusWhenReady.current = null;
       unregister();
       observer?.disconnect();
     };
   }, [record.key, record.controller, record.dom, record.panelId]);
-  const committed = useRef(false);
   useLayoutEffect(() => {
-    if (record.staged || committed.current) return;
+    if (record.staged) return;
     committed.current = true;
-    if (record.dom && root.current) restorePanelDomState(root.current, record.dom, { focus: true });
+    focusWhenReady.current?.();
   }, [record, record.staged]);
+  useLayoutEffect(() => {
+    // Freezing via inert may blur the source. A failed/cancelled handoff must
+    // return its original caret after React has removed inert, not focus a shell.
+    if (!frozen && !record.moving && record.frozenDom && root.current)
+      restorePanelDomState(root.current, record.frozenDom, { focus: true });
+  }, [frozen, record.moving, record.frozenDom]);
   useLayoutEffect(() => {
     const element = root.current,
       views = windowViews();
     if (!element || !views || frozen || !record.lease) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const checkpoint = () => {
+      record.controller.invalidate();
       if (element.getBoundingClientRect().width) lastDom.current = capturePanelDomState(element);
       clearTimeout(timer);
       timer = setTimeout(() => {
@@ -95,13 +125,18 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
         inert={frozen || undefined}
         aria-busy={frozen || undefined}
       >
-        <PanelViewStateScope controller={record.controller}>
-          <PanelInteractionScope
-            value={{ client: windowViews()?.client, lease: record.lease, staged: record.staged }}
-          >
-            {children}
-          </PanelInteractionScope>
-        </PanelViewStateScope>
+        <PanelViewBoundary
+          fallback={<p role="alert">{t("common.error")}</p>}
+          failed={(error) => windowViews()?.renderFailed(record.key, error)}
+        >
+          <PanelViewStateScope controller={record.controller}>
+            <PanelInteractionScope
+              value={{ client: windowViews()?.client, lease: record.lease, staged: record.staged }}
+            >
+              {children}
+            </PanelInteractionScope>
+          </PanelViewStateScope>
+        </PanelViewBoundary>
       </div>
     </div>
   );

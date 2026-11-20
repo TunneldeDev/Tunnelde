@@ -1,3 +1,4 @@
+import { createPanelCaptures, type AsyncPanelCapture, type PanelReady } from "./viewCapture";
 import {
   createContext,
   useContext,
@@ -99,7 +100,7 @@ export function createPanelViewState(initial?: unknown) {
 }
 function createController(initial: unknown, maxFields: number) {
   const incoming = initial === undefined ? {} : parseCapsule(initial, maxFields).fields;
-  const fields = new Map<string, { token: symbol; capture: () => unknown }>();
+  const captures = createPanelCaptures(maxFields, capsule);
   let disposed = false;
   const listeners = new Set<() => void>();
   return {
@@ -111,36 +112,45 @@ function createController(initial: unknown, maxFields: number) {
       };
     },
     changed() {
-      if (!disposed) for (const notify of listeners) notify();
+      if (!disposed) {
+        captures.invalidate();
+        for (const notify of listeners) notify();
+      }
     },
+    invalidate: captures.invalidate,
     read<T>(key: string, validate: (value: unknown) => value is T): T | undefined {
       if (disposed) throw new Error("panel.viewState.disposed");
       if (!validKey(key)) throw new Error("panel.viewState.invalidKey");
       const value = Object.prototype.hasOwnProperty.call(incoming, key) ? incoming[key] : undefined;
       return validate(value) ? value : undefined;
     },
-    register(key: string, capture: () => unknown) {
+    register(
+      key: string,
+      capture: () => unknown,
+      captureAsync?: AsyncPanelCapture,
+      ready?: PanelReady,
+    ) {
       if (disposed) throw new Error("panel.viewState.disposed");
       if (!validKey(key)) throw new Error("panel.viewState.invalidKey");
-      if (fields.has(key)) throw new Error("panel.viewState.duplicateKey");
-      const token = Symbol(key);
-      fields.set(key, { token, capture });
+      const unregister = captures.register(key, { sync: capture, async: captureAsync, ready });
       return () => {
-        if (fields.get(key)?.token !== token) return;
-        fields.delete(key);
-        // A closed dialog must not revive an old credential draft on reopening.
-        delete incoming[key];
+        if (unregister()) delete incoming[key];
       };
     },
-    capture(): PanelViewCapsule {
+    registerAsync(key: string, capture: AsyncPanelCapture, ready?: PanelReady) {
       if (disposed) throw new Error("panel.viewState.disposed");
-      // Rendering a long list must not crash. Reject an oversized handoff at
-      // capture instead, keeping the interactive source and every draft intact.
-      if (fields.size > maxFields) throw new Error("panel.viewState.tooManyFields");
-      return capsule(Object.fromEntries([...fields].map(([key, field]) => [key, field.capture()])));
+      if (!validKey(key)) throw new Error("panel.viewState.invalidKey");
+      const unregister = captures.register(key, { async: capture, ready });
+      return () => {
+        if (unregister()) delete incoming[key];
+      };
     },
+    capture: captures.capture,
+    captureAsync: captures.captureAsync,
+    hasReadiness: captures.hasReadiness,
+    waitReady: captures.waitReady,
     dispose() {
-      fields.clear();
+      captures.dispose();
       listeners.clear();
       for (const key of Object.keys(incoming)) delete incoming[key];
       disposed = true;
@@ -149,6 +159,8 @@ function createController(initial: unknown, maxFields: number) {
 }
 export type PanelViewState = ReturnType<typeof createPanelViewState>;
 const Context = createContext<PanelViewState | null>(null);
+/** Host-internal binding for async view factories; not a plugin transport. */
+export const usePanelViewController = () => useContext(Context);
 export function PanelViewStateScope({
   controller,
   children,
@@ -181,7 +193,12 @@ export function PanelViewStateGroup({ name, children }: { name: string; children
   });
   useLayoutEffect(() => {
     if (!parent || !controller) return;
-    const unregister = parent.register(name, controller.capture);
+    const unregister = parent.register(
+      name,
+      controller.capture,
+      controller.captureAsync,
+      controller.waitReady,
+    );
     const stop = controller.subscribe(parent.changed);
     return () => {
       stop();

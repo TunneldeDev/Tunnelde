@@ -411,3 +411,244 @@ it("does not mistake an async factory shell for a synchronous native provider re
   expect(f.transport.openView).not.toHaveBeenCalled();
   f.runtime.dispose();
 });
+
+it("hands factory state through the panel capsule and waits for real async restore before renderer readiness", async () => {
+  const { act, fireEvent, render, screen } = await import("@testing-library/react");
+  const { useState } = await import("react");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  let restore!: () => void;
+  const restored = vi.fn();
+  const cleanup = vi.fn();
+  const f = fixture(() => {
+    let text = "initial";
+    return {
+      component: function Editor() {
+        const [value, set] = useState(text);
+        return (
+          <input
+            aria-label="plugin draft"
+            value={value}
+            onChange={(event) => {
+              text = event.target.value;
+              set(text);
+            }}
+          />
+        );
+      },
+      captureState: async () => {
+        await Promise.resolve();
+        return { text };
+      },
+      restoreState: async (value) => {
+        restored(value);
+        await new Promise<void>((resolve) => {
+          restore = resolve;
+        });
+        text = (value as { text: string }).text;
+      },
+      dispose: cleanup,
+    };
+  });
+  await f.runtime.ensure(plugin);
+  const View = f.runtime.view("custom", "main")!;
+  const props = { pluginId: "custom", viewId: "main", visible: true };
+  const source = createPanelViewState();
+  const ui = render(
+    <PanelViewStateScope controller={source}>
+      <View {...props} />
+    </PanelViewStateScope>,
+  );
+  await screen.findByRole("textbox", { name: "plugin draft" });
+  await source.waitReady(new AbortController().signal);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "source-only draft" } });
+  expect(() => source.capture()).toThrow("asyncRequired");
+  const capsule = await source.captureAsync();
+  expect(capsule.fields["plugin.factory"]).toEqual({
+    version: 1,
+    pluginId: "custom",
+    viewId: "main",
+    state: { text: "source-only draft" },
+  });
+  expect(JSON.stringify(capsule)).not.toContain("activation");
+  ui.unmount();
+  expect(cleanup).toHaveBeenCalledOnce();
+  const destination = createPanelViewState(capsule);
+  const target = render(
+    <PanelViewStateScope controller={destination}>
+      <View {...props} />
+    </PanelViewStateScope>,
+  );
+  const ready = vi.fn();
+  const pending = destination.waitReady(new AbortController().signal).then(ready);
+  await vi.waitFor(() => expect(restored).toHaveBeenCalledWith({ text: "source-only draft" }));
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(ready).not.toHaveBeenCalled();
+  await act(async () => {
+    restore();
+  });
+  await pending;
+  expect(screen.getByRole("textbox")).toHaveProperty("value", "source-only draft");
+  expect(await destination.captureAsync()).toEqual(capsule);
+  expect(f.activate).toHaveBeenCalledOnce();
+  expect(f.transport.open).toHaveBeenCalledOnce();
+  expect(f.transport.openView).toHaveBeenCalledTimes(2);
+  target.unmount();
+  source.dispose();
+  destination.dispose();
+  f.runtime.dispose();
+});
+
+it("keeps StrictMode binding replay separate from obsolete loading captures", async () => {
+  const { render, screen } = await import("@testing-library/react");
+  const { StrictMode } = await import("react");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const f = fixture(() => ({
+    component: () => <span>replayed factory</span>,
+    captureState: async () => "latest",
+    restoreState: async () => {},
+  }));
+  await f.runtime.ensure(plugin);
+  const state = createPanelViewState();
+  const View = f.runtime.view("custom", "main")!;
+  const ui = render(
+    <StrictMode>
+      <PanelViewStateScope controller={state}>
+        <View pluginId="custom" viewId="main" visible />
+      </PanelViewStateScope>
+    </StrictMode>,
+  );
+  await screen.findByText("replayed factory");
+  await state.waitReady(new AbortController().signal);
+  expect((await state.captureAsync()).fields["plugin.factory"]).toEqual({
+    version: 1,
+    pluginId: "custom",
+    viewId: "main",
+    state: "latest",
+  });
+  ui.unmount();
+  state.dispose();
+  f.runtime.dispose();
+});
+
+it("rejects factory state capture for a stateless legacy-compatible instance instead of inventing an empty capsule", async () => {
+  const { render, screen } = await import("@testing-library/react");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const f = fixture(() => ({ component: () => <span>stateless view</span> }));
+  await f.runtime.ensure(plugin);
+  const state = createPanelViewState();
+  const View = f.runtime.view("custom", "main")!;
+  const ui = render(
+    <PanelViewStateScope controller={state}>
+      <View pluginId="custom" viewId="main" visible />
+    </PanelViewStateScope>,
+  );
+  await screen.findByText("stateless view");
+  await expect(state.captureAsync()).rejects.toThrow("viewStateUnavailable");
+  ui.unmount();
+  state.dispose();
+  f.runtime.dispose();
+});
+
+it("rejects capture/readiness when the real factory setup fails without stopping its activation", async () => {
+  const { render, screen } = await import("@testing-library/react");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const { PanelViewBoundary } = await import("@/lib/panels/viewBoundary");
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const f = fixture(async () => {
+    throw new Error("factory setup failed");
+  });
+  await f.runtime.ensure(plugin);
+  const state = createPanelViewState();
+  const View = f.runtime.view("custom", "main")!;
+  const failed = vi.fn();
+  const ui = render(
+    <PanelViewBoundary fallback={<span>isolated failure</span>} failed={failed}>
+      <PanelViewStateScope controller={state}>
+        <View pluginId="custom" viewId="main" visible />
+      </PanelViewStateScope>
+    </PanelViewBoundary>,
+  );
+  const rejected = expect(state.waitReady(new AbortController().signal)).rejects.toThrow();
+  await screen.findByText("isolated failure");
+  await rejected;
+  expect(failed).toHaveBeenCalledOnce();
+  expect(f.context().signal.aborted).toBe(false);
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  ui.unmount();
+  state.dispose();
+  f.runtime.dispose();
+  log.mockRestore();
+});
+
+it("rejects capsule owner/schema mismatch before acquiring a factory view", async () => {
+  const { render, screen } = await import("@testing-library/react");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const { PanelViewBoundary } = await import("@/lib/panels/viewBoundary");
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const f = fixture(() => ({
+    component: Component,
+    captureState: () => null,
+    restoreState: () => {},
+  }));
+  await f.runtime.ensure(plugin);
+  const View = f.runtime.view("custom", "main")!;
+  for (const invalid of [
+    { version: 1, pluginId: "other", viewId: "main", state: null },
+    { version: 1, pluginId: "custom", viewId: "other", state: null },
+    { version: 2, pluginId: "custom", viewId: "main", state: null },
+    { version: 1, pluginId: "custom", viewId: "main", state: null, token: "forbidden" },
+  ]) {
+    const state = createPanelViewState({ version: 1, fields: { "plugin.factory": invalid } });
+    const failed = vi.fn();
+    const ui = render(
+      <PanelViewBoundary fallback={<span>invalid capsule</span>} failed={failed}>
+        <PanelViewStateScope controller={state}>
+          <View pluginId="custom" viewId="main" visible />
+        </PanelViewStateScope>
+      </PanelViewBoundary>,
+    );
+    expect(screen.getByText("invalid capsule")).toBeTruthy();
+    expect(failed).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "panel.viewState.invalid" }),
+    );
+    expect(f.transport.openView).not.toHaveBeenCalled();
+    ui.unmount();
+    state.dispose();
+  }
+  f.runtime.dispose();
+  log.mockRestore();
+});
+
+it("does not re-enter a timed-out plugin capture whose real callback still runs", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: unknown) => void;
+  const capture = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const f = fixture(() => ({
+    component: Component,
+    captureState: capture,
+    restoreState: () => {},
+  }));
+  try {
+    await f.runtime.ensure(plugin);
+    const view = (await f.runtime.mountView("custom", "main", "activation"))!;
+    const timedOut = expect(view.captureState()).rejects.toThrow("timeout");
+    await vi.advanceTimersByTimeAsync(15000);
+    await timedOut;
+    await expect(view.captureState()).rejects.toThrow("limit");
+    expect(capture).toHaveBeenCalledOnce();
+    finish("late");
+    for (let i = 0; i < 15; i++) await Promise.resolve();
+    const next = view.captureState();
+    finish("new");
+    expect(await next).toBe("new");
+    expect(capture).toHaveBeenCalledTimes(2);
+  } finally {
+    f.runtime.dispose();
+    vi.useRealTimers();
+  }
+});

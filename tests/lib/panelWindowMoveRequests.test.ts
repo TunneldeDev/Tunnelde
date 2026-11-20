@@ -39,7 +39,13 @@ it("claims source jobs after subscribing, routes the exact expected lease and re
   mocks.move.mockResolvedValue(undefined);
   stops.push(startPanelMoveRequests(f.client, f.failure));
   await tick();
-  expect(mocks.move).toHaveBeenCalledExactlyOnceWith("tasks", "other", job.lease, job.id);
+  expect(mocks.move).toHaveBeenCalledExactlyOnceWith(
+    "tasks",
+    "other",
+    job.lease,
+    job.id,
+    expect.any(AbortSignal),
+  );
   expect(f.fail).toHaveBeenCalledExactlyOnceWith(job.id);
   expect(f.failure).not.toHaveBeenCalled();
   f.changed();

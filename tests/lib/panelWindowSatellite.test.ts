@@ -28,6 +28,8 @@ function fixture() {
           },
         ],
       };
+    if (request.action === "beginClose")
+      return snapshot.panels.filter((panel) => panel.windowId === "panel-one");
     return request.action === "staged" ? { state: "draft" } : null;
   });
   const client = {
@@ -43,7 +45,8 @@ function fixture() {
   } as unknown as PanelWindowClient;
   const views = {
     reconcile: vi.fn().mockResolvedValue(null),
-    capture: vi.fn().mockReturnValue("captured"),
+    captureAsync: vi.fn().mockResolvedValue("captured"),
+    setMoving: vi.fn(),
     stage: vi.fn().mockResolvedValue(null),
   } as unknown as WindowViews;
   const failure = vi.fn(),
@@ -122,7 +125,7 @@ it("captures before close, prepares all returns, then destroys only an empty com
   await settle();
   await f.session.close();
   await settle();
-  expect(f.views.capture).toHaveBeenCalledWith("connections");
+  expect(f.views.captureAsync).toHaveBeenCalledWith("connections", expect.any(AbortSignal));
   expect(f.control).toHaveBeenCalledWith({
     action: "prepare",
     lease,
@@ -161,4 +164,143 @@ it("rolls back a timed-out close return rather than permanently freezing the sat
     expect.objectContaining({ message: "panel.window.closeCancelled" }),
   );
   expect(f.client.destroy).not.toHaveBeenCalled();
+});
+
+it("waits for every asynchronous capture before freezing native membership or preparing any return", async () => {
+  const f = fixture();
+  await f.session.ready;
+  await settle();
+  const leases = ["connections", "tasks"].map((panelId) => ({
+    panelId,
+    windowId: "panel-one",
+    generation: 3,
+  }));
+  f.set({ windows: [], panels: leases, transfers: [] });
+  await settle();
+  const finish: ((value: unknown) => void)[] = [];
+  vi.mocked(f.views.captureAsync).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish.push((value) => resolve(value as Awaited<ReturnType<WindowViews["captureAsync"]>>));
+      }),
+  );
+  const pending = f.session.close();
+  await settle();
+  expect(f.views.setMoving).toHaveBeenCalledWith("connections", true, leases[0]);
+  expect(f.control).not.toHaveBeenCalledWith({ action: "beginClose" });
+  finish[0]!("one");
+  await settle();
+  expect(f.control).not.toHaveBeenCalledWith({ action: "beginClose" });
+  finish[1]!("two");
+  await pending;
+  expect(f.control).toHaveBeenCalledWith({
+    action: "prepare",
+    lease: leases[1],
+    targetWindow: "main",
+    state: "two",
+  });
+});
+it("rejects membership changed during capture instead of returning only the captured subset", async () => {
+  const f = fixture();
+  await f.session.ready;
+  await settle();
+  const lease = { panelId: "connections", windowId: "panel-one", generation: 3 };
+  f.set({ windows: [], panels: [lease], transfers: [] });
+  await settle();
+  let finish!: (value: unknown) => void;
+  vi.mocked(f.views.captureAsync).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureAsync"]>>);
+      }),
+  );
+  const pending = f.session.close();
+  await settle();
+  f.set({
+    windows: [],
+    panels: [lease, { ...lease, panelId: "tasks", generation: 4 }],
+    transfers: [],
+  });
+  await settle();
+  finish("draft");
+  await pending;
+  expect(f.control).not.toHaveBeenCalledWith(expect.objectContaining({ action: "prepare" }));
+  expect(f.control).toHaveBeenCalledWith({ action: "cancelClose" });
+  expect(f.views.setMoving).toHaveBeenCalledWith("connections", false, lease);
+  expect(f.failure).toHaveBeenCalledWith(
+    expect.objectContaining({ message: "panel.window.staleOwner" }),
+  );
+});
+it("rolls back all locally frozen leases on capture failure and permits a later retry", async () => {
+  const f = fixture();
+  await f.session.ready;
+  await settle();
+  const lease = { panelId: "connections", windowId: "panel-one", generation: 3 };
+  f.set({ windows: [], panels: [lease], transfers: [] });
+  await settle();
+  vi.mocked(f.views.captureAsync).mockRejectedValueOnce(new Error("capture failed"));
+  await f.session.close();
+  expect(f.views.setMoving).toHaveBeenLastCalledWith("connections", false, lease);
+  expect(f.control).not.toHaveBeenCalledWith({ action: "beginClose" });
+  await f.session.close();
+  expect(f.control).toHaveBeenCalledWith(expect.objectContaining({ action: "prepare" }));
+});
+it("cancels remaining prepared returns if a later prepare fails", async () => {
+  const f = fixture();
+  await f.session.ready;
+  await settle();
+  const leases = ["connections", "tasks"].map((panelId) => ({
+    panelId,
+    windowId: "panel-one",
+    generation: 3,
+  }));
+  f.set({ windows: [], panels: leases, transfers: [] });
+  await settle();
+  const original = f.control.getMockImplementation()!;
+  f.control.mockImplementation(async (request) => {
+    if (request.action === "prepare" && request.lease.panelId === "tasks")
+      throw new Error("blocked");
+    return original(request);
+  });
+  await f.session.close();
+  expect(f.control).toHaveBeenLastCalledWith({ action: "cancelClose" });
+  for (const lease of leases)
+    expect(f.views.setMoving).toHaveBeenCalledWith(lease.panelId, false, lease);
+  expect(f.client.destroy).not.toHaveBeenCalled();
+});
+it("cannot submit late captures after the source document is disposed", async () => {
+  const f = fixture();
+  await f.session.ready;
+  await settle();
+  const lease = { panelId: "connections", windowId: "panel-one", generation: 3 };
+  f.set({ windows: [], panels: [lease], transfers: [] });
+  await settle();
+  let finish!: (value: unknown) => void, signal!: AbortSignal;
+  vi.mocked(f.views.captureAsync).mockImplementationOnce((_id, current) => {
+    signal = current!;
+    return new Promise((resolve) => {
+      finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureAsync"]>>);
+    });
+  });
+  const pending = f.session.close();
+  await settle();
+  f.session.dispose();
+  expect(signal.aborted).toBe(true);
+  finish("late");
+  await pending;
+  expect(f.control).not.toHaveBeenCalledWith({ action: "beginClose" });
+  expect(f.control).not.toHaveBeenCalledWith(expect.objectContaining({ action: "prepare" }));
+});
+
+it("a capture failure before beginClose does not cancel unrelated native transfer jobs", async () => {
+  const f = fixture();
+  await f.session.ready;
+  await settle();
+  const lease = { panelId: "connections", windowId: "panel-one", generation: 3 };
+  f.set({ windows: [], panels: [lease], transfers: [] });
+  await settle();
+  vi.mocked(f.views.captureAsync).mockRejectedValueOnce(new Error("not ready"));
+  await f.session.close();
+  expect(f.control).not.toHaveBeenCalledWith({ action: "cancelClose" });
+  expect(f.views.setMoving).toHaveBeenLastCalledWith("connections", false, lease);
 });

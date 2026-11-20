@@ -14,7 +14,7 @@ export function startPanelMoveRequests(
     queued = false,
     running = false;
   let unsubscribe: (() => void) | undefined;
-  const active = new Set<string>();
+  const active = new Map<string, AbortController>();
   const report = (error: unknown) => {
     try {
       failure(error);
@@ -23,10 +23,17 @@ export function startPanelMoveRequests(
     }
   };
   const execute = async (job: PanelMoveJob) => {
-    active.add(job.id);
+    const lifetime = new AbortController();
+    active.set(job.id, lifetime);
     try {
       if (disposed) return;
-      await movePanelToWindow(job.lease.panelId, job.targetWindow, job.lease, job.id);
+      await movePanelToWindow(
+        job.lease.panelId,
+        job.targetWindow,
+        job.lease,
+        job.id,
+        lifetime.signal,
+      );
     } catch (error) {
       if (!disposed) report(error);
     } finally {
@@ -73,6 +80,9 @@ export function startPanelMoveRequests(
     disposed = true;
     queued = false;
     unsubscribe?.();
-    for (const id of active) void client.failPanelMove(id).catch(() => {});
+    for (const [id, lifetime] of active) {
+      lifetime.abort();
+      void client.failPanelMove(id).catch(() => {});
+    }
   };
 }

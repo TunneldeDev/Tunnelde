@@ -213,8 +213,8 @@ export function createFrontendRuntime(transport: FrontendTransport) {
               // native Workspace/Screen mount contract.
               if (view.kind !== "component" || view.provider || current.views.has(view.id))
                 continue;
-              const View = createFrontendFactoryComponent((signal) =>
-                mountView(plugin.id, view.id, session.token, undefined, signal),
+              const View = createFrontendFactoryComponent((signal, state) =>
+                mountView(plugin.id, view.id, session.token, state, signal),
               );
               register(current.views, view.id, View, true);
             }

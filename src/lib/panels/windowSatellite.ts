@@ -17,7 +17,14 @@ export function startSatelliteViews(
     running = false,
     closing = false,
     preparingClose = false,
+    nativeClosing = false,
     hadPanel = false;
+  const lifetime = new AbortController();
+  let closePanels: NativePanelSnapshot["panels"] = [];
+  const unfreezeClose = () => {
+    for (const panel of closePanels) views.setMoving(panel.panelId, false, panel);
+    closePanels = [];
+  };
   const staging = new Map<string, AbortController>();
   const cleanups: (() => void)[] = [];
   const reconcile = async () => {
@@ -67,8 +74,10 @@ export function startSatelliteViews(
     ) {
       // A deadline/cancellation must restore an interactive owner, not strand a
       // native window in permanent closing state after its return offer expired.
-      closing = false;
       await client.control({ action: "cancelClose" });
+      nativeClosing = false;
+      unfreezeClose();
+      closing = false;
       failure(new Error("panel.window.closeCancelled"));
       return;
     }
@@ -105,21 +114,51 @@ export function startSatelliteViews(
     if (closing || disposed) return;
     closing = true;
     preparingClose = true;
+    let panels: NativePanelSnapshot["panels"] = [];
     try {
       const snapshot = await client.snapshot();
+      if (disposed) return;
       // Capture before beginClose freezes the document. Native rejects closing
       // while a resource action/credential interaction is still in progress.
-      const panels = snapshot.panels.filter((panel) => panel.windowId === client.windowId);
-      const states = panels.map((panel) => ({ panel, state: views.capture(panel.panelId) }));
-      await client.control({ action: "beginClose" });
-      for (const { panel, state } of states)
+      panels = snapshot.panels.filter((panel) => panel.windowId === client.windowId);
+      closePanels = panels;
+      for (const panel of panels) views.setMoving(panel.panelId, true, panel);
+      const states = await Promise.all(
+        panels.map(async (panel) => ({
+          panel,
+          state: await views.captureAsync(panel.panelId, lifetime.signal),
+        })),
+      );
+      if (disposed) return;
+      nativeClosing = true;
+      const frozen = await client.control<NativePanelSnapshot["panels"]>({ action: "beginClose" });
+      // beginClose atomically returns the frozen membership. A panel may have
+      // entered/left during an asynchronous capture; never close a partial set.
+      if (
+        frozen.length !== panels.length ||
+        frozen.some(
+          (lease) =>
+            !panels.some(
+              (panel) =>
+                panel.panelId === lease.panelId &&
+                panel.windowId === lease.windowId &&
+                panel.generation === lease.generation,
+            ),
+        )
+      )
+        throw new Error("panel.window.staleOwner");
+      for (const { panel, state } of states) {
+        if (disposed) throw new Error("panel.window.cancelled");
         await client.control({ action: "prepare", lease: panel, targetWindow: "main", state });
+      }
       preparingClose = false;
       refresh();
     } catch (error) {
+      if (nativeClosing) await client.control({ action: "cancelClose" }).catch(() => {});
+      nativeClosing = false;
+      unfreezeClose();
       preparingClose = false;
       closing = false;
-      await client.control({ action: "cancelClose" }).catch(() => {});
       if (!disposed) failure(error);
     }
   };
@@ -149,6 +188,9 @@ export function startSatelliteViews(
     close,
     dispose() {
       disposed = true;
+      lifetime.abort();
+      if (nativeClosing) void client.control({ action: "cancelClose" }).catch(() => {});
+      unfreezeClose();
       queued = false;
       for (const cleanup of cleanups) cleanup();
       for (const controller of staging.values()) controller.abort();

@@ -336,6 +336,11 @@ Cycles, functions, getters, class instances, sparse arrays and nonfinite numbers
 are rejected rather than silently truncated. Never include credentials, native
 handles or background work in UI state. They are not durable storage. Async
 setup/capture/restore is deadline-bound; late acquired instances are cleaned.
+A view admits only one actual capture callback at a time. A timed-out callback
+that ignores cancellation remains charged until it settles; retries cannot start
+another callback in parallel. Panel-scoped factories share asynchronous ephemeral
+capture and wait for real committed rendering, not their loading shell. This does
+not change the coordinator-only native admission described below.
 
 Currently discovery lists only `contexts: ["coordinator"]` and
 `nativeWindows: false`: this factory/transport capability alone does **not**

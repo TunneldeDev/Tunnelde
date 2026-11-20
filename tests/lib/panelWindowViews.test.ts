@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createWindowViews, useWindowViews } from "@/lib/panels/windowViews";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
+import type { PanelDomState } from "@/lib/panels/domState";
 import type { NativePanelSnapshot, PanelLease } from "@/lib/panels/windowProtocol";
 
 const dom = { version: 1 as const, scroll: { body: { top: 73, left: 0 } }, focus: null };
@@ -126,4 +127,134 @@ it("local move freezing does not replace or erase the source view state", async 
   expect(frozen.controller).toBe(before.controller);
   views.setMoving("connections", false);
   expect(useWindowViews.getState().entries.get("connections")!.moving).toBe(false);
+});
+
+it("retries invalidated async capsules and captures the latest DOM only after plugin work settles", async () => {
+  const { views } = fixture();
+  await views.reconcile(snapshot([lease]));
+  const record = useWindowViews.getState().entries.get("connections")!;
+  let finish!: (value: unknown) => void;
+  const capture = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    )
+    .mockResolvedValue("new");
+  record.controller.registerAsync("draft", capture);
+  const root = vi.fn(() => dom);
+  views.registerRoot("connections", root);
+  const pending = views.captureAsync("connections");
+  record.controller.changed();
+  finish("stale");
+  expect((await pending).view.fields).toEqual({ draft: "new" });
+  expect(capture).toHaveBeenCalledTimes(2);
+  expect(root).toHaveBeenCalledOnce();
+});
+it("rejects an async capture whose root has been replaced even when the lease generation matches", async () => {
+  const { views } = fixture();
+  await views.reconcile(snapshot([lease]));
+  const record = useWindowViews.getState().entries.get("connections")!;
+  let finish!: (value: unknown) => void;
+  record.controller.registerAsync(
+    "draft",
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  views.registerRoot("connections", () => dom);
+  const check = expect(views.captureAsync("connections")).rejects.toThrow("staleOwner");
+  views.registerRoot("connections", () => dom);
+  finish("late");
+  await check;
+});
+it("cannot publish an async checkpoint after its owner is removed or replaced", async () => {
+  const { views, client } = fixture();
+  await views.reconcile(snapshot([lease]));
+  const record = useWindowViews.getState().entries.get("connections")!;
+  let finish!: (value: unknown) => void;
+  record.controller.registerAsync(
+    "draft",
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  views.registerRoot("connections", () => dom);
+  const check = expect(views.checkpoint("connections")).rejects.toThrow();
+  await views.reconcile(snapshot([{ ...lease, generation: 9 }]));
+  finish("late");
+  await check;
+  expect(client.control).not.toHaveBeenCalledWith(
+    expect.objectContaining({ action: "checkpoint" }),
+  );
+});
+it("stage render failure or document disposal rejects readiness, never acknowledges an empty shell", async () => {
+  const { views } = fixture();
+  const stage = views.stage(
+    { id: "broken", lease, targetWindow: "main" },
+    state,
+    new AbortController().signal,
+  );
+  const check = expect(stage).rejects.toThrow("view failure");
+  views.renderFailed("broken", new Error("view failure"));
+  await check;
+  expect(useWindowViews.getState().entries.size).toBe(0);
+  const next = views.stage(
+    { id: "disposed", lease, targetWindow: "main" },
+    state,
+    new AbortController().signal,
+  );
+  const disposed = expect(next).rejects.toThrow("disposed");
+  views.dispose();
+  await disposed;
+});
+it("old cleanup cannot unfreeze the replacement lease generation", async () => {
+  const { views } = fixture();
+  await views.reconcile(snapshot([lease]));
+  await views.reconcile(snapshot([{ ...lease, generation: 9 }]));
+  views.setMoving("connections", true);
+  views.setMoving("connections", false, lease);
+  expect(useWindowViews.getState().entries.get("connections")!.moving).toBe(true);
+});
+
+it.each([undefined, null, false, 0, ""])(
+  "falsy renderer rejection is still a failed stage, never an ACK",
+  async (error) => {
+    const { views } = fixture();
+    const pending = views.stage(
+      { id: "falsy", lease, targetWindow: "main" },
+      state,
+      new AbortController().signal,
+    );
+    const failed = vi.fn();
+    const done = vi.fn();
+    const checked = pending.then(done, failed);
+    views.renderFailed("falsy", error);
+    await checked;
+    expect(failed).toHaveBeenCalledExactlyOnceWith(error);
+    expect(done).not.toHaveBeenCalled();
+    expect(useWindowViews.getState().entries.size).toBe(0);
+  },
+);
+
+it("captures caret before inert blurs a moving source, not after asynchronous state work", async () => {
+  const { views } = fixture();
+  await views.reconcile(snapshot([lease]));
+  const focused = {
+    ...dom,
+    focus: { key: "draft", selection: { start: 2, end: 9, direction: "forward" as const } },
+  };
+  let current: PanelDomState = focused;
+  views.registerRoot("connections", () => current);
+  views.setMoving("connections", true, lease);
+  current = { ...focused, focus: null };
+  // A duplicate freeze must not replace the last focused source snapshot.
+  views.setMoving("connections", true, lease);
+  expect((await views.captureAsync("connections")).dom.focus).toEqual(focused.focus);
+  views.setMoving("connections", false, lease);
+  expect((await views.captureAsync("connections")).dom.focus).toBeNull();
 });

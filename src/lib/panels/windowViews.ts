@@ -14,6 +14,9 @@ export interface WindowViewRecord {
   dom?: PanelDomState;
   staged: boolean;
   moving?: boolean;
+  /** Capture BEFORE inert blurs the source; contains geometry/caret, no values. */
+  frozenDom?: PanelDomState;
+  failed?: boolean;
   lease?: PanelLease;
 }
 export const useWindowViews = create<{ entries: ReadonlyMap<string, WindowViewRecord> }>(() => ({
@@ -34,7 +37,7 @@ function parseTransfer(value: unknown) {
 export function createWindowViews(client: PanelWindowClient) {
   const records = new Map<string, WindowViewRecord>();
   const roots = new Map<string, () => PanelDomState>();
-  const ready = new Map<string, () => void>();
+  const ready = new Map<string, (failure?: { error: unknown }) => void>();
   const revisions = new Map<string, number>();
   let disposed = false,
     epoch = 0;
@@ -58,6 +61,53 @@ export function createWindowViews(client: PanelWindowClient) {
     };
     records.set(panelId, record);
     return record;
+  };
+  const captureAsync = async (panelId: string, signal?: AbortSignal) => {
+    const record = records.get(panelId),
+      root = roots.get(panelId);
+    if (!record?.lease || record.staged || record.failed || !root || disposed)
+      throw new Error("panel.window.viewNotReady");
+    const owner = record.lease;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    const timer = setTimeout(abort, 15_000);
+    try {
+      for (;;) {
+        let view;
+        try {
+          view = await record.controller.captureAsync(controller.signal);
+        } catch (error) {
+          if (
+            !controller.signal.aborted &&
+            error instanceof Error &&
+            error.message === "panel.viewState.changedDuringCapture"
+          )
+            continue;
+          throw error;
+        }
+        const current = records.get(panelId);
+        if (
+          disposed ||
+          controller.signal.aborted ||
+          current?.controller !== record.controller ||
+          current.staged ||
+          current.failed ||
+          current.lease?.generation !== owner.generation ||
+          roots.get(panelId) !== root
+        )
+          throw new Error("panel.window.staleOwner");
+        return {
+          version: 1,
+          view,
+          dom: current.moving && current.frozenDom ? current.frozenDom : root(),
+        };
+      }
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    }
   };
   return {
     client,
@@ -109,10 +159,14 @@ export function createWindowViews(client: PanelWindowClient) {
           publish();
           reject(new Error("panel.window.cancelled"));
         };
-        ready.set(offer.id, () => {
+        ready.set(offer.id, (failure) => {
           ready.delete(offer.id);
           signal.removeEventListener("abort", abort);
-          resolve();
+          if (failure) {
+            if (records.get(offer.lease.panelId)?.key === offer.id) remove(offer.lease.panelId);
+            publish();
+            reject(failure.error);
+          } else resolve();
         });
         signal.addEventListener("abort", abort, { once: true });
         publish();
@@ -121,44 +175,62 @@ export function createWindowViews(client: PanelWindowClient) {
     rendered(key: string) {
       ready.get(key)?.();
     },
+    renderFailed(key: string, error: unknown) {
+      for (const [id, record] of records) {
+        if (record.key !== key) continue;
+        records.set(id, { ...record, failed: true });
+        break;
+      }
+      ready.get(key)?.({ error });
+      publish();
+    },
     registerRoot(panelId: string, capture: () => PanelDomState) {
       roots.set(panelId, capture);
       return () => {
         if (roots.get(panelId) === capture) roots.delete(panelId);
       };
     },
-    setMoving(panelId: string, moving: boolean) {
+    setMoving(panelId: string, moving: boolean, expected?: PanelLease) {
       const record = records.get(panelId);
-      if (record) {
-        records.set(panelId, { ...record, moving });
+      if (
+        record &&
+        (!expected ||
+          (record.lease?.windowId === expected.windowId &&
+            record.lease.generation === expected.generation))
+      ) {
+        const frozenDom = moving && !record.moving ? roots.get(panelId)?.() : record.frozenDom;
+        records.set(panelId, { ...record, moving, frozenDom });
         publish();
       }
     },
     async checkpoint(panelId: string) {
       const record = records.get(panelId),
         root = roots.get(panelId);
-      if (!record?.lease || record.staged || !root || disposed) return;
+      if (!record?.lease || record.staged || record.failed || !root || disposed) return;
       const key = `${panelId}:${record.lease.generation}`;
       const revision = (revisions.get(key) ?? 0) + 1;
       revisions.set(key, revision);
-      await client.control({
-        action: "checkpoint",
-        lease: record.lease,
-        revision,
-        state: { version: 1, view: record.controller.capture(), dom: root() },
-      });
+      const state = await captureAsync(panelId);
+      if (disposed || records.get(panelId)?.controller !== record.controller) return;
+      await client.control({ action: "checkpoint", lease: record.lease, revision, state });
     },
+    captureAsync,
     capture(panelId: string) {
       const record = records.get(panelId),
         root = roots.get(panelId);
-      if (!record?.lease || record.staged || !root) throw new Error("panel.window.viewNotReady");
-      return { version: 1, view: record.controller.capture(), dom: root() };
+      if (!record?.lease || record.staged || record.failed || !root)
+        throw new Error("panel.window.viewNotReady");
+      return {
+        version: 1,
+        view: record.controller.capture(),
+        dom: record.moving && record.frozenDom ? record.frozenDom : root(),
+      };
     },
     dispose() {
       disposed = true;
       epoch++;
       for (const id of records.keys()) remove(id);
-      for (const done of ready.values()) done();
+      for (const done of ready.values()) done({ error: new Error("panel.window.disposed") });
       ready.clear();
       useWindowViews.setState({ entries: new Map() });
     },

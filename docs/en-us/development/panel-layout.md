@@ -435,3 +435,35 @@ Limit pending operations to 32 globally/eight per plugin, with a 15-second queue
 TTL and a 20-second RPC wait. These are presentation-only operations: hide keeps
 the renderer, slot and drafts, and never stops SSH or other running resources.
 Unsupported source presentations fail explicitly rather than retarget main.
+
+### Asynchronous ephemeral view capture
+
+Panel handoff and checkpoints await `captureAsync`; synchronous capture remains
+available for synchronous built-in fields but explicitly refuses async-only
+fields. A panel shares one capture at a time with a 15-second deadline. Cancelling
+one waiter does not release an uncooperative renderer's reservation. All selected
+callbacks must settle (including after a sibling fails) before new work is
+admitted. Strict JSON, field and aggregate size limits apply without truncation.
+Content changes invalidate an in-flight capsule; the window adapter retries only
+within its original deadline, then rechecks the exact controller, lease and DOM
+root before publishing. No capsule is persisted or added to public metadata.
+
+Factory renderers bind `{version, pluginId, viewId, state}` to their panel scope.
+Restore completes before mounting the actual renderer, and stage acknowledgement
+waits for its committed readiness, including newly registered child fields.
+Loading shells and error fallbacks never acknowledge a destination. Focus/caret
+restoration waits for both readiness and ownership commit. Capture source DOM
+state before `inert` can blur it, and restore its caret on rollback only after
+both local and native freezes are gone. A renderer failure is
+contained to its panel; a failed stage rolls back to the original source.
+Stateless factories explicitly reject capture rather than inventing empty state.
+
+Satellite close captures all owned panels before native `beginClose`, then checks
+its atomically frozen membership matches every captured lease. Failure cancels
+only a begun native close and unfreezes the exact original leases; old cleanup
+cannot unfreeze a replacement incarnation. Disposing a document cancels pending
+captures and prevents late preparation.
+
+This is the asynchronous state/readiness foundation, **not** a plugin native-view
+gateway. Transferable built-ins remain explicitly opt-in; satellite plugin
+activation/raw RPC, legacy-state warning UX and provider parity are not implied.

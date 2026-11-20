@@ -12,17 +12,20 @@ export async function movePanelToWindow(
   target?: string,
   expected?: PanelLease,
   operationId?: string,
+  signal?: AbortSignal,
 ) {
   const views = windowViews();
   if (!views || !transferablePanel(panelId)) throw new Error("panel.window.unsupportedView");
   const client = views.client;
   if (moving.has(panelId)) throw new Error("panel.window.moveInProgress");
   moving.add(panelId);
-  views.setMoving(panelId, true);
+  let source = expected;
   let created: string | undefined;
   let committed = false;
   try {
+    if (signal?.aborted) throw new Error("panel.window.cancelled");
     const snapshot = await client.snapshot();
+    if (signal?.aborted) throw new Error("panel.window.cancelled");
     const lease = snapshot.panels.find(
       (panel) => panel.panelId === panelId && panel.windowId === client.windowId,
     );
@@ -34,12 +37,15 @@ export async function movePanelToWindow(
           expected.generation !== lease.generation))
     )
       throw new Error("panel.window.staleOwner");
+    source = lease;
+    views.setMoving(panelId, true, lease);
     if (!target) {
       // Native checks this exact document/lease before AND after platform window
       // construction. Satellites cannot create arbitrary unowned windows.
       target = created = await client.create(lease);
       const deadline = Date.now() + 18_000;
       while (Date.now() < deadline) {
+        if (signal?.aborted) throw new Error("panel.window.cancelled");
         const current = await client.snapshot();
         if (
           current.windows.some((window) => window.id === target && window.ready && !window.closing)
@@ -50,7 +56,8 @@ export async function movePanelToWindow(
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
-    const state = views.capture(panelId);
+    const state = await views.captureAsync(panelId, signal);
+    if (signal?.aborted) throw new Error("panel.window.cancelled");
     const offer = await client.control<{ id: string }>(
       operationId
         ? { action: "preparePanelMove", id: operationId, state }
@@ -70,6 +77,10 @@ export async function movePanelToWindow(
         committed = true;
         return;
       }
+      if (signal?.aborted) {
+        await client.control({ action: "cancel", id: offer.id }).catch(() => {});
+        throw new Error("panel.window.cancelled");
+      }
       if (!current.transfers.some(({ offer: pending }) => pending.id === offer.id))
         throw new Error("panel.window.cancelled");
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -83,7 +94,7 @@ export async function movePanelToWindow(
     moving.delete(panelId);
     // Native commit can precede the source React unmount by a frame. Never
     // re-enable that retired source while its invalidation is still queued.
-    if (!committed) views.setMoving(panelId, false);
+    if (!committed && source) views.setMoving(panelId, false, source);
   }
 }
 
