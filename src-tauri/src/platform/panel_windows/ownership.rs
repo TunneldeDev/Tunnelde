@@ -8,7 +8,10 @@ use std::{
 };
 
 pub(super) fn transferable(id: &str) -> bool {
-    matches!(id, "connections" | "tasks" | "output" | "knownHosts")
+    matches!(
+        id,
+        "connections" | "tasks" | "output" | "knownHosts" | "forwarding"
+    )
 }
 
 // "plugin:" + a 128-byte plugin ID + ":" + a 128-byte view ID.

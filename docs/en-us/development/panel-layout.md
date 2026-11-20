@@ -1111,9 +1111,10 @@ data loss, connection/resource leaks or authorization failures) block release;
 non-blocking presentation and edge-case issues can follow in patch releases.
 A staged release does not mark the complete native-workspace plan finished.
 
-The initial native move allowlist covers connections, tasks, output, known hosts
-and compatible sidebar plugin factories. Forwarding has real macOS round-trip
-coverage but remains outside public native movement while integration continues.
+The native move allowlist covers connections, tasks, output, known hosts,
+forwarding and compatible sidebar plugin factories. Forwarding uses the shared
+production renderer, original-window prompts and preserved provider view state;
+its real macOS round-trip coverage also retained the original managed SSH session.
 Unsupported views stay in their original window rather than losing state.
 `viewFactories.nativeWindows` remains false until general plugin parity is ready.
 
@@ -1123,3 +1124,13 @@ file-preview handles; remaining resource APIs including one-off mount creation;
 and physical cross-window dragging across desktop platforms, displays and DPI.
 Continue these as follow-up implementation/acceptance work, without treating them
 as completed or requiring every non-blocking detail before a useful Beta.
+
+### Forwarding native-window delivery
+
+Forwarding now exposes the same new-window and existing-window move actions as
+the other admitted panels. Both TypeScript rendering/movement and native creation
+allowlists opt in explicitly. This does not loosen staged resource admission,
+prompt/effect movement fences or general plugin nativeWindows discovery. The
+existing capture/stage/commit path retains drafts and promotes the same restored
+provider tree; unsupported legacy providers can still reject a move without
+retiring the source. Physical cross-platform dragging remains follow-up acceptance.

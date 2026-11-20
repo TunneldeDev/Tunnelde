@@ -323,6 +323,7 @@ mod tests {
     fn provider_binding_is_not_an_ordinary_sidebar_or_permission_to_register_an_adapter() {
         let (mut ownership, main, satellite, lease, source) = fixture();
         let now = Instant::now();
+        let was_transferable = ownership.transferable("forwarding");
         assert!(ownership
             .native_view_target(
                 "main",
@@ -392,9 +393,10 @@ mod tests {
                 .host,
             "host"
         );
-        assert!(
-            !ownership.transferable("forwarding"),
-            "provider attachment silently admitted full forwarding adapter"
+        assert_eq!(
+            ownership.transferable("forwarding"),
+            was_transferable,
+            "provider attachment must not alter host presentation admission"
         );
         assert!(ownership.plugin_adapters().is_empty());
         assert!(ownership
