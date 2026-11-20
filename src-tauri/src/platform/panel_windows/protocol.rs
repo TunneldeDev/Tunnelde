@@ -211,7 +211,7 @@ impl Ownership {
                 self.begin_plugin_model(window, document, &panel_id, &revision)?
             )),
             Command::Snapshot {} => Ok(
-                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters()}),
+                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters(), "terminalViews": self.terminal_descriptors()}),
             ),
             Command::RequestAction { lease, request } => Ok(json!(
                 self.request_action(window, document, &lease, request, now)?

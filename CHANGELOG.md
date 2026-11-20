@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 内置终端标签支持移入独立窗体和返回，保留原 SSH、屏幕及未完成输入；断开和文件导航由主窗执行。当前选中终端界面插件时保留在主窗，其他页面适配仍在继续。Builtin terminal tabs support native-window roundtrips with the original SSH, screen and partial input retained; disconnect/navigation remain main-owned. Selected terminal interface providers stay in main for now; other page adapters remain in progress.
+
 - 终端渲染器支持只读设置与限定作用域的连接服务，普通检查点不会被误当成迁移交接；远程 shell 在暂离期间退出时，为交接保留最后输出。Terminal rendering supports read-only preferences and scoped I/O; periodic checkpoints are distinct from move barriers, and detached shell exit retains final output for handoff. The native terminal page entry remains pending.
 
 - 原生终端流具备按窗口/文档/面板代次校验的私有端点，交接保留原 SSH 与序列回放；为后续终端页面跨窗接入提供基础，暂未开放该页面入口。Private native terminal endpoints enforce window/document/panel generations and retain the original SSH stream with sequence replay; terminal page window integration remains pending.

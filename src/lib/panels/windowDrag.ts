@@ -2,7 +2,7 @@ import type { PanelWindowClient } from "./windowClient";
 import { transferablePanel } from "./windowViews";
 import { movePanelToWindow } from "./windowMoves";
 import { localPanelDragId } from "./localPanelDrag";
-import { SIDEBAR_MIME } from "@/lib/session/sidebarDock";
+import { SIDEBAR_MIME, TAB_MIME } from "@/lib/session/sidebarDock";
 import { usePanelWindows } from "@/store/panelWindows";
 import {
   INTERNAL_DRAG_FINISH,
@@ -35,7 +35,9 @@ export function installPanelWindowDrag(
     if (gesture) cancel(gesture);
     gesture = undefined;
     const panelId =
-      localPanelDragId(event.dataTransfer) || event.dataTransfer.getData(SIDEBAR_MIME);
+      localPanelDragId(event.dataTransfer) ||
+      event.dataTransfer.getData(SIDEBAR_MIME) ||
+      event.dataTransfer.getData(TAB_MIME);
     if (!panelId || !transferablePanel(panelId)) return;
     const lease = usePanelWindows
       .getState()

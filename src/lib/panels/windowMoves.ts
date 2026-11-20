@@ -111,10 +111,20 @@ export function nativePanelMoveActions(panelId: string, t: TFunction): MenuActio
   const move = (target?: string) => {
     void movePanelToWindow(panelId, target).catch((error) => toast(translateError(error), "error"));
   };
+  const blocked =
+    state.snapshot.terminalViews?.find((view) => view.panelId === panelId)?.allowMove === false;
   return [
-    { label: t("panels.newWindow"), separatorBefore: true, onSelect: () => move() },
+    ...(!blocked
+      ? [{ label: t("panels.newWindow"), separatorBefore: true, onSelect: () => move() }]
+      : []),
     ...state.snapshot.windows
-      .filter((window) => window.id !== state.windowId && window.ready && !window.closing)
+      .filter(
+        (window) =>
+          window.id !== state.windowId &&
+          window.ready &&
+          !window.closing &&
+          (!blocked || window.id === "main"),
+      )
       .map((window, index) => ({
         label:
           window.id === "main"

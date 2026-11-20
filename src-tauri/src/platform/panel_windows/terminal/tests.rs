@@ -34,7 +34,9 @@ async fn only_main_binds_a_live_concrete_resource_not_an_arbitrary_prefixed_pane
     let (unbound, _rx) = Endpoint::testing(id.strip_prefix("terminal:").unwrap());
     assert!(registry.bind_terminal(MAIN, &main, unbound).is_err());
     drop(receiver);
-    assert!(!registry.transferable(&lease.panel_id));
+    // The ended view remains movable, but never regains live PTY authority.
+    assert!(registry.transferable(&lease.panel_id));
+    assert!(registry.begin_terminal(MAIN, &main, &lease).is_err());
 }
 #[tokio::test]
 async fn exact_document_and_generation_control_input_and_output_separately() {
@@ -127,4 +129,59 @@ fn grammar_rejects_arbitrary_ssh_selectors_and_unknown_operations() {
     ] {
         assert!(serde_json::from_value::<Request>(value).is_err());
     }
+}
+
+#[tokio::test]
+async fn terminal_ui_actions_are_closed_and_bound_to_the_exact_panel_not_a_session_selector() {
+    use super::super::actions::ViewAction;
+    let (mut registry, main, _, _, lease, _receiver) = fixture();
+    let now = Instant::now();
+    let valid: ViewAction = serde_json::from_value(
+        json!({"kind":"terminal","command":{"operation":"font","font":"fira-code"}}),
+    )
+    .unwrap();
+    assert!(registry
+        .request_action(MAIN, &main, &lease, valid, now)
+        .is_ok());
+    assert!(serde_json::from_value::<ViewAction>(
+        json!({"kind":"terminal","sessionId":"other","command":{"operation":"disconnect"}})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<ViewAction>(json!({"kind":"terminal","command":{"operation":"recordCommand","hostId":"other","command":"ls"}})).is_err());
+    let invalid: ViewAction = serde_json::from_value(
+        json!({"kind":"terminal","command":{"operation":"font","font":"arbitrary-css"}}),
+    )
+    .unwrap();
+    assert!(registry
+        .request_action(MAIN, &main, &lease, invalid, now)
+        .is_err());
+    let other = registry.add_panel(MAIN, &main, "connections").unwrap();
+    let request: ViewAction =
+        serde_json::from_value(json!({"kind":"terminal","command":{"operation":"clipboardRead"}}))
+            .unwrap();
+    assert!(registry
+        .request_action(MAIN, &main, &other, request, now)
+        .is_err());
+}
+#[tokio::test]
+async fn unsupported_terminal_provider_blocks_outgoing_moves_but_never_blocks_return_to_main() {
+    let (mut registry, main, target, _, lease, _receiver) = fixture();
+    let now = Instant::now();
+    let offer = registry
+        .prepare(MAIN, &main, &lease, "target", Value::Null, now)
+        .unwrap();
+    registry
+        .acknowledge("target", &target, &offer.id, now)
+        .unwrap();
+    let remote = registry.commit(MAIN, &main, &offer.id, now).unwrap();
+    registry
+        .terminals
+        .blocked_views
+        .insert(lease.panel_id.clone());
+    assert!(registry
+        .prepare("target", &target, &remote, "other", Value::Null, now)
+        .is_err());
+    assert!(registry
+        .prepare("target", &target, &remote, MAIN, Value::Null, now)
+        .is_ok());
 }

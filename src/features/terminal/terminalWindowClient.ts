@@ -8,6 +8,7 @@ export interface TerminalWindowOutput {
 export type TerminalWindowRequest =
   | { action: "bind"; sessionId: string }
   | { action: "unbind"; panelId: string }
+  | { action: "configure"; panelId: string; allowMove: boolean }
   | { action: "detach"; lease: PanelLease }
   | { action: "write"; lease: PanelLease; data: string }
   | { action: "resize"; lease: PanelLease; cols: number; rows: number };
@@ -33,6 +34,8 @@ export function createTerminalWindowClient(identity: NativePanelIdentity) {
   }
   return {
     bind: (sessionId: string) => request<PanelLease>({ action: "bind", sessionId }),
+    configure: (panelId: string, allowMove: boolean) =>
+      request<void>({ action: "configure", panelId, allowMove }),
     unbind: (panelId: string) => request<void>({ action: "unbind", panelId }),
     detach: (lease: PanelLease) => request<number>({ action: "detach", lease }),
     write: (lease: PanelLease, data: string) => request<void>({ action: "write", lease, data }),

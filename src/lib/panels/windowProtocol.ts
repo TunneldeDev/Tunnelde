@@ -1,3 +1,4 @@
+import type { TerminalWindowCommand } from "@/features/terminal/terminalWindowModel";
 import type { PluginListCommand } from "@/features/plugins/panel/model";
 import type { HostPanelWindowAction } from "@/features/hosts/panel/protocol";
 import type { PreviewWindowAction } from "@/features/sftp/preview/windowActions";
@@ -47,6 +48,7 @@ export interface NativePreviewProviderDescriptor extends NativeForwardingProvide
   sourceKind: "local" | "remote";
 }
 export interface NativePanelSnapshot {
+  terminalViews?: Array<{ panelId: string; allowMove: boolean }>;
   pluginViews?: NativePluginViewDescriptor[];
   /** Unknown effects after coordinator document loss; counts only, no requests. */
   interruptions?: ReadonlyArray<{ panelId: string; count: number }>;
@@ -55,6 +57,10 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | {
+      kind: "terminal";
+      command: TerminalWindowCommand;
+    }
   | { kind: "plugins"; command: PluginListCommand }
   | HostPanelWindowAction
   | PreviewWindowAction
