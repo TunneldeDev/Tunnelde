@@ -131,6 +131,38 @@ impl Target {
         host_id: &str,
         password: Option<&str>,
     ) -> AppResult<()> {
+        self.credential_checked(app, host_id, password, |_| Ok(()))
+            .await
+    }
+
+    pub(crate) async fn credential_status(
+        &self,
+        app: &AppHandle,
+        host_id: &str,
+    ) -> AppResult<bool> {
+        if !self.0.contains_host(host_id) {
+            return Err(changed());
+        }
+        let route = self.0.clone();
+        Ok(
+            crate::services::credentials::load_reviewed(app.clone(), host_id.into(), move |app| {
+                route.verify(app)
+            })
+            .await?
+            .is_some(),
+        )
+    }
+
+    /// The caller's additional resource CAS is checked in the same DB guard
+    /// as binding admission/publication. Original WorkLifetime authority is
+    /// captured by the credential request; OS IO never holds either guard.
+    pub(crate) async fn credential_checked(
+        &self,
+        app: &AppHandle,
+        host_id: &str,
+        password: Option<&str>,
+        check: impl Fn(&rusqlite::Connection) -> AppResult<()> + Send + 'static,
+    ) -> AppResult<()> {
         if !self.0.contains_host(host_id) {
             return Err(changed());
         }
@@ -144,7 +176,10 @@ impl Target {
             host_id.into(),
             password.map(str::to_owned),
             move |app| before.before(app),
-            move |conn| observed.credential_stamp(conn),
+            move |conn| {
+                check(conn)?;
+                observed.credential_stamp(conn)
+            },
         )
         .await
     }

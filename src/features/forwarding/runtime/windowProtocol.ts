@@ -48,6 +48,24 @@ export type ForwardingWindowMutation =
       credentials?: PromptCredentials;
     }
   | {
+      operation: "credentialStatus" | "forgetCredential";
+      id: string;
+      revision: string;
+      interaction: string;
+      review: ConnectionReview;
+      hostId: string;
+    }
+  | {
+      operation: "saveCredential";
+      id: string;
+      revision: string;
+      interaction: string;
+      review: ConnectionReview;
+      hostId: string;
+      /** Ephemeral IPC input, never a view state/read model field. */
+      password: string;
+    }
+  | {
       operation: "save";
       rule: ReturnType<typeof forwardingSavePayload>;
       revision: string | null;

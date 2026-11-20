@@ -743,3 +743,24 @@ requiring fresh consent to dispose the original resources. Remote-forward
 cancellation retains it through the SSH peer acknowledgement, not just enqueue.
 Admitted listeners release the temporary start effect while keeping their group
 transport, so a running rule does not permanently block panel movement.
+
+### Reviewed builtin forwarding credentials (private gateway)
+
+`credentialStatus`, `saveCredential` and `forgetCredential` bind the original
+owning-panel interaction, exact rule/revision/host and route review. Status
+returns a boolean only; writes accept a bounded request-local password, never a
+physical keyring identifier, caller-selected service or provider origin. Only the
+reviewed target or its actual jump hosts may be addressed. Credential binding
+admission and publication repeat native origin, rule and route checks together
+under short authority → DB guards. The captured credential request retains its
+original authority even outside the submitting task scope; platform read/write
+callbacks run with neither guard held. Revocation or a rule edit during OS access
+cannot publish the staged item or erase a replacement binding.
+
+Exact-item retirement requires no replacement consent. The existing finite
+cleanup runner retains originating effect fences through admitted OS work,
+including late producers and canceled coordinators; a replacement runner's empty
+scan cannot settle an older worker. Durable cleanup failures keep their original
+records rather than retrying a save or following a changed logical target. These
+services are prerequisites, not complete prompt/provider/renderer integration or
+permission to advertise forwarding native-window support.

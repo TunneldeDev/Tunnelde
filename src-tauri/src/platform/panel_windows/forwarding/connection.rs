@@ -98,22 +98,19 @@ impl Credentials {
     }
 }
 
-/// Rule and route are checked on both sides of slow network/OS work. Trust
-/// publication additionally rechecks the rule within the SAME database guard
-/// that writes the observed endpoint and advances its native review.
-pub(super) async fn probe(
-    effect: Arc<Effect>,
-    id: String,
-    revision: String,
-    review: Review,
-    credentials: JumpCredentials,
-    approval: Option<(String, String)>,
-) -> AppResult<Value> {
+/// A captured target is never a plugin grant; original native authority and
+/// the displayed rule are checked around slow route/keychain capture.
+async fn reviewed_target(
+    effect: &Arc<Effect>,
+    id: &str,
+    revision: &str,
+    review: &Review,
+) -> AppResult<Target> {
     let handle = effect.clone();
-    let rule = id.clone();
-    let expected = revision.clone();
+    let rule = id.to_owned();
+    let expected = revision.to_owned();
     let reviewed = review.clone();
-    let target = crate::services::credentials::inspect(move || {
+    crate::services::credentials::inspect(move || {
         handle.with_current(|| {
             handle.app.state::<AppState>().db.with(|conn| {
                 domain::repository::require_reviewed_host(conn, &rule, &expected, &reviewed.host_id)
@@ -129,7 +126,21 @@ pub(super) async fn probe(
         })?;
         Ok(target)
     })
-    .await?;
+    .await
+}
+
+/// Rule and route are checked on both sides of slow network/OS work. Trust
+/// publication additionally rechecks the rule within the SAME database guard
+/// that writes the observed endpoint and advances its native review.
+pub(super) async fn probe(
+    effect: Arc<Effect>,
+    id: String,
+    revision: String,
+    review: Review,
+    credentials: JumpCredentials,
+    approval: Option<(String, String)>,
+) -> AppResult<Value> {
+    let target = reviewed_target(&effect, &id, &revision, &review).await?;
     let credentials = credentials.for_target(&target)?;
     if approval.as_ref().is_some_and(|(_, host)| {
         host != target.host_id() && !target.jump_hosts().iter().any(|jump| &jump.id == host)
@@ -289,4 +300,46 @@ pub(super) async fn start(
         .find(|item| item.id == session)
         .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
     Ok(json!(info))
+}
+
+pub(super) enum CredentialAction {
+    Status,
+    Save(String),
+    Forget,
+}
+/// Credential values stay in direct requests/native memory, never projected
+/// into read models/capsules. Write intent is explicit, not a missing password.
+pub(super) async fn credential(
+    effect: Arc<Effect>,
+    id: String,
+    revision: String,
+    review: Review,
+    host_id: String,
+    action: CredentialAction,
+) -> AppResult<Value> {
+    let target = reviewed_target(&effect, &id, &revision, &review).await?;
+    if !matches!(action, CredentialAction::Status) {
+        let password = match action {
+            CredentialAction::Save(password) => Some(password),
+            CredentialAction::Forget => None,
+            CredentialAction::Status => unreachable!(),
+        };
+        target
+            .credential_checked(&effect.app, &host_id, password.as_deref(), move |conn| {
+                domain::repository::require_reviewed_host(conn, &id, &revision, &review.host_id)
+            })
+            .await?;
+        return Ok(Value::Null);
+    }
+    let saved = target.credential_status(&effect.app, &host_id).await?;
+    let observed = target.observe_background(&effect.app).await?;
+    crate::services::credentials::inspect(move || {
+        effect.with_current(|| {
+            observed.with_current(&effect.app, |conn| {
+                domain::repository::require_reviewed_host(conn, &id, &revision, &review.host_id)?;
+                Ok(json!(saved))
+            })
+        })
+    })
+    .await
 }

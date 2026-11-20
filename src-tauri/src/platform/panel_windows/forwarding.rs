@@ -174,6 +174,58 @@ pub(crate) async fn panel_window_forwarding(
                 )
                 .await
             }
+            Request::CredentialStatus {
+                id,
+                revision,
+                review,
+                host_id,
+                ..
+            } => {
+                connection::credential(
+                    effect,
+                    id,
+                    revision,
+                    review,
+                    host_id,
+                    connection::CredentialAction::Status,
+                )
+                .await
+            }
+            Request::SaveCredential {
+                id,
+                revision,
+                review,
+                host_id,
+                password,
+                ..
+            } => {
+                connection::credential(
+                    effect,
+                    id,
+                    revision,
+                    review,
+                    host_id,
+                    connection::CredentialAction::Save(password),
+                )
+                .await
+            }
+            Request::ForgetCredential {
+                id,
+                revision,
+                review,
+                host_id,
+                ..
+            } => {
+                connection::credential(
+                    effect,
+                    id,
+                    revision,
+                    review,
+                    host_id,
+                    connection::CredentialAction::Forget,
+                )
+                .await
+            }
             request => {
                 let current = effect.clone();
                 // Blocking jobs inherit both lifetime and short authority, but
@@ -214,6 +266,9 @@ fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
         Request::Start { .. }
         | Request::PrepareStart { .. }
         | Request::Probe { .. }
+        | Request::CredentialStatus { .. }
+        | Request::SaveCredential { .. }
+        | Request::ForgetCredential { .. }
         | Request::Trust { .. } => return Err(AppError::validation("forward.invalid")),
         Request::Save {
             rule,

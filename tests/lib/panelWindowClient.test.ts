@@ -468,6 +468,33 @@ it("captures native probe/trust review and jump credentials without a generic ho
   client.dispose();
 });
 
+it("keeps credential intent and original review in one direct native request without replay", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 2 };
+  const request = {
+    operation: "saveCredential" as const,
+    id: "rule",
+    revision: "one",
+    interaction: "original-dialog",
+    review: { hostId: "host", revision: "a".repeat(64) },
+    hostId: "jump",
+    password: "request-only-secret",
+  };
+  const expected = structuredClone(request);
+  native.invoke.mockRejectedValueOnce(new Error("original origin retired"));
+  const pending = client.forwardingMutation(lease, request);
+  request.password = "replacement";
+  request.hostId = "foreign";
+  request.review.revision = "b".repeat(64);
+  await expect(pending).rejects.toThrow("original origin retired");
+  expect(native.invoke).toHaveBeenCalledExactlyOnceWith("panel_window_forwarding", {
+    document: identity.document,
+    lease,
+    request: expected,
+  });
+  client.dispose();
+});
+
 it("keeps reviewed start credentials in the exact direct request without replaying raw SSH", async () => {
   const client = createPanelWindowClient(identity);
   const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 3 };

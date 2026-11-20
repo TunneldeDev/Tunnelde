@@ -40,6 +40,28 @@ pub(crate) enum Request {
         #[serde(default)]
         credentials: super::connection::JumpCredentials,
     },
+    CredentialStatus {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        host_id: String,
+    },
+    SaveCredential {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        host_id: String,
+        password: String,
+    },
+    ForgetCredential {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        host_id: String,
+    },
     Save {
         rule: ForwardRule,
         revision: Option<String>,
@@ -88,6 +110,9 @@ impl Request {
             | Self::Start { interaction, .. }
             | Self::Probe { interaction, .. }
             | Self::Trust { interaction, .. }
+            | Self::CredentialStatus { interaction, .. }
+            | Self::SaveCredential { interaction, .. }
+            | Self::ForgetCredential { interaction, .. }
             | Self::PrepareStart { interaction, .. } => Some(interaction),
             _ => None,
         }
@@ -138,6 +163,33 @@ impl Request {
                     && bounded(fingerprint, 256)
                     && bounded(expected_host_id, 128)
                     && credentials.valid()
+            }
+            Self::CredentialStatus {
+                id,
+                revision,
+                interaction,
+                review,
+                host_id,
+            }
+            | Self::ForgetCredential {
+                id,
+                revision,
+                interaction,
+                review,
+                host_id,
+            } => reviewed(id, revision, interaction, review) && bounded(host_id, 128),
+            Self::SaveCredential {
+                id,
+                revision,
+                interaction,
+                review,
+                host_id,
+                password,
+            } => {
+                reviewed(id, revision, interaction, review)
+                    && bounded(host_id, 128)
+                    && !password.is_empty()
+                    && password.len() <= 128 * 1024
             }
             Self::Save {
                 rule,

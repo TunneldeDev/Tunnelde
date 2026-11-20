@@ -29,8 +29,12 @@ impl WorkLifetime {
         Self::with_current(|| Ok(()))
     }
     pub(crate) fn with_current<T>(effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
-        let current = Self::current();
-        let Some(authority) = current.authority else {
+        Self::current().with(effect)
+    }
+    /// Use the original request's authority, not whatever task happens to
+    /// consume it later. Only short transactions, never OS IO, belong here.
+    pub(crate) fn with<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        let Some(authority) = &self.authority else {
             return effect();
         };
         let mut effect = Some(effect);
@@ -40,6 +44,9 @@ impl WorkLifetime {
             Ok(())
         })?;
         Ok(result.expect("authority must admit the effect before succeeding"))
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self._guard.is_none() && self.authority.is_none()
     }
     /// Cleanup cannot need fresh consent from an already retired origin. Keep
     /// its fence as an opaque guard, but do not authorize NEW work under it.

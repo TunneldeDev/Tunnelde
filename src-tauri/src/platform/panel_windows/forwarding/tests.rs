@@ -384,3 +384,47 @@ fn probe_and_trust_are_bounded_reviewed_interactions_not_generic_host_key_comman
         registry.finish_native_action("forwarding", &action);
     }
 }
+
+#[test]
+fn credential_commands_require_original_review_and_explicit_bounded_write_intent() {
+    for operation in ["credentialStatus", "saveCredential", "forgetCredential"] {
+        let mut wire = json!({"operation":operation,"id":"rule","revision":"one","interaction":"original","review":{"hostId":"host","revision":"a".repeat(64)},"hostId":"host"});
+        if operation == "saveCredential" {
+            wire["password"] = json!("ephemeral-secret");
+        }
+        let request: Request = serde_json::from_value(wire.clone()).unwrap();
+        assert!(request.validate().is_ok());
+        assert_eq!(request.interaction(), Some("original"));
+        for field in ["id", "revision", "interaction", "hostId"] {
+            let mut invalid = wire.clone();
+            invalid[field] = json!("");
+            assert!(serde_json::from_value::<Request>(invalid)
+                .unwrap()
+                .validate()
+                .is_err());
+        }
+        for field in ["origin", "window", "service", "item", "proxyId", "request"] {
+            let mut invalid = wire.clone();
+            invalid[field] = json!("foreign");
+            assert!(serde_json::from_value::<Request>(invalid).is_err());
+        }
+        let mut missing = wire.clone();
+        missing.as_object_mut().unwrap().remove("interaction");
+        assert!(serde_json::from_value::<Request>(missing).is_err());
+        if operation == "saveCredential" {
+            for value in [json!(null), json!(""), json!("x".repeat(128 * 1024 + 1))] {
+                let mut invalid = wire.clone();
+                invalid["password"] = value;
+                assert!(match serde_json::from_value::<Request>(invalid) {
+                    Err(_) => true,
+                    Ok(r) => r.validate().is_err(),
+                });
+            }
+            wire.as_object_mut().unwrap().remove("password");
+            assert!(serde_json::from_value::<Request>(wire).is_err());
+        } else {
+            wire["password"] = json!(null);
+            assert!(serde_json::from_value::<Request>(wire).is_err());
+        }
+    }
+}
