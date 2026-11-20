@@ -125,7 +125,7 @@ pub(in crate::plugins::api) async fn dispatch(
             authorize(context, &["mounts.read"])?;
             encode(result)
         }
-        "dependencies.documentation" => {
+        "dependencies.documentation" | "documentation" => {
             crate::mounts::documentation::open(app.clone(), lease(context)).await?;
             Ok(Value::Null)
         }

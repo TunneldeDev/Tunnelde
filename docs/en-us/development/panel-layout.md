@@ -620,3 +620,19 @@ observation, clears the snapshot and fences abandoned responses. Invalidations
 coalesce to one trailing read. Group mutations refresh both sources even after
 partial failure, and manual refresh retries both. This document-local source is
 a prerequisite, not an implementation of cross-window data/action transport.
+
+### Host-owned mount maintenance and legacy documentation
+
+Plugin queries no longer run global process/bridge cleanup as a hidden preflight.
+The existing host recovery loop performs nonblocking registry maintenance, including
+one-off mounts with no persistent group. An occupied registry reservation is
+skipped until a later pass; healthy workers, ownership and existing cleanup errors
+are preserved. Exited workers remain recorded until filesystem absence is proved;
+a process exit is not permission to remove an active mount record. Maintenance
+publishes a change only when it records a new cleanup status.
+
+The existing `mounts.documentation` RPC uses the same exact-origin/read-grant/
+invocation-fenced browser launcher as `mounts.dependencies.documentation`, without
+legacy registry cleanup or dependency probing. Both are committed-only native
+calls. This does not admit other legacy mount aliases or prove physical FUSE or
+OS browser acceptance.

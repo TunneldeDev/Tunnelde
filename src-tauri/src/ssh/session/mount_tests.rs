@@ -228,7 +228,7 @@ async fn exercise(
     // EOF must reach sshfs itself, without stop_session aborting the bridge first.
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            mounts.reap().await;
+            mounts.reap_if_idle();
             if mounts
                 .list(Some("owner-b"))
                 .await

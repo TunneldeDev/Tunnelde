@@ -65,6 +65,11 @@ pub(crate) fn launch(app: &AppHandle) {
             {
                 break;
             }
+            // Process/bridge retirement belongs to the host, including legacy
+            // mounts with no persistent group or plugin view polling them.
+            if state.mounts.reap_if_idle() {
+                changed(&app);
+            }
             let handle = app.clone();
             let snapshot = tauri::async_runtime::spawn_blocking(move || {
                 handle.state::<AppState>().db.with(|conn| {

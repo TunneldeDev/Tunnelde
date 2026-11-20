@@ -86,7 +86,9 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         "mounts.runtime.open" | "mounts.runtime.reveal" => Some(CallPolicy::MountOpen),
         // A fixed host link bypasses dependency scans, rechecks original gates
         // at admission and retains its actual browser opener through settlement.
-        "mounts.dependencies.documentation" => Some(CallPolicy::MountDocumentation),
+        "mounts.dependencies.documentation" | "mounts.documentation" => {
+            Some(CallPolicy::MountDocumentation)
+        }
         _ => None,
     }
 }
@@ -146,7 +148,7 @@ mod tests {
         assert_eq!(remote, 2);
         assert_eq!(legacy, 3);
         assert_eq!(open, 2);
-        assert_eq!(documentation, 1);
+        assert_eq!(documentation, 2);
         for method in [
             "mounts.runtime.requestForceUnmount.extra",
             "mounts.runtime.requestForceUnmount\0",
@@ -163,6 +165,8 @@ mod tests {
             "mounts.runtime.reveal\0",
             "mounts.dependencies.documentation.extra",
             "mounts.dependencies.documentation\0",
+            "mounts.documentation.extra",
+            "mounts.documentation\0",
             "mounts.groups.connect.extra",
             "mounts.runtime.start\0",
             "mounts.rules.listAll",

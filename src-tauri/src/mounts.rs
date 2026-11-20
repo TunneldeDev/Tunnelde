@@ -811,20 +811,28 @@ impl MountRegistry {
             self.stop_resource(&mount).await;
         }
     }
-    pub async fn reap(&self) {
-        let mut mounts = self.mounts.lock().await;
+    /// Host maintenance, never a side effect of plugin reads. Skip an exact
+    /// registry reservation rather than delaying unrelated group recovery.
+    pub(crate) fn reap_if_idle(&self) -> bool {
+        let Ok(mut mounts) = self.mounts.try_lock() else {
+            return false;
+        };
+        let mut changed = false;
         for mount in mounts.values_mut() {
             if let Ok(Some(status)) = mount.child.try_wait() {
                 mount.bridge.abort();
-                mount.info.cleanup_error.get_or_insert_with(|| {
+                if mount.info.cleanup_error.is_none() {
                     tracing::debug!(%status, "SSHFS process exited");
-                    "mounts.processExited".into()
-                });
+                    mount.info.cleanup_error = Some("mounts.processExited".into());
+                    changed = true;
+                }
             } else if mount.bridge.is_finished() && mount.info.cleanup_error.is_none() {
                 let _ = mount.child.start_kill();
                 mount.info.cleanup_error = Some("mounts.transportClosed".into());
+                changed = true;
             }
         }
+        changed
     }
     pub async fn shutdown(&self) {
         self.closed
@@ -885,7 +893,6 @@ pub async fn action(
     )?;
     let result = policy
         .guard(&lease, async {
-            state.mounts.reap().await;
             match method.as_str() {
                 "dependencies" => Ok(serde_json::to_value(dependencies().await?)?),
                 "list" => Ok(serde_json::to_value(
