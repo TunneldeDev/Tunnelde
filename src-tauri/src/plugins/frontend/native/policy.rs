@@ -59,7 +59,16 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         // never create directories/files; configuration uses read-only SQLite
         // connections and never migrates, writes defaults or consumes a queue.
         // Staged factories need these to restore before render acknowledgement.
-        "storage.get"
+        // Host metadata readers are explicitly audited: saved snapshots use
+        // retained bounded DB workers, routes/fields use authorized retained
+        // admission workers, and discovery snapshots only clone in-memory data.
+        // No default writes, migrations, credentials, SSH or OS prompts.
+        "hosts.snapshot"
+        | "hosts.sourcesSnapshot"
+        | "hosts.routes.get"
+        | "hosts.routes.observe"
+        | "hosts.getFields"
+        | "storage.get"
         | "storage.observe"
         | "configuration.schema"
         | "configuration.snapshot"
@@ -180,6 +189,57 @@ mod owned_data_tests {
             "secrets.getOther",
             "secrets.get\0",
             "settings.get",
+        ] {
+            assert!(call_policy(method).is_none(), "{method}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod host_metadata_tests {
+    use super::*;
+    #[test]
+    fn only_reviewed_host_metadata_readers_are_staging_safe_and_retained() {
+        for method in [
+            "hosts.snapshot",
+            "hosts.sourcesSnapshot",
+            "hosts.routes.get",
+            "hosts.routes.observe",
+            "hosts.getFields",
+        ] {
+            assert!(
+                crate::plugins::api::method_info(method).is_some(),
+                "{method}"
+            );
+            let policy = call_policy(method).unwrap();
+            assert_eq!(policy, CallPolicy::StagedData, "{method}");
+            assert!(
+                policy.staged() && policy.retained() && policy.blocks_move(),
+                "{method}"
+            );
+        }
+        for method in [
+            "hosts.snapshot.extra",
+            "hosts.snapshot\0",
+            "hosts.sshConfig.preview",
+            "hosts.sshConfig.import",
+            "hosts.routes.save",
+            "hosts.transfer.export",
+            "hosts.transfer.preview",
+            "hosts.transfer.apply",
+            "hosts.setFields",
+            "hosts.create",
+            "hosts.update",
+            "hosts.delete",
+            "hosts.markUsed",
+            "hosts.reorder",
+            "groups.create",
+            "groups.update",
+            "groups.delete",
+            "hosts.setSource",
+            "hosts.removeSource",
+            "hostList.setColumn",
+            "hostList.setDecorations",
         ] {
             assert!(call_policy(method).is_none(), "{method}");
         }

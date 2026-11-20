@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 原生插件视图可读取已保存主机、发现来源、路由及自身扩展字段的元数据快照；暂存期间仍禁止导入、修改、凭据访问和建立连接。Native plugin views can read saved-host, discovery-source, route and own-field metadata snapshots; staging still forbids host mutations, imports, credentials and connection creation.
+
 - 插件列表支持独立窗体与返回，保留搜索、筛选及分页；详情、安装确认和本地安装草稿由主窗持有，安装操作重新校验目录条目而不接收独立窗提交的下载地址。Plugin lists support native-window roundtrips with search/filter/page state; details, installation confirmation and local-install drafts remain main-owned, with catalogue targets revalidated instead of accepting satellite-supplied download URLs.
 
 - 主机列表可移入独立窗体并返回，保留搜索、折叠与兼容插件草稿；收藏、视图设置等操作回到主协调器执行，凭据及导入导出对话框仍由主窗持有。Host lists support native-window roundtrips with search, collapsed groups and compatible provider drafts preserved; actions execute through the main coordinator, while credential/import/export dialogs remain main-owned.
