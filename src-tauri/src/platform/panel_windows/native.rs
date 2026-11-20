@@ -51,6 +51,7 @@ pub(crate) fn registered(app: &AppHandle, window: &str) -> bool {
         .is_some_and(|registry| lock(&registry).document(window).is_some())
 }
 pub(crate) fn changed(app: &AppHandle) {
+    super::plugin_views::gateway::prune(app);
     super::public::snapshot(app);
     super::public_panels::refresh(app);
     let windows = lock(&app.state::<Registry>()).windows();
@@ -504,6 +505,7 @@ pub(crate) fn start(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            super::plugin_views::gateway::prune(&app);
             let expired = lock(&app.state::<Registry>()).expire(Instant::now());
             if !expired.is_empty() {
                 changed(&app);

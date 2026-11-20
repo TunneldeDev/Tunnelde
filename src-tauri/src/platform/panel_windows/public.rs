@@ -301,6 +301,7 @@ pub(crate) fn close(app: &AppHandle, id: &str) -> AppResult<Value> {
 
 pub(crate) fn retire(app: &AppHandle, owner: &str, before: u64) {
     if let Some(registry) = app.try_state::<native::Registry>() {
+        super::plugin_views::gateway::retire(app, owner, before);
         for id in registry.public.retire(owner, before) {
             super::lifecycle::discard_empty(app, &id);
         }

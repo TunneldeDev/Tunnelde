@@ -22,29 +22,32 @@ function cloneState(value: unknown): unknown {
   return parsePanelViewCapsule({ version: 1, fields: { plugin: value } }).fields.plugin;
 }
 
-/** No engine start, singleton activation, background runner or global registry.
- * A document/panel gateway must separately authorize a satellite transport.
- */
-export async function openFrontendView({
-  plugin,
+/** No engine start, singleton activation or background runner. The caller's
+ * transport separately admits the exact document/panel view capability. */
+export type FrontendViewOwner = Omit<FrontendSession, "token">;
+export type FrontendViewTransport = Pick<FrontendTransport, "call" | "load" | "close">;
+
+export async function openScopedFrontendView({
+  owner,
   viewId,
-  activation,
   parent,
   transport,
   openView,
   check,
   state,
   signal,
+  protectedToken,
 }: {
-  plugin: PluginInfo;
+  owner: FrontendViewOwner;
   viewId: string;
-  activation: FrontendSession;
   parent: ResourceScope;
-  transport: FrontendTransport;
-  openView: NonNullable<FrontendTransport["openView"]>;
+  transport: FrontendViewTransport;
+  openView: () => Promise<FrontendSession>;
   check: () => void;
   state?: { value: unknown };
   signal?: AbortSignal;
+  /** Only the coordinator compatibility wrapper possesses this secret. */
+  protectedToken?: string;
 }): Promise<MountedFrontendView> {
   check();
   const restored = state ? { value: cloneState(state.value) } : undefined;
@@ -55,21 +58,23 @@ export async function openFrontendView({
   };
   try {
     const session = await scope.acquire(
-      () => openView(activation.token, viewId, crypto.randomUUID()),
+      () => openView(),
       (session) => {
         // A malformed view reply must never close the singleton activation.
-        if (session.token !== activation.token) return transport.close(session.token);
+        if (session.token !== protectedToken) return transport.close(session.token);
       },
       { timeoutMs: 15_000 },
     );
     live();
     if (
-      session.pluginId !== plugin.id ||
-      session.runtimeId !== activation.runtimeId ||
-      session.generation !== activation.generation ||
+      session.pluginId !== owner.pluginId ||
+      session.runtimeId !== owner.runtimeId ||
+      session.generation !== owner.generation ||
       session.sdkVersion !== uiSdk.version ||
-      session.entry !== activation.entry ||
-      session.token === activation.token
+      session.sdkVersion !== owner.sdkVersion ||
+      session.entry !== owner.entry ||
+      !session.token ||
+      session.token === protectedToken
     )
       throw new ResourceScopeClosed();
     const module: FrontendModule = await scope.run(() => transport.load(session), {
@@ -83,7 +88,7 @@ export async function openFrontendView({
         module.createView!(
           Object.freeze({
             sdk: uiSdk,
-            pluginId: plugin.id,
+            pluginId: owner.pluginId,
             viewId,
             signal: scope.signal,
             resources: scope,
@@ -143,4 +148,36 @@ export async function openFrontendView({
     scope.dispose();
     throw error;
   }
+}
+
+/** Existing coordinator path: never pass this activation-bearing wrapper into
+ * a satellite. Scoped renderers use only public owner metadata above. */
+export function openFrontendView({
+  plugin,
+  activation,
+  openView,
+  ...options
+}: {
+  plugin: PluginInfo;
+  viewId: string;
+  activation: FrontendSession;
+  parent: ResourceScope;
+  transport: FrontendTransport;
+  openView: NonNullable<FrontendTransport["openView"]>;
+  check: () => void;
+  state?: { value: unknown };
+  signal?: AbortSignal;
+}): Promise<MountedFrontendView> {
+  return openScopedFrontendView({
+    ...options,
+    owner: {
+      pluginId: plugin.id,
+      runtimeId: activation.runtimeId,
+      generation: activation.generation,
+      entry: activation.entry,
+      sdkVersion: activation.sdkVersion,
+    },
+    openView: () => openView(activation.token, options.viewId, crypto.randomUUID()),
+    protectedToken: activation.token,
+  });
 }

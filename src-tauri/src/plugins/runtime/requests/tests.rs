@@ -189,3 +189,55 @@ fn synchronous_fence_rechecks_deadline() {
     request.entry.lock().unwrap().deadline = Instant::now();
     assert!(fence.with_live(|| Ok(())).is_err());
 }
+
+#[tokio::test]
+async fn retained_admission_waits_for_actual_settlement_after_cancel_and_keeps_id_reserved() {
+    let registry = Requests::default();
+    registry.reserve("view", "work").unwrap();
+    let mut request = registry.claim("view", "work").unwrap();
+    let (entered, started) = tokio::sync::oneshot::channel();
+    let (finish, finished) = tokio::sync::oneshot::channel();
+    let mut task = tokio::spawn(async move {
+        request
+            .run_retained(async {
+                entered.send(()).unwrap();
+                finished.await.unwrap();
+                Ok("actually finished")
+            })
+            .await
+    });
+    started.await.unwrap();
+    assert!(registry.cancel("view", "work"));
+    assert!(tokio::time::timeout(Duration::from_millis(10), &mut task)
+        .await
+        .is_err());
+    assert!(registry.reserve("view", "work").is_err());
+    finish.send(()).unwrap();
+    assert!(task.await.unwrap().is_err()); // no late reply after cancellation
+    registry.reserve("view", "work").unwrap();
+}
+#[tokio::test]
+async fn retained_admission_never_polls_pre_cancelled_work_and_still_scopes_invocation() {
+    let registry = Requests::default();
+    registry.reserve("view", "work").unwrap();
+    let mut request = registry.claim("view", "work").unwrap();
+    assert!(registry.cancel("view", "work"));
+    assert!(request
+        .run_retained(async {
+            panic!("cancelled work must not start");
+            #[allow(unreachable_code)]
+            Ok(())
+        })
+        .await
+        .is_err());
+    drop(request);
+    registry.reserve("view", "next").unwrap();
+    let mut request = registry.claim("view", "next").unwrap();
+    let fence = request
+        .run_retained(async { Ok(current_invocation_fence().unwrap()) })
+        .await
+        .unwrap();
+    assert!(current_invocation_fence().is_none());
+    drop(request);
+    assert!(fence.with_live(|| Ok(())).is_err());
+}

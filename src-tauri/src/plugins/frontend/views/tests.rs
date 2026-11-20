@@ -321,3 +321,65 @@ async fn closing_one_view_cancels_its_claimed_work_without_retiring_siblings_or_
     assert!(f.registry.lease(&sibling).is_ok());
     assert!(f.security.is_ready(&f.lease).unwrap());
 }
+
+#[test]
+fn native_view_tokens_cannot_use_raw_frontend_calls_providers_or_singleton_authority() {
+    let f = Fixture::new();
+    let (token, _) = f
+        .registry
+        .open_scoped_view(&f.token, uuid::Uuid::new_v4(), "main", true, |lease| {
+            authorized(&f.security, lease)
+        })
+        .unwrap();
+    assert!(f.registry.is_native_view(&token));
+    assert!(!f.registry.is_native_view(&f.token));
+    assert!(f.registry.with_lease(&token, |_| Ok(())).is_err());
+    assert!(f.registry.with_activation(&token, |_| Ok(())).is_err());
+    assert!(f
+        .registry
+        .open_view(&token, uuid::Uuid::new_v4(), "main", |_| Ok(()))
+        .is_err());
+    let regular = f.open(uuid::Uuid::new_v4());
+    assert!(f.registry.with_lease(&regular, |_| Ok(())).is_ok());
+    assert!(f.registry.with_activation(&f.token, |_| Ok(())).is_ok());
+    assert!(f.security.is_ready(&f.lease).unwrap());
+    assert!(f.close(&token).1.is_empty());
+    assert!(f.registry.lease(&regular).is_ok());
+    assert!(f.security.is_ready(&f.lease).unwrap());
+}
+#[test]
+fn staged_metadata_policy_is_explicit_not_name_or_permission_inference() {
+    for method in ["api.describe", "extensions.describe"] {
+        assert!(super::super::native::metadata_method(method));
+    }
+    for method in [
+        "hosts.snapshot",
+        "mounts.rules.get",
+        "mounts.dependencies.get",
+        "files.local.list",
+        "bus.observe",
+        "secrets.get",
+        "workspace.panels.moveToWindow",
+        "api.describe.extra",
+        "extensions.describe\0",
+    ] {
+        assert!(!super::super::native::metadata_method(method), "{method}");
+    }
+}
+
+#[test]
+fn reusing_a_view_instance_cannot_change_its_native_or_coordinator_authority_class() {
+    let f = Fixture::new();
+    let instance = uuid::Uuid::new_v4();
+    let native = f
+        .registry
+        .open_scoped_view(&f.token, instance, "main", true, |_| Ok(()))
+        .unwrap()
+        .0;
+    assert!(f
+        .registry
+        .open_scoped_view(&f.token, instance, "main", false, |_| Ok(()))
+        .is_err());
+    assert!(f.registry.is_native_view(&native));
+    assert!(f.registry.with_lease(&native, |_| Ok(())).is_err());
+}

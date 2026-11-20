@@ -19,6 +19,7 @@ fn allowed(label: &str, command: &str, registered: bool) -> bool {
                     | "panel_window_release_drag"
                     | "panel_window_disconnect"
                     | "panel_window_focus"
+                    | "panel_window_plugin_view"
             ))
 }
 
@@ -75,6 +76,7 @@ mod tests {
             "panel_window_release_drag",
             "panel_window_disconnect",
             "panel_window_focus",
+            "panel_window_plugin_view",
         ] {
             assert!(allowed("panel-one", command, true));
             assert!(!allowed("panel-one", command, false));

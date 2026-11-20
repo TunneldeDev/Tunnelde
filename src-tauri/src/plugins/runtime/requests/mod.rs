@@ -141,6 +141,19 @@ impl Requests {
     }
 }
 impl Request {
+    /// Accepted native-view work must settle before the panel's effect fence
+    /// can be released. Cancellation stops delivery, not the admitted future.
+    pub async fn run_retained<T>(
+        &mut self,
+        work: impl Future<Output = AppResult<T>>,
+    ) -> AppResult<T> {
+        let fence = InvocationFence {
+            entry: self.entry.clone(),
+        };
+        fence.with_live(|| Ok(()))?;
+        let result = CURRENT_INVOCATION.scope(fence.clone(), work).await;
+        fence.with_live(|| result)
+    }
     pub async fn run<T>(&mut self, work: impl Future<Output = AppResult<T>>) -> AppResult<T> {
         let fence = InvocationFence {
             entry: self.entry.clone(),

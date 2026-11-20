@@ -13,6 +13,7 @@ use super::api::HostContext;
 use super::security::{FrontendSnapshot, Lease, PluginSecurity, RuntimeRetirement};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+pub(crate) mod native;
 pub(crate) mod requests;
 pub(crate) mod views;
 
@@ -176,6 +177,7 @@ impl Registry {
         let modules = self.modules.lock().unwrap_or_else(|e| e.into_inner());
         let module = modules
             .get(token)
+            .filter(|module| !module.view.as_ref().is_some_and(|view| view.native))
             .ok_or_else(|| AppError::validation("plugin.frontend.expired"))?;
         operation(&module.lease)
     }
@@ -332,6 +334,9 @@ pub fn plugin_frontend_ready(
 
 #[tauri::command]
 pub fn plugin_frontend_close(app: AppHandle, registry: State<'_, Registry>, token: String) {
+    if registry.is_native_view(&token) {
+        return;
+    }
     let state = app.state::<AppState>();
     let (tokens, retired) = registry.close(&token, |lease, token| {
         state.plugins.security.frontend_closed(lease, token)
@@ -453,6 +458,53 @@ fn mime(path: &str) -> Option<&'static str> {
         "woff2" => "font/woff2",
         _ => return None,
     })
+}
+
+/// Protocol identity comes from Tauri, not an Origin header or a URL token.
+/// Immutable module bytes are not RPC authority, but stale/foreign native views
+/// must not keep importing assets after their document capability is revoked.
+pub(crate) fn serve_in_window(
+    app: &AppHandle,
+    window: &str,
+    request: http::Request<Vec<u8>>,
+    origin: &str,
+) -> http::Response<Vec<u8>> {
+    let registry = app.state::<Registry>();
+    let state = app.state::<AppState>();
+    let denied = || {
+        http::Response::builder()
+            .status(403)
+            .header("Access-Control-Allow-Origin", origin)
+            .header("Cache-Control", "no-store")
+            .header("Content-Type", "text/plain")
+            .body(Vec::new())
+            .expect("fixed response headers")
+    };
+    let Some((token, _)) = asset_path(request.uri().path()) else {
+        return if window == "main" {
+            serve(&registry, &state.plugins.security, request, origin)
+        } else {
+            denied()
+        };
+    };
+    if registry.is_native_view(token) {
+        // Keep ownership locked through the synchronous module/policy lookup.
+        // No asynchronous work or filesystem/network I/O belongs in this gate.
+        let token = token.to_owned();
+        crate::platform::panel_windows::plugin_views::gateway::read_asset(
+            app,
+            window,
+            &token,
+            || serve(&registry, &state.plugins.security, request, origin),
+        )
+        .unwrap_or_else(denied)
+    } else if window == "main" {
+        serve(&registry, &state.plugins.security, request, origin)
+    } else {
+        // A satellite never imports the singleton activation or a coordinator
+        // child module, even if trusted code accidentally publishes its URL.
+        denied()
+    }
 }
 
 pub fn serve(

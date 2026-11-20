@@ -340,14 +340,41 @@ A view admits only one actual capture callback at a time. A timed-out callback
 that ignores cancellation remains charged until it settles; retries cannot start
 another callback in parallel. Panel-scoped factories share asynchronous ephemeral
 capture and wait for real committed rendering, not their loading shell. This does
-not change the coordinator-only native admission described below.
+not by itself enable the independent-window renderer described below.
 
 Currently discovery lists only `contexts: ["coordinator"]` and
 `nativeWindows: false`: this factory/transport capability alone does **not**
 authorize a satellite, transfer a provider's native resources, or promise that a
 legacy renderer's DOM can move across WebViews. Independent-window support must
-add exact panel/document admission and provider-specific gateways separately.
+finish the private panel/document transport and provider-specific gateways below.
 
 View module top-level code may be evaluated for each imported instance. Keep it
 free of singleton side effects; only `activate` owns singleton work. These are
 trusted in-process modules, not a JavaScript sandbox.
+
+### Native document binding (host-internal)
+
+The private `panel_window_plugin_view` transport binds a child module to the
+native caller's registered window, current document and exact panel generation,
+or to one incoming handoff offer. It never returns the activation token. A staged
+binding is promoted only inside the successful ownership commit; cancelling an
+offer and later moving the same panel to the same window cannot revive it.
+Reload, removal, failed/expired handoff and plugin retirement invalidate the exact
+binding. Immutable asset requests also use Tauri’s native WebView label and
+current document authority; satellites cannot import activation/coordinator
+module URLs. A token cannot be used by another window/document or through the raw
+frontend/provider commands, and cannot acknowledge activation or create children.
+
+Accepted calls have an independent native effect fence. Closing the view,
+cancelling its request, retiring its plugin or reloading its document does not
+release that fence before the actual worker settles. Panel removal cannot bypass
+it by removing and reusing a panel ID. Request admission occurs while ownership
+is still locked; locks are released before asynchronous work. Cancellation
+suppresses late delivery rather than claiming to undo accepted effects.
+
+This is not yet the public independent-window renderer capability. The gateway
+currently admits only the explicitly reviewed `api.describe` and
+`extensions.describe` metadata methods, not methods inferred safe from read
+permissions or get/list names. Provider handles and origin-window dialogs require
+domain-specific adapters; `nativeWindows: false` remains accurate until those
+paths and the real factory renderer are integrated and verified.

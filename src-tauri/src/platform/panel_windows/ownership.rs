@@ -108,6 +108,7 @@ pub(super) struct Ownership {
     pub(super) preview_placeholder: Option<super::presentation::LayoutMetadata>,
     pub(super) presentation_jobs: HashMap<String, super::presentation_jobs::PendingPresentation>,
     drags: HashMap<String, DragGrant>,
+    pub(super) native_views: super::plugin_views::Views,
 }
 impl Ownership {
     /// The native builder registers a window before a WebView exists. Only the
@@ -325,6 +326,9 @@ impl Ownership {
     }
     pub fn remove_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<()> {
         self.main(window, document)?;
+        if self.native_view_busy(panel_id) {
+            return Err("panel interaction in progress");
+        }
         self.remove_presentation_panel(panel_id)?;
         self.retire_panel_actions(panel_id);
         self.retire_panel_moves(panel_id);
@@ -598,6 +602,9 @@ impl Ownership {
         }
         if self.panels[&pending.lease.panel_id].blocked
             || !self.panels[&pending.lease.panel_id].interactions.is_empty()
+            || !self.panels[&pending.lease.panel_id]
+                .native_actions
+                .is_empty()
         {
             return Err("panel interaction in progress");
         }
@@ -610,6 +617,7 @@ impl Ownership {
         panel.checkpoint = pending.state;
         panel.presentation = pending.presentation;
         let lease = panel.lease.clone();
+        self.promote_native_views(&pending.id, &lease, &pending.target_document);
         self.finish_move(&pending.id, &lease);
         Ok(lease)
     }

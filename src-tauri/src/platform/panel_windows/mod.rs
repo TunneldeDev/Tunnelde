@@ -5,6 +5,7 @@ mod lifecycle;
 mod moves;
 pub(crate) mod native;
 mod ownership;
+pub(crate) mod plugin_views;
 mod presentation;
 mod presentation_jobs;
 mod protocol;

@@ -16,6 +16,7 @@ pub(super) struct ViewOwner {
     activation: String,
     instance: uuid::Uuid,
     view_id: String,
+    pub(super) native: bool,
 }
 
 impl Registry {
@@ -39,6 +40,17 @@ impl Registry {
         view_id: &str,
         valid: impl FnOnce(&Lease) -> AppResult<()>,
     ) -> AppResult<(String, Vec<String>)> {
+        self.open_scoped_view(activation, instance, view_id, false, valid)
+    }
+
+    pub(super) fn open_scoped_view(
+        &self,
+        activation: &str,
+        instance: uuid::Uuid,
+        view_id: &str,
+        native: bool,
+        valid: impl FnOnce(&Lease) -> AppResult<()>,
+    ) -> AppResult<(String, Vec<String>)> {
         let mut modules = self.modules.lock().unwrap_or_else(|e| e.into_inner());
         let module = modules
             .get(activation)
@@ -55,7 +67,7 @@ impl Registry {
         for (token, module) in modules.iter() {
             let Some(view) = &module.view else { continue };
             if view.activation == activation && view.instance == instance {
-                if view.view_id != view_id {
+                if view.view_id != view_id || view.native != native {
                     return Err(AppError::validation("plugin.frontend.expired"));
                 }
                 replaced.push(token.clone());
@@ -80,6 +92,7 @@ impl Registry {
                     activation: activation.into(),
                     instance,
                     view_id: view_id.into(),
+                    native,
                 }),
                 assets,
                 bytes: 0,

@@ -46,14 +46,11 @@ pub fn run() {
                 return;
             };
             let origin = platform::protocol_origin::for_app(&app);
+            let caller = context.webview_label().to_owned();
             tauri::async_runtime::spawn(async move {
                 let _capacity = capacity;
-                let state = app.state::<state::AppState>();
-                responder.respond(plugins::frontend::serve(
-                    &app.state::<plugins::frontend::Registry>(),
-                    &state.plugins.security,
-                    request,
-                    &origin,
+                responder.respond(plugins::frontend::serve_in_window(
+                    &app, &caller, request, &origin,
                 ));
             });
         })
@@ -168,6 +165,7 @@ pub fn run() {
             services::forwarding::start::commands::forwarding_start_cancel,
             services::forwarding::start::commands::forwarding_start_release_ui,
             window::main_window_ready,
+            platform::panel_windows::plugin_views::gateway::panel_window_plugin_view,
             platform::panel_windows::native::panel_window_initialize,
             platform::panel_windows::native::panel_window_control,
             platform::panel_windows::native::panel_window_create,
