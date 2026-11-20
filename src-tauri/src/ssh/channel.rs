@@ -15,6 +15,7 @@ impl OwnedChannel {
         self.channel.as_mut().expect("owned SSH channel")
     }
 
+    #[cfg(test)]
     pub(crate) fn into_stream(mut self) -> ChannelStream<client::Msg> {
         self.channel
             .take()
@@ -60,6 +61,17 @@ impl SplitChannel {
             self.reader.as_mut().expect("owned SSH channel read side"),
             self.writer.clone(),
         )
+    }
+
+    /// An accepted host resource may outlive its creating view. Until the host
+    /// commits that resource, even a dropped/late channel retains the original
+    /// effect. Dropping the release callback does NOT release that fence.
+    pub(crate) fn release_work_on_commit(mut self) -> (Self, impl FnOnce()) {
+        let retained = Arc::new(std::sync::Mutex::new(Some(self.lifetime.clone())));
+        self.lifetime = crate::services::operations::WorkLifetime::new(retained.clone());
+        (self, move || {
+            retained.lock().unwrap_or_else(|e| e.into_inner()).take();
+        })
     }
 
     /// Retirement survives cancellation of the caller awaiting it. A queued

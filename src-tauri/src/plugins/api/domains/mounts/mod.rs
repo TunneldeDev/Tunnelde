@@ -135,6 +135,15 @@ pub(in crate::plugins::api) async fn dispatch(
         // a hidden side effect of listing; OS effects retain their own workers.
         "list" => encode(state.mounts.list(Some(&context.id)).await),
         "browse" => remote_paths::browse(context, params).await,
+        "mount" => encode(
+            crate::mounts::startup::mount_plugin(
+                app.clone(),
+                lease(context),
+                serde_json::from_value(params)
+                    .map_err(|_| crate::error::AppError::validation("mounts.request.invalid"))?,
+            )
+            .await?,
+        ),
         "open" => {
             crate::mounts::open_plugin(
                 app.clone(),

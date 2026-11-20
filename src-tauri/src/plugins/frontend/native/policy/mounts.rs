@@ -90,6 +90,10 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         // The original invocation/origin is captured before the registry wait;
         // the exact plugin generation, probes and admitted cleanup are retained.
         "mounts.unmount" => Some(CallPolicy::MountUnmount),
+        // Original lease, invocation, origin and SSH identity are captured
+        // before bounded startup. Failed/unreceived results own exact cleanup;
+        // accepted mounts belong to the registry, not the creating child view.
+        "mounts.mount" => Some(CallPolicy::MountCreation),
         // A fixed host link bypasses dependency scans, rechecks original gates
         // at admission and retains its actual browser opener through settlement.
         "mounts.dependencies.documentation" | "mounts.documentation" => {
@@ -115,6 +119,7 @@ mod tests {
         let mut legacy = 0;
         let mut open = 0;
         let mut unmount = 0;
+        let mut creation = 0;
         let mut documentation = 0;
         for method in crate::plugins::api::METHODS
             .iter()
@@ -141,6 +146,7 @@ mod tests {
                     CallPolicy::MountLegacy => legacy += 1,
                     CallPolicy::MountOpen => open += 1,
                     CallPolicy::MountUnmount => unmount += 1,
+                    CallPolicy::MountCreation => creation += 1,
                     CallPolicy::MountDocumentation => documentation += 1,
                     other => panic!("unexpected mount policy {other:?}"),
                 }
@@ -157,6 +163,7 @@ mod tests {
         assert_eq!(legacy, 3);
         assert_eq!(open, 3);
         assert_eq!(unmount, 1);
+        assert_eq!(creation, 1);
         assert_eq!(documentation, 2);
         for method in [
             "mounts.runtime.requestForceUnmount.extra",
@@ -165,7 +172,8 @@ mod tests {
             "mounts.paths.remote.browse.extra",
             "mounts.paths.remote.resolve\0",
             "mounts.paths.remote.list",
-            "mounts.mount",
+            "mounts.mount.extra",
+            "mounts.mount\0",
             "mounts.browse.extra",
             "mounts.browse\0",
             "mounts.reveal",
