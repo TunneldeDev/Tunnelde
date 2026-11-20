@@ -10,7 +10,8 @@ use crate::{
 };
 pub(crate) use policy::{call_policy, CallPolicy};
 pub(crate) use provider::{
-    selected_forwarding_source, selected_preview_source, selected_tasks_source, ProviderSelection,
+    selected_forwarding_source, selected_hosts_source, selected_preview_source,
+    selected_tasks_source, ProviderSelection,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -199,6 +200,12 @@ impl Source {
     pub(crate) fn test_preview_source(lease: Lease, revision: u64) -> Self {
         let mut source = Self::test_source(lease, "runtime", "preview", true, "private-singleton");
         source.provider = Some(ProviderSelection::test_preview_selection(revision));
+        source
+    }
+    #[cfg(test)]
+    pub(crate) fn test_hosts_source(lease: Lease, revision: u64) -> Self {
+        let mut source = Self::test_source(lease, "runtime", "hosts", true, "private-singleton");
+        source.provider = Some(ProviderSelection::test_hosts_selection(revision));
         source
     }
     #[cfg(test)]

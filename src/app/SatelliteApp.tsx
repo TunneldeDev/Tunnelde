@@ -1,3 +1,5 @@
+import { WindowHostsPanel } from "@/features/hosts/panel/WindowHostsPanel";
+import type { HostsWindowModel } from "./panelReadModels";
 import { NativePreviewContent } from "@/features/sftp/preview/NativePreviewContent";
 import type { PreviewWindowModel } from "@/features/sftp/preview/windowPublication";
 import "@/features/sftp/preview/previewPanel.css";
@@ -149,6 +151,18 @@ function PluginView(props: NativeViewProps) {
         visible={!props.record.staged}
       >
         <NativePluginPanel panelId={props.record.panelId} visible={!props.record.staged} />
+      </WorkbenchPanel>
+    </NativePanelView>
+  );
+}
+
+function HostsView(props: NativeViewProps) {
+  const model = useNativeReadModel<HostsWindowModel>(props);
+  if (!model) return null;
+  return (
+    <NativePanelView panelId="hosts">
+      <WorkbenchPanel view="hosts" location="workspace" visible={!props.record.staged}>
+        <WindowHostsPanel client={props.client} record={props.record} data={model.hosts} />
       </WorkbenchPanel>
     </NativePanelView>
   );
@@ -488,7 +502,9 @@ export function SatelliteApp() {
             id: record.panelId as SidebarView,
             key: record.key,
             content:
-              record.panelId === "filePreview" ? (
+              record.panelId === "hosts" ? (
+                <HostsView client={client} record={record} presented={presented} />
+              ) : record.panelId === "filePreview" ? (
                 <PreviewView client={client} record={record} presented={presented} />
               ) : record.panelId === "knownHosts" ? (
                 <KnownHostsView client={client} record={record} presented={presented} />

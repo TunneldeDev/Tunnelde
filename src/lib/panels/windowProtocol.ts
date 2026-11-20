@@ -1,3 +1,4 @@
+import type { HostPanelWindowAction } from "@/features/hosts/panel/protocol";
 import type { PreviewWindowAction } from "@/features/sftp/preview/windowActions";
 import type { PanelPresentation } from "@/store/panelPresentation";
 import type { FloatingRect } from "@/lib/layout/floatingPanel";
@@ -53,6 +54,7 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | HostPanelWindowAction
   | PreviewWindowAction
   | TransferWindowAction
   | { kind: "task"; key: string; ticket: string; actionId: string }

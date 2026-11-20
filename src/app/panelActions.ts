@@ -1,3 +1,4 @@
+import { executeHostPanelCommand } from "@/features/hosts/panel/execute";
 import { executePreviewWindowAction } from "@/features/sftp/preview/windowActions";
 import { createTransferWindowActions } from "@/features/sftp/transferWindowActions";
 import { forwardingStore } from "@/features/forwarding/data/store";
@@ -19,6 +20,8 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request, lease }) => {
       switch (request.kind) {
+        case "hosts":
+          return executeHostPanelCommand(request.command, () => client.show());
         case "preview":
           return executePreviewWindowAction(lease, request);
         case "refreshForwarding":

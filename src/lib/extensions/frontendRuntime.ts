@@ -212,14 +212,15 @@ export function createFrontendRuntime(transport: FrontendTransport) {
           // Factory-only declarations gain a stable per-mounted-view adapter.
           if (current.viewFactory && transport.openView) {
             for (const view of plugin.views) {
-              // Forwarding's explicit host context has no synchronous required
-              // Workspace/Screen slot. Other providers still need their own
+              // These providers have no synchronous required Workspace/Screen
+              // slot. Other providers still need their own
               // async slot/handle admission; never opt them in implicitly.
               if (
                 view.kind !== "component" ||
                 (view.provider &&
                   view.provider !== "forwarding" &&
-                  view.provider !== "backgroundTasks") ||
+                  view.provider !== "backgroundTasks" &&
+                  view.provider !== "hostList") ||
                 current.views.has(view.id)
               )
                 continue;

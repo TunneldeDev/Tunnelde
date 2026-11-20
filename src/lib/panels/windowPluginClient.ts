@@ -32,6 +32,15 @@ type Request =
       "kind"
     >)
   | { action: "forwarding"; token: string; lease: PanelLease; request: ForwardingWindowMutation }
+  | { action: "describeHostsProvider"; target: NativePluginViewTarget }
+  | {
+      action: "openHostsProvider";
+      target: NativePluginViewTarget;
+      pluginId: string;
+      runtimeId: string;
+      viewId: string;
+      selectionRevision: number;
+    }
   | { action: "describeTasksProvider"; target: NativePluginViewTarget }
   | {
       action: "openTasksProvider";
@@ -260,6 +269,31 @@ export function createNativePluginViewClient(
         revision: value.revision,
         command: value.command,
       });
+    },
+    async describeHostsProvider(target: NativePluginViewTarget) {
+      check();
+      const value = await request<NativeForwardingProviderDescriptor | null>({
+        action: "describeHostsProvider",
+        target,
+      });
+      check();
+      return value;
+    },
+    async openHostsProvider(
+      target: NativePluginViewTarget,
+      descriptor: NativeForwardingProviderDescriptor,
+    ) {
+      check();
+      return acceptSession(
+        await request<FrontendSession>({
+          action: "openHostsProvider",
+          target,
+          pluginId: descriptor.view.pluginId,
+          runtimeId: descriptor.view.runtimeId,
+          viewId: descriptor.view.viewId,
+          selectionRevision: descriptor.selectionRevision,
+        }),
+      );
     },
     async describeTasksProvider(target: NativePluginViewTarget) {
       check();

@@ -412,13 +412,14 @@ it("does not mistake an async factory shell for a synchronous native provider re
   f.runtime.dispose();
 });
 
-it("adapts factory-only forwarding providers without opting synchronous-slot providers or legacy registrations in", async () => {
+it("adapts factory-only async providers without opting synchronous-slot providers or legacy registrations in", async () => {
   const factory = vi.fn(() => ({ component: Component }));
   const f = fixture(factory);
   const provider: PluginInfo = {
     ...plugin,
     views: [
       { ...plugin.views[0]!, provider: "forwarding" },
+      { ...plugin.views[0]!, id: "hosts", provider: "hostList" },
       { ...plugin.views[0]!, id: "layout", provider: "workbench" },
       { ...plugin.views[0]!, id: "registered", provider: "forwarding" },
     ],
@@ -435,6 +436,9 @@ it("adapts factory-only forwarding providers without opting synchronous-slot pro
   expect(f.runtime.isFactoryView("custom", "registered", Component)).toBe(false);
   expect(f.runtime.view("custom", "registered")).toBe(Component);
   expect(f.runtime.view("custom", "layout")).toBeUndefined();
+  const Hosts = f.runtime.view("custom", "hosts")!;
+  expect(Hosts).toBeTypeOf("function");
+  expect(f.runtime.isFactoryView("custom", "hosts", Hosts)).toBe(true);
   expect(f.runtime.factoryOwner("custom", "main")).toBeUndefined();
   expect(factory).not.toHaveBeenCalled();
   expect(f.transport.openView).not.toHaveBeenCalled();

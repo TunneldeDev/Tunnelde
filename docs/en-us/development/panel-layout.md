@@ -1155,15 +1155,14 @@ non-blocking presentation and edge-case issues can follow in patch releases.
 A staged release does not mark the complete native-workspace plan finished.
 
 The native move allowlist covers connections, tasks, output, known hosts,
-forwarding and compatible sidebar plugin factories. Forwarding uses the shared
+forwarding, hosts, docked file previews and compatible sidebar plugin factories. Forwarding uses the shared
 production renderer, original-window prompts and preserved provider view state;
 its real macOS round-trip coverage also retained the original managed SSH session.
 Unsupported views stay in their original window rather than losing state.
 `viewFactories.nativeWindows` remains false until general plugin parity is ready.
 
-Remaining rollout: ordinary terminal/SFTP/editor/host/settings and other panel
-adapters; factoryless plugin presentation; background-task providers and full
-file-preview handles; remaining resource APIs;
+Remaining rollout: ordinary terminal/SFTP/editor/settings and other panel
+adapters; factoryless plugin presentation; remaining resource APIs;
 and physical cross-window dragging across desktop platforms, displays and DPI.
 Continue these as follow-up implementation/acceptance work, without treating them
 as completed or requiring every non-blocking detail before a useful Beta.
@@ -1248,3 +1247,24 @@ cross-platform or FUSE acceptance. Quick Look remains main-local: returning a
 satellite directly into Quick Look is explicitly unsupported; return to main first.
 Local Quick Look/panel state continuity and broader workspace rollout remain
 follow-ups, not reasons to claim general `nativeWindows` support.
+
+### Native host-list presentation
+
+Hosts use the shared tree/table renderer and a private display-only read model.
+The projection explicitly enumerates metadata; credentials and connection routes
+are not serialized. The closed native action grammar accepts opaque host/group
+incarnation markers, not raw hosts, settings patches or arbitrary IPC commands.
+Main re-resolves targets after revealing itself and again at destructive
+confirmation, rejecting edited, removed or recreated targets.
+
+Search, group collapse, focus and supported factory-provider drafts travel in the
+view capsule. Main owns credential, SSH-config and import/export dialogs outside
+the movable list. Satellite actions reveal those dialogs in main rather than
+bootstrapping another application owner. Host-list factories require no synchronous
+workspace slot and now receive the same main-window factory adapter as forwarding
+and task providers. Factoryless providers remain on the existing compatibility path.
+
+macOS acceptance covered actual builtin and factory-provider window roundtrips,
+search/collapse, favorite writes, table/sort actions, main-owned export-dialog
+opening, singleton activation count and isolated plugin/host/session cleanup.
+It is not real SSH, physical pointer drag or cross-platform acceptance.

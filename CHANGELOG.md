@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 主机列表可移入独立窗体并返回，保留搜索、折叠与兼容插件草稿；收藏、视图设置等操作回到主协调器执行，凭据及导入导出对话框仍由主窗持有。Host lists support native-window roundtrips with search, collapsed groups and compatible provider drafts preserved; actions execute through the main coordinator, while credential/import/export dialogs remain main-owned.
+
 - 停靠的文件预览支持移入独立窗体并返回，保留受支持的插件草稿、PDF 页码/缩放和媒体位置，复用原文件资源；修复元数据更新抢夺文本焦点及异步正文就绪被错误取消。Docked file previews support explicit native-window roundtrips with supported provider drafts, PDF page/zoom and media position preserved on the original resource; fix metadata-driven text focus resets and retired async readiness cancelling replacement renderers.
 
 - 预览元数据与读取状态由宿主独立持有，正文暂时移除不会使插件观察丢失；补齐文本、PDF 和媒体的视图状态捕获，为完整跨窗口预览继续铺设基础。Preview metadata/read state survives an absent renderer; text, PDF and media state capture prepares the remaining native preview adapter.
