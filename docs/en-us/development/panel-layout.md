@@ -716,7 +716,7 @@ review, rule revision and the original live owning-panel interaction. It forces
 background forwarding purpose and host-owned group pooling; arbitrary SSH input,
 foreign jump credentials, caller window labels and provider authority are not
 accepted. This transport is not yet a complete connection-prompt adapter:
-saved-credential management, connection testing and actual prompt/renderer
+key installation and actual prompt/provider/renderer
 integration remain mandatory before forwarding transfer discovery is admitted.
 
 The private `probe`/`trust` operations bind the same rule revision, route review
@@ -764,3 +764,28 @@ scan cannot settle an older worker. Durable cleanup failures keep their original
 records rather than retrying a save or following a changed logical target. These
 services are prerequisites, not complete prompt/provider/renderer integration or
 permission to advertise forwarding native-window support.
+
+### Reviewed builtin forwarding connection tests (private gateway)
+
+`test` binds the original window/document/lease/interaction, exact rule revision
+and reviewed route, accepting only bounded credentials for actual jump hosts.
+Its lowercase UUIDv4 `testId` is private correlation, never the global SSH test
+identifier: native code generates a separate internal diagnostic ID and uses the
+existing three-sample, 25-second measurement budget. Results recheck rule/route
+and original authority before committing; a canceled or retired test cannot
+publish a late result or admit another network/credential worker.
+
+`cancelTest` signals only the exact originating scope. It remains usable during
+that panel's occupied effect fence and after the original consent is retired,
+because disposing that same admitted work requires no new consent. It grants no
+permission to cancel another window, document, lease, interaction or global SSH
+test. Early cancellation leaves a sticky tombstone; at most 64 records are kept,
+and live-dialog history is never evicted to admit a replay. Retiring the original
+scope cancels active work and reclaims settled records. Result commit wins once;
+a later cancel is idempotent, not rollback.
+
+A cancellation acknowledgement is not IO settlement. The original native effect
+and panel-removal/transfer fence remain until admitted workers and actual
+transport cleanup finish, including work outliving the test future. The owning
+test's IPC reply awaits that settlement. No global `ssh_cancel_test` fallback,
+provider authority serialization or forwarding discovery admission is added.

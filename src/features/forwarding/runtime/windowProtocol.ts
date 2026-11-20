@@ -21,6 +21,16 @@ export interface ForwardingWindowStartPlan {
 export type ForwardingWindowMutation =
   | { operation: "prepareStart"; id: string; revision: string; interaction: string }
   | {
+      operation: "test";
+      id: string;
+      revision: string;
+      interaction: string;
+      review: ConnectionReview;
+      testId: string;
+      credentials?: PromptCredentials;
+    }
+  | { operation: "cancelTest"; testId: string; interaction: string }
+  | {
       operation: "start";
       id: string;
       revision: string;

@@ -526,3 +526,58 @@ it("keeps reviewed start credentials in the exact direct request without replayi
   });
   client.dispose();
 });
+
+it("captures reviewed test/cancel correlation without falling back to global SSH diagnostic IDs", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 7 };
+  const originalId = "a1234567-89ab-4cde-8fab-0123456789ab";
+  const request = {
+    operation: "test" as const,
+    id: "rule",
+    revision: "one",
+    interaction: "original-dialog",
+    review: { hostId: "host", revision: "a".repeat(64) },
+    testId: originalId,
+    credentials: { jump: { password: "ephemeral" } },
+  };
+  const expected = structuredClone(request);
+  let reject!: (error: Error) => void;
+  native.invoke.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  const running = client.forwardingMutation(lease, request);
+  request.review.hostId = "foreign";
+  request.credentials.jump.password = "replacement";
+  request.interaction = "replacement-dialog";
+  request.testId = "b1234567-89ab-4cde-8fab-0123456789ab";
+  native.invoke.mockResolvedValueOnce(null);
+  const cancel = {
+    operation: "cancelTest" as const,
+    testId: originalId,
+    interaction: "original-dialog",
+  };
+  const cancelled = client.forwardingMutation(lease, cancel);
+  cancel.interaction = "replacement-dialog";
+  cancel.testId = request.testId;
+  await cancelled;
+  reject(new Error("ssh.testCancelled"));
+  await expect(running).rejects.toThrow("ssh.testCancelled");
+  expect(native.invoke.mock.calls).toEqual([
+    ["panel_window_forwarding", { document: identity.document, lease, request: expected }],
+    [
+      "panel_window_forwarding",
+      {
+        document: identity.document,
+        lease,
+        request: { operation: "cancelTest", testId: originalId, interaction: "original-dialog" },
+      },
+    ],
+  ]);
+  native.invoke.mockRejectedValueOnce(new Error("invalid test owner"));
+  await expect(client.forwardingMutation(lease, cancel)).rejects.toThrow("invalid test owner");
+  expect(native.invoke).toHaveBeenCalledTimes(3);
+  client.dispose();
+});

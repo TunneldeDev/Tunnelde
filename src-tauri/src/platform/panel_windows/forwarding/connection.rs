@@ -15,7 +15,7 @@ impl JumpCredentials {
     pub(super) fn valid(&self) -> bool {
         valid_jumps(&self.0, 0)
     }
-    fn for_target(
+    pub(super) fn for_target(
         self,
         target: &Target,
     ) -> AppResult<HashMap<String, crate::ssh::session::HopCredential>> {
@@ -100,7 +100,7 @@ impl Credentials {
 
 /// A captured target is never a plugin grant; original native authority and
 /// the displayed rule are checked around slow route/keychain capture.
-async fn reviewed_target(
+pub(super) async fn reviewed_target(
     effect: &Arc<Effect>,
     id: &str,
     revision: &str,

@@ -116,6 +116,7 @@ pub(super) struct Ownership {
     pub(super) presentation_jobs: HashMap<String, super::presentation_jobs::PendingPresentation>,
     drags: HashMap<String, DragGrant>,
     pub(super) native_views: super::plugin_views::Views,
+    pub(super) forwarding_tests: super::forwarding::diagnostics::Registry,
 }
 impl Ownership {
     /// The native builder registers a window before a WebView exists. Only the

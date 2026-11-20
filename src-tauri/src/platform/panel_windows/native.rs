@@ -51,6 +51,7 @@ pub(crate) fn registered(app: &AppHandle, window: &str) -> bool {
         .is_some_and(|registry| lock(&registry).document(window).is_some())
 }
 pub(crate) fn changed(app: &AppHandle) {
+    super::forwarding::diagnostics::prune(app);
     super::plugin_views::gateway::prune(app);
     super::public::snapshot(app);
     super::public_panels::refresh(app);

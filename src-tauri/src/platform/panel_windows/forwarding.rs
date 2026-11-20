@@ -2,6 +2,7 @@
 //! caller-chosen native identity. Start credentials stay request-local; they
 //! never enter capsules/read models. Transfer admission is separate.
 mod connection;
+pub(super) mod diagnostics;
 mod request;
 use super::{
     native,
@@ -59,6 +60,18 @@ impl Ownership {
         }
         let id = uuid::Uuid::new_v4().to_string();
         self.relay_fence(&lease.panel_id, &id, true)?;
+        if let Request::Test {
+            test_id,
+            interaction,
+            ..
+        } = request
+        {
+            let scope = diagnostics::Scope::new(window, document, lease, interaction);
+            if let Err(error) = self.begin_forwarding_test(test_id, scope, &id) {
+                self.finish_native_action(&lease.panel_id, &id);
+                return Err(error);
+            }
+        }
         Ok(id)
     }
 }
@@ -74,8 +87,11 @@ struct Effect {
 }
 impl Effect {
     fn with_current<T>(&self, run: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        self.with_ownership(|_| run())
+    }
+    fn with_ownership<T>(&self, run: impl FnOnce(&mut Ownership) -> AppResult<T>) -> AppResult<T> {
         let registry = self.app.state::<native::Registry>();
-        let ownership = native::lock(&registry);
+        let mut ownership = native::lock(&registry);
         ownership
             .forwarding_scope_current(
                 &self.window,
@@ -90,9 +106,13 @@ impl Effect {
         {
             return Err(native::invalid("panel action expired"));
         }
+        ownership
+            .forwarding_tests
+            .check_action(&self.id)
+            .map_err(native::invalid)?;
         // Ownership -> automation -> registry -> DB. No awaits,
         // native UI or calls back into ownership inside this transaction.
-        run()
+        run(&mut ownership)
     }
 }
 impl Authority for Effect {
@@ -103,7 +123,7 @@ impl Authority for Effect {
 impl Drop for Effect {
     fn drop(&mut self) {
         native::lock(&self.app.state::<native::Registry>())
-            .finish_native_action(&self.lease.panel_id, &self.id);
+            .finish_forwarding_action(&self.lease.panel_id, &self.id);
         native::changed(&self.app);
         if let Some(settled) = self.settled.take() {
             let _ = settled.send(());
@@ -119,6 +139,22 @@ pub(crate) async fn panel_window_forwarding(
     request: Request,
 ) -> AppResult<Value> {
     let app = window.app_handle().clone();
+    // Cancellation is a scoped cleanup signal, not admission of a new effect.
+    // It must remain usable while that same panel's test fence is occupied.
+    if let Request::CancelTest {
+        test_id,
+        interaction,
+    } = &request
+    {
+        request.validate().map_err(native::invalid)?;
+        native::lock(&app.state::<native::Registry>())
+            .cancel_forwarding_test(
+                test_id,
+                diagnostics::Scope::new(window.label(), &document, &lease, interaction),
+            )
+            .map_err(native::invalid)?;
+        return Ok(Value::Null);
+    }
     let id = native::lock(&app.state::<native::Registry>())
         .begin_forwarding(window.label(), &document, &lease, &request)
         .map_err(native::invalid)?;
@@ -141,6 +177,14 @@ pub(crate) async fn panel_window_forwarding(
             Request::PrepareStart { id, revision, .. } => {
                 connection::prepare(effect, id, revision).await
             }
+            Request::Test {
+                id,
+                revision,
+                review,
+                test_id,
+                credentials,
+                ..
+            } => diagnostics::run(effect, id, revision, review, test_id, credentials).await,
             Request::Start {
                 id,
                 revision,
@@ -269,6 +313,8 @@ fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
         | Request::CredentialStatus { .. }
         | Request::SaveCredential { .. }
         | Request::ForgetCredential { .. }
+        | Request::Test { .. }
+        | Request::CancelTest { .. }
         | Request::Trust { .. } => return Err(AppError::validation("forward.invalid")),
         Request::Save {
             rule,

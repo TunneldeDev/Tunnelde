@@ -14,6 +14,19 @@ pub(crate) enum Request {
         revision: String,
         interaction: String,
     },
+    Test {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        test_id: String,
+        #[serde(default)]
+        credentials: super::connection::JumpCredentials,
+    },
+    CancelTest {
+        test_id: String,
+        interaction: String,
+    },
     Start {
         id: String,
         revision: String,
@@ -113,7 +126,9 @@ impl Request {
             | Self::CredentialStatus { interaction, .. }
             | Self::SaveCredential { interaction, .. }
             | Self::ForgetCredential { interaction, .. }
-            | Self::PrepareStart { interaction, .. } => Some(interaction),
+            | Self::PrepareStart { interaction, .. }
+            | Self::Test { interaction, .. }
+            | Self::CancelTest { interaction, .. } => Some(interaction),
             _ => None,
         }
     }
@@ -131,6 +146,22 @@ impl Request {
                 && review.identity().bytes().all(|b| b.is_ascii_hexdigit())
         };
         let valid = match self {
+            Self::Test {
+                id,
+                revision,
+                interaction,
+                review,
+                test_id,
+                credentials,
+            } => {
+                reviewed(id, revision, interaction, review)
+                    && test_id_valid(test_id)
+                    && credentials.valid()
+            }
+            Self::CancelTest {
+                test_id,
+                interaction,
+            } => test_id_valid(test_id) && bounded(interaction, 128),
             Self::PrepareStart {
                 id,
                 revision,
@@ -247,4 +278,8 @@ impl Request {
             Err("forward.invalid")
         }
     }
+}
+fn test_id_valid(id: &str) -> bool {
+    uuid::Uuid::parse_str(id)
+        .is_ok_and(|parsed| parsed.get_version_num() == 4 && parsed.to_string() == id)
 }
