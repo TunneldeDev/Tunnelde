@@ -102,7 +102,7 @@ numbers, word wrap and native browser scrolling. Plugin tokens never replace
 the document text or supply markup. Decoration classes use the host-owned
 `cm-editor-token-*` vocabulary; forced-colors mode keeps readable system text.
 
-The included [`syntax-basic` example](../../../../examples/plugins/syntax-basic/README.md)
+The [`syntax-basic` example in Tunnelde-hub](https://github.com/TunneldeDev/Tunnelde-hub/tree/main/examples/syntax-basic)
 is a deliberately lightweight tokenizer for common source files, not a complete
 language parser or language server. Production providers should implement the
 same bounded semantic-token contract with a real parser if they need exact
