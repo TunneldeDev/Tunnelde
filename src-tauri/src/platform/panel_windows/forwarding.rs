@@ -1,10 +1,11 @@
-//! Private builtin forwarding ingress. No arbitrary invoke, provider authority,
-//! caller-chosen native identity. Start credentials stay request-local; they
+//! Private native forwarding ingress. No arbitrary invoke, raw provider bearer
+//! authority or caller-chosen native identity. Start credentials stay request-local; they
 //! never enter capsules/read models. Transfer admission is separate.
 mod clipboard;
 mod connection;
 pub(super) mod diagnostics;
-mod request;
+pub(super) mod provider;
+pub(super) mod request;
 use super::{
     native,
     ownership::{Lease, Ownership},
@@ -53,6 +54,16 @@ impl Ownership {
         lease: &Lease,
         request: &Request,
     ) -> Result<String, &'static str> {
+        self.begin_forwarding_scoped(window, document, lease, request, None)
+    }
+    fn begin_forwarding_scoped(
+        &mut self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+        request: &Request,
+        provider: Option<&str>,
+    ) -> Result<String, &'static str> {
         request.validate()?;
         self.forwarding_current(window, document, lease, request)?;
         // One actual operation per panel, independent of JS response delivery.
@@ -67,7 +78,8 @@ impl Ownership {
             ..
         } = request
         {
-            let scope = diagnostics::Scope::new(window, document, lease, interaction);
+            let scope =
+                diagnostics::Scope::new(window, document, lease, interaction).provider(provider);
             if let Err(error) = self.begin_forwarding_test(test_id, scope, &id) {
                 self.finish_native_action(&lease.panel_id, &id);
                 return Err(error);
@@ -84,6 +96,7 @@ struct Effect {
     lease: Lease,
     id: String,
     interaction: Option<String>,
+    provider: Option<provider::Provider>,
     settled: Option<tokio::sync::oneshot::Sender<()>>,
 }
 impl Effect {
@@ -111,9 +124,23 @@ impl Effect {
             .forwarding_tests
             .check_action(&self.id)
             .map_err(native::invalid)?;
-        // Ownership -> automation -> registry -> DB. No awaits,
+        // Ownership -> optional module/policy/selection -> automation -> registry
+        // -> DB. No awaits,
         // native UI or calls back into ownership inside this transaction.
-        run(&mut ownership)
+        if let Some(provider) = &self.provider {
+            provider
+                .authority
+                .check_binding(&ownership, (&self.window, &self.document), &self.lease)
+                .map_err(native::invalid)?;
+            provider.with_current(&self.app, || run(&mut ownership))
+        } else {
+            run(&mut ownership)
+        }
+    }
+    fn plugin_owner(&self) -> Option<(String, u64)> {
+        self.provider
+            .as_ref()
+            .map(|provider| provider.authority.owner())
     }
 }
 impl Authority for Effect {
@@ -139,7 +166,24 @@ pub(crate) async fn panel_window_forwarding(
     lease: Lease,
     request: Request,
 ) -> AppResult<Value> {
-    let app = window.app_handle().clone();
+    dispatch(
+        window.app_handle().clone(),
+        window.label(),
+        document,
+        lease,
+        request,
+        None,
+    )
+    .await
+}
+async fn dispatch(
+    app: AppHandle,
+    window: &str,
+    document: String,
+    lease: Lease,
+    request: Request,
+    provider_token: Option<String>,
+) -> AppResult<Value> {
     // Cancellation is a scoped cleanup signal, not admission of a new effect.
     // It must remain usable while that same panel's test fence is occupied.
     if let Request::CancelTest {
@@ -151,22 +195,56 @@ pub(crate) async fn panel_window_forwarding(
         native::lock(&app.state::<native::Registry>())
             .cancel_forwarding_test(
                 test_id,
-                diagnostics::Scope::new(window.label(), &document, &lease, interaction),
+                diagnostics::Scope::new(window, &document, &lease, interaction)
+                    .provider(provider_token.as_deref()),
             )
             .map_err(native::invalid)?;
         return Ok(Value::Null);
     }
-    let id = native::lock(&app.state::<native::Registry>())
-        .begin_forwarding(window.label(), &document, &lease, &request)
-        .map_err(native::invalid)?;
+    request.validate().map_err(native::invalid)?;
+    let (id, provider) = {
+        let registry = app.state::<native::Registry>();
+        let mut ownership = native::lock(&registry);
+        let provider = provider_token
+            .as_deref()
+            .map(|token| {
+                provider::Provider::capture(
+                    &ownership,
+                    (window, &document),
+                    &lease,
+                    token,
+                    &request,
+                )
+            })
+            .transpose()?;
+        let id = if let Some(provider) = &provider {
+            provider.with_current(&app, || {
+                ownership
+                    .begin_forwarding_scoped(
+                        window,
+                        &document,
+                        &lease,
+                        &request,
+                        Some(provider.authority.token()),
+                    )
+                    .map_err(native::invalid)
+            })?
+        } else {
+            ownership
+                .begin_forwarding(window, &document, &lease, &request)
+                .map_err(native::invalid)?
+        };
+        (id, provider)
+    };
     let (settled, settlement) = tokio::sync::oneshot::channel();
     let effect = Arc::new(Effect {
         app: app.clone(),
-        window: window.label().into(),
+        window: window.into(),
         document,
         lease,
         id,
         interaction: request.interaction().map(str::to_owned),
+        provider,
         settled: Some(settled),
     });
     native::changed(&app);
@@ -297,7 +375,11 @@ pub(crate) async fn panel_window_forwarding(
                     Prepared::Value(value) => Ok(value),
                     Prepared::Stop(stopping) => {
                         domain::automation::changed(&effect.app);
-                        stopping.finish().await.map(|()| Value::Null)
+                        WorkLifetime::current()
+                            .retirement()
+                            .scope(stopping.finish())
+                            .await
+                            .map(|()| Value::Null)
                     }
                 }
             }

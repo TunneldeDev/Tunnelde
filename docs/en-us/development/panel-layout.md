@@ -913,9 +913,32 @@ document/offer invalidation revoke access. Exact handoff promotes the staged chi
 using the existing view lifecycle, while admitted effects retain their independent
 settlement fence. Closing a child never closes the singleton or a replacement child.
 
-This is attachment infrastructure, not a forwarding mutation authority or a
-complete provider renderer. A native child cannot use the raw main-document
+Attachment alone does not confer mutation authority or provide a complete
+provider renderer. A native child cannot use the raw main-document
 `forwarding_provider_open` bridge. Provider actions/prompt integration still need
 their own exact-origin native services before the forwarding adapter is admitted
 for discovery; an attachment does not register an ordinary sidebar adapter or
 enable native-window discovery.
+
+### Native forwarding-provider mutation ingress
+
+The private native plugin-view gateway also accepts a closed `forwarding`
+request with the original native child token, committed lease and typed mutation.
+It never accepts caller-selected plugin identity, permissions, provider bearer
+origin or arbitrary invoke. Staged/frozen children cannot mutate. Admission and
+actual short domain effects recheck the exact original child, selected module,
+selection epoch, read/write policy, builtin host and captured rule/group revision.
+Write operations require `forwards.write`; reads retain the existing provider
+read policy. Callbacks under these locks must not reenter frontend/security or
+perform OS/network I/O.
+
+Provider-created listeners retain the originating plugin generation for runtime
+cleanup. A delayed network setup cannot publish after selection or permission
+loss. Already-admitted stop/disconnect cleanup retires its original handles even
+if selection is revoked; actual descendants keep the panel fence until settlement.
+Diagnostic cancellation is bound to the original child, not a replacement or the
+builtin route, and policy loss cancels pending provider diagnostics.
+
+This is a service ingress, not the complete `ForwardingActions`, provider prompt
+or production satellite renderer. It does not enable native-window discovery or
+relax the raw main-document frontend lease bridge.

@@ -51,8 +51,8 @@ pub(crate) fn registered(app: &AppHandle, window: &str) -> bool {
         .is_some_and(|registry| lock(&registry).document(window).is_some())
 }
 pub(crate) fn changed(app: &AppHandle) {
-    super::forwarding::diagnostics::prune(app);
     super::plugin_views::gateway::prune(app);
+    super::forwarding::diagnostics::prune(app);
     super::public::snapshot(app);
     super::public_panels::refresh(app);
     let windows = lock(&app.state::<Registry>()).windows();
@@ -514,6 +514,7 @@ pub(crate) fn start(app: &AppHandle) {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let adapters_retired = super::plugin_views::gateway::prune(&app);
+            super::forwarding::diagnostics::prune(&app);
             let expired = lock(&app.state::<Registry>()).expire(Instant::now());
             if adapters_retired || !expired.is_empty() {
                 changed(&app);

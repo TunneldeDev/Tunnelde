@@ -319,6 +319,7 @@ pub(crate) mod origin;
 #[cfg(not(windows))]
 pub(crate) mod pickers;
 mod provider;
+pub(super) use provider::ForwardingAuthority;
 #[cfg(test)]
 mod tests;
 pub(crate) mod ui;

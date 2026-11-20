@@ -4,6 +4,7 @@ import type { FrontendModule } from "@/lib/extensions/uiSdk";
 import type { FrontendViewTransport } from "@/lib/extensions/runtime/views/frontend";
 import { ResourceScopeClosed } from "@/lib/extensions/runtime/scopes/errors";
 import { callScopedRequest } from "@/lib/extensions/runtime/requests/frontend";
+import type { ForwardingWindowMutation } from "@/features/forwarding/runtime/windowProtocol";
 import type {
   NativePanelIdentity,
   NativePluginViewDescriptor,
@@ -14,6 +15,7 @@ import type {
 export type NativePluginViewTarget =
   { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
 type Request =
+  | { action: "forwarding"; token: string; lease: PanelLease; request: ForwardingWindowMutation }
   | { action: "describeForwardingProvider"; target: NativePluginViewTarget }
   | {
       action: "openForwardingProvider";
@@ -144,6 +146,16 @@ export function createNativePluginViewClient(
   };
   return {
     transport,
+    async forwardingMutation<T = unknown>(
+      token: string,
+      lease: PanelLease,
+      mutation: ForwardingWindowMutation,
+    ): Promise<T> {
+      check(token);
+      const result = await request<T>({ action: "forwarding", token, lease, request: mutation });
+      check(token);
+      return result;
+    },
     async registerAdapter(pluginId: string, runtimeId: string, viewId: string) {
       check();
       if (identity.windowId !== "main") throw new Error("panel.window.coordinatorRequired");

@@ -221,3 +221,43 @@ async fn cancel_during_admitted_blocking_work_keeps_lifetime_until_its_actual_re
     }
     panic!("actual worker retained the fence after return");
 }
+
+#[test]
+fn provider_test_cancellation_is_not_builtin_or_replacement_child_authority() {
+    let mut ownership = Ownership::default();
+    let document = ownership.register("main").unwrap();
+    ownership.ready("main", &document).unwrap();
+    let lease = ownership
+        .add_panel("main", &document, "forwarding")
+        .unwrap();
+    let interaction = ownership
+        .begin_interaction("main", &document, &lease)
+        .unwrap();
+    let builtin = Scope::new("main", &document, &lease, &interaction);
+    let original = builtin.clone().provider(Some("retired-original-child"));
+    let (cancel, receiver) = watch::channel(false);
+    let id = uuid::Uuid::new_v4().to_string();
+    ownership.forwarding_tests.records.insert(
+        id.clone(),
+        Record {
+            scope: original.clone(),
+            action: Some("actual-effect".into()),
+            completed: false,
+            cancel,
+        },
+    );
+    assert!(ownership
+        .cancel_forwarding_test(&id, builtin.clone())
+        .is_err());
+    assert!(ownership
+        .cancel_forwarding_test(&id, builtin.provider(Some("replacement-child")))
+        .is_err());
+    assert!(!*receiver.borrow());
+    // Exact cleanup remains available after child retirement; no new grant.
+    ownership.cancel_forwarding_test(&id, original).unwrap();
+    assert!(*receiver.borrow());
+    assert_eq!(
+        ownership.forwarding_tests.records[&id].action.as_deref(),
+        Some("actual-effect")
+    );
+}

@@ -19,6 +19,11 @@ use tauri::{AppHandle, Manager, WebviewWindow};
     deny_unknown_fields
 )]
 pub(crate) enum Request {
+    Forwarding {
+        token: String,
+        lease: super::super::ownership::Lease,
+        request: super::super::forwarding::request::Request,
+    },
     DescribeForwardingProvider {
         target: Target,
     },
@@ -108,6 +113,21 @@ pub(crate) async fn panel_window_plugin_view(
         .authorize(window.label(), &document)
         .map_err(native::invalid)?;
     match request {
+        Request::Forwarding {
+            token,
+            lease,
+            request,
+        } => {
+            super::super::forwarding::provider::request(
+                app.clone(),
+                window.label(),
+                document,
+                lease,
+                token,
+                request,
+            )
+            .await
+        }
         Request::DescribeForwardingProvider { target } => {
             super::provider::describe(app, window.label(), &document, target).await
         }

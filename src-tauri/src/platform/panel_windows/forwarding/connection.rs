@@ -1,4 +1,4 @@
-//! Builtin-only reviewed connections. The original interaction owns every phase;
+//! Builtin-host reviewed connections for builtin and scoped native providers. The original interaction owns every phase;
 //! credentials are request-local, never part of a panel capsule/read model.
 mod installation;
 use super::*;
@@ -257,7 +257,7 @@ pub(super) async fn start(
         }
         let pending = tokio::select! { biased;
             _ = attempt.cancelled() => return Err(AppError::validation("forward.startCancelled")),
-            pending = domain::prepare_managed(&effect.app, &id, Some(&revision), None, Some(credentials.request(review.host_id.clone())), Some(review)) => pending?,
+            pending = domain::prepare_managed(&effect.app, &id, Some(&revision), effect.plugin_owner(), Some(credentials.request(review.host_id.clone())), Some(review)) => pending?,
         };
         let session = pending.session();
         // Proxy/keychain observation must finish OUTSIDE ownership/automation

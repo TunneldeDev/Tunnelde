@@ -131,6 +131,16 @@ impl Source {
         app: &AppHandle,
         operation: impl FnOnce() -> AppResult<T>,
     ) -> AppResult<T> {
+        self.with_permissions(app, &[], operation)
+    }
+    /// Only pure short resource callbacks: this holds module/policy/selection.
+    /// Never reenter frontend/security or perform OS/network I/O inside it.
+    pub(crate) fn with_permissions<T>(
+        &self,
+        app: &AppHandle,
+        permissions: &[&str],
+        operation: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
         let registry = app.state::<Registry>();
         let modules = registry.modules.lock().unwrap_or_else(|e| e.into_inner());
         let module = modules
@@ -145,7 +155,7 @@ impl Source {
         {
             return Err(AppError::validation("plugin.notRunning"));
         }
-        self.with_policy(app, operation)
+        self.with_policy(app, permissions, operation)
     }
     pub(crate) fn provider_selection(&self) -> Option<&ProviderSelection> {
         self.provider.as_ref()
@@ -153,6 +163,7 @@ impl Source {
     fn with_policy<T>(
         &self,
         app: &AppHandle,
+        additional: &[&str],
         operation: impl FnOnce() -> AppResult<T>,
     ) -> AppResult<T> {
         let state = app.state::<AppState>();
@@ -161,10 +172,11 @@ impl Source {
         } else {
             &["ui.trusted"]
         };
+        let permissions: Vec<_> = permissions.iter().chain(additional).copied().collect();
         state
             .plugins
             .security
-            .with_authorized(&self.lease, permissions, || {
+            .with_authorized(&self.lease, &permissions, || {
                 if let Some(provider) = &self.provider {
                     let settings = state.settings.read().unwrap_or_else(|e| e.into_inner());
                     provider.check(
@@ -242,7 +254,7 @@ pub(crate) fn open(app: &AppHandle, source: Source) -> AppResult<FrontendSession
             if *lease != source.lease {
                 return Err(AppError::validation("plugin.frontend.expired"));
             }
-            source.with_policy(app, || Ok(()))?;
+            source.with_policy(app, &[], || Ok(()))?;
             if !state.plugins.security.is_ready(lease)? {
                 return Err(AppError::validation("plugin.notRunning"));
             }

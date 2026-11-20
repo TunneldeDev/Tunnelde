@@ -12,6 +12,7 @@ pub(super) struct Scope {
     document: String,
     lease: Lease,
     interaction: String,
+    provider: Option<String>,
 }
 impl Scope {
     pub(super) fn new(window: &str, document: &str, lease: &Lease, interaction: &str) -> Self {
@@ -20,7 +21,12 @@ impl Scope {
             document: document.into(),
             lease: lease.clone(),
             interaction: interaction.into(),
+            provider: None,
         }
+    }
+    pub(super) fn provider(mut self, provider: Option<&str>) -> Self {
+        self.provider = provider.map(str::to_owned);
+        self
     }
     fn current(&self, owner: &Ownership) -> Result<(), &'static str> {
         owner.forwarding_scope_current(
@@ -28,7 +34,15 @@ impl Scope {
             &self.document,
             &self.lease,
             Some(&self.interaction),
-        )
+        )?;
+        if let Some(token) = &self.provider {
+            owner.forwarding_provider_binding(
+                (&self.window, &self.document),
+                &self.lease,
+                token,
+            )?;
+        }
+        Ok(())
     }
 }
 struct Record {
@@ -172,7 +186,30 @@ impl Ownership {
     }
 }
 pub(crate) fn prune(app: &AppHandle) {
-    native::lock(&app.state::<native::Registry>()).prune_forwarding_tests();
+    let registry = app.state::<native::Registry>();
+    let mut ownership = native::lock(&registry);
+    ownership.prune_forwarding_tests();
+    // A readable provider may lose write access without its view closing. An
+    // in-flight diagnostic still needs cancellation, not just denied delivery.
+    for record in ownership.forwarding_tests.records.values() {
+        if record.completed {
+            continue;
+        }
+        if let Some(token) = &record.scope.provider {
+            let scope = &record.scope;
+            let current = ownership
+                .forwarding_provider_authority(
+                    (&scope.window, &scope.document),
+                    &scope.lease,
+                    token,
+                )
+                .map_err(native::invalid)
+                .and_then(|authority| authority.with_current(app, true, || Ok(())));
+            if current.is_err() {
+                record.cancel.send_replace(true);
+            }
+        }
+    }
 }
 async fn guard<T>(
     mut cancel: watch::Receiver<bool>,

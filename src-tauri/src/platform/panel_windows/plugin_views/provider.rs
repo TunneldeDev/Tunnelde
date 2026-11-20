@@ -10,6 +10,7 @@ use crate::{
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+#[derive(Clone)]
 pub(super) struct Binding {
     source: Source,
     host: String,
@@ -23,7 +24,85 @@ impl Binding {
         })
     }
 }
+/// Process-local continuation, never Serialize/Deserialize or a raw provider
+/// bearer scope. Each effect still checks the issuing native attachment.
+pub(in crate::platform::panel_windows) struct ForwardingAuthority {
+    token: String,
+    binding: Binding,
+}
+impl ForwardingAuthority {
+    pub(in crate::platform::panel_windows) fn token(&self) -> &str {
+        &self.token
+    }
+    pub(in crate::platform::panel_windows) fn host(&self) -> &str {
+        &self.binding.host
+    }
+    pub(in crate::platform::panel_windows) fn owner(&self) -> (String, u64) {
+        (
+            self.binding.source.lease.id.clone(),
+            self.binding.source.lease.generation,
+        )
+    }
+    pub(in crate::platform::panel_windows) fn check_binding(
+        &self,
+        ownership: &Ownership,
+        caller: (&str, &str),
+        lease: &Lease,
+    ) -> Result<()> {
+        ownership.forwarding_provider_binding(caller, lease, &self.token)?;
+        let binding = ownership.native_views.bindings[&self.token]
+            .provider
+            .as_ref()
+            .expect("provider binding");
+        if binding.host != self.binding.host || !binding.source.same_module(&self.binding.source) {
+            return Err("plugin.forwarding.expired");
+        }
+        Ok(())
+    }
+    pub(in crate::platform::panel_windows) fn with_current<T>(
+        &self,
+        app: &AppHandle,
+        write: bool,
+        operation: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        self.binding.source.with_permissions(
+            app,
+            if write { &["forwards.write"] } else { &[] },
+            operation,
+        )
+    }
+}
 impl Ownership {
+    pub(in crate::platform::panel_windows) fn forwarding_provider_binding(
+        &self,
+        caller: (&str, &str),
+        lease: &Lease,
+        token: &str,
+    ) -> Result<()> {
+        if lease.panel_id != "forwarding"
+            || self.native_view_owned_lease(caller.0, caller.1, token, Instant::now())? != *lease
+            || self.native_views.bindings[token].provider.is_none()
+        {
+            return Err("plugin.forwarding.expired");
+        }
+        Ok(())
+    }
+    pub(in crate::platform::panel_windows) fn forwarding_provider_authority(
+        &self,
+        caller: (&str, &str),
+        lease: &Lease,
+        token: &str,
+    ) -> Result<ForwardingAuthority> {
+        self.forwarding_provider_binding(caller, lease, token)?;
+        Ok(ForwardingAuthority {
+            token: token.into(),
+            binding: self.native_views.bindings[token]
+                .provider
+                .as_ref()
+                .expect("provider binding")
+                .clone(),
+        })
+    }
     fn forwarding_provider_target(
         &self,
         window: &str,
@@ -361,5 +440,79 @@ mod tests {
                 Instant::now()
             )
             .is_err());
+    }
+    #[test]
+    fn native_forwarding_continuation_keeps_exact_child_host_runtime_and_committed_owner() {
+        let (mut ownership, main, satellite, lease, source) = fixture();
+        let now = Instant::now();
+        ownership
+            .bind_forwarding_provider(
+                ("main", &main),
+                Target::Owned {
+                    lease: lease.clone(),
+                },
+                source.clone(),
+                "selected-host".into(),
+                "original".into(),
+                now,
+            )
+            .unwrap();
+        let authority = ownership
+            .forwarding_provider_authority(("main", &main), &lease, "original")
+            .unwrap();
+        assert_eq!(authority.host(), "selected-host");
+        assert_eq!(authority.owner(), ("provider".into(), 5));
+        authority
+            .check_binding(&ownership, ("main", &main), &lease)
+            .unwrap();
+        assert!(authority
+            .check_binding(&ownership, ("satellite", &satellite), &lease)
+            .is_err());
+        let offer = ownership
+            .prepare("main", &main, &lease, "satellite", Value::Null, now)
+            .unwrap();
+        ownership
+            .bind_forwarding_provider(
+                ("satellite", &satellite),
+                Target::Staged {
+                    id: offer.id.clone(),
+                },
+                source.clone(),
+                "selected-host".into(),
+                "staged".into(),
+                now,
+            )
+            .unwrap();
+        assert!(ownership
+            .forwarding_provider_authority(("satellite", &satellite), &lease, "staged")
+            .is_err());
+        assert!(authority
+            .check_binding(&ownership, ("main", &main), &lease)
+            .is_err());
+        ownership.cancel("main", &main, &offer.id).unwrap();
+        ownership
+            .close_native_view("main", &main, "original")
+            .unwrap();
+        ownership
+            .bind_forwarding_provider(
+                ("main", &main),
+                Target::Owned {
+                    lease: lease.clone(),
+                },
+                source,
+                "selected-host".into(),
+                "replacement".into(),
+                now,
+            )
+            .unwrap();
+        assert!(
+            authority
+                .check_binding(&ownership, ("main", &main), &lease)
+                .is_err(),
+            "replacement child revived retained authority"
+        );
+        ownership
+            .forwarding_provider_authority(("main", &main), &lease, "replacement")
+            .unwrap();
     }
 }

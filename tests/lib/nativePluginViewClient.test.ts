@@ -338,3 +338,35 @@ it("closes a late forwarding-provider acquisition rather than adopting it after 
   ]);
   await expect(f.client.describeForwardingProvider(target)).rejects.toThrow();
 });
+
+it("snapshots provider mutations with only the original native child and lease, never falling back to builtin IPC", async () => {
+  const f = fixture();
+  await f.open();
+  const lease = { panelId: "forwarding", windowId: "satellite", generation: 2 };
+  const mutation = { operation: "saveGroup" as const, hostId: "host", name: "Original group" };
+  const pending = f.client.forwardingMutation(session.token, lease, mutation);
+  lease.generation = 3;
+  mutation.name = "Later edit";
+  expect(await pending).toBeNull();
+  expect(f.invoke).toHaveBeenLastCalledWith("panel_window_plugin_view", {
+    document: identity.document,
+    request: {
+      action: "forwarding",
+      token: session.token,
+      lease: { panelId: "forwarding", windowId: "satellite", generation: 2 },
+      request: { operation: "saveGroup", hostId: "host", name: "Original group" },
+    },
+  });
+  f.invoke.mockRejectedValueOnce(new Error("plugin.forwarding.expired"));
+  await expect(f.client.forwardingMutation(session.token, lease, mutation)).rejects.toThrow(
+    "plugin.forwarding.expired",
+  );
+  expect(f.invoke.mock.calls.every(([command]) => command === "panel_window_plugin_view")).toBe(
+    true,
+  );
+  await f.client.transport.close(session.token);
+  const count = f.invoke.mock.calls.length;
+  await expect(f.client.forwardingMutation(session.token, lease, mutation)).rejects.toThrow();
+  expect(f.invoke.mock.calls).toHaveLength(count);
+  f.client.dispose();
+});
