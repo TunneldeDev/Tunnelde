@@ -1284,3 +1284,20 @@ The actual archive URL/hash and installation authorization stay main-owned.
 Local installation dialogs live outside the movable browser, so moving the list
 does not discard an archive inspection or install draft. Detail/settings actions
 reveal main; this adapter does not claim native detail-page/settings support.
+
+### Native host metadata reads
+
+The exact `hosts.snapshot`, `hosts.sourcesSnapshot`, `hosts.routes.get`,
+`hosts.routes.observe` and `hosts.getFields` methods are staging-safe retained
+reads. Saved snapshots recheck read authorization outside the DB guard; route
+and own-field queries use their existing authorized, bounded admission workers.
+Discovery snapshots only clone bounded in-memory metadata. Schema-change reports
+do not migrate or write field values. Original plugin grants, generation, view
+origin and call lifetime remain checked by the native gateway, including after
+worker settlement; dropping a caller does not prematurely release the move fence.
+
+No prefix/get-name inference: host mutations, imports/exports, SSH-config access,
+column/decorations publication, credentials and connection APIs are not admitted
+by this change. General `viewFactories.nativeWindows` remains false. Existing
+reader cancellation/revocation tests and native policy/lifetime tests are not a
+claim of actual SSH/FUSE or cross-platform UI acceptance.
