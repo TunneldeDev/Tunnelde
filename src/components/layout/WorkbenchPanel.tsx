@@ -1,3 +1,10 @@
+import { startLocalPanelDrag, endLocalPanelDrag } from "@/lib/panels/localPanelDrag";
+import { useStore } from "zustand";
+import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
+import { usePanelWindows } from "@/store/panelWindows";
+import { movePanelToWindow } from "@/lib/panels/windowMoves";
+import { toast } from "@/store/toasts";
+import { translateError } from "@/lib/api/errors";
 import {
   createContext,
   useContext,
@@ -57,8 +64,8 @@ export function PanelHeader({
 /** Default integrated panel. Content has one retained owner regardless of presentation. */
 export function WorkbenchPanel({
   view,
-  location,
-  visible,
+  location: requestedLocation,
+  visible: requestedVisible,
   children,
 }: {
   view: SidebarView;
@@ -67,9 +74,18 @@ export function WorkbenchPanel({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const store = panelPresentation(view);
-  const pinned = store((state) => state.pinned);
-  const bounds = store((state) => state.bounds);
+  const local = useLocalPanelScope();
+  const location = local?.location ?? requestedLocation;
+  const visible = requestedVisible && (local?.visible ?? true);
+  const windowId = usePanelWindows((state) => state.windowId);
+  const close = () => {
+    if (windowId === "main") closePanel(view);
+    else
+      void movePanelToWindow(view, "main").catch((error) => toast(translateError(error), "error"));
+  };
+  const store = local?.floating ?? panelPresentation(view);
+  const pinned = useStore(store, (state) => state.pinned);
+  const bounds = useStore(store, (state) => state.bounds);
   const panel = useRef<HTMLElement>(null);
   const actions = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -107,11 +123,15 @@ export function WorkbenchPanel({
       )
         return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      store.getState().close();
+      if (windowId === "main") store.getState().close();
+      else
+        void movePanelToWindow(view, "main").catch((error) =>
+          toast(translateError(error), "error"),
+        );
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
-  }, [visible, location, pinned, store, view]);
+  }, [visible, location, pinned, store, view, windowId]);
   return (
     <PanelScope.Provider value={scope}>
       <HelpPresentationProvider value="tooltip">
@@ -123,7 +143,7 @@ export function WorkbenchPanel({
           panelId={view}
           bounds={bounds}
           onBounds={store.getState().setBounds}
-          onEscape={() => closePanel(view)}
+          onEscape={close}
           header={(floating) => (
             <header
               className={`workbench-panel__head${location === "workspace" ? " is-business-only" : ""}`}
@@ -140,10 +160,16 @@ export function WorkbenchPanel({
                 >
                   <span
                     draggable
+                    data-panel-drag-handle
+                    onDragEnd={endLocalPanelDrag}
                     className="workbench-panel__dock-grip"
                     title={t("docking.dragHint")}
                     onPointerDown={(event) => event.stopPropagation()}
                     onDragStart={(event) => {
+                      if (local) {
+                        startLocalPanelDrag(local.workspace, view, event.dataTransfer);
+                        return;
+                      }
                       event.dataTransfer.setData(TAB_MIME, sidebarTabId(view));
                       event.dataTransfer.setData(SIDEBAR_MIME, view);
                       event.dataTransfer.effectAllowed = "move";
@@ -176,12 +202,7 @@ export function WorkbenchPanel({
                 </>
               ) : null}
               {location !== "workspace" && (
-                <IconButton
-                  size="sm"
-                  ref={closeButton}
-                  label={t("common.close")}
-                  onClick={() => closePanel(view)}
-                >
+                <IconButton size="sm" ref={closeButton} label={t("common.close")} onClick={close}>
                   <X size={14} />
                 </IconButton>
               )}

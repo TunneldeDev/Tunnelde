@@ -1,3 +1,4 @@
+import { useRemoteTaskModel } from "@/lib/panels/taskModel";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ProviderSurface } from "@/components/layout/ProviderSurface";
@@ -17,6 +18,7 @@ export function BackgroundTasksSurface({
   visible: boolean;
   children: ReactNode;
 }) {
+  const remote = useRemoteTaskModel();
   const [surface] = useState(createPersistentSurface);
   const Entries = surface.Mount;
   const frame = useMemo(
@@ -52,6 +54,7 @@ export function BackgroundTasksSurface({
     [Entries, frame, entries, visible],
   );
   /* eslint-enable react-hooks/refs */
+  if (remote) return <div className="background-tasks-surface">{children}</div>;
   return (
     <div className="background-tasks-surface">
       <ProviderSurface target="backgroundTasks" backgroundTasks={context} visible={visible}>

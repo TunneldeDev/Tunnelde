@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SshSession, TabRecord } from "@/lib/api/types";
 
 const mocks = vi.hoisted(() => ({
+  panelWindowsStart: vi.fn(),
+  panelWindowsStop: vi.fn(),
   mainWindowSnapshot: vi.fn(),
   tabs: vi.fn(),
   saveTabs: vi.fn(),
@@ -38,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks, events: mocks.events, isTauri: () => true }));
+vi.mock("@/app/panelWindows", () => ({ startPanelWindows: mocks.panelWindowsStart }));
 vi.mock("@/app/backgroundTaskSources", () => ({ registerBackgroundTaskSources: () => () => {} }));
 vi.mock("@/app/pluginWorkspaceBridge", () => ({
   wirePluginWorkspaceBridge: vi.fn(async () => vi.fn()),
@@ -125,6 +128,8 @@ const fresh = async () => {
 
 beforeEach(() => {
   vi.resetModules();
+  mocks.panelWindowsStop.mockReset();
+  mocks.panelWindowsStart.mockReset().mockResolvedValue(mocks.panelWindowsStop);
   vi.mocked(window.matchMedia).mockReturnValue({
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
@@ -404,4 +409,16 @@ describe("workspace startup and persistence", () => {
     expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:settings"]);
     expect(mocks.tabs).toHaveBeenCalledTimes(1);
   });
+});
+
+it("starts panel-window coordination once per main bootstrap and releases it with that lifetime", async () => {
+  const { bootstrap, disposeBootstrap } = await fresh();
+  await bootstrap();
+  await bootstrap();
+  expect(mocks.panelWindowsStart).toHaveBeenCalledTimes(1);
+  const signal = mocks.panelWindowsStart.mock.calls[0]![0] as AbortSignal;
+  expect(signal.aborted).toBe(false);
+  disposeBootstrap();
+  expect(signal.aborted).toBe(true);
+  expect(mocks.panelWindowsStop).toHaveBeenCalledTimes(1);
 });

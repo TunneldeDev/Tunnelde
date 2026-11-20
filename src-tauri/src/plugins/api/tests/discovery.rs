@@ -194,9 +194,15 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "storage.recovery.request",
             "workspace.panels.close",
             "workspace.panels.list",
+            "workspace.panels.moveToWindow",
             "workspace.panels.observe",
+            "workspace.panels.ownership",
             "workspace.panels.setPresentation",
             "workspace.resizeSplits",
+            "workspace.windows.close",
+            "workspace.windows.create",
+            "workspace.windows.list",
+            "workspace.windows.observe",
         ]
     );
 }
@@ -281,6 +287,12 @@ fn panel_methods_are_explicit_experimental_permission_checked_additions() {
     for (name, permission) in [
         ("workspace.panels.list", "workspace.read"),
         ("workspace.panels.observe", "workspace.read"),
+        ("workspace.panels.ownership", "workspace.read"),
+        ("workspace.panels.moveToWindow", "workspace.write"),
+        ("workspace.windows.list", "workspace.read"),
+        ("workspace.windows.observe", "workspace.read"),
+        ("workspace.windows.create", "workspace.write"),
+        ("workspace.windows.close", "workspace.write"),
         ("workspace.panels.setPresentation", "workspace.write"),
         ("workspace.panels.close", "workspace.write"),
         ("workspace.resizeSplits", "workspace.write"),

@@ -19,6 +19,7 @@ mod artifacts;
 pub mod bandwidth;
 mod batch;
 mod compressed;
+pub(crate) mod directory;
 pub mod durable;
 mod lifecycle;
 #[cfg(windows)]

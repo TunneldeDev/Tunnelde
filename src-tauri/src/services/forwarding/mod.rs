@@ -5,6 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 pub(crate) mod automation;
 pub(crate) mod connections;
 pub mod contract;
+pub(crate) mod disconnect;
 pub(crate) mod groups;
 pub(crate) mod interaction;
 pub(crate) mod query;
@@ -12,7 +13,10 @@ pub(crate) mod repository;
 mod runtime;
 pub(crate) mod start;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
-pub(crate) use runtime::{prepare_checked, prepare_managed, start_managed, take_checked};
+pub(crate) use runtime::{
+    prepare_checked, prepare_managed, start_managed, stop_checked, take_checked,
+    take_manual_remove, take_manual_stop,
+};
 pub use runtime::{start_checked, stop};
 
 pub(crate) fn registry(app: &AppHandle) -> ForwardRegistry {

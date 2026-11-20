@@ -53,3 +53,31 @@ right. It supports controlled visibility; revealing never changes the password o
 submits its form. Copy requires an explicit callback and never reads the clipboard.
 Host export selection actions sit before Cancel in the footer and affect only
 shown hosts when filtering.
+
+## VS Code workbench reference
+
+Use VS Code's workbench interaction model as the reference, not a wholesale
+visual reskin. Keep Tunnelde's branding, existing theme tokens and continuous
+corners. Prefer small, shared-component corrections over feature-local styling.
+
+- Separate the workbench area, view container, section/group and content row.
+  Do not style a forwarding rule like its group heading. Merge redundant title
+  levels when a container holds only one view; keep its actions discoverable.
+- A view has one identity and one business-resource owner across sidebar, dock,
+  floating and independent-window presentations. Moving or hiding is not stopping
+  work. Restore drafts, selection, scroll and focus; failed moves keep the source.
+- Put related creation actions together in the title toolbar. Less frequent,
+  context-specific actions belong in the shared overflow/context menu. Toolbar,
+  menu and keyboard entry points must invoke the same command and enabled state.
+- Offer keyboard alternatives to drag-only operations, visible focus and
+  accessible labels. Empty, loading, error and disconnected states are distinct;
+  do not turn a loading or error placeholder into a ready destination.
+- Match extension concepts (commands, context, contribution points, scoped
+  events/disposables) where useful, but advertise only implemented capabilities.
+  VS Code is a design reference, not a claim of API/binary compatibility or a
+  reason to weaken permissions, lifecycle fences or native ownership checks.
+
+Reference implementations: VS Code
+[`PanelPart`](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/panel/panelPart.ts)
+and
+[`ViewPaneContainer`](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/views/viewPaneContainer.ts).

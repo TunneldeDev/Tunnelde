@@ -17,3 +17,6 @@
 *.gz binary
 *.AppImage binary
 *.deb binary
+
+# Preserve byte-identical upstream README; its digest is verified in CI.
+src-tauri/vendor/russh/README.md whitespace=-blank-at-eol

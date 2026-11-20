@@ -113,18 +113,24 @@ pub async fn forwarding_stop(
         )
         .await;
     }
-    forwarding::stop(&app, &id).await
+    match (expected_revision.as_deref(), runtime_id.as_deref()) {
+        (Some(revision), runtime) => forwarding::stop_checked(&app, &id, revision, runtime).await,
+        // Historical callers that supplied neither token retain their wire
+        // behavior. An instance-only request must never fall back to blind stop.
+        (None, None) => forwarding::stop(&app, &id).await,
+        _ => Err(crate::error::AppError::validation("forward.changed")),
+    }
 }
 
 #[tauri::command]
 pub(crate) fn forwarding_groups_list(
     app: AppHandle,
-    host_id: String,
+    host_id: Option<String>,
 ) -> AppResult<Vec<forwarding::groups::Group>> {
     use tauri::Manager;
     app.state::<crate::state::AppState>()
         .db
-        .with(|conn| forwarding::groups::list(conn, Some(&host_id)))
+        .with(|conn| forwarding::groups::list(conn, host_id.as_deref()))
 }
 #[tauri::command]
 pub(crate) fn forwarding_group_save(

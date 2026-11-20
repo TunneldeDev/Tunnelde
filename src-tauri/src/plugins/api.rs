@@ -7,6 +7,7 @@ mod transport;
 pub use catalogue::{ApiMethod, METHODS};
 pub(super) use domains::files::remote_write::write_remote;
 pub(super) use domains::files::text::write_local;
+pub(crate) use domains::mounts::browse as browse_mount;
 pub(super) use transport::frontend::frontend_request;
 
 use crate::error::{AppError, AppResult};

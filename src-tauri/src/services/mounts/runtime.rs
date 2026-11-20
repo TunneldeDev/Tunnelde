@@ -18,6 +18,8 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedMutexGuard};
 
+pub(crate) mod force;
+pub(crate) mod open;
 mod recovery;
 pub(super) use recovery::retryable;
 pub(crate) use recovery::{launch, shutdown};
@@ -26,7 +28,23 @@ pub(crate) const OWNER: &str = "@tunnelde/mount-rules";
 
 #[derive(Clone)]
 pub(crate) struct Authority(pub Option<Lease>);
+struct UnmountAuthority {
+    app: AppHandle,
+    authority: Authority,
+}
+impl crate::mounts::unmount::Policy for UnmountAuthority {
+    fn with_authorized<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        self.authority.commit(&self.app, effect)
+    }
+}
 impl Authority {
+    pub(crate) fn unmount_policy(&self, app: &AppHandle) -> impl crate::mounts::unmount::Policy {
+        UnmountAuthority {
+            app: app.clone(),
+            authority: self.clone(),
+        }
+    }
+
     pub(crate) fn check(&self, app: &AppHandle) -> AppResult<()> {
         self.commit(app, || Ok(()))
     }
@@ -235,8 +253,25 @@ fn rule_state(
     );
     changed(app);
 }
-pub(crate) fn adopt_state(app: &AppHandle, rule: &Entry<Rule>, mount: &crate::mounts::MountInfo) {
-    rule_state(app, rule, "running", Some(mount), None, true);
+impl Coordinator {
+    /// Infallible host publication after the conversion's DB commit. The caller
+    /// still holds the mount registry and group guards; no plugin reauthorization
+    /// or transport ownership transfer belongs here.
+    pub(crate) fn adopt_state(&self, rule: &Entry<Rule>, mount: &crate::mounts::MountInfo) {
+        self.lock().rules.insert(
+            rule.value.id.clone(),
+            RuleStatus {
+                rule_id: rule.value.id.clone(),
+                revision: rule.revision.clone(),
+                group_id: rule.value.group_id.clone(),
+                phase: "running".into(),
+                runtime_id: Some(mount.id.clone()),
+                session_id: Some(mount.session_id.clone()),
+                desired: true,
+                error: None,
+            },
+        );
+    }
 }
 fn connection_state(
     app: &AppHandle,
@@ -559,7 +594,7 @@ pub(crate) async fn stop(
             {
                 if let Err(error) = state
                     .mounts
-                    .unmount_checked(OWNER, mount, false, Some(0), || authority.check(app))
+                    .unmount_checked(OWNER, mount, false, Some(0), authority.unmount_policy(app))
                     .await
                 {
                     prior.phase = "cleanupRequired".into();

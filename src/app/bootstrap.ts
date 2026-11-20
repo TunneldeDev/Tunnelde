@@ -23,6 +23,7 @@ import { registerBackgroundTaskSources } from "./backgroundTaskSources";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import { createPluginActivationBridge } from "./plugins/activationBridge";
 import { reportError } from "@/lib/diagnostics";
+import { startPanelWindows } from "./panelWindows";
 import { startDraftRecovery } from "@/lib/editor/recovery/persistence";
 
 let startup: Promise<void> | undefined;
@@ -143,6 +144,11 @@ async function start(signal: AbortSignal): Promise<void> {
   );
   // Save pruned/normalized restoration, but never overwrite an unreadable snapshot.
   if (restored) schedulePersistence();
+  try {
+    cleanups.push(await startPanelWindows(signal));
+  } catch (error) {
+    if (!signal.aborted) reportError("panels.windows", "startup", error);
+  }
   void useUpdates.getState().refresh();
 }
 

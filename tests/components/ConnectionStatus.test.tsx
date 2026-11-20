@@ -200,3 +200,55 @@ it("clears hidden selections when changing the query and exposes reusable filter
   expect(screen.getByRole("menuitemcheckbox", { name: /Mounts/ })).toBeTruthy();
   expect(disconnect).not.toHaveBeenCalled();
 });
+
+it("uses the satellite model for composable search and batch effects and retains its search/selection capsule", async () => {
+  const { ConnectionDetails } = await import("@/components/layout/ConnectionStatus");
+  const { ConnectionModelScope } = await import("@/lib/panels/connectionModel");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const remote = [
+    session("remote-a"),
+    session("remote-b"),
+    session("remote-mount", { purpose: "mounts" }),
+  ];
+  useSsh.setState({ sessions: [session("local-only")] });
+  const many = vi.fn().mockResolvedValue({ closed: ["remote-a"], failed: ["remote-b"] });
+  const single = vi.fn();
+  const tree = (controller: ReturnType<typeof createPanelViewState>) => (
+    <PanelViewStateScope controller={controller}>
+      <ConnectionModelScope
+        model={{
+          version: 1,
+          sessions: remote,
+          history: [],
+          hosts: [{ id: "host", name: "Remote production" }],
+          disconnectingSessionIds: [],
+        }}
+        disconnect={single}
+        disconnectMany={many}
+      >
+        <ConnectionDetails />
+      </ConnectionModelScope>
+    </PanelViewStateScope>
+  );
+  const source = createPanelViewState();
+  const view = render(tree(source));
+  const query = '@type:terminal @host:"Remote production"';
+  fireEvent.change(screen.getByRole("textbox", { name: "Search sessions…" }), {
+    target: { value: query },
+  });
+  expect(screen.queryByRole("listitem", { name: "Server · local-only" })).toBeNull();
+  expect(screen.queryByRole("listitem", { name: "Server · remote-mount" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Select visible" }));
+  const snapshot = source.capture();
+  expect(snapshot.fields["connections.query"]).toBe(query);
+  expect(snapshot.fields["connections.selection"]).toEqual(["remote-a", "remote-b"]);
+  view.unmount();
+  render(tree(createPanelViewState(snapshot)));
+  expect(screen.getByRole("textbox", { name: "Search sessions…" })).toHaveProperty("value", query);
+  fireEvent.click(screen.getByRole("button", { name: "Close selected" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm close" }));
+  await waitFor(() => expect(many).toHaveBeenCalledExactlyOnceWith(["remote-a", "remote-b"]));
+  await waitFor(() => expect(screen.getByText("1 selected")).toBeTruthy());
+  expect(disconnect).not.toHaveBeenCalled();
+  expect(single).not.toHaveBeenCalled();
+});

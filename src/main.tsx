@@ -17,10 +17,9 @@ import "@/styles/settings.css";
 import "@/styles/colors.css";
 import "@/styles/corners.css";
 
-import { StrictMode } from "react";
+import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 
-import { App } from "@/App";
 import "@/i18n/i18n";
 
 const container = document.getElementById("root");
@@ -28,8 +27,16 @@ if (!container) {
   throw new Error("root container is missing");
 }
 
+// Do not even evaluate the main bootstrap module in a satellite document.
+const Entry = lazy(() =>
+  new URLSearchParams(window.location.search).get("panelWindow") === "1"
+    ? import("@/app/SatelliteApp").then(({ SatelliteApp }) => ({ default: SatelliteApp }))
+    : import("@/App").then(({ App }) => ({ default: App })),
+);
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <Suspense fallback={<div className="splash" role="status" />}>
+      <Entry />
+    </Suspense>
   </StrictMode>,
 );

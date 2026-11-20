@@ -1,7 +1,9 @@
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { useRemoteOutputModel } from "@/lib/panels/outputModel";
 import { ArrowDownToLine, ListFilter, Trash2 } from "lucide-react";
 import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, parseSearchQuery } from "@/lib/search/query";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
 import { IconButton } from "@/components/ui/form/Button";
@@ -39,16 +41,41 @@ const OutputLine = memo(function OutputLine({ entry }: { entry: OutputEntry }) {
 export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
   const { t } = useTranslation();
   const scope = useWorkbenchPanel();
-  const output = useOutput(active);
-  const [channel, setChannel] = useState("all");
-  const [query, setQuery] = useState("");
-  const [minimum, setMinimum] = useState("TRACE");
-  const [follow, setFollow] = useState(true);
-  const [wrap, setWrap] = useState(false);
+  const remote = useRemoteOutputModel();
+  const local = useOutput(active && !remote);
+  const output = remote ?? local;
+  const [channel, setChannel] = usePanelViewState(
+    "output.channel",
+    "all",
+    (v): v is string => typeof v === "string",
+  );
+  const [query, setQuery] = usePanelViewState(
+    "output.query",
+    "",
+    (v): v is string => typeof v === "string",
+  );
+  const [minimum, setMinimum] = usePanelViewState(
+    "output.minimum",
+    "TRACE",
+    (v): v is string => typeof v === "string",
+  );
+  const [follow, setFollow] = usePanelViewState(
+    "output.follow",
+    true,
+    (v): v is boolean => typeof v === "boolean",
+  );
+  const [wrap, setWrap] = usePanelViewState(
+    "output.wrap",
+    false,
+    (v): v is boolean => typeof v === "boolean",
+  );
   const scroll = useRef<HTMLDivElement>(null);
-  const plugins = usePlugins((state) => state.items);
-  const info = useSettings((state) => state.info);
+  const localPlugins = usePlugins((state) => state.items);
+  const plugins = remote?.plugins ?? localPlugins;
+  const localInfo = useSettings((state) => state.info);
+  const info = remote ? remote.info : localInfo;
   const sessions = useSsh((state) => state.sessions);
+  const sessionCount = remote?.sessionCount ?? sessions.length;
   const channels = useMemo(() => {
     const domains = [...new Set(output.entries.map((entry) => entry.domain))].sort();
     const pluginIds = [
@@ -88,7 +115,7 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
     `${info?.name ?? "Tunnelde"} ${info?.version ?? ""}`.trim(),
     `${t("output.platform")}: ${info ? `${info.os} · ${info.arch} · Tauri ${info.tauriVersion}` : "—"}`,
     `${t("output.build")}: ${info ? t(info.debug ? "output.debug" : "output.release") : "—"}`,
-    `${t("output.sessions")}: ${sessions.length}`,
+    `${t("output.sessions")}: ${sessionCount}`,
     `${t("output.plugins")}: ${plugins.filter((item) => item.status === "running").length} / ${plugins.length}`,
     ...plugins.map(
       (plugin) =>
@@ -112,11 +139,12 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
     void action().catch((error) => toast(translateError(error), "error"));
 
   const menuActions: MenuAction[] = [
-    { label: t("common.refresh"), onSelect: output.refresh },
+    { label: t("common.refresh"), onSelect: () => attempt(output.refresh) },
     {
       label: t("output.copy"),
       disabled: !renderedText,
-      onSelect: () => attempt(() => api.clipboardWriteText(renderedText)),
+      onSelect: () =>
+        attempt(() => (remote ? remote.copy(renderedText) : api.clipboardWriteText(renderedText))),
     },
     {
       label: t("output.wrap"),
@@ -127,9 +155,12 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
     {
       label: t("output.openFile"),
       separatorBefore: true,
-      onSelect: () => attempt(api.openLatestLog),
+      onSelect: () => attempt(remote?.openLatest ?? api.openLatestLog),
     },
-    { label: t("logs.openFolder"), onSelect: () => attempt(api.openLogDir) },
+    {
+      label: t("logs.openFolder"),
+      onSelect: () => attempt(remote?.openDirectory ?? api.openLogDir),
+    },
   ];
   const controls = (
     <div className="output-panel__actions">
@@ -146,7 +177,7 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
         size="sm"
         label={t("output.clear")}
         disabled={channel === "runtime"}
-        onClick={output.clear}
+        onClick={() => attempt(async () => output.clear())}
       >
         <Trash2 size={14} />
       </IconButton>
@@ -211,6 +242,7 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
       <div
         className="output-panel__scroll"
         ref={scroll}
+        data-panel-scroll="output.content"
         tabIndex={0}
         role="region"
         aria-label={t("output.content")}

@@ -21,10 +21,25 @@ impl PendingStart {
     pub(crate) fn session(&self) -> String {
         self.session_id.clone()
     }
+    /// Observe slow route/keychain state before the caller's short final owner
+    /// gate. The proof cannot be replaced independently of this preparation.
+    pub(crate) async fn observe(self) -> AppResult<ObservedStart> {
+        let observed = self.target.observe_background(&self.app).await?;
+        Ok(ObservedStart {
+            pending: self,
+            observed,
+        })
+    }
     pub(crate) fn commit(self) -> AppResult<()> {
+        self.commit_inner(None)
+    }
+    fn commit_inner(
+        self,
+        observed: Option<crate::ssh::session::review::Observed>,
+    ) -> AppResult<()> {
         let state = self.app.state::<AppState>();
         self.listener.commit(&state.forwards, || {
-            self.target.with_current(&self.app, |conn| {
+            let current = |conn: &rusqlite::Connection| {
                 if !state.ssh.is_active(&self.session_id) {
                     return Err(AppError::validation("ssh.sessionMissing"));
                 }
@@ -37,8 +52,21 @@ impl PendingStart {
                     return Err(AppError::validation("forward.changed"));
                 }
                 state.ssh.publish(&self.session_id)
-            })
+            };
+            match observed {
+                Some(observed) => observed.with_current(&self.app, current),
+                None => self.target.with_current(&self.app, current),
+            }
         })
+    }
+}
+pub(crate) struct ObservedStart {
+    pending: PendingStart,
+    observed: crate::ssh::session::review::Observed,
+}
+impl ObservedStart {
+    pub(crate) fn commit(self) -> AppResult<()> {
+        self.pending.commit_inner(Some(self.observed))
     }
 }
 
@@ -191,22 +219,82 @@ pub async fn start_checked(
     }
     result
 }
+impl super::Forwarding<'_> {
+    pub(super) fn take_remove_checked(
+        &self,
+        id: &str,
+        revision: &str,
+        runtime: Option<&str>,
+    ) -> AppResult<crate::ssh::forward::StoppedForward> {
+        self.registry.remove_snapshot(id, runtime, || {
+            super::repository::remove(self.db, id, Some(revision))
+        })
+    }
+    pub(super) fn take_checked(
+        &self,
+        id: &str,
+        revision: &str,
+        runtime: Option<&str>,
+    ) -> AppResult<crate::ssh::forward::StoppedForward> {
+        // Registry -> DB, matching start admission and conditional edits. Both
+        // rule revision and listener incarnation must still be current under
+        // the same registry lock before invalidating tickets or taking a socket.
+        self.registry.take_snapshot(id, runtime, || {
+            if !self
+                .rule(id)?
+                .is_some_and(|entry| entry.revision == revision)
+            {
+                return Err(AppError::validation("forward.changed"));
+            }
+            Ok(())
+        })
+    }
+}
 pub(crate) fn take_checked(
     app: &AppHandle,
     id: &str,
     revision: &str,
     runtime: &str,
 ) -> AppResult<crate::ssh::forward::StoppedForward> {
+    service(&app.state::<AppState>()).take_checked(id, revision, Some(runtime))
+}
+pub(crate) fn take_manual_stop(
+    app: &AppHandle,
+    id: &str,
+    revision: &str,
+    runtime: Option<&str>,
+) -> AppResult<crate::ssh::forward::StoppedForward> {
     let state = app.state::<AppState>();
-    state.forwards.take_checked(id, Some(runtime), || {
-        if !service(&state)
-            .rule(id)?
-            .is_some_and(|entry| entry.revision == revision)
-        {
-            return Err(AppError::validation("forward.changed"));
-        }
-        Ok(())
+    // Automation -> registry -> DB. Native-window ingress additionally holds
+    // exact document/lease authority over this entire synchronous transaction.
+    state
+        .forward_automation
+        .pause_after(id, || service(&state).take_checked(id, revision, runtime))
+}
+/// Native-window removal holds its exact owner fence over this synchronous
+/// automation -> registry -> DB transaction and through the returned cleanup.
+pub(crate) fn take_manual_remove(
+    app: &AppHandle,
+    id: &str,
+    revision: &str,
+    runtime: Option<&str>,
+) -> AppResult<crate::ssh::forward::StoppedForward> {
+    let state = app.state::<AppState>();
+    state.forward_automation.pause_after(id, || {
+        service(&state).take_remove_checked(id, revision, runtime)
     })
+}
+pub(crate) async fn stop_checked(
+    app: &AppHandle,
+    id: &str,
+    revision: &str,
+    runtime: Option<&str>,
+) -> AppResult<()> {
+    let stopping = take_manual_stop(app, id, revision, runtime)?;
+    super::automation::changed(app);
+    // take_checked already spawned cleanup, so cancelling delivery cannot
+    // abandon the taken listener or its group-connection lifetime.
+    stopping.finish().await
 }
 pub async fn stop(app: &AppHandle, id: &str) -> AppResult<()> {
     super::automation::pause(app, id);

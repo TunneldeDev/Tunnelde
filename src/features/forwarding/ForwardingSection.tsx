@@ -1,6 +1,8 @@
-import { useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { connectionPromptHost, type ConnectionPromptHost } from "@/features/connect/prompt";
+import { PanelViewStateGroup, usePanelViewState } from "@/lib/panels/viewState";
+import { groupEditor as validGroupEditor, type ForwardGroupEditor } from "./model/viewState";
 import { ForwardGroupDialog } from "./components/ForwardGroupDialog";
-import type { ForwardGroup } from "./model/contract";
 import { HelpHint } from "@/components/ui/form/HelpHint";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -11,7 +13,11 @@ import type { Host } from "@/lib/api/types";
 import { ForwardRuleEditor } from "./components/ForwardRuleEditor";
 import { ForwardingSurface } from "./components/ForwardingSurface";
 import { ForwardGroups } from "./components/ForwardGroups";
-import { useForwardingController } from "./runtime/useForwardingController";
+import {
+  useForwardingController,
+  type ConnectionRequest,
+  type ForwardingController,
+} from "./runtime/useForwardingController";
 import "./forwarding.css";
 
 export type { ForwardRule } from "./model/contract";
@@ -29,12 +35,57 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
         </Button>
       </section>
     );
-  return <SavedForwardingSection key={props.host.id} {...props} />;
+  return (
+    <ForwardingHostSection
+      {...props}
+      host={connectionPromptHost(props.host)}
+      renderSurface={(surface) => <ForwardingSurface {...surface} />}
+      renderConnection={(connection, controller) => (
+        <ConnectDialog
+          host={props.host}
+          after="background"
+          purpose="forwarding"
+          onClose={controller.closeConnection}
+          connectSession={(request, review) =>
+            controller.connectAndStart(connection, request, review)
+          }
+          onConnected={(connected) => controller.connected(connection, connected)}
+        />
+      )}
+    />
+  );
 }
-function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
+
+export interface ForwardingHostSectionProps {
+  host: ConnectionPromptHost;
+  embedded?: boolean;
+  renderSurface(props: ComponentProps<typeof ForwardingSurface>): ReactNode;
+  renderConnection(connection: ConnectionRequest, controller: ForwardingController): ReactNode;
+}
+/** The shared host UI accepts display metadata and explicit presentation
+ * services. A satellite never fabricates a writable Host or falls back to the
+ * main document's dialog/provider runtime. */
+export function ForwardingHostSection(props: ForwardingHostSectionProps) {
+  if (props.host.source) throw new Error("panel.window.unsupportedView");
+  return (
+    <PanelViewStateGroup key={props.host.id} name="forwarding-host">
+      <SavedForwardingSection {...props} />
+    </PanelViewStateGroup>
+  );
+}
+function SavedForwardingSection({
+  host,
+  embedded = false,
+  renderSurface,
+  renderConnection,
+}: ForwardingHostSectionProps) {
   const { t } = useTranslation();
   const controller = useForwardingController(host);
-  const [groupEditor, setGroupEditor] = useState<{ group?: ForwardGroup } | null>(null);
+  const [groupEditor, setGroupEditor] = usePanelViewState<ForwardGroupEditor>(
+    "group-editor",
+    null,
+    (value): value is ForwardGroupEditor => validGroupEditor(value, host.id),
+  );
   const { rules, loading, session, canStart, form, busy, failure, connectingRules } = controller;
   return (
     <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
@@ -61,7 +112,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
               size="sm"
               leading={<Plus size={14} />}
               disabled={busy || loading}
-              onClick={() => setGroupEditor({})}
+              onClick={() => setGroupEditor({ hostId: host.id })}
             >
               {t("forward.addGroup")}
             </Button>
@@ -110,6 +161,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
         )}
       {form ? (
         <ForwardRuleEditor
+          key={`${host.id}:${form.id}:${form.revision ?? "new"}`}
           rule={form}
           groups={controller.groups}
           hostName={host.name}
@@ -119,8 +171,11 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           onCancel={controller.cancel}
         />
       ) : null}
-      <ForwardingSurface hostId={host.id} title={host.name} controller={controller}>
-        {loading ? (
+      {renderSurface({
+        hostId: host.id,
+        title: host.name,
+        controller,
+        children: loading ? (
           <p className="forwarding__empty" role="status">
             {t("common.loading")}
           </p>
@@ -128,10 +183,10 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           <ForwardGroups
             controller={controller}
             hostId={host.id}
-            onEditGroup={(group) => setGroupEditor({ group })}
+            onEditGroup={(group) => setGroupEditor({ hostId: host.id, group })}
           />
-        )}
-      </ForwardingSurface>
+        ),
+      })}
       {failure?.target === "list" ? (
         <p role="alert" className="td-field__error">
           {failure.message}
@@ -145,18 +200,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           onClose={() => setGroupEditor(null)}
         />
       )}
-      {connectingRules && (
-        <ConnectDialog
-          host={host}
-          after="background"
-          purpose="forwarding"
-          onClose={controller.closeConnection}
-          connectSession={(request, review) =>
-            controller.connectAndStart(connectingRules, request, review)
-          }
-          onConnected={(connected) => controller.connected(connectingRules, connected)}
-        />
-      )}
+      {connectingRules && renderConnection(connectingRules, controller)}
     </section>
   );
 }

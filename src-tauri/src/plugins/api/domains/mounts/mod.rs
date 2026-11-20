@@ -1,7 +1,9 @@
 //! Mount RPCs share host-owned configuration, transports and operation receipts.
+mod force;
 mod legacy;
 mod paths;
 mod plans;
+mod remote_paths;
 use crate::{
     error::AppResult,
     plugins::{
@@ -17,6 +19,7 @@ use crate::{
     },
     state::AppState,
 };
+pub(crate) use remote_paths::browse;
 use serde_json::{json, Value};
 use std::sync::LazyLock;
 use tauri::Manager;
@@ -118,13 +121,48 @@ pub(in crate::plugins::api) async fn dispatch(
         "legacy.list" | "legacy.convert" | "legacy.dismiss" => {
             legacy::call(context, method, params).await
         }
-        "dependencies.get" | "dependencies.refresh" => encode(crate::mounts::dependencies().await),
-        "dependencies.documentation" => {
+        "dependencies.get" | "dependencies.refresh" | "dependencies" => {
+            let result = crate::mounts::dependencies().await?;
             authorize(context, &["mounts.read"])?;
-            crate::commands::open_external(
+            encode(result)
+        }
+        "dependencies.documentation" | "documentation" => {
+            crate::mounts::documentation::open(app.clone(), lease(context)).await?;
+            Ok(Value::Null)
+        }
+        // Legacy public aliases use the ORIGINAL admitted lease, not a newly
+        // discovered main-document plugin. No cleanup or fingerprint scan is
+        // a hidden side effect of listing; OS effects retain their own workers.
+        "list" => encode(state.mounts.list(Some(&context.id)).await),
+        "browse" => remote_paths::browse(context, params).await,
+        "open" => {
+            crate::mounts::open_plugin(
                 app.clone(),
-                crate::mounts::dependencies().await.documentation,
-            )?;
+                context.id.clone(),
+                context.generation,
+                field(&params, "id")?,
+                crate::mounts::unmount::PluginPolicy {
+                    app: app.clone(),
+                    lease: lease(context),
+                },
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "unmount" => {
+            state
+                .mounts
+                .unmount_checked(
+                    &context.id,
+                    &field::<String>(&params, "id")?,
+                    optional(&params, "force")?.unwrap_or(false),
+                    Some(context.generation),
+                    crate::mounts::unmount::PluginPolicy {
+                        app: app.clone(),
+                        lease: lease(context),
+                    },
+                )
+                .await?;
             Ok(Value::Null)
         }
         "paths.remote.browse"
@@ -206,57 +244,27 @@ pub(in crate::plugins::api) async fn dispatch(
         "runtime.open" | "runtime.reveal" => {
             let id: String = field(&params, "id")?;
             let runtime_id: String = field(&params, "runtimeId")?;
-            let status = state
-                .mount_runtime
-                .rule_states()
-                .into_iter()
-                .find(|s| s.rule_id == id && s.runtime_id.as_deref() == Some(&runtime_id))
+            let states = state.mount_runtime.rule_states();
+            let target = runtime::force::Target::capture(&states, &id, &runtime_id)?;
+            let gate = state.mount_runtime.gate(&target.group)?;
+            target.recheck(&state.mount_runtime.rule_states())?;
+            let session = states
+                .iter()
+                .find(|s| s.rule_id == id)
+                .and_then(|s| s.session_id.clone())
                 .ok_or_else(repository::changed)?;
-            let session = status.session_id.ok_or_else(repository::changed)?;
             crate::mounts::open_managed(
                 app.clone(),
                 runtime_id,
                 session,
                 optional(&params, "path")?,
                 method == "runtime.reveal",
-                Authority(Some(lease(context))),
+                runtime::open::policy(app, Authority(Some(lease(context))), target, gate),
             )
             .await?;
             Ok(Value::Null)
         }
-        "runtime.requestForceUnmount" => {
-            let id: String = field(&params, "id")?;
-            let runtime_id: String = field(&params, "runtimeId")?;
-            let current = state
-                .mount_runtime
-                .rule_states()
-                .into_iter()
-                .find(|s| s.rule_id == id && s.runtime_id.as_deref() == Some(&runtime_id))
-                .ok_or_else(repository::changed)?;
-            let confirmed=crate::plugins::api::frontend_request(context,"ui.confirm",json!({"message":if state.locale().starts_with("zh"){"强制卸载可能丢失尚未写入的文件内容。是否继续？"}else{"Force unmount may discard pending file writes. Continue?"}})).await?;
-            if confirmed != true {
-                return Ok(json!({"confirmed":false}));
-            }
-            let _gate = state.mount_runtime.gate(&current.group_id)?;
-            let authority = Authority(Some(lease(context)));
-            authority.check(app)?;
-            if !state
-                .mount_runtime
-                .rule_states()
-                .iter()
-                .any(|s| s.rule_id == id && s.runtime_id.as_deref() == Some(&runtime_id))
-            {
-                return Err(repository::changed());
-            }
-            state
-                .mounts
-                .unmount_checked(runtime::OWNER, &runtime_id, true, Some(0), || {
-                    authority.check(app)
-                })
-                .await?;
-            runtime::stop(app, &id, Some(&runtime_id), &authority).await?;
-            Ok(json!({"confirmed":true}))
-        }
+        "runtime.requestForceUnmount" => force::call(context, params).await,
         name if plans::owns(name) => plans::call(context, name, params).await,
         _ => {
             crate::mounts::action(

@@ -61,6 +61,7 @@ export function PanelFrame({
       ref={ref}
       className={`workbench-panel is-${location}${floating ? " workbench-panel--floating" : ""}`}
       data-workbench-panel={panelId}
+      data-drag-hit-test={floating ? "exclude" : undefined}
       role={floating ? "dialog" : "region"}
       aria-modal={floating ? "false" : undefined}
       aria-label={label}

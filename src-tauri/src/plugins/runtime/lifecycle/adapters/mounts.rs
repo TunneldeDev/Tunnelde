@@ -1,4 +1,10 @@
 use super::*;
+struct ReleasePolicy(HostContext);
+impl crate::mounts::unmount::Policy for ReleasePolicy {
+    fn with_authorized<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        authorized(&self.0, effect)
+    }
+}
 pub(super) async fn collect(context: &HostContext) -> AppResult<Vec<Entry>> {
     Ok(context
         .app
@@ -29,9 +35,12 @@ pub(super) async fn release(context: &HostContext, id: &str) -> AppResult<Outcom
         .app
         .state::<AppState>()
         .mounts
-        .release_owned_resource(&context.id, context.generation, id, || {
-            authorized(context, || Ok(()))
-        })
+        .release_owned_resource(
+            &context.id,
+            context.generation,
+            id,
+            ReleasePolicy(context.clone()),
+        )
         .await?;
     Ok(Outcome::Released)
 }

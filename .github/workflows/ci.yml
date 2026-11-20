@@ -120,6 +120,9 @@ jobs:
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      - name: Test SSH channel close patch
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml -p russh --no-default-features --features ring,rsa,flate2 --lib
+
       - name: Check stable plugin discovery contract
         run: |
           TUNNELDE_API_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-api-describe.json" cargo test --manifest-path src-tauri/Cargo.toml emit_discovery_contract_response
@@ -398,6 +401,7 @@ jobs:
           TUNNELDE_TEST_FILE_SAVE_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib historical_file_save_helper_is_not_inferred_from_runner_capabilities -- --ignored
 
       - name: Test real SSHFS mount when FUSE is available
+        timeout-minutes: 8
         run: |
           if [ -r /dev/fuse ] && [ -w /dev/fuse ]; then
             cargo test --manifest-path src-tauri/Cargo.toml real_passive_sshfs_mount_resolves_owned_files -- --ignored --nocapture

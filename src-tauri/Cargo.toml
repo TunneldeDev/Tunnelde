@@ -20,6 +20,7 @@ tauri-build = { version = "2.7.4", features = [] }
 [dependencies]
 tauri = { version = "2.12.5", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2.8.4"
+raw-window-handle = "0.6.2"
 tauri-plugin-opener = "2.7.2"
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.14.1"
@@ -83,3 +84,13 @@ xattr = "1.7.0"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWindow", "NSResponder"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFLocale"] }
+
+# Retain channel CLOSE acknowledgments; see vendor/russh/TUNNELDE-PATCH.md.
+[patch.crates-io]
+russh = { path = "vendor/russh" }
+
+# Keep the temporary transport patch's tests on the application lockfile.
+[workspace]
+members = ["vendor/russh"]
+default-members = ["."]
+resolver = "2"

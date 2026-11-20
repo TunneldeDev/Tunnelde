@@ -1021,10 +1021,19 @@ pub fn known_hosts_list(
 }
 
 #[tauri::command]
-pub fn known_hosts_forget(state: State<'_, AppState>, host: String, port: i64) -> AppResult<bool> {
-    state
-        .db
-        .with(|conn| db::known_hosts::forget(conn, &host, port))
+pub fn known_hosts_forget(
+    state: State<'_, AppState>,
+    host: String,
+    port: i64,
+    expected: Option<db::known_hosts::KnownHostEntry>,
+) -> AppResult<bool> {
+    state.db.with(|conn| match expected {
+        Some(entry) if entry.host == host && entry.port == port => {
+            db::known_hosts::forget_expected(conn, &entry)
+        }
+        Some(_) => Err(AppError::validation("settings.knownHostsChanged")),
+        None => db::known_hosts::forget(conn, &host, port),
+    })
 }
 
 #[tauri::command]

@@ -1,7 +1,3 @@
-import { observePanels, panelsSnapshot } from "@/lib/panels/observation";
-import { useFilePreview } from "@/store/filePreview";
-import { panelSnapshot, requirePanel } from "@/lib/panels/snapshot";
-import { setPanelLocation, closePanel } from "@/lib/panels/controller";
 import { invoke } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { domainEvents } from "@/lib/events/domain";
@@ -94,23 +90,8 @@ export async function runPluginWorkspaceRequest(
         signal,
       );
     }
-    case "workspace.panels.list":
-      return panelsSnapshot();
-    case "workspace.panels.observe":
-      return observePanels(optionalText(params, "revision"), signal);
-    case "workspace.panels.setPresentation": {
-      const view = requirePanel(text(params, "panelId"));
-      const presentation = text(params, "presentation");
-      if (presentation !== "sidebar" && presentation !== "workspace" && presentation !== "floating")
-        throw new Error("invalid:presentation");
-      if (view === "filePreview" && useFilePreview.getState().presentation === "quickLook")
-        useFilePreview.getState().dock();
-      setPanelLocation(view, presentation);
-      return panelSnapshot().find((item) => item.id === view);
-    }
-    case "workspace.panels.close":
-      closePanel(requirePanel(text(params, "panelId")));
-      break;
+    // Panel metadata/presentation is handled by native workbench routing. Never
+    // replay it against this coordinator's stores for a satellite-owned panel.
     case "workspace.snapshot":
       return pluginWorkspaceSnapshot();
     case "workspace.showQuickAccess": {
@@ -265,6 +246,8 @@ export async function runPluginWorkspaceRequest(
     }
     case "ui.confirm":
       return confirmPlugin(request.requestId, request.pluginId, pluginConfirmation(params));
+    case "__mounts.forceUnmount":
+      return confirmPlugin(request.requestId, request.pluginId, pluginConfirmation(params), true);
     case "profiles.activate":
       return confirmPlugin(request.requestId, request.pluginId, profileActivationReview(params));
     case "storage.recovery.request":
@@ -282,7 +265,12 @@ export async function runPluginWorkspaceRequest(
   return pluginWorkspaceSnapshot();
 }
 
-function confirmPlugin(requestId: string, pluginId: string, message: string): Promise<boolean> {
+function confirmPlugin(
+  requestId: string,
+  pluginId: string,
+  message: string,
+  forceUnmount = false,
+): Promise<boolean> {
   if (useDialogs.getState().dialog.kind !== "none") throw new Error("dialog.busy");
   const name =
     usePlugins.getState().items.find((plugin) => plugin.id === pluginId)?.name ?? pluginId;
@@ -295,24 +283,31 @@ function confirmPlugin(requestId: string, pluginId: string, message: string): Pr
       pendingConfirmations.delete(requestId);
       window.clearTimeout(timer);
       unsubscribe();
+      const current = useDialogs.getState().dialog;
+      if (current.kind === "confirm" && current.onConfirm === accept) useDialogs.getState().close();
       resolve(value);
     };
-    const timer = window.setTimeout(() => {
-      finish(false);
-      if (useDialogs.getState().dialog === dialog) useDialogs.getState().close();
-    }, 55_000);
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    const timer = window.setTimeout(cancel, 55_000);
+    // Register cancellation before publishing; synchronous subscribers may
+    // dispose the bridge, replace the dialog or respond immediately.
+    pendingConfirmations.set(requestId, cancel);
     useDialogs.getState().confirm({
       title: i18n.t("pluginApi.confirmTitle", { name }),
       body: message,
       preformatted: true,
-      confirmLabel: i18n.t("pluginApi.confirm"),
-      onConfirm: () => finish(true),
+      danger: forceUnmount,
+      focusCancel: forceUnmount,
+      confirmLabel: i18n.t(forceUnmount ? "mounts.forceUnmountConfirm" : "pluginApi.confirm"),
+      onConfirm: accept,
     });
+    if (complete) return;
     const dialog = useDialogs.getState().dialog;
-    pendingConfirmations.set(requestId, () => {
-      finish(false);
-      if (useDialogs.getState().dialog === dialog) useDialogs.getState().close();
-    });
+    if (dialog.kind !== "confirm" || dialog.onConfirm !== accept) {
+      cancel();
+      return;
+    }
     unsubscribe = useDialogs.subscribe((state) => {
       if (state.dialog !== dialog) finish(false);
     });

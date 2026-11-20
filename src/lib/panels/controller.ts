@@ -1,3 +1,7 @@
+import { usePanelWindows } from "@/store/panelWindows";
+import { windowViews } from "./windowViews";
+import { reportError } from "@/lib/diagnostics";
+
 import { canFloatPluginView } from "@/lib/plugins/presentation";
 import { preservePanelFocus } from "./focus";
 import { useNavigation, type SidebarView } from "@/store/navigation";
@@ -48,7 +52,18 @@ export function closePanel(view: SidebarView) {
   }
 }
 
+function focusRemotePanel(view: SidebarView) {
+  const { available, snapshot, windowId } = usePanelWindows.getState();
+  const owner = snapshot.panels.find((panel) => panel.panelId === view);
+  if (!available || !owner || owner.windowId === windowId) return false;
+  const client = windowViews()?.client;
+  if (!client) return false;
+  void client.focus(view).catch((error) => reportError("panels.windows", "focus", error));
+  return true;
+}
+
 export function revealPanel(view: SidebarView, fallback: PanelPresentation = "sidebar") {
+  if (focusRemotePanel(view)) return;
   const workspace = useWorkspace.getState();
   if (workspace.tabs.some((tab) => tab.id === sidebarTabId(view))) {
     workspace.activate(sidebarTabId(view));
@@ -70,6 +85,7 @@ export function revealPanel(view: SidebarView, fallback: PanelPresentation = "si
 
 /** Status/navigation entry semantics shared by panels regardless of presentation. */
 export function togglePanel(view: SidebarView, fallback: PanelPresentation = "sidebar") {
+  if (focusRemotePanel(view)) return;
   const workspace = useWorkspace.getState();
   if (workspace.tabs.some((tab) => tab.id === sidebarTabId(view)))
     workspace.toggleDockedSidebar(view);

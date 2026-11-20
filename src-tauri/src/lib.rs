@@ -25,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(automation::transport::Lifecycle::default())
         .manage(window::StartupWindow::default())
+        .manage(platform::panel_windows::native::Registry::default())
         .manage(window::close::Registry::default())
         .manage(platform::application_actions::Registry::default())
         .manage(platform::background::BackgroundWindow::default())
@@ -44,34 +45,18 @@ pub fn run() {
                 );
                 return;
             };
-            let origin = if cfg!(dev) {
-                "http://localhost:1420"
-            } else if cfg!(target_os = "windows") {
-                "http://tauri.localhost"
-            } else {
-                "tauri://localhost"
-            };
+            let origin = platform::protocol_origin::for_app(&app);
+            let caller = context.webview_label().to_owned();
             tauri::async_runtime::spawn(async move {
                 let _capacity = capacity;
-                let state = app.state::<state::AppState>();
-                responder.respond(plugins::frontend::serve(
-                    &app.state::<plugins::frontend::Registry>(),
-                    &state.plugins.security,
-                    request,
-                    origin,
+                responder.respond(plugins::frontend::serve_in_window(
+                    &app, &caller, request, &origin,
                 ));
             });
         })
         .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
             let app = context.app_handle().clone();
-            let origin = if cfg!(dev) {
-                "http://localhost:1420"
-            } else if cfg!(target_os = "windows") {
-                "http://tauri.localhost"
-            } else {
-                "tauri://localhost"
-            }
-            .to_string();
+            let origin = platform::protocol_origin::for_app(&app);
             tauri::async_runtime::spawn(async move {
                 use tauri::Manager;
                 responder.respond(
@@ -90,6 +75,12 @@ pub fn run() {
         }))
         .on_page_load(|webview, payload| {
             use tauri::Manager;
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                platform::panel_windows::native::navigation_started(
+                    webview.app_handle(),
+                    webview.label(),
+                );
+            }
             if webview.label() == "main"
                 && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
             {
@@ -98,8 +89,15 @@ pub fn run() {
             }
         })
         .on_window_event(|window, event| {
+            use tauri::Manager;
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Focused(_)) {
+                platform::panel_windows::native::native_event(
+                    window.app_handle(),
+                    window.label(),
+                    event,
+                );
+            }
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
-                use tauri::Manager;
                 platform::application_actions::reset(window.app_handle());
                 window.state::<preview::Registry>().clear();
                 window
@@ -117,12 +115,14 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(window::SAVED_STATE_FLAGS)
                 .skip_initial_state("main")
+                .with_filter(|label| label == "main")
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
+            platform::panel_windows::native::start(&handle);
             services::forwarding::automation::start(&handle);
             services::mounts::runtime::launch(&handle);
             automation::transport::start(&handle);
@@ -152,7 +152,7 @@ pub fn run() {
             );
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(platform::ipc_authority::guard(tauri::generate_handler![
             services::editor::recovery::commands::editor_drafts_read,
             services::editor::recovery::commands::editor_drafts_save,
             window::close::main_window_close_guard_claim,
@@ -165,6 +165,17 @@ pub fn run() {
             services::forwarding::start::commands::forwarding_start_cancel,
             services::forwarding::start::commands::forwarding_start_release_ui,
             window::main_window_ready,
+            platform::panel_windows::plugin_views::gateway::panel_window_plugin_view,
+            platform::panel_windows::native::panel_window_initialize,
+            platform::panel_windows::native::panel_window_control,
+            platform::panel_windows::native::panel_window_create,
+            platform::panel_windows::native::panel_window_show,
+            platform::panel_windows::native::panel_window_destroy,
+            platform::panel_windows::native::panel_window_drop_target,
+            platform::panel_windows::native::panel_window_release_drag,
+            platform::panel_windows::native::panel_window_disconnect,
+            platform::panel_windows::forwarding::panel_window_forwarding,
+            platform::panel_windows::native::panel_window_focus,
             platform::restart::app_restart,
             platform::application_actions::application_action_claim,
             platform::application_actions::application_action_release,
@@ -232,6 +243,7 @@ pub fn run() {
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
             plugins::frontend::plugin_frontend_open,
+            plugins::frontend::views::plugin_frontend_view_open,
             plugins::frontend::plugin_frontend_ready,
             plugins::frontend::plugin_frontend_close,
             plugins::frontend::plugin_frontend_failed,
@@ -383,7 +395,7 @@ pub fn run() {
             commands::history_clear,
             commands::known_hosts_list,
             commands::known_hosts_forget,
-        ])
+        ]))
         .build(tauri::generate_context!())
         .expect("error while building Tunnelde")
         .run(|app, event| {

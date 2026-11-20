@@ -1,3 +1,4 @@
+import { panelDropZone as zoneOf, type PanelDropZone as DropHint } from "@/lib/layout/dropZone";
 import {
   Activity,
   GripVertical,
@@ -562,27 +563,7 @@ function TabStrip({
   );
 }
 
-type DropHint = "left" | "right" | "top" | "bottom";
-
-export function zoneOf(
-  element: HTMLDivElement,
-  event: { clientX: number; clientY: number },
-): DropHint | null {
-  const rect = element.getBoundingClientRect();
-  if (!rect.width || !rect.height) return null;
-  const x = (event.clientX - rect.left) / rect.width;
-  const y = (event.clientY - rect.top) / rect.height;
-  // Keep the middle quarter for merging; divide the remainder by the nearest
-  // edge so corners do not make the top and bottom targets unreachable.
-  if (x >= 0.375 && x <= 0.625 && y >= 0.375 && y <= 0.625) return null;
-  const distances: [DropHint, number][] = [
-    ["left", x],
-    ["right", 1 - x],
-    ["top", y],
-    ["bottom", 1 - y],
-  ];
-  return distances.reduce((best, candidate) => (candidate[1] < best[1] ? candidate : best))[0];
-}
+export { panelDropZone as zoneOf } from "@/lib/layout/dropZone";
 
 export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolean }) {
   const tabs = useWorkspace((state) => state.tabs);

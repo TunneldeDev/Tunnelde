@@ -1,8 +1,10 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
-import { useTransfers } from "@/store/transfers";
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { translateError } from "@/lib/api/errors";
+import { useTransferCommands } from "./transferTaskController";
 
 export function TransferSpeedLimit({
   id,
@@ -15,7 +17,14 @@ export function TransferSpeedLimit({
 }) {
   const { t } = useTranslation();
   const fieldId = useId();
-  const [draft, setDraft] = useState(String(value));
+  const [draft, setDraft] = usePanelViewState(
+    "limitDraft",
+    String(value),
+    (v): v is string => typeof v === "string",
+  );
+  const actions = useTransferCommands(id);
+  const pending = useRef(false);
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [invalid, setInvalid] = useState(false);
   return (
@@ -29,18 +38,24 @@ export function TransferSpeedLimit({
       }}
       onSubmit={(event) => {
         event.preventDefault();
+        if (pending.current) return;
         const kib = Number(draft);
         if (!draft.trim() || !Number.isInteger(kib) || kib < 0 || kib > 1_048_576) {
           setInvalid(true);
           return;
         }
+        pending.current = true;
         setBusy(true);
-        void useTransfers
-          .getState()
-          .setSpeedLimit(id, kib)
+        setError("");
+        void Promise.resolve()
+          .then(() => actions.setSpeedLimit(kib))
           .then((saved) => {
-            setBusy(false);
             if (saved) onClose();
+          })
+          .catch((cause: unknown) => setError(translateError(cause)))
+          .finally(() => {
+            pending.current = false;
+            setBusy(false);
           });
       }}
     >
@@ -48,6 +63,7 @@ export function TransferSpeedLimit({
       <div className="transfer__limit-controls">
         <Input
           id={fieldId}
+          data-panel-focus={`transfer:${id}:limit`}
           type="number"
           min={0}
           max={1_048_576}
@@ -71,6 +87,7 @@ export function TransferSpeedLimit({
         </Button>
       </div>
       <small id={`${fieldId}-hint`}>{t("sftp.taskSpeedLimitHint")}</small>
+      {error ? <span role="alert">{error}</span> : null}
       {invalid ? <span role="alert">{t("sftp.invalidSpeedLimit")}</span> : null}
     </form>
   );

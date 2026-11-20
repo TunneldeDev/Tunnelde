@@ -107,7 +107,11 @@ pub fn apply_background_dock_preference(app: &AppHandle) {
                 .unwrap_or(false);
             // Accessory mode keeps the menu-bar tray available. Use activation
             // policy rather than Dock transforms, which can drop rapid hides.
-            let policy = if visible || show_in_background {
+            let satellite_visible = handle
+                .webview_windows()
+                .iter()
+                .any(|(id, window)| id != "main" && window.is_visible().unwrap_or(false));
+            let policy = if visible || satellite_visible || show_in_background {
                 tauri::ActivationPolicy::Regular
             } else {
                 tauri::ActivationPolicy::Accessory
@@ -122,10 +126,21 @@ pub fn apply_background_dock_preference(app: &AppHandle) {
 }
 
 /// Keeps the native title bar in sync with the in-app theme.
+fn known_windows(app: &AppHandle) -> Vec<tauri::WebviewWindow> {
+    app.webview_windows()
+        .into_iter()
+        .filter(|(label, _)| {
+            label == "main" || super::panel_windows::native::registered(app, label)
+        })
+        .map(|(_, window)| window)
+        .collect()
+}
 pub fn apply_theme(app: &AppHandle, mode: &str) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
+    for window in known_windows(app) {
+        apply_window_theme(app, &window, mode);
+    }
+}
+fn apply_window_theme(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str) {
     let theme = match mode {
         "dark" => Some(Theme::Dark),
         "light" => Some(Theme::Light),
@@ -153,9 +168,12 @@ pub fn apply_theme(app: &AppHandle, mode: &str) {
 
 /// Applies native chrome immediately, including when the preference changes.
 pub fn apply_title_bar_style(app: &AppHandle, style: &str) -> AppResult<()> {
-    let Some(window) = app.get_webview_window("main") else {
-        return Ok(());
-    };
+    for window in known_windows(app) {
+        apply_window_title_bar_style(&window, style)?;
+    }
+    Ok(())
+}
+fn apply_window_title_bar_style(window: &tauri::WebviewWindow, style: &str) -> AppResult<()> {
     let compact = style == "compact";
 
     #[cfg(not(target_os = "macos"))]
@@ -207,7 +225,9 @@ pub fn install_close_handler(app: &AppHandle) {
     let target = window.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
-            let keep_alive = cfg!(target_os = "macos") || close_to_tray(&handle);
+            let keep_alive = cfg!(target_os = "macos")
+                || close_to_tray(&handle)
+                || super::panel_windows::native::has_satellites(&handle);
             let needs_review = close::intercept(&handle, keep_alive);
             if keep_alive {
                 api.prevent_close();
@@ -233,14 +253,16 @@ fn close_to_tray(app: &AppHandle) -> bool {
 /// no devtools outside debug builds.
 #[cfg(windows)]
 pub fn configure_webview(app: &AppHandle) {
+    for window in known_windows(app) {
+        configure_window_webview(&window);
+    }
+}
+#[cfg(windows)]
+fn configure_window_webview(window: &tauri::WebviewWindow) {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2Settings3, ICoreWebView2Settings4,
     };
     use windows_core::Interface;
-
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
 
     let _ = window.with_webview(|webview| {
         let controller = webview.controller();

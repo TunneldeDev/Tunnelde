@@ -1,4 +1,12 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -86,7 +94,9 @@ beforeEach(() => {
         throw { code: "ssh", message: "ssh.passwordRequired" };
       const rule = rows.find((row) => row.id === args.id)!;
       const sessionId = `managed-${rule.groupId ?? rule.id}`;
-      rows = rows.map((r) => (r.id === args.id ? { ...r, active: true, sessionId } : r));
+      rows = rows.map((r) =>
+        r.id === args.id ? { ...r, active: true, sessionId, runtimeId: "runtime" } : r,
+      );
       return {
         id: sessionId,
         hostId: "host",
@@ -99,7 +109,7 @@ beforeEach(() => {
       };
     }
     if (command === "forwarding_stop") {
-      rows = rows.map((r) => ({ ...r, active: false, sessionId: null }));
+      rows = rows.map((r) => ({ ...r, active: false, sessionId: null, runtimeId: null }));
     }
     if (command === "forwarding_remove") {
       if (
@@ -217,7 +227,11 @@ it("starts a saved rule using a dedicated connection, then stops it", async () =
   );
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await screen.findByText("Stopped");
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", { id: "rule" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", {
+    id: "rule",
+    expectedRevision: rows[0]!.revision,
+    runtimeId: "runtime",
+  });
 });
 it("requires confirmation before saving a listener exposed to other devices", async () => {
   await act(async () => {
@@ -444,6 +458,7 @@ it("keeps stopping feedback and actions disabled until the listener is released"
       targetHost: "127.0.0.1",
       targetPort: 80,
       active: true,
+      runtimeId: "runtime",
       sessionId: "current",
       revision: "initial-version",
     },
@@ -656,7 +671,13 @@ it("allows stopping automatic retries even when no SSH connection is active", as
   expect(await screen.findByText("Waiting to retry")).toBeTruthy();
   expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start all" }).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-  await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", { id: "rule" }));
+  await waitFor(() =>
+    expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", {
+      id: "rule",
+      expectedRevision: rows[0]!.revision,
+      runtimeId: rows[0]!.runtimeId ?? null,
+    }),
+  );
   expect(screen.queryByRole("button", { name: "Connect forwarding" })).toBeNull();
 });
 
@@ -802,4 +823,107 @@ it("keeps Add forwarding and New group adjacent and preserves group creation/rev
     name: "Databases",
     expectedRevision: "g2",
   });
+});
+
+it("shares one group snapshot across host surfaces and keeps empty groups host-scoped", async () => {
+  const implementation = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((command, args) =>
+    command === "forwarding_groups_list"
+      ? Promise.resolve([
+          { id: "one-group", hostId: "host", name: "First empty group", revision: "one" },
+          { id: "two-group", hostId: "other", name: "Second empty group", revision: "two" },
+        ])
+      : implementation(command, args),
+  );
+  const view = render(
+    <>
+      <ForwardingSection host={host} />
+      <ForwardingSection host={{ ...host, id: "other", name: "Other" }} />
+    </>,
+  );
+  const first = await screen.findByRole("region", { name: "First empty group" });
+  const second = await screen.findByRole("region", { name: "Second empty group" });
+  expect(first.closest(".forwarding")).not.toBe(second.closest(".forwarding"));
+  expect(
+    within(first.closest(".forwarding") as HTMLElement).queryByRole("region", {
+      name: "Second empty group",
+    }),
+  ).toBeNull();
+  expect(
+    invokeMock.mock.calls.filter(([command]) => command === "forwarding_groups_list"),
+  ).toHaveLength(1);
+  view.unmount();
+  render(<ForwardingSection host={host} />);
+  await screen.findByRole("region", { name: "First empty group" });
+  expect(
+    invokeMock.mock.calls.filter(([command]) => command === "forwarding_groups_list"),
+  ).toHaveLength(2);
+});
+
+it("invalidates provider frames immediately when a local rule, group or session source changes before React commits", async () => {
+  const { useForwardingController } =
+    await import("@/features/forwarding/runtime/useForwardingController");
+  const { forwardingStore } = await import("@/features/forwarding/data/store");
+  const { forwardingGroupsStore } = await import("@/features/forwarding/data/groups");
+  const hook = renderHook(() => useForwardingController(host));
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  expect(hook.result.current.validate()).toBe(true);
+  const ruleFrame = hook.result.current;
+  await act(async () => {
+    forwardingStore.accept((entries) => [...entries]);
+    expect(ruleFrame.validate()).toBe(false);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
+  await waitFor(() => expect(hook.result.current.validate()).toBe(true));
+  const groupFrame = hook.result.current;
+  await act(async () => {
+    forwardingGroupsStore.accept((entries) => [...entries]);
+    expect(groupFrame.validate()).toBe(false);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
+  await waitFor(() => expect(hook.result.current.validate()).toBe(true));
+  const sessionFrame = hook.result.current;
+  await act(async () => {
+    useSsh.setState({ sessions: [] });
+    expect(sessionFrame.validate()).toBe(false);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
+});
+
+it("reports a stale stop without hiding or stopping the replacement listener", async () => {
+  connect();
+  rows = [{ ...savedRule(), active: true, sessionId: "current", runtimeId: "old-runtime" }];
+  const original = rows[0]!;
+  const implementation = invokeMock.getMockImplementation()!;
+  let release!: () => void;
+  invokeMock.mockImplementation(async (command, args) => {
+    if (command === "forwarding_stop") {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (rows[0]?.runtimeId !== args.runtimeId || rows[0]?.revision !== args.expectedRevision)
+        throw { code: "validation", message: "forward.changed" };
+      throw new Error("a stale stop must never pass CAS");
+    }
+    return implementation(command, args);
+  });
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+  await screen.findByRole("button", { name: "Stopping…" });
+  await act(async () => {
+    rows = [{ ...original, runtimeId: "new-runtime" }];
+    release();
+  });
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    translateError({ code: "validation", message: "forward.changed" }),
+  );
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_stop", {
+    id: original.id,
+    expectedRevision: original.revision,
+    runtimeId: "old-runtime",
+  });
+  expect(rows[0]?.runtimeId).toBe("new-runtime");
+  expect(rows[0]?.active).toBe(true);
+  expect(await screen.findByText("Running")).toBeTruthy();
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Stop" }).disabled).toBe(false);
 });

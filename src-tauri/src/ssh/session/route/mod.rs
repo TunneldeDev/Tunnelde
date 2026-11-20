@@ -33,6 +33,7 @@ pub(super) async fn open(
                     .ok_or_else(|| AppError::Ssh(format!("ssh.hostKeyUntrusted: {}", host.name)))?,
             )
         };
+        crate::services::operations::WorkLifetime::check()?;
         let stream = match pending.jumps.last() {
             Some(jump) => Box::pin(
                 tokio::time::timeout(
@@ -46,6 +47,7 @@ pub(super) async fn open(
             ) as crate::network::Stream,
             None => snapshot.transport.connect(&host.host, host.port).await?,
         };
+        crate::services::operations::WorkLifetime::check()?;
         let (handle, observed, remote_forwards) = handshake(stream, expected).await?;
         pending.target = Some(handle);
         // No credentials are sent after a host, route, proxy or trust edit.
@@ -85,6 +87,7 @@ pub(super) async fn open(
             rows: 32,
         };
         let request = snapshot.authentication(app, host, &request).await?;
+        crate::services::operations::WorkLifetime::check()?;
         tokio::time::timeout(
             CONNECT_TIMEOUT,
             authenticate(

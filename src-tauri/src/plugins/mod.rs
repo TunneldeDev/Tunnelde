@@ -36,6 +36,10 @@ pub mod wasm;
 
 pub use runtime::activation::{ActivationPlan, PackageReview, PluginDependency, StartPermit};
 
+// Native presentation commits may consume the transport's bounded cancellation
+// fence, never its request IDs, module tokens or arbitrary plugin commands.
+pub(crate) use runtime::requests::{current_invocation_fence, InvocationFence};
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

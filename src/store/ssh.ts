@@ -10,7 +10,24 @@ import { useMonitor } from "@/store/monitor";
 import { recordSessionEvent, type SessionHistory } from "./sshHistory";
 
 const connections = new Map<string, Promise<SshSession | null>>();
-const disconnections = new Map<string, Promise<void>>();
+interface Disconnection {
+  promise: Promise<void>;
+  reportToast: boolean;
+  failed: boolean;
+  error?: unknown;
+}
+const disconnections = new Map<string, Disconnection>();
+// Each caller observes the shared operation's failure in its own window. A
+// coalesced request must not mistake another caller's failed disconnect for success.
+function observeDisconnection(entry: Disconnection, onError?: (error: unknown) => void) {
+  if (!onError) {
+    entry.reportToast = true;
+    return entry.promise;
+  }
+  return entry.promise.then(() => {
+    if (entry.failed) onError(entry.error);
+  });
+}
 let sessionVersion = 0;
 let snapshotVersion = 0;
 
@@ -28,7 +45,7 @@ interface SshStore {
     onError?: (error: unknown) => void,
     acquisition?: { key: string; connect: (request: SshConnectRequest) => Promise<SshSession> },
   ) => Promise<SshSession | null>;
-  disconnect: (sessionId: string) => Promise<void>;
+  disconnect: (sessionId: string, onError?: (error: unknown) => void) => Promise<void>;
   disconnectMany: (
     sessionIds: readonly string[],
   ) => Promise<{ closed: string[]; failed: string[] }>;
@@ -119,17 +136,20 @@ export const useSsh = create<SshStore>((set, get) => ({
     return operation;
   },
 
-  disconnect: (sessionId) => {
+  disconnect: (sessionId, onError) => {
     const existing = disconnections.get(sessionId);
-    if (existing) {
-      return existing;
-    }
+    if (existing) return observeDisconnection(existing, onError);
     const session = get().sessions.find((item) => item.id === sessionId);
     if (!session) return Promise.resolve();
     set((state) => ({
       disconnectingSessionIds: [...state.disconnectingSessionIds, sessionId],
       history: recordSessionEvent(state.history, session, "disconnecting"),
     }));
+    const entry: Disconnection = {
+      promise: Promise.resolve(),
+      reportToast: !onError,
+      failed: false,
+    };
     const operation = (async () => {
       try {
         await api.sshDisconnect(sessionId);
@@ -146,7 +166,9 @@ export const useSsh = create<SshStore>((set, get) => ({
             ),
           }));
         }
-        toast(translateError(error), "error");
+        entry.failed = true;
+        entry.error = error;
+        if (entry.reportToast) toast(translateError(error), "error");
       } finally {
         disconnections.delete(sessionId);
         set((state) => ({
@@ -154,8 +176,9 @@ export const useSsh = create<SshStore>((set, get) => ({
         }));
       }
     })();
-    disconnections.set(sessionId, operation);
-    return operation;
+    entry.promise = operation;
+    disconnections.set(sessionId, entry);
+    return observeDisconnection(entry, onError);
   },
 
   disconnectMany: async (sessionIds) => {

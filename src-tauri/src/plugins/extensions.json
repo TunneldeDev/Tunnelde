@@ -223,6 +223,23 @@
       "pendingLimit": 8,
       "cancellation": "cooperative-settlement",
       "hidden": "blocks-webview-suspension"
+    },
+    "viewFactories": {
+      "moduleExport": "createView",
+      "activation": "single-coordinator",
+      "transport": "per-instance",
+      "contexts": ["coordinator"],
+      "nativeWindows": false,
+      "state": {
+        "members": ["captureState", "restoreState"],
+        "optional": true,
+        "serialization": "strict-json",
+        "maximumBytes": 1048576,
+        "maximumNodes": 10000,
+        "maximumDepth": 64
+      },
+      "maximumPerActivation": 16,
+      "maximumTotal": 64
     }
   },
   "runtime": {
@@ -570,6 +587,50 @@
     "readPermission": "workspace.read",
     "writePermission": "workspace.write",
     "events": ["workspace://panels-changed"],
-    "ownership": "One retained renderer per panel in the main window. Presentation changes do not disconnect resources. Metadata only; drafts and feature contents are excluded."
+    "ownership": "One retained renderer per native-owned panel. Presentation operations execute in the current source document; no resources are disconnected and no drafts or feature contents are exposed.",
+    "routing": "current-source-document",
+    "completion": "source-effect-completion",
+    "cancellation": "before-admission-only; accepted synchronous UI effects are not rolled back",
+    "eventPayload": "revision-only-invalidation",
+    "satellitePresentations": ["workspace", "floating"],
+    "limits": {
+      "maximumPending": 32,
+      "maximumPerPlugin": 8,
+      "queuedLifetimeSeconds": 15
+    }
+  },
+  "nativeWindows": {
+    "version": 1,
+    "experimental": true,
+    "methods": [
+      "workspace.windows.list",
+      "workspace.windows.observe",
+      "workspace.windows.create",
+      "workspace.windows.close",
+      "workspace.panels.ownership",
+      "workspace.panels.moveToWindow"
+    ],
+    "readPermission": "workspace.read",
+    "writePermission": "workspace.write",
+    "events": ["workspace://windows-changed"],
+    "eventPayload": "revision-only-invalidation",
+    "ownership": "host-native; singleton coordinator retained",
+    "maximumWindows": 16,
+    "panelMoves": {
+      "routing": "current-source-document",
+      "completion": "native-ownership-commit",
+      "destination": "existing-ready-window",
+      "cancellation": "rollback-before-commit",
+      "expectedOwner": "optional-window-and-generation",
+      "maximumPending": 32,
+      "maximumPerPlugin": 8
+    },
+    "placeholder": {
+      "visible": false,
+      "emptyTimeoutSeconds": 20,
+      "retirement": "creator-cancel-or-revocation-empty-only"
+    },
+    "close": "normal-capture-return; coordinator-close-forbidden",
+    "state": "metadata-only; no document tokens, drafts, resources or feature contents"
   }
 }

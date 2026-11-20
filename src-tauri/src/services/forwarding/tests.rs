@@ -445,3 +445,165 @@ fn automation_preference_failure_rolls_back_rule_and_version() {
         Options::default()
     );
 }
+
+#[tokio::test]
+async fn checked_inactive_stop_requires_current_revision_without_invalidating_rejected_attempts() {
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let first = service.save_checked(rule(host(&db)), None).unwrap();
+    let current = service
+        .save_checked(first.rule.clone(), Some(&first.revision))
+        .unwrap();
+    // A rejection must not increment registry stop revisions either.
+    let before = registry
+        .inspect_automation(|snapshot| snapshot(&first.rule.id))
+        .unwrap()
+        .stop_revision;
+    assert!(service
+        .take_checked(&first.rule.id, &first.revision, None)
+        .is_err());
+    assert!(service
+        .take_checked(&first.rule.id, &current.revision, Some("retired-runtime"))
+        .is_err());
+    let unchanged = registry
+        .inspect_automation(|snapshot| snapshot(&first.rule.id))
+        .unwrap()
+        .stop_revision;
+    assert_eq!(unchanged, before);
+    service
+        .take_checked(&first.rule.id, &current.revision, None)
+        .unwrap()
+        .finish()
+        .await
+        .unwrap();
+    let stopped = registry
+        .inspect_automation(|snapshot| snapshot(&first.rule.id))
+        .unwrap()
+        .stop_revision;
+    assert_ne!(stopped, before);
+    service
+        .remove_checked(&first.rule.id, Some(&current.revision))
+        .unwrap();
+    assert!(service
+        .take_checked(&first.rule.id, &current.revision, None)
+        .is_err());
+}
+
+#[tokio::test]
+async fn exact_removal_is_revision_bound_and_atomically_clears_automation_and_group_membership() {
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let host_id = host(&db);
+    let group = db
+        .with(|conn| groups::save_at(conn, None, &host_id, "Group", None))
+        .unwrap();
+    let mut draft = rule(host_id);
+    draft.id = "exact-removal".into();
+    let options = automation::Options {
+        auto_start: true,
+        auto_retry: true,
+    };
+    let original = registry
+        .edit(&draft.id, || {
+            repository::save_grouped(&db, &draft, None, options, Some(&group.id))
+        })
+        .unwrap();
+    let current = service
+        .save_configured(draft, Some(&original.revision), options)
+        .unwrap();
+    let before = registry
+        .inspect_automation(|read| read(&current.rule.id))
+        .unwrap()
+        .stop_revision;
+    for (revision, runtime) in [
+        (original.revision.as_str(), None),
+        (current.revision.as_str(), Some("retired-runtime")),
+    ] {
+        assert!(service
+            .take_remove_checked(&current.rule.id, revision, runtime)
+            .is_err());
+    }
+    assert_eq!(
+        serde_json::to_value(service.rule(&current.rule.id).unwrap().unwrap()).unwrap(),
+        serde_json::to_value(&current).unwrap()
+    );
+    assert_eq!(
+        registry
+            .inspect_automation(|read| read(&current.rule.id))
+            .unwrap()
+            .stop_revision,
+        before
+    );
+    // Failure in the last cleanup statement rolls back the rule, revision,
+    // automation and membership rather than leaving a partially deleted rule.
+    db.with(|conn| {
+        conn.execute_batch("CREATE TRIGGER refuse_membership_cleanup BEFORE DELETE ON settings WHEN OLD.key LIKE 'forward-membership:%' BEGIN SELECT RAISE(ABORT, 'test failure'); END;")?;
+        Ok(())
+    }).unwrap();
+    assert!(service
+        .take_remove_checked(&current.rule.id, &current.revision, None)
+        .is_err());
+    assert_eq!(
+        serde_json::to_value(service.rule(&current.rule.id).unwrap().unwrap()).unwrap(),
+        serde_json::to_value(&current).unwrap()
+    );
+    assert_eq!(
+        db.with(|conn| automation::settings::read(conn, &current.rule.id, &current.revision))
+            .unwrap(),
+        options
+    );
+    assert_eq!(
+        registry
+            .inspect_automation(|read| read(&current.rule.id))
+            .unwrap()
+            .stop_revision,
+        before
+    );
+    db.with(|conn| {
+        conn.execute_batch("DROP TRIGGER refuse_membership_cleanup")?;
+        Ok(())
+    })
+    .unwrap();
+    service
+        .take_remove_checked(&current.rule.id, &current.revision, None)
+        .unwrap()
+        .finish()
+        .await
+        .unwrap();
+    assert!(service.rule(&current.rule.id).unwrap().is_none());
+    assert_eq!(
+        db.with(|conn| automation::settings::read(conn, &current.rule.id, &current.revision))
+            .unwrap(),
+        automation::Options::default()
+    );
+    assert_eq!(
+        db.with(|conn| groups::membership(conn, &current.rule.id))
+            .unwrap(),
+        None
+    );
+    let retained = db.with(|conn| groups::list(conn, None)).unwrap();
+    assert_eq!(retained.len(), 1);
+    assert_eq!(retained[0].id, group.id);
+    assert_eq!(retained[0].revision, group.revision);
+    assert!(service
+        .take_remove_checked(&current.rule.id, &current.revision, None)
+        .is_err());
+    // Recreating the same ID never reuses the deleted rule's revision.
+    let recreated = service.create(current.rule.clone()).unwrap();
+    assert_ne!(recreated.revision, current.revision);
+    assert!(service
+        .take_remove_checked(&current.rule.id, &current.revision, None)
+        .is_err());
+    assert_eq!(
+        serde_json::to_value(service.rule(&current.rule.id).unwrap().unwrap()).unwrap(),
+        serde_json::to_value(&recreated).unwrap()
+    );
+}

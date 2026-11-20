@@ -26,8 +26,19 @@ while IFS= read -r path; do
   esac
 done < <(git ls-files)
 
+# Vendored upstream's public key-parsing fixtures contain literal PEM headers.
+# Verify their exact upstream hashes before exempting just those files, never
+# the whole vendor tree or any patched/new source file.
+vendor_exclusions=()
+if node scripts/ci/check-russh-vendor.mjs >/tmp/tunnelde-vendor-exclusions; then
+  while IFS= read -r path; do vendor_exclusions+=("$path"); done </tmp/tunnelde-vendor-exclusions
+else
+  echo "::error::vendored SSH source integrity check failed"
+  status=1
+fi
+
 if git grep -InE 'C:\\\\Users\\\\|/Users/[a-z]|BEGIN [A-Z ]*PRIVATE KEY' -- \
-  ':!*.example' ':!LICENSE' >/tmp/tunnelde-secret-scan 2>/dev/null; then
+  ':!*.example' ':!LICENSE' "${vendor_exclusions[@]}" >/tmp/tunnelde-secret-scan 2>/dev/null; then
   echo "::error::personal paths or private keys found in tracked files"
   cat /tmp/tunnelde-secret-scan
   status=1
