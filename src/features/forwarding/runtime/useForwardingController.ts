@@ -4,6 +4,7 @@ import { useForwardingCaptureGuard } from "./useForwardingCaptureGuard";
 import { usePanelViewState } from "@/lib/panels/viewState";
 import { forwardDraft, type ForwardDraft } from "../model/viewState";
 import { useForwardingActions } from "./actionScope";
+import { useForwardingConfirm } from "./confirmationScope";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { translateError } from "@/lib/api/errors";
@@ -63,7 +64,7 @@ export function useForwardingController(host: Host) {
   const [operationFailure, setFailure] = useState<{ target: string; message: string } | null>(null);
   const mutation = useRef(false);
   const live = useRef(true);
-  const confirm = useDialogs((state) => state.confirm);
+  const confirm = useForwardingConfirm();
   useForwardingCaptureGuard(
     "controller-admission",
     () =>
@@ -147,17 +148,17 @@ export function useForwardingController(host: Host) {
     if (mutation.current) return;
     const draft = form;
     if (!draft) return;
-    const action = () =>
+    const savedInput = structuredClone(rule);
+    const action = (interaction?: string) =>
       run(
         "editor",
         async () => {
           if (currentForm.current !== draft || (draft.id && !draft.revision))
             throw new Error("forward.changed");
-          const saved = await actions.save(
-            rule,
-            draft.id ? draft.revision : undefined,
-            draftAuthority,
-          );
+          const args = [savedInput, draft.id ? draft.revision : undefined, draftAuthority] as const;
+          const saved = await (interaction
+            ? actions.save(...args, interaction)
+            : actions.save(...args));
           if (!live.current) return;
           setForm(null);
           if (start) {
@@ -186,8 +187,8 @@ export function useForwardingController(host: Host) {
         body: t("forward.exposureBody", { address: rule.bindHost }),
         confirmLabel: t(start ? "forward.saveStart" : "common.save"),
         danger: true,
-        onConfirm: async () => {
-          await action();
+        onConfirm: async (interaction) => {
+          await action(interaction);
         },
       });
     } else void action();
@@ -206,13 +207,21 @@ export function useForwardingController(host: Host) {
   };
   const requestRemove = (rule: RevisionedRule, authority?: ForwardingAuthority) => {
     authority?.authorize();
+    const target = structuredClone(rule);
     confirm({
       title: t("forward.deleteTitle"),
       body: t("forward.deleteBody", { name: rule.name }),
       confirmLabel: t("common.delete"),
       danger: true,
-      onConfirm: async () => {
-        await run(rule.id, () => actions.remove(rule, authority), "remove");
+      onConfirm: async (interaction) => {
+        await run(
+          target.id,
+          () =>
+            interaction
+              ? actions.remove(target, authority, interaction)
+              : actions.remove(target, authority),
+          "remove",
+        );
       },
     });
   };
@@ -220,22 +229,25 @@ export function useForwardingController(host: Host) {
     run(rule.id, () => actions.stop(rule, authority), "stop");
   const requestDisconnect = (authority?: ForwardingAuthority) => {
     authority?.authorize();
-    const targets = sessions.filter(
-      (item) => item.hostId === host.id && item.purpose === "forwarding",
-    );
+    const targetHostId = host.id;
+    const targets = sessions
+      .filter((item) => item.hostId === targetHostId && item.purpose === "forwarding")
+      .map(({ id }) => ({ id }));
     if (!targets.length) return;
     confirm({
       title: t("forward.disconnectTitle"),
       body: t("forward.disconnectBody", { count: targets.length, host: host.name }),
       confirmLabel: t("terminal.disconnect"),
-      onConfirm: async () => {
+      onConfirm: async (interaction) => {
         await run(
           "group",
           async () => {
             const failures: string[] = [];
             for (const item of targets) {
               try {
-                await actions.disconnect(host.id, item.id, authority);
+                if (interaction)
+                  await actions.disconnect(targetHostId, item.id, authority, interaction);
+                else await actions.disconnect(targetHostId, item.id, authority);
               } catch (cause) {
                 failures.push(translateError(cause));
               }

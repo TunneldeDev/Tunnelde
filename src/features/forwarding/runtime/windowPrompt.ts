@@ -2,6 +2,7 @@ import type { ConnectionReview } from "@/lib/api/connections/review";
 import type { ConnectionQuality, HostKeyInfo, SshSession } from "@/lib/api/types";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
+import { createPanelWindowInteraction } from "@/lib/panels/windowInteraction";
 import type { ConnectionPromptHost, ConnectionPromptServices } from "@/features/connect/prompt";
 import type { ForwardingWindowMutation, ForwardingWindowStartPlan } from "./windowProtocol";
 
@@ -31,41 +32,18 @@ export function createForwardingWindowPrompt(
   requestedLease: PanelLease,
   requestedTarget: WindowForwardingPromptTarget,
 ) {
-  const lease: PanelLease = {
-    panelId: requestedLease.panelId,
-    windowId: requestedLease.windowId,
-    generation: requestedLease.generation,
-  };
+  const { lease, acquired, check, close } = createPanelWindowInteraction(client, requestedLease);
   const target = {
     id: requestedTarget.id,
     revision: requestedTarget.revision,
     hostId: requestedTarget.hostId,
   };
-  let open = true;
   let interaction = "";
   let review: ConnectionReview;
   let jumps: ConnectionPromptHost[] = [];
   let allowedHosts = new Set<string>();
   let tail: Promise<unknown> = Promise.resolve();
   const tests = new Map<string, { cancelled: boolean; finished: boolean }>();
-  const check = () => {
-    if (!open) throw new Error("panel.window.disposed");
-  };
-  const acquired = client.control<string>({ action: "beginInteraction", lease });
-  let release: Promise<void> | undefined;
-  const close = () => {
-    open = false;
-    release ??= acquired
-      .then(
-        (id) => client.control<void>({ action: "endInteraction", lease, id }),
-        () => {}, // No acquired token exists when native admission failed.
-      )
-      .catch((error: unknown) => {
-        release = undefined;
-        throw error;
-      });
-    return release;
-  };
   const base = () => ({
     id: target.id,
     revision: target.revision,

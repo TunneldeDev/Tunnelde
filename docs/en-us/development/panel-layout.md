@@ -848,3 +848,21 @@ This complete builtin prompt service/UI prerequisite does not itself mount the
 full forwarding renderer or provide provider/disconnect/host-dialog adapters.
 Forwarding transfer discovery and `nativeWindows` remain disabled until those
 and the full ordinary-page/native acceptance requirements are complete.
+
+### Original forwarding confirmations
+
+`WindowForwardingConfirmationScope` composes the shared controlled `ConfirmDialog`
+with an original `createPanelWindowInteraction`; the builtin connection prompt
+uses that same lifecycle primitive. The forwarding controller supplies cloned
+rule/edit inputs and fixed disconnect session IDs to a document-local confirmation
+service. The exact original interaction is passed only to the corresponding
+save/remove/disconnect action, not provider authority or checkpoint state.
+Native scopes acquire before displaying approval, retire late acquisitions,
+refuse overlapping replacement, and invalidate retained callbacks/visible UI on
+client or lease replacement. Equivalent read-model updates and lifecycle replay
+must not reacquire or silently replace visible consent. Pending/visible approval
+blocks capture and is never restored as an already-approved draft. A satellite
+without an explicit confirmation service fails closed rather than borrowing the
+main dialog store. Main-document behavior keeps the existing confirmation host.
+This UI boundary is not the missing native disconnect/provider/host services or
+full forwarding renderer, and does not enable native transfer discovery.

@@ -6,6 +6,7 @@ vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true }));
 import "@/i18n/i18n";
 import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
 import { ForwardingReadScope } from "@/features/forwarding/data/readScope";
+import { ForwardingConfirmationScope } from "@/features/forwarding/runtime/confirmationScope";
 import { ForwardingActionScope } from "@/features/forwarding/runtime/actionScope";
 import type { ForwardingActions } from "@/features/forwarding/runtime/actions";
 import type { ForwardingReadData } from "@/features/forwarding/data/readModel";
@@ -74,7 +75,18 @@ afterEach(() => {
 const tree = () => (
   <ForwardingReadScope value={data}>
     <ForwardingActionScope value={actions}>
-      <ForwardingSection host={host} />
+      <ForwardingConfirmationScope
+        value={(options) =>
+          useDialogs.getState().confirm({
+            ...options,
+            onConfirm: async () => {
+              await options.onConfirm();
+            },
+          })
+        }
+      >
+        <ForwardingSection host={host} />
+      </ForwardingConfirmationScope>
     </ForwardingActionScope>
   </ForwardingReadScope>
 );

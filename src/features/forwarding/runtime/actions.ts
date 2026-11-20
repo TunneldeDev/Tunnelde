@@ -25,13 +25,23 @@ export interface ForwardingActions {
     rule: ForwardRule,
     revision?: string,
     authority?: ForwardingAuthority,
+    interaction?: string,
   ): Promise<RevisionedRule>;
-  remove(rule: RevisionedRule, authority?: ForwardingAuthority): Promise<void>;
+  remove(
+    rule: RevisionedRule,
+    authority?: ForwardingAuthority,
+    interaction?: string,
+  ): Promise<void>;
   stop(
     rule: Pick<RevisionedRule, "id" | "revision"> & { runtimeId?: string | null },
     authority?: ForwardingAuthority,
   ): Promise<void>;
-  disconnect(hostId: string, sessionId: string, authority?: ForwardingAuthority): Promise<void>;
+  disconnect(
+    hostId: string,
+    sessionId: string,
+    authority?: ForwardingAuthority,
+    interaction?: string,
+  ): Promise<void>;
   saveGroup(hostId: string, name: string, group?: ForwardGroup): Promise<ForwardGroup>;
   removeGroup(group: ForwardGroup): Promise<void>;
   copyAddress(text: string): Promise<void>;
