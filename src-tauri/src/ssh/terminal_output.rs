@@ -32,38 +32,59 @@ impl TerminalOutput {
         self.started && (self.attached || self.buffered_bytes < MAX_BUFFERED_OUTPUT)
     }
 
+    pub fn attached(&self) -> bool {
+        self.attached
+    }
+
     pub fn detach(&mut self) -> u64 {
         self.attached = false;
         self.sequence
     }
 
     pub fn attach(&mut self, emit: &mut impl FnMut(u64, &[u8])) {
+        self.try_attach(&mut |sequence, bytes| {
+            emit(sequence, bytes);
+            true
+        });
+    }
+
+    /// A revoked window or failed delivery is backpressure, never dropped bytes.
+    pub fn try_attach(&mut self, emit: &mut impl FnMut(u64, &[u8]) -> bool) {
         if self.attached {
             return;
         }
         self.attached = true;
         self.started = true;
         while let Some(bytes) = self.buffered.pop_front() {
+            if !emit(self.sequence + 1, &bytes) {
+                self.buffered.push_front(bytes);
+                self.attached = false;
+                break;
+            }
+            self.sequence += 1;
             self.buffered_bytes -= bytes.len();
-            self.publish(&bytes, emit);
         }
     }
 
+    #[cfg(test)]
     pub fn receive(&mut self, bytes: &[u8], emit: &mut impl FnMut(u64, &[u8])) {
+        self.try_receive(bytes, &mut |sequence, bytes| {
+            emit(sequence, bytes);
+            true
+        });
+    }
+
+    pub fn try_receive(&mut self, bytes: &[u8], emit: &mut impl FnMut(u64, &[u8]) -> bool) {
         if bytes.is_empty() {
             return;
         }
-        if self.attached {
-            self.publish(bytes, emit);
+        if self.attached && emit(self.sequence + 1, bytes) {
+            self.sequence += 1;
         } else {
+            self.attached = false;
             self.buffered_bytes += bytes.len();
             self.buffered.push_back(bytes.to_vec());
         }
-    }
-
-    fn publish(&mut self, bytes: &[u8], emit: &mut impl FnMut(u64, &[u8])) {
-        self.sequence += 1;
-        emit(self.sequence, bytes);
     }
 }
 
@@ -122,5 +143,54 @@ mod tests {
         });
         assert_eq!(replayed, packets);
         assert!(output.can_read());
+    }
+    #[test]
+    fn revoked_or_failed_sink_preserves_sequence_and_exact_bytes_for_a_new_owner() {
+        let mut output = TerminalOutput::new(b"prompt".to_vec());
+        let mut delivered = Vec::new();
+        output.try_attach(&mut |sequence, bytes| {
+            delivered.push((sequence, bytes.to_vec()));
+            true
+        });
+        assert_eq!(output.detach(), 1);
+        output.try_receive(&[0xe4, 0xb8], &mut |_, _| panic!("detached"));
+        output.try_receive(&[0xad, 0x1b], &mut |_, _| panic!("detached"));
+        let mut attempts = 0;
+        output.try_attach(&mut |sequence, bytes| {
+            attempts += 1;
+            if attempts == 1 {
+                delivered.push((sequence, bytes.to_vec()));
+                true
+            } else {
+                false
+            }
+        });
+        assert!(!output.attached());
+        assert_eq!(output.detach(), 2);
+        output.try_receive(b"[0m", &mut |_, _| {
+            panic!("failed sink must remain detached")
+        });
+        output.try_attach(&mut |sequence, bytes| {
+            delivered.push((sequence, bytes.to_vec()));
+            true
+        });
+        assert_eq!(
+            delivered,
+            vec![
+                (1, b"prompt".to_vec()),
+                (2, vec![0xe4, 0xb8]),
+                (3, vec![0xad, 0x1b]),
+                (4, b"[0m".to_vec())
+            ]
+        );
+        assert_eq!(output.buffered_bytes, 0);
+        output.try_receive(b"late", &mut |_, _| false);
+        assert_eq!(output.detach(), 4);
+        assert_eq!(output.buffered_bytes, 4);
+        output.try_attach(&mut |sequence, bytes| {
+            assert_eq!((sequence, bytes), (5, b"late".as_slice()));
+            true
+        });
+        assert_eq!(output.buffered_bytes, 0);
     }
 }

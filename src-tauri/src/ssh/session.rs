@@ -245,7 +245,8 @@ impl client::Handler for ClientHandler {
     }
 }
 
-enum WriterMsg {
+pub(super) enum WriterMsg {
+    Presentation(super::terminal_presentation::Request),
     Attach,
     Detach(oneshot::Sender<u64>),
     Data(Vec<u8>),
@@ -423,6 +424,30 @@ impl SshManager {
             .writer
             .try_send(WriterMsg::Data(data))
             .map_err(|_| AppError::Ssh("ssh.sessionBusy".into()))
+    }
+
+    pub(crate) fn terminal_endpoint(
+        &self,
+        session_id: &str,
+    ) -> AppResult<super::terminal_presentation::Endpoint> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        let session = sessions
+            .get(session_id)
+            .filter(|session| {
+                session.published
+                    && session.user_managed
+                    && session.info.terminal
+                    && !session.handle.is_closed()
+                    && !session.task.is_finished()
+            })
+            .ok_or_else(|| AppError::validation("ssh.terminalUnavailable"))?;
+        Ok(super::terminal_presentation::Endpoint {
+            session_id: session_id.into(),
+            writer: session.writer.clone(),
+        })
     }
 
     pub fn attach(&self, session_id: &str) -> AppResult<()> {
@@ -679,13 +704,20 @@ async fn pump_terminal(
 ) {
     let (mut reader, writer) = channel.split();
     let mut output = TerminalOutput::new(startup);
+    let mut presentation: Option<super::terminal_presentation::Output> = None;
+    let mut deliver = |sequence, bytes: &[u8]| {
+        emit(sequence, bytes);
+        true
+    };
     loop {
         tokio::select! {
             // Until both frontend listeners exist, SSH's channel queue/window
             // buffers output without losing a prompt's first ANSI bytes.
             incoming = reader.wait(), if output.can_read() => {
                 match incoming {
-                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => output.receive(&data, &mut emit),
+                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => output.try_receive(&data, &mut |sequence, bytes| {
+                        if let Some(sink) = &presentation { sink(sequence, bytes) } else { deliver(sequence, bytes) }
+                    }),
                     Some(ChannelMsg::Close) | None => break,
                     _ => {}
                 }
@@ -693,7 +725,33 @@ async fn pump_terminal(
             message = outgoing.recv() => {
                 match message {
                     Some(WriterMsg::Attach) => {
-                        output.attach(&mut emit);
+                        // Legacy/main attach cannot steal a window-scoped stream.
+                        if presentation.is_none() { output.attach(&mut |sequence, bytes| { deliver(sequence, bytes); }); }
+                    }
+                    Some(WriterMsg::Presentation(request)) => {
+                        let super::terminal_presentation::Request { authorization, operation, reply } = request;
+                        // Recheck when dequeued, not only before queue admission.
+                        let result = if !(authorization.current)() {
+                            Err(AppError::validation("stale panel owner"))
+                        } else {
+                            use super::terminal_presentation::Operation;
+                            match operation {
+                                Operation::Attach(sink) => {
+                                    if output.attached() {
+                                        Err(AppError::validation("ssh.sessionBusy"))
+                                    } else {
+                                        presentation = Some(sink);
+                                        output.try_attach(&mut |sequence, bytes| presentation.as_ref().unwrap()(sequence, bytes));
+                                        Ok(None)
+                                    }
+                                }
+                                Operation::Detach => Ok(Some(output.detach())),
+                                Operation::Write(bytes) => writer.data_bytes(bytes).await.map(|_| None).map_err(map_ssh_error),
+                                Operation::Resize { cols, rows } => writer.window_change(cols, rows, 0, 0).await.map(|_| None).map_err(map_ssh_error),
+                            }
+                        };
+                        drop(authorization.retention);
+                        let _ = reply.send(result);
                     }
                     Some(WriterMsg::Detach(reply)) => {
                         let _ = reply.send(output.detach());
@@ -1528,6 +1586,115 @@ mod tests {
                 .unwrap(),
             (3, b"still alive".to_vec())
         );
+        tx.send(WriterMsg::Close).await.unwrap();
+        task.await.unwrap();
+        server.abort();
+    }
+    #[tokio::test]
+    async fn native_terminal_handoff_retains_original_ssh_and_replays_only_to_the_current_sink() {
+        use super::super::terminal_presentation::{Authorization, Endpoint, Operation};
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        fn authorization(current: Arc<AtomicBool>) -> Authorization {
+            Authorization {
+                current: Arc::new(move || current.load(Ordering::SeqCst)),
+                retention: Box::new(()),
+            }
+        }
+        let (client, _, server) = server(false, false).await;
+        let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
+        let (tx, rx) = mpsc::channel(16);
+        let endpoint = Endpoint {
+            session_id: "exact".into(),
+            writer: tx.clone(),
+        };
+        let main_packets = Arc::new(AtomicUsize::new(0));
+        let observed_main = main_packets.clone();
+        let task = tokio::spawn(async move {
+            pump_terminal(channel, rx, startup, |_, _| {
+                observed_main.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
+        });
+        let first_current = Arc::new(AtomicBool::new(true));
+        let (first, mut first_rx) = mpsc::unbounded_channel();
+        let current = first_current.clone();
+        let rejected_output = Arc::new(AtomicUsize::new(0));
+        let rejected = rejected_output.clone();
+        let first_sink = Arc::new(move |sequence, bytes: &[u8]| {
+            if !current.load(Ordering::SeqCst) {
+                rejected.fetch_add(1, Ordering::SeqCst);
+                return false;
+            }
+            first.send((sequence, bytes.to_vec())).is_ok()
+        });
+        endpoint
+            .request(
+                authorization(first_current.clone()),
+                Operation::Attach(first_sink),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first_rx.recv().await.unwrap(), (1, PROMPT.to_vec()));
+        tx.send(WriterMsg::Attach).await.unwrap(); // legacy attach must not steal the scoped route
+        endpoint
+            .request(
+                authorization(first_current.clone()),
+                Operation::Write(b"first owner".to_vec()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first_rx.recv().await.unwrap(), (2, b"first owner".to_vec()));
+        first_current.store(false, Ordering::SeqCst);
+        assert!(endpoint
+            .request(
+                authorization(first_current.clone()),
+                Operation::Write(b"stale input".to_vec())
+            )
+            .await
+            .is_err());
+        // Main-owned backend input is independent of a view's presentation lease.
+        tx.send(WriterMsg::Data("\x1b[33m后台\x1b[0m".as_bytes().to_vec()))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while rejected_output.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(first_rx.try_recv().is_err());
+        let second_current = Arc::new(AtomicBool::new(true));
+        let (second, mut second_rx) = mpsc::unbounded_channel();
+        let second_sink =
+            Arc::new(move |sequence, bytes: &[u8]| second.send((sequence, bytes.to_vec())).is_ok());
+        endpoint
+            .request(
+                authorization(second_current.clone()),
+                Operation::Attach(second_sink),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            second_rx.recv().await.unwrap(),
+            (3, "\x1b[33m后台\x1b[0m".as_bytes().to_vec())
+        );
+        assert_eq!(main_packets.load(Ordering::SeqCst), 0);
+        assert!(!client.is_closed());
+        assert_eq!(
+            endpoint
+                .request(authorization(second_current.clone()), Operation::Detach)
+                .await
+                .unwrap(),
+            Some(3)
+        );
+        endpoint
+            .request(
+                authorization(second_current),
+                Operation::Write(b"still same SSH".to_vec()),
+            )
+            .await
+            .unwrap();
         tx.send(WriterMsg::Close).await.unwrap();
         task.await.unwrap();
         server.abort();
