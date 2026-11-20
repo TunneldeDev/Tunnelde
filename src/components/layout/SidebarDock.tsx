@@ -1,6 +1,8 @@
 import { NativePanelView } from "./NativePanelView";
 import { useWindowViews } from "@/lib/panels/windowViews";
-import { panelLocation } from "@/lib/panels/controller";
+
+import { canFloatPluginView } from "@/lib/plugins/presentation";
+import { panelLocation, setPanelLocation } from "@/lib/panels/controller";
 import { ForwardingPanel } from "@/features/forwarding/ForwardingPanel";
 import { OutputPanel } from "@/features/output/OutputPanel";
 import { WorkbenchPanel } from "./WorkbenchPanel";
@@ -93,8 +95,9 @@ function RetainedPanel({ view, children }: { view: SidebarView; children: ReactN
   );
 }
 
-export function FloatingPanelLayer() {
+export function FloatingPanelLayer({ children }: { children?: ReactNode }) {
   const panels = usePanelPresentations((state) => state.panels);
+  const plugins = usePlugins((state) => state.items);
   const tabs = useWorkspace((state) => state.tabs);
   const sidebarVisible = useNavigation((state) => state.sidebarVisible);
   const activeSidebar = useNavigation((state) => state.activeSidebar);
@@ -102,6 +105,10 @@ export function FloatingPanelLayer() {
     for (const [id, state] of Object.entries(panels)) {
       if (!state?.open) continue;
       const view = id as SidebarView;
+      if (!canFloatPluginView(view)) {
+        setPanelLocation(view, "sidebar");
+        continue;
+      }
       const tab = tabs.find((item) => item.id === sidebarTabId(view));
       if (tab) {
         useWorkspace.getState().activate(tab.id);
@@ -109,7 +116,7 @@ export function FloatingPanelLayer() {
       } else if (sidebarVisible && activeSidebar === view)
         panelPresentation(view).getState().close();
     }
-  }, [panels, tabs, sidebarVisible, activeSidebar]);
+  }, [panels, tabs, sidebarVisible, activeSidebar, plugins]);
   const entries = Object.entries(panels)
     .filter(
       ([view, state]) =>
@@ -118,19 +125,20 @@ export function FloatingPanelLayer() {
     .sort((a, b) => a[1]!.order - b[1]!.order);
   return (
     <div className="workbench-floating-layer">
-      {entries.map(([id], index) => {
+      {entries.map(([id, state]) => {
         const view = id as SidebarView;
         return (
           <div
             key={view}
             className="workbench-floating-slot"
-            style={{ zIndex: index + 1 }}
+            style={{ zIndex: state!.order + 1 }}
             onPointerDownCapture={() => panelPresentation(view).getState().raise()}
           >
             <SidebarMount view={view} floating />
           </div>
         );
       })}
+      {children}
     </div>
   );
 }

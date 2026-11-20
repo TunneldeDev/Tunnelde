@@ -242,6 +242,8 @@
     "deleteBody": "Delete group “{{name}}” and its subgroups? Saved hosts will be kept and moved to Ungrouped."
   },
   "settings": {
+    "disconnectOnPanelClose": "Disconnect when closing a session panel",
+    "disconnectOnPanelCloseHint": "Enabled by default. Closing the last terminal, file, editor or monitor panel using a connection disconnects it. Connections still used by another panel and dedicated forwarding or mount connections are kept. Turn off to keep sessions in the background.",
     "operation": {
       "busy": "Settings operations are busy. Wait for current operations to finish, then try again.",
       "cancelled": "The settings operation was cancelled before commit admission.",
@@ -2734,6 +2736,16 @@
     "imported_other": "Imported {{count}} hosts"
   },
   "connections": {
+    "search": "Search sessions…",
+    "selected_one": "{{count}} selected",
+    "selected_other": "{{count}} selected",
+    "selectSession": "Select {{name}} · {{id}}",
+    "selectVisible": "Select visible",
+    "clearSelection": "Clear selection",
+    "closeSelected": "Close selected",
+    "batchWarning_one": "Close {{count}} selected session? Its terminals, file views, forwarding and mounts will stop. Unselected sessions are not affected.",
+    "batchWarning_other": "Close {{count}} selected sessions? Their terminals, file views, forwarding and mounts will stop. Unselected sessions are not affected.",
+    "noMatches": "No matching active sessions",
     "mounts": "Mounts",
     "title": "Connection details",
     "sessions": "{{count}} active sessions",

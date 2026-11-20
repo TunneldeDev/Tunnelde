@@ -19,7 +19,7 @@ import { GripVertical, Pin, RotateCcw, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { HelpPresentationProvider } from "@/components/ui/form/HelpHint";
-import { useFloatingPanel } from "./useFloatingPanel";
+import { PanelFrame } from "./PanelFrame";
 import { panelActionsContainer } from "./panelSlots";
 import { SidebarDockControls, SidebarTitle } from "./SidebarDockControls";
 import { sidebarLabel, SIDEBAR_MIME, sidebarTabId, TAB_MIME } from "@/lib/session/sidebarDock";
@@ -66,13 +66,11 @@ export function WorkbenchPanel({
   view,
   location: requestedLocation,
   visible: requestedVisible,
-  showTitle = false,
   children,
 }: {
   view: SidebarView;
   location: PanelPresentation;
   visible: boolean;
-  showTitle?: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -82,9 +80,8 @@ export function WorkbenchPanel({
   const windowId = usePanelWindows((state) => state.windowId);
   const close = () => {
     if (windowId === "main") closePanel(view);
-    else {
+    else
       void movePanelToWindow(view, "main").catch((error) => toast(translateError(error), "error"));
-    }
   };
   const store = local?.floating ?? panelPresentation(view);
   const pinned = useStore(store, (state) => state.pinned);
@@ -92,11 +89,6 @@ export function WorkbenchPanel({
   const panel = useRef<HTMLElement>(null);
   const actions = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const floating = useFloatingPanel(
-    panel,
-    location === "floating" ? bounds : null,
-    store.getState().setBounds,
-  );
   const focusBeforeOpen = useRef<HTMLElement | null>(null);
   const scope = useMemo(() => ({ view, location, visible }), [view, location, visible]);
   useLayoutEffect(() => {
@@ -143,105 +135,82 @@ export function WorkbenchPanel({
   return (
     <PanelScope.Provider value={scope}>
       <HelpPresentationProvider value="tooltip">
-        <section
-          ref={panel}
-          className={`workbench-panel is-${location}${location === "floating" ? " workbench-panel--floating" : ""}`}
-          data-workbench-panel={view}
-          data-drag-hit-test={location === "floating" ? "exclude" : undefined}
-          role={location === "floating" ? "dialog" : "region"}
-          aria-modal={location === "floating" ? "false" : undefined}
-          aria-label={sidebarLabel(view, t)}
-          onKeyDown={(event) => {
-            if (
-              event.defaultPrevented ||
-              event.nativeEvent.isComposing ||
-              event.key !== "Escape" ||
-              location !== "floating"
-            )
-              return;
-            if (
-              document.querySelector(
-                '[role="dialog"][aria-modal="true"], .td-menu, .context-menu, .td-tooltip',
-              )
-            )
-              return;
-            event.stopPropagation();
-            close();
-          }}
+        <PanelFrame
+          frameRef={panel}
+          floating={location === "floating"}
+          location={location}
+          label={sidebarLabel(view, t)}
+          panelId={view}
+          bounds={bounds}
+          onBounds={store.getState().setBounds}
+          onEscape={close}
+          header={(floating) => (
+            <header
+              className={`workbench-panel__head${location === "workspace" ? " is-business-only" : ""}`}
+              role="toolbar"
+              aria-label={sidebarLabel(view, t)}
+            >
+              {location === "floating" ? (
+                <button
+                  type="button"
+                  className="workbench-panel__drag"
+                  title={t("panels.moveHint")}
+                  {...floating.handle("move")}
+                  onDoubleClick={floating.reset}
+                >
+                  <span
+                    draggable
+                    data-panel-drag-handle
+                    onDragEnd={endLocalPanelDrag}
+                    className="workbench-panel__dock-grip"
+                    title={t("docking.dragHint")}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onDragStart={(event) => {
+                      if (local) {
+                        startLocalPanelDrag(local.workspace, view, event.dataTransfer);
+                        return;
+                      }
+                      event.dataTransfer.setData(TAB_MIME, sidebarTabId(view));
+                      event.dataTransfer.setData(SIDEBAR_MIME, view);
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
+                  >
+                    <GripVertical size={12} />
+                  </span>
+                  <strong>{sidebarLabel(view, t)}</strong>
+                </button>
+              ) : location === "sidebar" ? (
+                <SidebarTitle view={view}>{sidebarLabel(view, t)}</SidebarTitle>
+              ) : (
+                <span className="workbench-panel__spacer" />
+              )}
+              <div ref={actions} className="workbench-panel__action-slot" />
+              {location !== "workspace" && <SidebarDockControls view={view} />}
+              {location === "floating" ? (
+                <>
+                  <IconButton size="sm" label={t("panels.resetLayout")} onClick={floating.reset}>
+                    <RotateCcw size={13} />
+                  </IconButton>
+                  <IconButton
+                    size="sm"
+                    label={t("panels.keepOpen")}
+                    active={pinned}
+                    onClick={store.getState().togglePinned}
+                  >
+                    <Pin size={13} />
+                  </IconButton>
+                </>
+              ) : null}
+              {location !== "workspace" && (
+                <IconButton size="sm" ref={closeButton} label={t("common.close")} onClick={close}>
+                  <X size={14} />
+                </IconButton>
+              )}
+            </header>
+          )}
         >
-          <header
-            className="workbench-panel__head"
-            role="toolbar"
-            aria-label={sidebarLabel(view, t)}
-          >
-            {location === "floating" ? (
-              <button
-                type="button"
-                className="workbench-panel__drag"
-                title={t("panels.moveHint")}
-                {...floating.handle("move")}
-                onDoubleClick={floating.reset}
-              >
-                <span
-                  draggable
-                  data-panel-drag-handle
-                  className="workbench-panel__dock-grip"
-                  title={t("docking.dragHint")}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onDragEnd={endLocalPanelDrag}
-                  onDragStart={(event) => {
-                    if (local) {
-                      startLocalPanelDrag(local.workspace, view, event.dataTransfer);
-                      return;
-                    }
-                    event.dataTransfer.setData(TAB_MIME, sidebarTabId(view));
-                    event.dataTransfer.setData(SIDEBAR_MIME, view);
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                >
-                  <GripVertical size={12} />
-                </span>
-                <strong>{sidebarLabel(view, t)}</strong>
-              </button>
-            ) : location === "sidebar" || (showTitle && !local) ? (
-              <SidebarTitle view={view}>{sidebarLabel(view, t)}</SidebarTitle>
-            ) : (
-              <span className="workbench-panel__spacer" />
-            )}
-            <div ref={actions} className="workbench-panel__action-slot" />
-            <SidebarDockControls view={view} />
-            {location === "floating" ? (
-              <>
-                <IconButton size="sm" label={t("panels.resetLayout")} onClick={floating.reset}>
-                  <RotateCcw size={13} />
-                </IconButton>
-                <IconButton
-                  size="sm"
-                  label={t("panels.keepOpen")}
-                  active={pinned}
-                  onClick={store.getState().togglePinned}
-                >
-                  <Pin size={13} />
-                </IconButton>
-              </>
-            ) : null}
-            <IconButton size="sm" ref={closeButton} label={t("common.close")} onClick={close}>
-              <X size={14} />
-            </IconButton>
-          </header>
-          <div className="workbench-panel__body">{children}</div>
-          {location === "floating" &&
-            (["n", "e", "s", "w", "ne", "nw", "se", "sw"] as const).map((edge) => (
-              <div
-                key={edge}
-                className={`workbench-panel__resize workbench-panel__resize--${edge}`}
-                {...floating.handle(edge)}
-                {...(edge === "se"
-                  ? { role: "button", tabIndex: 0, "aria-label": t("panels.resizeHint") }
-                  : { "aria-hidden": true })}
-              />
-            ))}
-        </section>
+          {children}
+        </PanelFrame>
       </HelpPresentationProvider>
     </PanelScope.Provider>
   );

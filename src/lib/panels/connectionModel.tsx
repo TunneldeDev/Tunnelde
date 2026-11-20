@@ -1,3 +1,4 @@
+import { disconnectConnectionBatch } from "@/lib/session/connectionBatch";
 import { usePanelWindows } from "@/store/panelWindows";
 import { windowViews } from "./windowViews";
 import { toast } from "@/store/toasts";
@@ -15,19 +16,28 @@ export interface ConnectionPanelModel {
   hosts: { id: string; name: string }[];
   disconnectingSessionIds: string[];
 }
+type DisconnectMany = (ids: readonly string[]) => Promise<{ closed: string[]; failed: string[] }>;
 const Context = createContext<
-  (ConnectionPanelModel & { disconnect: (id: string) => Promise<void> }) | null
+  | (ConnectionPanelModel & {
+      disconnect: (id: string) => Promise<void>;
+      disconnectMany: DisconnectMany;
+    })
+  | null
 >(null);
 export function ConnectionModelScope({
   model,
   disconnect,
+  disconnectMany,
   children,
 }: {
   model: ConnectionPanelModel;
   disconnect: (id: string) => Promise<void>;
+  disconnectMany: DisconnectMany;
   children: ReactNode;
 }) {
-  return <Context.Provider value={{ ...model, disconnect }}>{children}</Context.Provider>;
+  return (
+    <Context.Provider value={{ ...model, disconnect, disconnectMany }}>{children}</Context.Provider>
+  );
 }
 export function connectionPanelModel(): ConnectionPanelModel {
   const { sessions, history, disconnectingSessionIds } = useSsh.getState();
@@ -53,6 +63,25 @@ export function useConnectionPanelModel() {
       history,
       hosts,
       disconnectingSessionIds,
+      disconnectMany: async (ids: readonly string[]) => {
+        if (!usePanelWindows.getState().available) return useSsh.getState().disconnectMany(ids);
+        const client = windowViews()?.client;
+        const state = usePanelWindows.getState();
+        // Bind the WHOLE confirmed batch to one lease; a late model refresh or
+        // owner change must not let queued workers retarget another generation.
+        const lease = state.snapshot.panels.find(
+          (panel) => panel.panelId === "connections" && panel.windowId === state.windowId,
+        );
+        return disconnectConnectionBatch(ids, async (id) => {
+          try {
+            if (!client || !lease) throw new Error("panel.window.staleOwner");
+            await client.action(lease, { kind: "disconnect", sessionId: id });
+          } catch (error) {
+            toast(translateError(error), "error");
+            throw error;
+          }
+        });
+      },
       disconnect: async (id: string) => {
         const state = usePanelWindows.getState(),
           client = windowViews()?.client;

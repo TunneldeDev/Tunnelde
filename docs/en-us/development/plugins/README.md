@@ -830,3 +830,8 @@ Use the returned `hostId` in `sessions.connect` or `workspace.openHost`. IDs bin
 - [Public profile writes and activation](profile-mutations.md)
 
 [Host quick-look preview API](file-preview.md).
+
+Contributed view entries may set `allowFloating: false` to opt out of the host's
+same-document floating presentation. Omission permits floating; all built-in
+pages and panels support it. This does not grant native-window ownership or
+resource permissions.

@@ -98,6 +98,8 @@ pub struct Settings {
     pub motion: String,
     pub show_status_bar: bool,
     pub restore_workspace: bool,
+    /// Release a connection after its last live session panel is explicitly closed.
+    pub disconnect_on_panel_close: bool,
     pub host_activation: String,
     pub host_direct_connect: bool,
     pub terminal_scrollback: u32,
@@ -179,6 +181,7 @@ impl Default for Settings {
             motion: "system".into(),
             show_status_bar: true,
             restore_workspace: true,
+            disconnect_on_panel_close: true,
             host_activation: "details".into(),
             host_direct_connect: true,
             terminal_scrollback: 10_000,
@@ -482,6 +485,21 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closing_session_panels_disconnects_by_default_and_preserves_opt_out() {
+        let legacy: Settings = serde_json::from_str("{}").unwrap();
+        assert!(legacy.disconnect_on_panel_close);
+        let explicit: Settings = serde_json::from_value(serde_json::json!({
+            "disconnectOnPanelClose": false
+        }))
+        .unwrap();
+        assert!(!explicit.disconnect_on_panel_close);
+        assert_eq!(
+            serde_json::to_value(explicit).unwrap()["disconnectOnPanelClose"],
+            false
+        );
+    }
 
     #[test]
     fn regional_colors_validate_and_survive_theme_switches_and_round_trip() {

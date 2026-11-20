@@ -58,6 +58,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "uiProviders",
     "hostList",
     "restoreWorkspace",
+    "disconnectOnPanelClose",
     "hostActivation",
     "hostDirectConnect",
     "terminalScrollback",

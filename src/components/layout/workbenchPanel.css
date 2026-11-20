@@ -28,8 +28,10 @@
   align-items: center;
   flex-shrink: 0;
   gap: 4px;
-  min-height: 38px;
-  padding: 5px 8px 5px 12px;
+  height: var(--td-workbench-header-h, 34px);
+  min-height: var(--td-workbench-header-h, 34px);
+  box-sizing: border-box;
+  padding: 0 6px;
   border-bottom: 1px solid var(--td-border);
 }
 .workbench-panel__head .sidebar__title,
@@ -203,4 +205,19 @@
   border-bottom: 1px solid var(--td-border-strong);
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* Workspace tabs already provide placement, close and title chrome. */
+.workbench-panel__head.is-business-only > .workbench-panel__spacer {
+  display: none;
+}
+.workbench-panel__head.is-business-only:not(:has(.workbench-panel__business-actions > *)) {
+  display: none;
+}
+
+.pane__float-grip {
+  align-self: center;
+  flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
 }

@@ -23,6 +23,7 @@ it("captures and restores hundreds of actual session disclosures and confirmatio
       <ConnectionModelScope
         model={{ version: 1, sessions, hosts: [], history: [], disconnectingSessionIds: [] }}
         disconnect={vi.fn()}
+        disconnectMany={vi.fn()}
       >
         <ConnectionDetails />
       </ConnectionModelScope>
@@ -39,7 +40,12 @@ it("captures and restores hundreds of actual session disclosures and confirmatio
     view.container.querySelectorAll<HTMLButtonElement>(".connection-list__heading button")[179]!,
   );
   const snapshot = source.capture();
-  expect(Object.keys(snapshot.fields)).toEqual(["connections.rows"]);
+  expect(Object.keys(snapshot.fields).sort()).toEqual([
+    "connections.confirming",
+    "connections.query",
+    "connections.rows",
+    "connections.selection",
+  ]);
   view.unmount();
   const restored = render(content(createPanelViewState(snapshot)));
   expect(restored.container.querySelectorAll<HTMLDetailsElement>("details")[179]!.open).toBe(true);

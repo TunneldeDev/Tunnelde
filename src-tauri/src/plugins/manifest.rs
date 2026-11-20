@@ -99,6 +99,8 @@ fn valid_keybindings(bindings: &[String]) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_floating: Option<bool>,
     pub id: String,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -624,6 +626,23 @@ pub fn valid_command_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plugin_view_floating_defaults_to_allowed_and_preserves_explicit_opt_out() {
+        let mut value = serde_json::json!({"id":"main", "title":"Main"});
+        let view: super::PluginView = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(view.allow_floating, None);
+        assert!(serde_json::to_value(&view)
+            .unwrap()
+            .get("allowFloating")
+            .is_none());
+        value["allowFloating"] = false.into();
+        let view: super::PluginView = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(view.allow_floating, Some(false));
+        assert_eq!(serde_json::to_value(view).unwrap()["allowFloating"], false);
+        value["allowFloating"] = "false".into();
+        assert!(serde_json::from_value::<super::PluginView>(value).is_err());
+    }
+
     #[test]
     fn host_menu_requires_read_permission_and_one_bounded_context() {
         let dir = temp_dir("host-menu");

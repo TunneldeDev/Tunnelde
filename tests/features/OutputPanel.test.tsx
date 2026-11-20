@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { OutputPanel } from "@/features/output/OutputPanel";
+import { useTabBarContent } from "@/store/tabBar";
 import { useNavigation } from "@/store/navigation";
 import {
   boundOutput,
@@ -298,3 +299,25 @@ it("bounds UTF-8 JSON including non-ASCII messages and metadata rather than only
     1024 * 1024 + 2,
   );
 });
+
+it.each([false, true])(
+  "keeps output actions only beside filters, without tab contributions (docked=%s)",
+  async (docked) => {
+    const { container } = render(<OutputPanel active docked={docked} />);
+    await screen.findByText(/plugin start failed · reason=/);
+    const toolbar = container.querySelector(".output-panel__filters")!;
+    expect(
+      useTabBarContent.getState().items.filter((item) => item.tabId === "sidebar:output"),
+    ).toEqual([]);
+    for (const label of [
+      "Follow latest output",
+      "Clear displayed output",
+      "Output actions",
+      "Output channel",
+      "Minimum log level",
+    ])
+      expect(screen.getByRole("button", { name: label }).closest(".output-panel__filters")).toBe(
+        toolbar,
+      );
+  },
+);

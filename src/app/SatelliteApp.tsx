@@ -1,3 +1,4 @@
+import { disconnectConnectionBatch } from "@/lib/session/connectionBatch";
 import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
 import { ConfirmDialogHost } from "@/components/ui/overlay/ConfirmDialogHost";
 import { startPresentationRequests } from "@/lib/panels/presentationRequests";
@@ -135,7 +136,7 @@ function ConnectionView(props: NativeViewProps) {
   if (!model) return null; // Never mark staged-ready until a real model is rendered.
   return (
     <NativePanelView panelId={record.panelId}>
-      <WorkbenchPanel view="connections" location="workspace" visible={!record.staged} showTitle>
+      <WorkbenchPanel view="connections" location="workspace" visible={!record.staged}>
         <ConnectionModelScope
           model={{
             ...model.connection,
@@ -143,6 +144,20 @@ function ConnectionView(props: NativeViewProps) {
               ...new Set([...model.connection.disconnectingSessionIds, ...pending]),
             ],
           }}
+          disconnectMany={(ids) =>
+            disconnectConnectionBatch(ids, async (id) => {
+              if (!record.lease || record.staged) throw new Error("panel.window.staleOwner");
+              setPending((items) => [...items, id]);
+              try {
+                await client.action(record.lease, { kind: "disconnect", sessionId: id });
+              } catch (error) {
+                toast(translateError(error), "error");
+                throw error;
+              } finally {
+                setPending((items) => items.filter((item) => item !== id));
+              }
+            })
+          }
           disconnect={async (id) => {
             if (!record.lease || record.staged) return;
             setPending((items) => [...items, id]);
@@ -176,7 +191,7 @@ function TaskView(props: NativeViewProps) {
   if (!model) return null;
   return (
     <NativePanelView panelId={record.panelId}>
-      <WorkbenchPanel view="tasks" location="workspace" visible={!record.staged} showTitle>
+      <WorkbenchPanel view="tasks" location="workspace" visible={!record.staged}>
         <TaskModelScope
           value={{
             items,
@@ -221,7 +236,7 @@ function OutputView(props: NativeViewProps) {
   };
   return (
     <NativePanelView panelId={record.panelId}>
-      <WorkbenchPanel view="output" location="workspace" visible={!record.staged} showTitle>
+      <WorkbenchPanel view="output" location="workspace" visible={!record.staged}>
         <OutputModelScope
           value={{
             ...model.output,
@@ -249,7 +264,7 @@ function KnownHostsView(props: NativeViewProps) {
   };
   return (
     <NativePanelView panelId={record.panelId}>
-      <WorkbenchPanel view="knownHosts" location="workspace" visible={!record.staged} showTitle>
+      <WorkbenchPanel view="knownHosts" location="workspace" visible={!record.staged}>
         <KnownHostsModelScope
           value={{
             ...model.knownHosts,

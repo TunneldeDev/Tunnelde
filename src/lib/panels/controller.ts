@@ -1,6 +1,8 @@
 import { usePanelWindows } from "@/store/panelWindows";
 import { windowViews } from "./windowViews";
 import { reportError } from "@/lib/diagnostics";
+
+import { canFloatPluginView } from "@/lib/plugins/presentation";
 import { preservePanelFocus } from "./focus";
 import { useNavigation, type SidebarView } from "@/store/navigation";
 import { useWorkspace } from "@/store/workspace";
@@ -12,11 +14,14 @@ export type { PanelPresentation } from "@/store/panelPresentation";
 
 export function panelLocation(view: SidebarView): PanelPresentation {
   if (useWorkspace.getState().tabs.some((tab) => tab.id === sidebarTabId(view))) return "workspace";
+  if (!canFloatPluginView(view)) return "sidebar";
   const state = panelPresentation(view).getState();
   return state.open || state.preferred === "floating" ? "floating" : "sidebar";
 }
 
 export function setPanelLocation(view: SidebarView, location: PanelPresentation) {
+  if (location === "floating" && !canFloatPluginView(view))
+    throw new Error("panel.presentationUnsupported");
   const floating = panelPresentation(view).getState();
   preservePanelFocus(view);
   if (location === "floating") {
@@ -70,7 +75,11 @@ export function revealPanel(view: SidebarView, fallback: PanelPresentation = "si
   ) {
     // Already visible. Leave the current location alone.
   } else {
-    setPanelLocation(view, panelPresentation(view).getState().preferred ?? fallback);
+    const preferred = panelPresentation(view).getState().preferred ?? fallback;
+    setPanelLocation(
+      view,
+      preferred === "floating" && !canFloatPluginView(view) ? "sidebar" : preferred,
+    );
   }
 }
 

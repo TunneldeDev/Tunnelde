@@ -11,11 +11,13 @@ export function ConnectionSession({
   history,
   ended = false,
   grouped = false,
+  selection,
 }: {
   session: SshSession;
   history?: SessionHistory;
   ended?: boolean;
   grouped?: boolean;
+  selection?: { checked: boolean; disabled: boolean; onChange: () => void };
 }) {
   const { t, i18n } = useTranslation();
   const [confirming, setConfirming] = usePanelViewState(
@@ -39,6 +41,16 @@ export function ConnectionSession({
   return (
     <li className="connection-list__item" aria-label={`${session.title} · ${session.id}`}>
       <div className="connection-list__heading">
+        {selection && !ended && (
+          <input
+            type="checkbox"
+            className="td-checkbox connection-list__select"
+            aria-label={t("connections.selectSession", { name: session.title, id: session.id })}
+            checked={selection.checked}
+            disabled={selection.disabled || pending}
+            onChange={selection.onChange}
+          />
+        )}
         <div className="connection-list__identity">
           <strong>{grouped ? purpose : session.title}</strong>
           <code>{session.address}</code>

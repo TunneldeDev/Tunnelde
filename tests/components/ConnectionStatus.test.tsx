@@ -160,3 +160,95 @@ it("toggles the same panel from its status entry without stopping sessions", () 
   expect(useSsh.getState().sessions).toHaveLength(1);
   expect(disconnect).not.toHaveBeenCalled();
 });
+
+it("combines search presets and text, selecting only visible sessions for batch closure", async () => {
+  useSsh.getState().acceptSession(session("term"));
+  useSsh.getState().acceptSession(session("forward", { terminal: false, purpose: "forwarding" }));
+  useSsh.getState().acceptSession(session("other", { address: "root@elsewhere:22" }));
+  render(<ConnectionStatus />);
+  fireEvent.click(screen.getByRole("button", { name: "3 connections" }));
+  const query = screen.getByRole("textbox", { name: "Search sessions…" });
+  fireEvent.change(query, { target: { value: "example @type:terminal @status:connected" } });
+  expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Select visible" }));
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Close selected" }));
+  expect(disconnect).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm close" }));
+  await waitFor(() => expect(disconnect).toHaveBeenCalledExactlyOnceWith("term"));
+  expect(
+    useSsh
+      .getState()
+      .sessions.map((s) => s.id)
+      .sort(),
+  ).toEqual(["forward", "other"]);
+});
+
+it("clears hidden selections when changing the query and exposes reusable filter presets", () => {
+  useSsh.getState().acceptSession(session("a"));
+  useSsh.getState().acceptSession(session("b", { purpose: "mounts", terminal: false }));
+  render(<ConnectionStatus />);
+  fireEvent.click(screen.getByRole("button", { name: "2 connections" }));
+  fireEvent.click(screen.getByRole("button", { name: "Select visible" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Search sessions…" }), {
+    target: { value: "@type:mounts" },
+  });
+  expect(
+    (screen.getByRole("button", { name: "Close selected" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Filter presets" }));
+  expect(screen.getByRole("menuitemcheckbox", { name: /Mounts/ })).toBeTruthy();
+  expect(disconnect).not.toHaveBeenCalled();
+});
+
+it("uses the satellite model for composable search and batch effects and retains its search/selection capsule", async () => {
+  const { ConnectionDetails } = await import("@/components/layout/ConnectionStatus");
+  const { ConnectionModelScope } = await import("@/lib/panels/connectionModel");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const remote = [
+    session("remote-a"),
+    session("remote-b"),
+    session("remote-mount", { purpose: "mounts" }),
+  ];
+  useSsh.setState({ sessions: [session("local-only")] });
+  const many = vi.fn().mockResolvedValue({ closed: ["remote-a"], failed: ["remote-b"] });
+  const single = vi.fn();
+  const tree = (controller: ReturnType<typeof createPanelViewState>) => (
+    <PanelViewStateScope controller={controller}>
+      <ConnectionModelScope
+        model={{
+          version: 1,
+          sessions: remote,
+          history: [],
+          hosts: [{ id: "host", name: "Remote production" }],
+          disconnectingSessionIds: [],
+        }}
+        disconnect={single}
+        disconnectMany={many}
+      >
+        <ConnectionDetails />
+      </ConnectionModelScope>
+    </PanelViewStateScope>
+  );
+  const source = createPanelViewState();
+  const view = render(tree(source));
+  const query = '@type:terminal @host:"Remote production"';
+  fireEvent.change(screen.getByRole("textbox", { name: "Search sessions…" }), {
+    target: { value: query },
+  });
+  expect(screen.queryByRole("listitem", { name: "Server · local-only" })).toBeNull();
+  expect(screen.queryByRole("listitem", { name: "Server · remote-mount" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Select visible" }));
+  const snapshot = source.capture();
+  expect(snapshot.fields["connections.query"]).toBe(query);
+  expect(snapshot.fields["connections.selection"]).toEqual(["remote-a", "remote-b"]);
+  view.unmount();
+  render(tree(createPanelViewState(snapshot)));
+  expect(screen.getByRole("textbox", { name: "Search sessions…" })).toHaveProperty("value", query);
+  fireEvent.click(screen.getByRole("button", { name: "Close selected" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm close" }));
+  await waitFor(() => expect(many).toHaveBeenCalledExactlyOnceWith(["remote-a", "remote-b"]));
+  await waitFor(() => expect(screen.getByText("1 selected")).toBeTruthy());
+  expect(disconnect).not.toHaveBeenCalled();
+  expect(single).not.toHaveBeenCalled();
+});

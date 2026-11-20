@@ -242,6 +242,8 @@
     "deleteBody": "删除分组“{{name}}”及其子分组？已保存的主机会保留并移至未分组。"
   },
   "settings": {
+    "disconnectOnPanelClose": "关闭会话面板时断开连接",
+    "disconnectOnPanelCloseHint": "默认开启。关闭使用某条连接的最后一个终端、文件、编辑器或监控面板时，断开该连接；其他面板仍在使用的连接，以及转发和挂载专用连接会保留。关闭此选项则允许会话留在后台。",
     "operation": {
       "busy": "设置操作正忙。请等待当前操作结束后重试。",
       "cancelled": "设置操作已在提交准入前取消。",
@@ -2734,6 +2736,12 @@
     "imported_other": "已导入 {{count}} 台主机"
   },
   "connections": {
+    "search": "搜索会话…",
+    "selectSession": "选择 {{name}} · {{id}}",
+    "selectVisible": "选择当前结果",
+    "clearSelection": "取消选择",
+    "closeSelected": "关闭所选会话",
+    "noMatches": "没有匹配的活动会话",
     "mounts": "文件挂载",
     "title": "连接详情",
     "sessions": "当前 {{count}} 条会话",
@@ -2763,7 +2771,11 @@
       "disconnecting": "已请求关闭",
       "disconnectFailed": "关闭失败",
       "ended": "会话已结束"
-    }
+    },
+    "selected_one": "已选择 {{count}} 条",
+    "selected_other": "已选择 {{count}} 条",
+    "batchWarning_one": "确定关闭所选 {{count}} 条会话？对应的终端、文件视图、转发与挂载将停止，未选择的会话不受影响。",
+    "batchWarning_other": "确定关闭所选 {{count}} 条会话？对应的终端、文件视图、转发与挂载将停止，未选择的会话不受影响。"
   },
   "hostTransfer": {
     "chooseFile": "选择文件…",

@@ -1,3 +1,4 @@
+import { canFloatPluginView } from "@/lib/plugins/presentation";
 import { useNavigation } from "@/store/navigation";
 import { useWorkspace } from "@/store/workspace";
 import { usePlugins } from "@/store/plugins";
@@ -35,7 +36,9 @@ export function panelSnapshot() {
       pinned: state.pinned,
       bounds: state.bounds ? { ...state.bounds } : null,
       available,
-      presentations: ["sidebar", "workspace", "floating"] as const,
+      presentations: canFloatPluginView(view)
+        ? (["sidebar", "workspace", "floating"] as const)
+        : (["sidebar", "workspace"] as const),
     };
   });
 }
