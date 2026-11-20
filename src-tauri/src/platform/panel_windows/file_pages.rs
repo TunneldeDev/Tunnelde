@@ -66,6 +66,20 @@ pub(crate) enum Operation {
         path: String,
         is_dir: bool,
     },
+    Copy {
+        source: Source,
+        from: String,
+        to: String,
+        overwrite: bool,
+    },
+    Transfer {
+        from_source: Source,
+        from_path: String,
+        to_source: Source,
+        to_path: String,
+        remove_source: bool,
+        overwrite: bool,
+    },
     Rename {
         source: Source,
         from: String,
@@ -77,23 +91,31 @@ impl Operation {
     fn mutation(&self) -> bool {
         !matches!(self, Self::List { .. } | Self::Home { .. })
     }
-    fn source(&self) -> &Source {
+    fn sources(&self) -> Vec<&Source> {
         match self {
             Self::List { source, .. }
             | Self::Home { source }
             | Self::Mkdir { source, .. }
             | Self::CreateFile { source, .. }
             | Self::Remove { source, .. }
-            | Self::Rename { source, .. } => source,
+            | Self::Rename { source, .. }
+            | Self::Copy { source, .. } => vec![source],
+            Self::Transfer {
+                from_source,
+                to_source,
+                ..
+            } => vec![from_source, to_source],
         }
     }
     fn valid(&self) -> bool {
         fn path(s: &str) -> bool {
             !s.is_empty() && s.len() <= 32768 && !s.contains('\0')
         }
-        if let Source::Remote { session_id } = self.source() {
-            if uuid::Uuid::parse_str(session_id).is_err() {
-                return false;
+        for source in self.sources() {
+            if let Source::Remote { session_id } = source {
+                if uuid::Uuid::parse_str(session_id).is_err() {
+                    return false;
+                }
             }
         }
         match self {
@@ -102,7 +124,10 @@ impl Operation {
             Self::Mkdir { path: p, .. }
             | Self::CreateFile { path: p, .. }
             | Self::Remove { path: p, .. } => path(p),
-            Self::Rename { from, to, .. } => path(from) && path(to),
+            Self::Rename { from, to, .. } | Self::Copy { from, to, .. } => path(from) && path(to),
+            Self::Transfer {
+                from_path, to_path, ..
+            } => path(from_path) && path(to_path),
         }
     }
 }

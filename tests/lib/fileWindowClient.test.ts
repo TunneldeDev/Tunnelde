@@ -75,3 +75,30 @@ it("suppresses a late read after disposal and does not issue stale unbind or cle
   await expect(client.mkdir(lease, source, "/new")).rejects.toThrow("panel.window.disposed");
   expect(invoke).toHaveBeenCalledOnce();
 });
+it("binds copy and cross-source transfer to the exact lease without downgrading sources", async () => {
+  const client = createFileWindowClient(identity);
+  const local = { kind: "local" as const };
+  invoke.mockResolvedValueOnce(null).mockResolvedValueOnce("transfer-id");
+  await client.copy(lease, source, "/source", "/copy", true);
+  expect(await client.transfer(lease, source, "/source", local, "/download", false)).toBe(
+    "transfer-id",
+  );
+  expect(invoke).toHaveBeenNthCalledWith(2, "panel_window_files", {
+    document: identity.document,
+    request: {
+      action: "execute",
+      target: { kind: "owned", lease },
+      operation: {
+        operation: "transfer",
+        fromSource: source,
+        fromPath: "/source",
+        toSource: local,
+        toPath: "/download",
+        removeSource: false,
+        overwrite: false,
+      },
+    },
+  });
+  expect(invoke).toHaveBeenCalledTimes(2);
+  client.dispose();
+});

@@ -8,11 +8,30 @@ export type FileWindowOperation =
   | { operation: "home"; source: FsSource }
   | { operation: "mkdir" | "createFile"; source: FsSource; path: string }
   | { operation: "remove"; source: FsSource; path: string; isDir: boolean }
-  | { operation: "rename"; source: FsSource; from: string; to: string; overwrite: boolean };
+  | {
+      operation: "rename" | "copy";
+      source: FsSource;
+      from: string;
+      to: string;
+      overwrite: boolean;
+    };
+type TransferOperation = {
+  operation: "transfer";
+  fromSource: FsSource;
+  fromPath: string;
+  toSource: FsSource;
+  toPath: string;
+  removeSource: boolean;
+  overwrite: boolean;
+};
 type Request =
   | { action: "bind"; panelId: string; sources: FsSource[]; allowMove: boolean }
   | { action: "unbind"; panelId: string }
-  | { action: "execute"; target: FileWindowTarget; operation: FileWindowOperation };
+  | {
+      action: "execute";
+      target: FileWindowTarget;
+      operation: FileWindowOperation | TransferOperation;
+    };
 /** Private file-page client. Native derives the actual caller, validates source
  * membership, and retains effect authority through worker settlement. No SSH
  * bootstrap, main-store hydration, plugin Bus, or global IPC fallback. */
@@ -27,8 +46,10 @@ export function createFileWindowClient(identity: NativePanelIdentity) {
     check();
     return result;
   }
-  const execute = <T>(target: FileWindowTarget, operation: FileWindowOperation) =>
-    request<T>({ action: "execute", target, operation });
+  const execute = <T>(
+    target: FileWindowTarget,
+    operation: FileWindowOperation | TransferOperation,
+  ) => request<T>({ action: "execute", target, operation });
   const owned = (lease: PanelLease): FileWindowTarget => ({ kind: "owned", lease });
   return {
     bind: (panelId: string, sources: FsSource[], allowMove: boolean) =>
@@ -46,6 +67,26 @@ export function createFileWindowClient(identity: NativePanelIdentity) {
       execute<void>(owned(lease), { operation: "remove", source, path, isDir }),
     rename: (lease: PanelLease, source: FsSource, from: string, to: string, overwrite = false) =>
       execute<void>(owned(lease), { operation: "rename", source, from, to, overwrite }),
+    copy: (lease: PanelLease, source: FsSource, from: string, to: string, overwrite = false) =>
+      execute<void>(owned(lease), { operation: "copy", source, from, to, overwrite }),
+    transfer: (
+      lease: PanelLease,
+      fromSource: FsSource,
+      fromPath: string,
+      toSource: FsSource,
+      toPath: string,
+      removeSource: boolean,
+      overwrite = false,
+    ) =>
+      execute<string>(owned(lease), {
+        operation: "transfer",
+        fromSource,
+        fromPath,
+        toSource,
+        toPath,
+        removeSource,
+        overwrite,
+      }),
     dispose() {
       disposed = true;
     },

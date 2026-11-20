@@ -100,3 +100,104 @@ fn dropped_receipt_blocks_task_reuse_even_after_shutdown_of_its_worker() {
         assert!(registry.reserve_cleanup("job").is_err());
     }
 }
+
+struct Origin {
+    allowed: Arc<AtomicBool>,
+    released: Arc<AtomicBool>,
+}
+impl crate::services::operations::Authority for Origin {
+    fn with_current(&self, effect: &mut dyn FnMut() -> AppResult<()>) -> AppResult<()> {
+        if !self.allowed.load(Ordering::Acquire) {
+            return Err(AppError::validation("retired-file-origin"));
+        }
+        effect()
+    }
+}
+impl Drop for Origin {
+    fn drop(&mut self) {
+        self.released.store(true, Ordering::Release);
+    }
+}
+
+#[tokio::test]
+async fn file_page_transfer_origin_follows_actual_worker_and_queued_mutation_clones() {
+    let registry = TransferRegistry::default();
+    let allowed = Arc::new(AtomicBool::new(true));
+    let released = Arc::new(AtomicBool::new(false));
+    let origin = crate::services::operations::WorkLifetime::authorized(Arc::new(Origin {
+        allowed: allowed.clone(),
+        released: released.clone(),
+    }));
+    registry
+        .register("native-page", Arc::new(AtomicBool::new(false)), None)
+        .unwrap();
+    registry
+        .bind_worker_origin("native-page", origin.clone())
+        .unwrap();
+    let worker = registry.observation("native-page").unwrap();
+    drop(origin); // Native reply receiver has gone; actual worker still owns it.
+    assert!(!released.load(Ordering::Acquire));
+    allowed.store(false, Ordering::Release);
+    let polled = Arc::new(AtomicBool::new(false));
+    let flag = polled.clone();
+    assert!(worker
+        .retained_checked(
+            async move {
+                flag.store(true, Ordering::Release);
+                Ok(())
+            },
+            map_sftp
+        )
+        .await
+        .is_err());
+    assert!(
+        !polled.load(Ordering::Acquire),
+        "retired origin must not poll a queued mutation"
+    );
+    let event = registry.inner.lock().unwrap().active["native-page"]
+        .event
+        .clone();
+    registry.complete(event);
+    assert!(!registry.is_active("native-page"));
+    assert!(
+        !released.load(Ordering::Acquire),
+        "a still-owned worker clone keeps its fence"
+    );
+    drop(worker);
+    assert!(released.load(Ordering::Acquire));
+}
+
+#[test]
+fn unacknowledged_native_transfer_request_does_not_release_origin_at_ui_completion() {
+    let registry = TransferRegistry::default();
+    let released = Arc::new(AtomicBool::new(false));
+    registry
+        .register("native-page", Arc::new(AtomicBool::new(false)), None)
+        .unwrap();
+    registry
+        .bind_worker_origin(
+            "native-page",
+            crate::services::operations::WorkLifetime::authorized(Arc::new(Origin {
+                allowed: Arc::new(AtomicBool::new(true)),
+                released: released.clone(),
+            })),
+        )
+        .unwrap();
+    let worker = registry.observation("native-page").unwrap();
+    let receipt = worker.begin().unwrap();
+    let event = registry.inner.lock().unwrap().active["native-page"]
+        .event
+        .clone();
+    registry.complete(event);
+    drop(worker);
+    assert!(!released.load(Ordering::Acquire));
+    assert!(registry
+        .register("native-page", Arc::new(AtomicBool::new(false)), None)
+        .is_err());
+    receipt.acknowledge();
+    registry
+        .register("native-page", Arc::new(AtomicBool::new(false)), None)
+        .unwrap();
+    assert!(released.load(Ordering::Acquire));
+    registry.release("native-page");
+}

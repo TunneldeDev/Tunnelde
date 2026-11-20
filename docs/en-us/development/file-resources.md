@@ -221,14 +221,23 @@ nothing. Native code captures the original session identity; descriptors expose
 only the panel ID and whether its provider permits outgoing moves.
 
 The private `panel_window_files` broker currently supports directory/home reads,
-mkdir, empty-file creation, removal and atomic rename. Reads require the exact
+mkdir, empty-file creation, removal, atomic rename, copy and cross-source transfers. Reads require the exact
 owned lease or live staged destination; staged destinations cannot mutate. A
 source-set change or coordinator reload retires earlier bindings. Actual workers,
 not reply receivers, retain mutation fences through settlement; bounded local
 workers and remote dispatch recheck the originating authority. Late reads and
 disposed renderer replies cannot update a replacement view.
 
-This boundary does not yet expose native file-page presentation. Copy/transfers,
-text editing, provider/action integration and end-to-end SFTP handoff remain
+Copy/transfers reuse the existing journaled worker, scheduler, conflict checks,
+recovery ownership and progress events. Both endpoints must belong to the bound
+source set. The actual worker and its original mutation observations retain the
+origin after returning a task ID or losing delivery; recheck after scheduler waits
+and before new mutation dispatch. Pending/unacknowledged effects keep the move
+fence rather than reporting a clean finish. The filesystem renderer adapter reads
+its current staged/owned target on every call, including after promotion; editor
+and OS-open effects must be supplied explicitly by their owner.
+
+This boundary does not yet expose native file-page presentation. Text editing,
+provider/action integration and end-to-end SFTP handoff remain
 separate integration work. Keep the existing main-window workflow available;
 do not advertise complete native file-page support based on resource tests.
