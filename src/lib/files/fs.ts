@@ -15,93 +15,120 @@ export function sameSource(left: FsSource, right: FsSource): boolean {
  * Every file operation goes through here so a panel never has to know whether
  * it is looking at this computer or at a server.
  */
-export const fs = {
-  list(source: FsSource, path?: string | null): Promise<Listing> {
-    return source.kind === "local"
-      ? api.localList(path ?? null)
-      : api.sftpList(source.sessionId, path ?? null);
-  },
+export type FileSystemBackend = Pick<
+  typeof api,
+  | "localList"
+  | "sftpList"
+  | "localHome"
+  | "localMkdir"
+  | "sftpMkdir"
+  | "localCreateFile"
+  | "sftpCreateFile"
+  | "localRename"
+  | "sftpRename"
+  | "localDelete"
+  | "sftpDelete"
+  | "localCopy"
+  | "sftpCopy"
+  | "fsTransfer"
+  | "localReadText"
+  | "sftpReadText"
+  | "localWriteText"
+  | "sftpWriteText"
+  | "openLocalPath"
+>;
+/** A renderer may supply a leased backend. No fallback to global IPC is allowed. */
+export function createFileSystem(api: FileSystemBackend) {
+  return {
+    list(source: FsSource, path?: string | null): Promise<Listing> {
+      return source.kind === "local"
+        ? api.localList(path ?? null)
+        : api.sftpList(source.sessionId, path ?? null);
+    },
 
-  home(source: FsSource): Promise<string> {
-    return source.kind === "local" ? api.localHome() : Promise.resolve(".");
-  },
+    home(source: FsSource): Promise<string> {
+      return source.kind === "local" ? api.localHome() : Promise.resolve(".");
+    },
 
-  mkdir(source: FsSource, path: string): Promise<void> {
-    return source.kind === "local" ? api.localMkdir(path) : api.sftpMkdir(source.sessionId, path);
-  },
+    mkdir(source: FsSource, path: string): Promise<void> {
+      return source.kind === "local" ? api.localMkdir(path) : api.sftpMkdir(source.sessionId, path);
+    },
 
-  createFile(source: FsSource, path: string): Promise<void> {
-    return source.kind === "local"
-      ? api.localCreateFile(path)
-      : api.sftpCreateFile(source.sessionId, path);
-  },
+    createFile(source: FsSource, path: string): Promise<void> {
+      return source.kind === "local"
+        ? api.localCreateFile(path)
+        : api.sftpCreateFile(source.sessionId, path);
+    },
 
-  rename(source: FsSource, from: string, to: string, overwrite = false): Promise<void> {
-    return source.kind === "local"
-      ? api.localRename(from, to, overwrite)
-      : api.sftpRename(source.sessionId, from, to, overwrite);
-  },
+    rename(source: FsSource, from: string, to: string, overwrite = false): Promise<void> {
+      return source.kind === "local"
+        ? api.localRename(from, to, overwrite)
+        : api.sftpRename(source.sessionId, from, to, overwrite);
+    },
 
-  remove(source: FsSource, path: string, isDir: boolean): Promise<void> {
-    return source.kind === "local"
-      ? api.localDelete(path, isDir)
-      : api.sftpDelete(source.sessionId, path, isDir);
-  },
+    remove(source: FsSource, path: string, isDir: boolean): Promise<void> {
+      return source.kind === "local"
+        ? api.localDelete(path, isDir)
+        : api.sftpDelete(source.sessionId, path, isDir);
+    },
 
-  copy(source: FsSource, from: string, to: string, overwrite = false): Promise<void> {
-    return source.kind === "local"
-      ? api.localCopy(from, to, overwrite)
-      : api.sftpCopy(source.sessionId, from, to, overwrite);
-  },
+    copy(source: FsSource, from: string, to: string, overwrite = false): Promise<void> {
+      return source.kind === "local"
+        ? api.localCopy(from, to, overwrite)
+        : api.sftpCopy(source.sessionId, from, to, overwrite);
+    },
 
-  transfer(
-    from: FsSource,
-    fromPath: string,
-    to: FsSource,
-    toPath: string,
-    removeSource: boolean,
-    overwrite = false,
-  ): Promise<string> {
-    const fromSession = from.kind === "local" ? null : from.sessionId;
-    const toSession = to.kind === "local" ? null : to.sessionId;
-    return api.fsTransfer(fromSession, fromPath, toSession, toPath, removeSource, overwrite);
-  },
+    transfer(
+      from: FsSource,
+      fromPath: string,
+      to: FsSource,
+      toPath: string,
+      removeSource: boolean,
+      overwrite = false,
+    ): Promise<string> {
+      const fromSession = from.kind === "local" ? null : from.sessionId;
+      const toSession = to.kind === "local" ? null : to.sessionId;
+      return api.fsTransfer(fromSession, fromPath, toSession, toPath, removeSource, overwrite);
+    },
 
-  readText(source: FsSource, path: string, encoding?: string): Promise<TextFile | null> {
-    return source.kind === "local"
-      ? api.localReadText(path, encoding)
-      : api.sftpReadText(source.sessionId, path, encoding);
-  },
+    readText(source: FsSource, path: string, encoding?: string): Promise<TextFile | null> {
+      return source.kind === "local"
+        ? api.localReadText(path, encoding)
+        : api.sftpReadText(source.sessionId, path, encoding);
+    },
 
-  writeText(
-    source: FsSource,
-    path: string,
-    content: string,
-    baseline: string,
-    encoding: string,
-    bom: boolean,
-    baselineEncoding?: string,
-    baselineBom?: boolean,
-  ): Promise<void> {
-    return source.kind === "local"
-      ? api.localWriteText(path, content, baseline, encoding, bom, baselineEncoding, baselineBom)
-      : api.sftpWriteText(
-          source.sessionId,
-          path,
-          content,
-          baseline,
-          encoding,
-          bom,
-          baselineEncoding,
-          baselineBom,
-        );
-  },
+    writeText(
+      source: FsSource,
+      path: string,
+      content: string,
+      baseline: string,
+      encoding: string,
+      bom: boolean,
+      baselineEncoding?: string,
+      baselineBom?: boolean,
+    ): Promise<void> {
+      return source.kind === "local"
+        ? api.localWriteText(path, content, baseline, encoding, bom, baselineEncoding, baselineBom)
+        : api.sftpWriteText(
+            source.sessionId,
+            path,
+            content,
+            baseline,
+            encoding,
+            bom,
+            baselineEncoding,
+            baselineBom,
+          );
+    },
 
-  /** Hands a local file or folder to the system default application. */
-  openLocal(path: string): Promise<void> {
-    return api.openLocalPath(path);
-  },
-};
+    /** Hands a local file or folder to the system default application. */
+    openLocal(path: string): Promise<void> {
+      return api.openLocalPath(path);
+    },
+  };
+}
+export type FileSystem = ReturnType<typeof createFileSystem>;
+export const fs = createFileSystem(api);
 
 /** Both local and remote text files can be edited in place. */
 export function canEdit(_source: FsSource): boolean {
