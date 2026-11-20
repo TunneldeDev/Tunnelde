@@ -49,6 +49,24 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       cleanups.add(release);
       return release;
     },
+    async onPanelFocus(focus: (lease: PanelLease) => void) {
+      check();
+      let active = true;
+      const unlisten = await listen<PanelLease>("ui://panel-window-focus", ({ payload }) => {
+        if (!disposed && active && payload?.windowId === identity.windowId) focus(payload);
+      });
+      if (disposed) {
+        unlisten();
+        return () => {};
+      }
+      const release = () => {
+        if (!cleanups.delete(release)) return;
+        active = false;
+        unlisten();
+      };
+      cleanups.add(release);
+      return release;
+    },
     async onClose(close: () => void) {
       check();
       const unlisten = await listen("ui://panel-window-close", () => {

@@ -541,12 +541,13 @@ pub(crate) fn panel_window_focus(
     ownership
         .authorize(window.label(), &document)
         .map_err(invalid)?;
-    let target = ownership
+    let lease = ownership
         .leases()
         .into_iter()
         .find(|lease| lease.panel_id == panel_id)
-        .ok_or_else(|| invalid("panel not found"))?
-        .window_id;
+        .ok_or_else(|| invalid("panel not found"))?;
+    let target = lease.window_id.clone();
+    let target_document = ownership.document(&target).map(str::to_owned);
     if !ownership
         .windows()
         .iter()
@@ -565,6 +566,19 @@ pub(crate) fn panel_window_focus(
         target.unminimize()?;
         target.set_focus()?;
         super::super::window::apply_background_dock_preference(app);
+    }
+    // Window focus alone leaves an inactive tab (or hidden presentation) hidden.
+    // Reveal only the exact lease/document sampled by this native request; a
+    // delayed focus notification must not act on a new incarnation after reload.
+    let current = {
+        let ownership = lock(&registry);
+        ownership.document(&target) == target_document.as_deref()
+            && ownership.leases().iter().any(|current| current == &lease)
+    };
+    if current {
+        if let Some(target) = app.get_webview_window(&target) {
+            let _ = target.emit("ui://panel-window-focus", &lease);
+        }
     }
     Ok(())
 }

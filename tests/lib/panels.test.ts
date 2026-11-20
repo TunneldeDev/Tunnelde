@@ -136,3 +136,44 @@ it("focuses a detached owner from status/navigation without opening duplicate lo
     usePanelWindows.setState({ windowId, available, snapshot });
   }
 });
+
+it("keeps the main source adapter from reading or mutating a remotely owned panel", async () => {
+  const { createMainPanelPresentation } = await import("@/lib/panels/mainPresentation");
+  const { usePanelWindows } = await import("@/store/panelWindows");
+  const previous = usePanelWindows.getState();
+  try {
+    usePanelWindows.setState({
+      windowId: "main",
+      available: true,
+      snapshot: {
+        windows: [],
+        transfers: [],
+        panels: [
+          { panelId: "tasks", windowId: "main", generation: 3 },
+          { panelId: "connections", windowId: "satellite", generation: 4 },
+        ],
+      },
+    });
+    const host = createMainPanelPresentation();
+    expect(host.read().map((p) => p.id)).toEqual(["tasks"]);
+    const navigation = useNavigation.getState(),
+      workspace = useWorkspace.getState();
+    expect(() => host.set("connections", "floating")).toThrow("staleOwner");
+    expect(() => host.close("connections")).toThrow("staleOwner");
+    expect(() => host.reveal("connections")).toThrow("staleOwner");
+    expect(useNavigation.getState()).toBe(navigation);
+    expect(useWorkspace.getState()).toBe(workspace);
+    expect(host.set("tasks", "floating")).toMatchObject({
+      id: "tasks",
+      visible: true,
+      presentation: "floating",
+    });
+    host.close("tasks");
+    expect(host.read()[0]?.visible).toBe(false);
+    host.reveal("tasks");
+    expect(host.read()[0]?.visible).toBe(true);
+    expect(() => host.set("tasks", "invalid" as never)).toThrow("unsupportedPresentation");
+  } finally {
+    usePanelWindows.setState(previous);
+  }
+});

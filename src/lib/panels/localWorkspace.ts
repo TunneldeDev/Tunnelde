@@ -9,6 +9,8 @@ export interface LocalPanelGroup {
 export interface LocalPanelLayout {
   groups: LocalPanelGroup[];
   floating: string[];
+  /** Hidden views retain their original slot and their mounted portal owner. */
+  hidden: string[];
   layout: PanelLayoutNode | null;
 }
 function prune(node: PanelLayoutNode | null, groups: Set<string>): PanelLayoutNode | null {
@@ -37,6 +39,7 @@ function clean(state: LocalPanelLayout, valid: Set<string>): LocalPanelLayout {
     groups,
     layout: prune(state.layout, new Set(groups.map((g) => g.id))),
     floating: state.floating.filter((id) => valid.has(id)),
+    hidden: state.hidden.filter((id) => valid.has(id)),
   };
 }
 
@@ -45,7 +48,12 @@ function clean(state: LocalPanelLayout, valid: Set<string>): LocalPanelLayout {
 export function createLocalPanelWorkspace() {
   let serial = 0;
   const id = () => `panel-group-${++serial}`;
-  const store = createStore<LocalPanelLayout>(() => ({ groups: [], floating: [], layout: null }));
+  const store = createStore<LocalPanelLayout>(() => ({
+    groups: [],
+    floating: [],
+    hidden: [],
+    layout: null,
+  }));
   const known = () =>
     new Set([...store.getState().groups.flatMap((g) => g.panels), ...store.getState().floating]);
   const without = (panel: string) => {
@@ -108,8 +116,8 @@ export function createLocalPanelWorkspace() {
       // Avoid rerendering read-model progress frames when membership is unchanged.
       const previous = store.getState();
       if (
-        JSON.stringify([state.groups, state.floating, state.layout]) !==
-        JSON.stringify([previous.groups, previous.floating, previous.layout])
+        JSON.stringify([state.groups, state.floating, state.hidden, state.layout]) !==
+        JSON.stringify([previous.groups, previous.floating, previous.hidden, previous.layout])
       )
         store.setState(state);
     },
@@ -155,12 +163,23 @@ export function createLocalPanelWorkspace() {
       const state = without(panel);
       store.setState({ ...state, floating: [...state.floating, panel] });
     },
+    hide(panel: string) {
+      if (!known().has(panel)) return;
+      const state = store.getState();
+      if (!state.hidden.includes(panel)) store.setState({ hidden: [...state.hidden, panel] });
+    },
     activate(panel: string) {
       const state = store.getState();
+      if (!known().has(panel)) return;
+      const hidden = state.hidden.filter((id) => id !== panel);
       if (state.floating.includes(panel))
-        store.setState({ floating: [...state.floating.filter((id) => id !== panel), panel] });
+        store.setState({
+          hidden,
+          floating: [...state.floating.filter((id) => id !== panel), panel],
+        });
       else
         store.setState({
+          hidden,
           groups: state.groups.map((g) => (g.panels.includes(panel) ? { ...g, active: panel } : g)),
         });
     },
@@ -182,3 +201,21 @@ export function createLocalPanelWorkspace() {
   };
 }
 export type LocalPanelWorkspace = ReturnType<typeof createLocalPanelWorkspace>;
+
+/** Render-only projection. Keep hidden slots/split ratios in the source layout
+ * so revealing a view restores its exact group without remounting its owner. */
+export function visibleLocalPanelLayout(state: LocalPanelLayout): LocalPanelLayout {
+  const hidden = new Set(state.hidden);
+  const groups = state.groups.flatMap((group) => {
+    const panels = group.panels.filter((id) => !hidden.has(id));
+    return panels.length
+      ? [{ ...group, panels, active: panels.includes(group.active) ? group.active : panels[0]! }]
+      : [];
+  });
+  return {
+    groups,
+    floating: state.floating.filter((id) => !hidden.has(id)),
+    hidden: [],
+    layout: prune(state.layout, new Set(groups.map((group) => group.id))),
+  };
+}

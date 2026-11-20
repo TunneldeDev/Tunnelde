@@ -139,3 +139,45 @@ it("drags tabs to split edges, merges in the center and discards cancelled hover
   expect(mounts).toBe(2);
   expect(unmounts).toBe(0);
 });
+
+it("retains hidden portal trees, drafts and split slots through the source presentation adapter", async () => {
+  const { act } = await import("@testing-library/react");
+  const { sourcePanelPresentation } = await import("@/lib/panels/sourcePresentation");
+  const view = render(<PanelWorkspace windowId="native-source" entries={entries} />);
+  const host = sourcePanelPresentation()!;
+  const input = screen.getByRole("textbox", { name: "connections" });
+  fireEvent.change(input, { target: { value: "retained hidden draft" } });
+  await act(() => workspace.split("connections", "row"));
+  const layout = workspace.store.getState().layout;
+  expect(document.querySelectorAll('[role="separator"]')).toHaveLength(1);
+  await act(() => host.close("connections"));
+  expect(screen.queryByRole("textbox", { name: "connections" })).toBeNull();
+  expect(document.querySelectorAll('[role="separator"]')).toHaveLength(0);
+  expect(host.read().find((p) => p.id === "connections")).toMatchObject({
+    visible: false,
+    presentation: "workspace",
+    available: true,
+    windowId: "native-source",
+  });
+  expect(unmounts).toBe(0);
+  await act(() => host.reveal("connections"));
+  expect(screen.getByRole("textbox", { name: "connections" })).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("retained hidden draft");
+  expect(workspace.store.getState().layout).toBe(layout);
+  await act(() => {
+    host.set("connections", "floating");
+    host.close("connections");
+    host.close("tasks");
+  });
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(unmounts).toBe(0);
+  await act(() => host.reveal("connections"));
+  expect(screen.getByRole("textbox", { name: "connections" })).toBe(input);
+  expect(host.read().find((p) => p.id === "connections")).toMatchObject({
+    visible: true,
+    presentation: "floating",
+  });
+  view.unmount();
+  expect(unmounts).toBe(2);
+  expect(sourcePanelPresentation()).toBeNull();
+});

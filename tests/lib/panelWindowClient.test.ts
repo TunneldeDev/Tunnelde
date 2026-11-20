@@ -224,3 +224,41 @@ it("retains late move claims for cleanup, but never starts more work after local
   });
   await expect(client.claimPanelMoves()).rejects.toThrow("disposed");
 });
+
+it("delivers target-window focus metadata only and disposes late focus listeners", async () => {
+  let receive!: (event: { payload: unknown }) => void;
+  const unlisten = vi.fn(),
+    focused = vi.fn();
+  native.listen.mockImplementation((_name, callback) => {
+    receive = callback;
+    return Promise.resolve(unlisten);
+  });
+  const client = createPanelWindowClient(identity);
+  const release = await client.onPanelFocus(focused);
+  const lease = { panelId: "tasks", windowId: identity.windowId, generation: 7 };
+  receive({ payload: { ...lease, windowId: "other" } });
+  expect(focused).not.toHaveBeenCalled();
+  receive({ payload: lease });
+  expect(focused).toHaveBeenCalledExactlyOnceWith(lease);
+  release();
+  client.dispose();
+  receive({ payload: lease });
+  expect(focused).toHaveBeenCalledOnce();
+  expect(unlisten).toHaveBeenCalledOnce();
+  const late = createPanelWindowClient(identity);
+  let settle!: (stop: () => void) => void;
+  native.listen.mockImplementationOnce((_name, callback) => {
+    receive = callback;
+    return new Promise((resolve) => {
+      settle = resolve;
+    });
+  });
+  const pending = late.onPanelFocus(focused);
+  late.dispose();
+  settle(unlisten);
+  await pending;
+  receive({ payload: lease });
+  expect(focused).toHaveBeenCalledOnce();
+  expect(unlisten).toHaveBeenCalledTimes(2);
+  expect(native.invoke).not.toHaveBeenCalled();
+});

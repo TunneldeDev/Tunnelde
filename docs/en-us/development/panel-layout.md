@@ -371,3 +371,25 @@ current native snapshot, not report a false failure for expected cancellation.
 The caller owns request error presentation; satellites do not show unsolicited
 error toasts for a plugin's cancelled operation. Transferability remains explicit
 adapter opt-in; this API does not grant unsupported providers native parity.
+
+### Source-document presentation adapters
+
+Install one private presentation adapter per document. The coordinator adapter
+must reject mutations for panels owned by another window; the satellite adapter
+uses only its local workspace and floating slots, never main feature stores or
+resource bootstrap. Expose closed layout metadata and synchronous set/hide/reveal
+operations to the eventual native source router, not arbitrary store access.
+Satellite supported presentations are workspace/floating; never silently map an
+unsupported sidebar request to another presentation.
+
+A hidden local view retains its original slot, split geometry and portal owner.
+Render a pruned visible layout, not a destructive rewrite of the source layout;
+revealing must restore the same DOM/draft and group. Removing native membership
+still releases the slot and its observers. This private adapter is groundwork,
+not a claim that legacy public panel APIs already route to satellites.
+
+Native focus must reveal the requested panel, not merely raise its window with
+an unrelated active tab. Notify only the native-sampled owner lease after focus;
+recheck document/generation, and let the source reveal only its exact current,
+non-staged lease. Focus never starts resources, restores plugin activation, or
+grants a satellite additional application IPC authority.

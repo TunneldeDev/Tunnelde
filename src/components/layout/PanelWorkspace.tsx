@@ -12,7 +12,13 @@ import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PanelLayout } from "@/components/ui/layout/PanelLayout";
 import { Menu } from "@/components/ui/overlay/Menu";
-import { createLocalPanelWorkspace, type LocalPanelWorkspace } from "@/lib/panels/localWorkspace";
+import {
+  createLocalPanelWorkspace,
+  visibleLocalPanelLayout,
+  type LocalPanelWorkspace,
+} from "@/lib/panels/localWorkspace";
+import { createLocalPanelPresentation } from "@/lib/panels/localPresentation";
+import { installSourcePanelPresentation } from "@/lib/panels/sourcePresentation";
 import { LocalPanelScopeProvider } from "@/lib/panels/localWorkspaceScope";
 import { localPanelMoveActions } from "@/lib/panels/localWorkspaceActions";
 import { nativePanelMoveActions, movePanelToWindow } from "@/lib/panels/windowMoves";
@@ -78,7 +84,8 @@ function Group({
   slots: ReadonlyMap<string, Slot>;
 }) {
   const { t } = useTranslation();
-  const group = useStore(workspace.store, (state) => state.groups.find((group) => group.id === id));
+  const source = useStore(workspace.store);
+  const group = visibleLocalPanelLayout(source).groups.find((group) => group.id === id);
   const strip = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const [hint, setHint] = useState<PanelDropZone | "merge" | null>(null);
@@ -268,27 +275,44 @@ function Group({
 /** Shared document-local panel workspace: tabs, split geometry and floating
  * presentations compose existing primitives. Each portal owner stays mounted
  * while its DOM slot moves, preserving drafts, selection and resource lifetimes. */
-export function PanelWorkspace({ entries }: { entries: readonly PanelWorkspaceEntry[] }) {
+export function PanelWorkspace({
+  entries,
+  windowId,
+}: {
+  entries: readonly PanelWorkspaceEntry[];
+  /** Native source adapter is optional for independently composed workspaces. */
+  windowId?: string;
+}) {
   const { t } = useTranslation();
   const [workspace] = useState(createLocalPanelWorkspace);
   const state = useStore(workspace.store);
+  const shown = visibleLocalPanelLayout(state);
   const [slots] = useState(() => new Map<string, Slot>());
   const ids = useMemo(() => entries.map((entry) => entry.id), [entries]);
   useLayoutEffect(() => {
     for (const id of ids) if (!slots.has(id)) slots.set(id, createSlot(id));
-    workspace.reconcile(ids);
     for (const [id, slot] of slots)
       if (!ids.includes(id as SidebarView)) {
         slot.element.remove();
         slots.delete(id);
       }
+    workspace.reconcile(ids);
   }, [ids, workspace, slots]);
+  useLayoutEffect(() => {
+    if (!windowId) return;
+    const host = createLocalPanelPresentation(
+      windowId,
+      workspace,
+      () => new Map([...slots].map(([id, slot]) => [id, slot.floating])),
+    );
+    return installSourcePanelPresentation(host);
+  }, [windowId, workspace, slots]);
   return (
     <div className="panel-workspace">
       <div className="panel-workspace__docked">
-        {state.layout ? (
+        {shown.layout ? (
           <PanelLayout
-            layout={state.layout}
+            layout={shown.layout}
             renderPane={(id) => <Group id={id} workspace={workspace} slots={slots} />}
             onResize={(id, ratio) => workspace.resize({ [id]: ratio })}
             onResizeMany={workspace.resize}
@@ -297,7 +321,7 @@ export function PanelWorkspace({ entries }: { entries: readonly PanelWorkspaceEn
         ) : null}
       </div>
       <div className="workbench-floating-layer">
-        {state.floating.map((id, index) => {
+        {shown.floating.map((id, index) => {
           const slot = slots.get(id);
           return slot ? (
             <div
@@ -324,7 +348,9 @@ export function PanelWorkspace({ entries }: { entries: readonly PanelWorkspaceEn
               panelId: entry.id,
               floating: slot.floating,
               location: floating ? "floating" : "workspace",
-              visible: floating || group?.active === entry.id,
+              visible:
+                !state.hidden.includes(entry.id) &&
+                (floating || shown.groups.some((group) => group.active === entry.id)),
             }}
           >
             {entry.content}

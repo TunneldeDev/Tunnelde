@@ -1,12 +1,12 @@
 import type { TFunction } from "i18next";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
-import type { LocalPanelWorkspace } from "./localWorkspace";
+import { visibleLocalPanelLayout, type LocalPanelWorkspace } from "./localWorkspace";
 export function localPanelMoveActions(
   workspace: LocalPanelWorkspace,
   panel: string,
   t: TFunction,
 ): MenuAction[] {
-  const state = workspace.store.getState();
+  const state = visibleLocalPanelLayout(workspace.store.getState());
   const floating = state.floating.includes(panel);
   const count = state.groups.reduce((count, group) => count + group.panels.length, 0);
   return [

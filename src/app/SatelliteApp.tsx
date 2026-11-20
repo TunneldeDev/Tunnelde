@@ -22,6 +22,7 @@ import {
   useWindowViews,
   type WindowViewRecord,
 } from "@/lib/panels/windowViews";
+import { startSourcePanelFocus } from "@/lib/panels/sourcePresentation";
 import { startPanelMoveRequests } from "@/lib/panels/windowMoveRequests";
 import { startSatelliteViews } from "@/lib/panels/windowSatellite";
 import { usePanelWindows } from "@/store/panelWindows";
@@ -323,11 +324,15 @@ export function SatelliteApp() {
         const stopMoves = startPanelMoveRequests(current, (error) =>
           reportError("panels.windows", "pluginMove", error),
         );
+        const stopFocus = startSourcePanelFocus(current, (error) =>
+          reportError("panels.windows", "focus", error),
+        );
         const stopDrag = installPanelWindowDrag(current, (error) =>
           toast(translateError(error), "error"),
         );
         cleanup = () => {
           stopMoves();
+          stopFocus();
           stopDrag();
           session.dispose();
           uninstall();
@@ -371,6 +376,7 @@ export function SatelliteApp() {
         </div>
       ) : (
         <PanelWorkspace
+          windowId={client.windowId}
           entries={[...entries.values()].map((record) => ({
             id: record.panelId as SidebarView,
             key: record.key,
