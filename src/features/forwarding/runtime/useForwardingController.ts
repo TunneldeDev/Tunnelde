@@ -1,3 +1,6 @@
+import { useForwardingCaptureGuard } from "./useForwardingCaptureGuard";
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { forwardDraft, type ForwardDraft } from "../model/viewState";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -54,7 +57,11 @@ export function useForwardingController(host: Host) {
   const load = forwardingStore.refresh;
   const isActive = (rule: ForwardInfo) =>
     rule.active && sessions.some((item) => item.id === rule.sessionId);
-  const [form, setForm] = useState<(ForwardRule & { revision?: string }) | null>(null);
+  const [form, setForm] = usePanelViewState<ForwardDraft | null>(
+    "rule-editor",
+    null,
+    (value): value is ForwardDraft | null => forwardDraft(value, host.id),
+  );
   const [draftAuthority, setDraftAuthority] = useState<ForwardingAuthority>();
   const currentForm = useRef(form);
   useLayoutEffect(() => {
@@ -66,6 +73,14 @@ export function useForwardingController(host: Host) {
   const mutation = useRef(false);
   const live = useRef(true);
   const confirm = useDialogs((state) => state.confirm);
+  useForwardingCaptureGuard(
+    "controller-admission",
+    () =>
+      mutation.current ||
+      !!connectingRules ||
+      (!!form && !!draftAuthority) ||
+      useDialogs.getState().dialog.kind === "confirm",
+  );
   const failure =
     operationFailure ??
     (groupError ? { target: "list", message: groupError } : null) ??
@@ -208,7 +223,8 @@ export function useForwardingController(host: Host) {
     setDraftAuthority(authority);
     const native = rules.find((entry) => entry.id === rule.id && entry.revision === rule.revision);
     setForm({
-      ...rule,
+      ...forwardingSavePayload(rule),
+      revision: rule.revision,
       groupId: native?.groupId ?? null,
       ...(native?.automation ? { automation: native.automation } : {}),
     });

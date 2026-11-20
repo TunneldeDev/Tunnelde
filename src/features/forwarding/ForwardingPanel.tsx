@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect } from "react";
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { forwardingSelection } from "./model/viewState";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Network, Plus, Server } from "lucide-react";
 import { ForwardingSection } from "./ForwardingSection";
@@ -20,12 +22,18 @@ export function ForwardingPanel() {
   const openHost = useDialogs((state) => state.openHost);
   const sessions = useSsh((state) => state.sessions);
   const target = useNavigation((state) => state.forwardingTarget);
-  const [selection, setSelection] = useState<{
+  const [selection, setSelection] = usePanelViewState<{
     hostId: string | null;
     targetRevision: number;
-  }>({ hostId: null, targetRevision: 0 });
+  }>("forwarding-selection", { hostId: null, targetRevision: 0 }, forwardingSelection);
   const selected =
     target && target.revision !== selection.targetRevision ? target.hostId : selection.hostId;
+  useEffect(() => {
+    // Consume external navigation into the explicit draft too. A destination
+    // must not need the originating document's navigation store to reopen it.
+    if (target && target.revision !== selection.targetRevision)
+      setSelection({ hostId: target.hostId, targetRevision: target.revision });
+  }, [target, selection.targetRevision, setSelection]);
   const snapshot = useForwardingSnapshot();
   const rules = snapshot.entries ?? [];
   const error = snapshot.error ? translateError(snapshot.error) : "";

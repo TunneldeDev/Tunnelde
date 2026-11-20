@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { PanelViewStateGroup, usePanelViewState } from "@/lib/panels/viewState";
+import { groupEditor as validGroupEditor, type ForwardGroupEditor } from "./model/viewState";
 import { ForwardGroupDialog } from "./components/ForwardGroupDialog";
-import type { ForwardGroup } from "./model/contract";
 import { HelpHint } from "@/components/ui/form/HelpHint";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -29,12 +29,20 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
         </Button>
       </section>
     );
-  return <SavedForwardingSection key={props.host.id} {...props} />;
+  return (
+    <PanelViewStateGroup key={props.host.id} name="forwarding-host">
+      <SavedForwardingSection {...props} />
+    </PanelViewStateGroup>
+  );
 }
 function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
   const { t } = useTranslation();
   const controller = useForwardingController(host);
-  const [groupEditor, setGroupEditor] = useState<{ group?: ForwardGroup } | null>(null);
+  const [groupEditor, setGroupEditor] = usePanelViewState<ForwardGroupEditor>(
+    "group-editor",
+    null,
+    (value): value is ForwardGroupEditor => validGroupEditor(value, host.id),
+  );
   const { rules, loading, session, canStart, form, busy, failure, connectingRules } = controller;
   return (
     <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
@@ -61,7 +69,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
               size="sm"
               leading={<Plus size={14} />}
               disabled={busy || loading}
-              onClick={() => setGroupEditor({})}
+              onClick={() => setGroupEditor({ hostId: host.id })}
             >
               {t("forward.addGroup")}
             </Button>
@@ -110,6 +118,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
         )}
       {form ? (
         <ForwardRuleEditor
+          key={`${host.id}:${form.id}:${form.revision ?? "new"}`}
           rule={form}
           groups={controller.groups}
           hostName={host.name}
@@ -128,7 +137,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           <ForwardGroups
             controller={controller}
             hostId={host.id}
-            onEditGroup={(group) => setGroupEditor({ group })}
+            onEditGroup={(group) => setGroupEditor({ hostId: host.id, group })}
           />
         )}
       </ForwardingSurface>

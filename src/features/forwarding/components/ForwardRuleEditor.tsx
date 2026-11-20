@@ -1,5 +1,7 @@
 import { ArrowRight, Laptop, Server } from "lucide-react";
-import { useId, useState } from "react";
+import { useId } from "react";
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { editorDraft, type ForwardEditorDraft } from "../model/viewState";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
@@ -29,11 +31,15 @@ export function ForwardRuleEditor({
 }) {
   const { t } = useTranslation();
   const id = useId();
-  const [form, setForm] = useState({
-    ...rule,
-    bindPort: String(rule.bindPort),
-    targetPort: String(rule.targetPort),
-  });
+  const [form, setForm] = usePanelViewState<ForwardEditorDraft>(
+    "rule-fields",
+    () => ({
+      ...rule,
+      bindPort: String(rule.bindPort),
+      targetPort: String(rule.targetPort),
+    }),
+    (value): value is ForwardEditorDraft => editorDraft(value, rule),
+  );
   const local = form.mode === "local";
   const prefix = `forward.${form.mode}` as const;
   return (

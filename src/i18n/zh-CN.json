@@ -2842,6 +2842,7 @@
     "exportChanged": "导出期间主机配置发生变化，请重新导出。"
   },
   "panels": {
+    "finishInteractionBeforeMoving": "请先完成当前操作或确认，再移动此面板。",
     "stateLossTitle": "在另一窗口重新打开此视图？",
     "stateLossBody": "{{views}} 不支持保留视图状态。迁移或返回窗口时会重新打开视图，丢弃未保存的输入、选区及其他临时状态。已保存的数据和宿主管理的连接不会因此关闭。取消可保留当前视图。",
     "stateLossConfirm": "丢弃视图状态并重新打开",

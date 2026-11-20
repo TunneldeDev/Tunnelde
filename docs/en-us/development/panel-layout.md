@@ -591,3 +591,20 @@ The connection manager uses shared `SearchToolbar`/`SearchField` parsing for tex
 changing the query clears it. Batch confirmation binds a fixed set of IDs and
 cleanup runs with bounded concurrency, retaining failures for retry. History is
 searchable but never selectable for disconnection.
+
+### Forwarding view-state adapter
+
+Forwarding host selection, rule editor identity, partial input strings and group
+editor/name drafts use the common ephemeral panel capsule. External navigation
+is consumed into that selection so another document does not need to hydrate the
+main navigation store. Drafts bind host/rule/revision; empty port inputs stay
+strings until explicit save. New group drafts carry a host identity even before
+an ID exists. Cancelling closes and unregisters the draft; capture does not save,
+connect, restart or persist preferences.
+
+Provider continuation authority is document-local and must never be serialized or
+silently replaced with unrestricted built-in authority. Capturing a provider-owned
+editor, pending connection/confirmation, or in-flight rule/group mutation is
+rejected. This capture-time guard is not a native effect fence or proof of a
+complete forwarding native-window adapter: native resource admission, origin UI,
+shared data/action transports and provider handles still require their own gates.

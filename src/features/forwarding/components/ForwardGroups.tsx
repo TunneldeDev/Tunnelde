@@ -1,3 +1,4 @@
+import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { translateError } from "@/lib/api/errors";
@@ -20,6 +21,7 @@ export function ForwardGroups({
 }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
+  useForwardingCaptureGuard("groups-admission", () => busy);
   const [error, setError] = useState<string | null>(null);
   const run = async (operation: () => Promise<unknown>) => {
     if (busy) return;
