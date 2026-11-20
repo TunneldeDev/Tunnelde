@@ -112,10 +112,10 @@ fn admission_is_exact_owner_ready_destination_and_interaction_fenced() {
         .state
         .submit_move(owner(), "tasks", "pending", None, f.now)
         .is_err());
-    f.state.add_panel("main", &f.main, "plugins").unwrap();
+    f.state.add_panel("main", &f.main, "settings").unwrap();
     assert!(f
         .state
-        .submit_move(owner(), "plugins", "target", None, f.now)
+        .submit_move(owner(), "settings", "target", None, f.now)
         .is_err());
     let consent = f
         .state

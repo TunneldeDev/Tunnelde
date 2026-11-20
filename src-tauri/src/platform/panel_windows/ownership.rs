@@ -10,7 +10,14 @@ use std::{
 pub(super) fn transferable(id: &str) -> bool {
     matches!(
         id,
-        "hosts" | "connections" | "tasks" | "output" | "knownHosts" | "forwarding" | "filePreview"
+        "plugins"
+            | "hosts"
+            | "connections"
+            | "tasks"
+            | "output"
+            | "knownHosts"
+            | "forwarding"
+            | "filePreview"
     )
 }
 

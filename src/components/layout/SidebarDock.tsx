@@ -273,7 +273,7 @@ export function SidebarContents() {
           ) : view === "output" ? (
             <OutputPanel active={active} docked={!!owner} />
           ) : view === "plugins" ? (
-            <PluginsSidebar />
+            <PluginsSidebar dialogs={false} />
           ) : parsePluginSidebar(view) ? (
             <PluginSidebarPanel view={view as PluginSidebarView} visible={active} />
           ) : (

@@ -148,7 +148,7 @@ it("recognizes local-workspace opaque tokens without exposing panel IDs as trans
 });
 it("does not opt an unsupported panel into native movement", () => {
   const f = fixture();
-  f.transfer.setData(SIDEBAR_MIME, "plugins");
+  f.transfer.setData(SIDEBAR_MIME, "settings");
   f.start();
   f.finish();
   expect(f.control).not.toHaveBeenCalled();
