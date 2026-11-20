@@ -9,6 +9,19 @@ use serde::Deserialize;
     deny_unknown_fields
 )]
 pub(crate) enum Request {
+    PrepareStart {
+        id: String,
+        revision: String,
+        interaction: String,
+    },
+    Start {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        #[serde(default)]
+        credentials: super::connection::Credentials,
+    },
     Save {
         rule: ForwardRule,
         revision: Option<String>,
@@ -53,13 +66,35 @@ impl Request {
             {
                 interaction.as_deref()
             }
-            Self::Remove { interaction, .. } => Some(interaction),
+            Self::Remove { interaction, .. }
+            | Self::Start { interaction, .. }
+            | Self::PrepareStart { interaction, .. } => Some(interaction),
             _ => None,
         }
     }
     pub(super) fn validate(&self) -> Result<(), &'static str> {
         let optional = |value: &Option<String>, max| value.as_ref().is_none_or(|v| bounded(v, max));
         let valid = match self {
+            Self::PrepareStart {
+                id,
+                revision,
+                interaction,
+            } => bounded(id, 128) && bounded(revision, 256) && bounded(interaction, 128),
+            Self::Start {
+                id,
+                revision,
+                interaction,
+                review,
+                credentials,
+            } => {
+                bounded(id, 128)
+                    && bounded(revision, 256)
+                    && bounded(interaction, 128)
+                    && bounded(&review.host_id, 128)
+                    && review.identity().len() == 64
+                    && review.identity().bytes().all(|b| b.is_ascii_hexdigit())
+                    && credentials.valid()
+            }
             Self::Save {
                 rule,
                 revision,

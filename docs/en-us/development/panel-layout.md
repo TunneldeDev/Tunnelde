@@ -678,14 +678,16 @@ are domain correctness guarantees, not native-window action/origin admission.
 
 The private `panel_window_forwarding` grammar currently accepts rule saves,
 exact-snapshot stops/removals, group saves and empty-group removal. It accepts neither a
-provider origin nor credentials, SSH IDs, arbitrary command names or caller
-window labels. Save binds revision/group/automation explicitly; non-loopback
+provider origin, SSH IDs, arbitrary command names nor caller window labels.
+Reviewed start credentials use a separate closed, bounded, request-local payload;
+never publish them in read models, layout capsules, logs or events. Save binds revision/group/automation explicitly; non-loopback
 exposure requires a current interaction from that same document and panel lease.
 
 Admission checks the native IPC label, document, exact lease and live panel;
 a worker rechecks them while holding ownership over the synchronous domain
 transaction (ownership → automation for stop/removal → forwarding registry → database).
-Only one direct operation per panel is admitted. The actual-effect guard lives
+Only one direct operation per panel is admitted; replies await the guard's actual
+settlement, including descendant cleanup of the last pooled transport. The actual-effect guard lives
 inside the native worker, not the JS response; stop/removal retains it through already
 spawned listener/connection cleanup. Reload or lost consent before the final gate
 rejects; cancellation after commit is not rollback. Removal cannot erase a direct
@@ -705,3 +707,29 @@ forwarding adapter: connection/prompt and provider handles, deletion-confirmatio
 clipboard/host dialogs and the satellite renderer still require integration and
 acceptance. Forwarding transfer discovery remains disabled. Never add per-method
 raw-command fallbacks to make an incomplete remote service look complete.
+
+### Reviewed builtin forwarding starts (private gateway)
+
+`prepareStart` returns only prompt-safe host/jump metadata and a native route
+review, never a full host/key path/proxy/credential record. `start` binds that
+review, rule revision and the original live owning-panel interaction. It forces
+background forwarding purpose and host-owned group pooling; arbitrary SSH input,
+foreign jump credentials, caller window labels and provider authority are not
+accepted. This transport is not yet a complete connection-prompt adapter: probe,
+trust, saved-credential management, connection testing and actual prompt/renderer
+integration remain mandatory before forwarding transfer discovery is admitted.
+
+A private `WorkLifetime` may carry a synchronous native publication authority.
+Bounded descendants inherit the effect and check before worker admission and
+network/authentication steps. Route/keychain observation stays outside ownership
+locks; final unpublished-session insertion and listener admission recheck the
+exact original window/document/lease/interaction under short ownership guards.
+An opaque observed-start proof remains paired with its pending listener, so slow
+OS inspection never happens while ownership/automation/registry locks are held.
+
+Pending routes/listeners and unreceived deliveries retain their effect across
+caller retirement and descendant cleanup. Cleanup scopes keep the fence without
+requiring fresh consent to dispose the original resources. Remote-forward
+cancellation retains it through the SSH peer acknowledgement, not just enqueue.
+Admitted listeners release the temporary start effect while keeping their group
+transport, so a running rule does not permanently block panel movement.

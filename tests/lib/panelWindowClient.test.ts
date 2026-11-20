@@ -435,3 +435,35 @@ it("captures exact deletion target and original confirmation before native deliv
   });
   client.dispose();
 });
+
+it("keeps reviewed start credentials in the exact direct request without replaying raw SSH", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 3 };
+  const request = {
+    operation: "start" as const,
+    id: "rule",
+    revision: "rule-revision",
+    interaction: "original-consent",
+    review: { hostId: "host", revision: "a".repeat(64) },
+    credentials: { password: "request-only", jumps: { jump: { passphrase: "hop-only" } } },
+  };
+  native.invoke.mockRejectedValueOnce(new Error("origin expired"));
+  const result = client.forwardingMutation(lease, request);
+  request.review.hostId = "replacement";
+  request.credentials.password = "replacement-password";
+  request.credentials.jumps.jump.passphrase = "replacement-hop";
+  await expect(result).rejects.toThrow("origin expired");
+  expect(native.invoke).toHaveBeenCalledExactlyOnceWith("panel_window_forwarding", {
+    document: identity.document,
+    lease,
+    request: {
+      operation: "start",
+      id: "rule",
+      revision: "rule-revision",
+      interaction: "original-consent",
+      review: { hostId: "host", revision: "a".repeat(64) },
+      credentials: { password: "request-only", jumps: { jump: { passphrase: "hop-only" } } },
+    },
+  });
+  client.dispose();
+});

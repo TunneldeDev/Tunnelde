@@ -1,10 +1,13 @@
 //! Private builtin forwarding ingress. No arbitrary invoke, provider authority,
-//! credentials or caller-chosen native identity. Transfer admission is separate.
+//! caller-chosen native identity. Start credentials stay request-local; they
+//! never enter capsules/read models. Transfer admission is separate.
+mod connection;
 mod request;
 use super::{
     native,
     ownership::{Lease, Ownership},
 };
+use crate::services::operations::{Authority, WorkLifetime};
 use crate::{
     error::{AppError, AppResult},
     services::forwarding as domain,
@@ -12,6 +15,7 @@ use crate::{
 };
 use request::Request;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 impl Ownership {
@@ -22,11 +26,20 @@ impl Ownership {
         lease: &Lease,
         request: &Request,
     ) -> Result<(), &'static str> {
+        self.forwarding_scope_current(window, document, lease, request.interaction())
+    }
+    fn forwarding_scope_current(
+        &self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+        interaction: Option<&str>,
+    ) -> Result<(), &'static str> {
         if lease.panel_id != "forwarding" {
             return Err("unsupported panel action");
         }
         self.resource_action(window, document, lease)?;
-        if let Some(interaction) = request.interaction() {
+        if let Some(interaction) = interaction {
             self.require_interaction(window, document, lease, interaction)?;
         }
         Ok(())
@@ -56,17 +69,20 @@ struct Effect {
     document: String,
     lease: Lease,
     id: String,
+    interaction: Option<String>,
+    settled: Option<tokio::sync::oneshot::Sender<()>>,
 }
 impl Effect {
-    fn with_current<T>(
-        &self,
-        request: &Request,
-        run: impl FnOnce() -> AppResult<T>,
-    ) -> AppResult<T> {
+    fn with_current<T>(&self, run: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
         let registry = self.app.state::<native::Registry>();
         let ownership = native::lock(&registry);
         ownership
-            .forwarding_current(&self.window, &self.document, &self.lease, request)
+            .forwarding_scope_current(
+                &self.window,
+                &self.document,
+                &self.lease,
+                self.interaction.as_deref(),
+            )
             .map_err(native::invalid)?;
         if !ownership.panels[&self.lease.panel_id]
             .native_actions
@@ -74,9 +90,14 @@ impl Effect {
         {
             return Err(native::invalid("panel action expired"));
         }
-        // Ownership -> automation (stop/removal) -> registry -> DB. No awaits,
+        // Ownership -> automation -> registry -> DB. No awaits,
         // native UI or calls back into ownership inside this transaction.
         run()
+    }
+}
+impl Authority for Effect {
+    fn with_current(&self, effect: &mut dyn FnMut() -> AppResult<()>) -> AppResult<()> {
+        self.with_current(effect)
     }
 }
 impl Drop for Effect {
@@ -84,6 +105,9 @@ impl Drop for Effect {
         native::lock(&self.app.state::<native::Registry>())
             .finish_native_action(&self.lease.panel_id, &self.id);
         native::changed(&self.app);
+        if let Some(settled) = self.settled.take() {
+            let _ = settled.send(());
+        }
     }
 }
 
@@ -98,36 +122,60 @@ pub(crate) async fn panel_window_forwarding(
     let id = native::lock(&app.state::<native::Registry>())
         .begin_forwarding(window.label(), &document, &lease, &request)
         .map_err(native::invalid)?;
-    let effect = Effect {
+    let (settled, settlement) = tokio::sync::oneshot::channel();
+    let effect = Arc::new(Effect {
         app: app.clone(),
         window: window.label().into(),
         document,
         lease,
         id,
-    };
+        interaction: request.interaction().map(str::to_owned),
+        settled: Some(settled),
+    });
     native::changed(&app);
     // Move the actual-effect guard INSIDE the worker. Dropping IPC delivery or
     // reloading the coordinator cannot unlock a still-running native operation.
-    tauri::async_runtime::spawn(async move {
-        let prepared = tauri::async_runtime::spawn_blocking(move || {
-            let result = effect.with_current(&request, || prepare(&effect.app, &request));
-            (effect, result)
-        })
+    let work = WorkLifetime::authorized(effect.clone());
+    let result = tauri::async_runtime::spawn(work.scope(async move {
+        match request {
+            Request::PrepareStart { id, revision, .. } => {
+                connection::prepare(effect, id, revision).await
+            }
+            Request::Start {
+                id,
+                revision,
+                review,
+                credentials,
+                ..
+            } => connection::start(effect, id, revision, review, credentials).await,
+            request => {
+                let current = effect.clone();
+                // Blocking jobs inherit both lifetime and short authority, but
+                // keep slow OS observations outside the ownership lock.
+                let prepared = crate::services::credentials::inspect(move || {
+                    current.with_current(|| prepare(&current.app, &request))
+                })
+                .await?;
+                match prepared {
+                    Prepared::Value(value) => Ok(value),
+                    Prepared::Stop(stopping) => {
+                        domain::automation::changed(&effect.app);
+                        stopping.finish().await.map(|()| Value::Null)
+                    }
+                }
+            }
+        }
+    }))
+    .await
+    .map_err(|_| AppError::internal("forward.invalid"))?;
+    // A successful listener shutdown may retire its final pooled transport on
+    // a descendant worker. Do not acknowledge completion before that same
+    // effect fence has actually left the registry. IPC cancellation drops only
+    // this receiver; descendants still own the guard and continue cleanup.
+    settlement
         .await
         .map_err(|_| AppError::internal("forward.invalid"))?;
-        let (effect, result) = prepared;
-        let outcome = match result? {
-            Prepared::Value(value) => Ok(value),
-            Prepared::Stop(stopping) => {
-                domain::automation::changed(&effect.app);
-                stopping.finish().await.map(|()| Value::Null)
-            }
-        };
-        drop(effect);
-        outcome
-    })
-    .await
-    .map_err(|_| AppError::internal("forward.invalid"))?
+    result
 }
 
 enum Prepared {
@@ -137,6 +185,9 @@ enum Prepared {
 fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
     let state = app.state::<AppState>();
     let value = match request {
+        Request::Start { .. } | Request::PrepareStart { .. } => {
+            return Err(AppError::validation("forward.invalid"))
+        }
         Request::Save {
             rule,
             revision,

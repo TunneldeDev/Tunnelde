@@ -38,12 +38,21 @@ const MAX_EARLY_OUTPUT: usize = 1024 * 1024;
 
 /// Setup can be cancelled during authentication, PTY setup or a later jump.
 /// Dropping a russh handle alone does not close channels retaining senders.
-#[derive(Default)]
 struct PendingRoute {
+    work: crate::services::operations::WorkLifetime,
     target: Option<Handle<ClientHandler>>,
     jumps: Vec<Arc<Handle<ClientHandler>>>,
 }
 
+impl Default for PendingRoute {
+    fn default() -> Self {
+        Self {
+            work: crate::services::operations::WorkLifetime::current(),
+            target: None,
+            jumps: Vec::new(),
+        }
+    }
+}
 impl PendingRoute {
     fn release(mut self) -> (Handle<ClientHandler>, Vec<Arc<Handle<ClientHandler>>>) {
         (
@@ -58,13 +67,21 @@ impl Drop for PendingRoute {
         let target = self.target.take().map(Arc::new);
         let jumps = std::mem::take(&mut self.jumps);
         if target.is_some() || !jumps.is_empty() {
-            tauri::async_runtime::spawn(async move {
+            let work = self.work.clone();
+            tauri::async_runtime::spawn(work.retirement().scope(async move {
                 close_transports(
                     target.iter().chain(jumps.iter().rev()).map(Arc::as_ref),
                     None,
                 )
                 .await;
-            });
+                // Enqueued DISCONNECT is not transport retirement. Keep the
+                // inherited effect until every original handle is closed.
+                while target.as_ref().is_some_and(|handle| !handle.is_closed())
+                    || jumps.iter().any(|handle| !handle.is_closed())
+                {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }));
         }
     }
 }
@@ -746,6 +763,7 @@ async fn connect_captured(
     destination: Option<&SessionIdentity>,
     snapshot: &route::Snapshot,
 ) -> AppResult<SessionInfo> {
+    crate::services::operations::WorkLifetime::check()?;
     snapshot.verify_background(&app).await?;
     let mut host = snapshot.target().clone();
     if password_auth {
@@ -761,6 +779,7 @@ async fn connect_captured(
     .await?;
 
     let authentication = snapshot.authentication(&app, &host, &request).await?;
+    crate::services::operations::WorkLifetime::check()?;
     tokio::time::timeout(
         CONNECT_TIMEOUT,
         authenticate(
@@ -773,6 +792,7 @@ async fn connect_captured(
     .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
 
     snapshot.verify_background(&app).await?;
+    crate::services::operations::WorkLifetime::check()?;
     let terminal = prepare_terminal(
         pending.target.as_ref().expect("route target"),
         request.cols,
@@ -802,77 +822,80 @@ async fn connect_captured(
 
     let snapshot = snapshot.clone();
     let delivery = crate::services::credentials::checked(move |job| {
-        let info = snapshot.with_current(&app, |conn| {
-            job.commit()?;
-            let state = app.state::<AppState>();
-            let mut info = info;
-            if !host.id.starts_with(crate::plugins::host_sources::PREFIX) {
-                info.title = db::hosts::find_host(conn, &host.id)?.name;
-            }
-            let (handle, jumps) = pending.release();
-            let shared_handle = Arc::new(handle);
-            let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
-            let task_app = app.clone();
-            let task_session = session_id.clone();
+        let authority = snapshot.observe(&app)?;
+        let info = crate::services::operations::WorkLifetime::with_current(|| {
+            authority.with_current(&app, |conn| {
+                job.commit()?;
+                let state = app.state::<AppState>();
+                let mut info = info;
+                if !host.id.starts_with(crate::plugins::host_sources::PREFIX) {
+                    info.title = db::hosts::find_host(conn, &host.id)?.name;
+                }
+                let (handle, jumps) = pending.release();
+                let shared_handle = Arc::new(handle);
+                let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
+                let task_app = app.clone();
+                let task_session = session_id.clone();
 
-            let task_handle = Arc::clone(&shared_handle);
-            let task = tokio::spawn(async move {
-                if let Some((channel, startup)) = terminal {
-                    pump_terminal(channel, rx, startup, |sequence, data| {
-                        emit_data(&task_app, &task_session, sequence, data)
-                    })
-                    .await;
-                } else {
-                    loop {
-                        tokio::select! {
-                            _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                                if task_handle.is_closed() { break; }
-                            }
-                            message = rx.recv() => match message {
-                                Some(WriterMsg::Detach(reply)) => { let _ = reply.send(0); }
-                                Some(WriterMsg::Close) | None => break,
-                                _ => {}
+                let task_handle = Arc::clone(&shared_handle);
+                let task = tokio::spawn(async move {
+                    if let Some((channel, startup)) = terminal {
+                        pump_terminal(channel, rx, startup, |sequence, data| {
+                            emit_data(&task_app, &task_session, sequence, data)
+                        })
+                        .await;
+                    } else {
+                        loop {
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                                    if task_handle.is_closed() { break; }
+                                }
+                                message = rx.recv() => match message {
+                                    Some(WriterMsg::Detach(reply)) => { let _ = reply.send(0); }
+                                    Some(WriterMsg::Close) | None => break,
+                                    _ => {}
+                                }
                             }
                         }
                     }
-                }
 
-                let removed = if let Some(state) = task_app.try_state::<AppState>() {
-                    state.forwards.stop_session(&task_session);
-                    state.monitor.forget(&task_session);
-                    let removed = state.ssh.remove(&task_session);
-                    state.plugins.forget_connection(&task_session);
-                    removed
-                } else {
-                    false
-                };
-                if removed {
-                    let _ = task_app.emit(
-                        CLOSED_EVENT,
-                        ClosedPayload {
-                            session_id: task_session.clone(),
-                            reason: "closed".into(),
-                        },
-                    );
-                }
-                if let Some(state) = task_app.try_state::<AppState>() {
-                    state.mounts.stop_session(&task_session).await;
-                }
-            });
+                    let removed = if let Some(state) = task_app.try_state::<AppState>() {
+                        state.forwards.stop_session(&task_session);
+                        state.monitor.forget(&task_session);
+                        let removed = state.ssh.remove(&task_session);
+                        state.plugins.forget_connection(&task_session);
+                        removed
+                    } else {
+                        false
+                    };
+                    if removed {
+                        let _ = task_app.emit(
+                            CLOSED_EVENT,
+                            ClosedPayload {
+                                session_id: task_session.clone(),
+                                reason: "closed".into(),
+                            },
+                        );
+                    }
+                    if let Some(state) = task_app.try_state::<AppState>() {
+                        state.mounts.stop_session(&task_session).await;
+                    }
+                });
 
-            state.ssh.insert(SessionHandle {
-                published,
-                user_managed: published,
-                server_key: observed.fingerprint,
-                _jumps: jumps,
-                remote_forwards,
-                info: info.clone(),
-                writer: tx,
-                task,
-                handle: shared_handle,
-            });
+                state.ssh.insert(SessionHandle {
+                    published,
+                    user_managed: published,
+                    server_key: observed.fingerprint,
+                    _jumps: jumps,
+                    remote_forwards,
+                    info: info.clone(),
+                    writer: tx,
+                    task,
+                    handle: shared_handle,
+                });
 
-            Ok(info)
+                Ok(info)
+            })
         })?;
 
         // Publication owns its notifications even if reply delivery is lost.
@@ -914,13 +937,14 @@ pub(crate) fn begin_disconnect(app: &AppHandle, session_id: &str) -> Option<Sess
     state.forwards.stop_session(session_id);
     let cleanup_app = app.clone();
     let cleanup_session = session_id.to_owned();
-    tauri::async_runtime::spawn(async move {
+    let work = crate::services::operations::WorkLifetime::current();
+    tauri::async_runtime::spawn(work.retirement().scope(async move {
         cleanup_app
             .state::<AppState>()
             .mounts
             .stop_session(&cleanup_session)
             .await;
-    });
+    }));
     let disposal = state.ssh.begin_disconnect(session_id);
     if disposal.is_some() {
         state.monitor.forget(session_id);
@@ -1105,6 +1129,7 @@ mod tests {
             Some(ChannelMsg::Data { .. })
         ));
         let pending = PendingRoute {
+            work: crate::services::operations::WorkLifetime::current(),
             target: Some(client),
             jumps: vec![jump.clone()],
         };
@@ -1140,6 +1165,7 @@ mod tests {
         let mut observer = client.channel_open_session().await.unwrap();
         let result: AppResult<()> = async move {
             let route = PendingRoute {
+                work: crate::services::operations::WorkLifetime::current(),
                 target: Some(client),
                 jumps: vec![],
             };

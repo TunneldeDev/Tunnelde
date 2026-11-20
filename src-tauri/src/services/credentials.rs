@@ -73,6 +73,7 @@ pub(crate) async fn load_reviewed(
                 || Ok(()),
                 |conn| authority.check(conn),
             )?;
+            crate::services::operations::WorkLifetime::check()?;
             service.read_after_admission(&request)
         },
     )
@@ -91,6 +92,7 @@ pub(crate) async fn status(app: AppHandle, host_id: String) -> AppResult<bool> {
             || Ok(()),
             |conn| authority.check(conn),
         )?;
+        crate::services::operations::WorkLifetime::check()?;
         Ok(service.read_after_admission(&request)?.is_some())
     })
     .await
@@ -108,6 +110,7 @@ pub(crate) fn read_proxy(
         || Ok(()),
         |conn| authority::proxy_stamp(conn, expected),
     )?;
+    crate::services::operations::WorkLifetime::check()?;
     service.read_after_admission(&request)
 }
 

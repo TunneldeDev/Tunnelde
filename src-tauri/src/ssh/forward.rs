@@ -87,6 +87,7 @@ async fn release_remote((handle, routes, host, port): RemoteForward) -> AppResul
 }
 
 struct ActiveForward {
+    work: crate::services::operations::WorkLifetime,
     lifetime: Option<Arc<dyn Send + Sync>>,
     admitted: Arc<AtomicBool>,
     identity: String,
@@ -116,30 +117,34 @@ impl ActiveForward {
 impl Drop for ActiveForward {
     fn drop(&mut self) {
         let lifetime = self.lifetime.take();
+        let work = self.work.clone();
+        let listener = self.listener.take();
+        let remote = self.remote.take();
         let _ = self.cancel.send(true);
-        if let Some(listener) = self.listener.take() {
+        if let Some(listener) = &listener {
             listener.abort();
         }
-        if let Some(remote) = self.remote.take() {
-            // Reserve the endpoint until the cancellation request completes.
-            // A new forward must never overtake an older detached cleanup.
+        if listener.is_some() || remote.is_some() || lifetime.is_some() {
             let completion = self.cancel.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = release_remote(remote).await {
-                    tracing::warn!(%error, "Could not release remote forwarding listener");
+            tauri::async_runtime::spawn(work.retirement().scope(async move {
+                if let Some(listener) = listener {
+                    listener.abort();
+                    let _ = listener.await;
+                }
+                if let Some(remote) = remote {
+                    if let Err(error) = release_remote(remote).await {
+                        tracing::warn!(%error, "Could not release remote forwarding listener");
+                    }
                 }
                 drop(completion);
+                // A transport destructor can spawn its own session cleanup;
+                // run it in the inherited scope so that cleanup keeps the fence.
                 drop(lifetime);
-            });
-        } else if let Some(lifetime) = lifetime {
-            // Entries can be removed while the registry mutex is held. An
-            // owner's destructor may stop SSH/other rules; never call it here.
-            tauri::async_runtime::spawn(async move {
-                drop(lifetime);
-            });
+            }));
         }
     }
 }
+
 enum StopTarget<'a> {
     Any,
     Snapshot(Option<&'a str>),
@@ -369,9 +374,10 @@ impl ForwardRegistry {
             self.publish();
         }
         // Spawn before returning so caller cancellation cannot interrupt cleanup.
-        Ok(StoppedForward(
-            item.map(|item| tauri::async_runtime::spawn(item.shutdown())),
-        ))
+        Ok(StoppedForward(item.map(|item| {
+            let work = crate::services::operations::WorkLifetime::current();
+            tauri::async_runtime::spawn(work.retirement().scope(item.shutdown()))
+        })))
     }
     pub async fn stop(&self, id: &str) -> AppResult<()> {
         self.take_checked(id, None, || Ok(()))?.finish().await
@@ -445,7 +451,7 @@ impl PendingForward {
     /// Reject cancelled or duplicate preparations before the final callback can
     /// publish private resources. No fallible admission step follows that callback.
     pub(crate) fn commit(
-        self,
+        mut self,
         registry: &ForwardRegistry,
         current: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<()> {
@@ -461,8 +467,10 @@ impl PendingForward {
         }
         current()?;
         self.item.admitted.store(true, Ordering::Release);
+        let work = std::mem::take(&mut self.item.work);
         active.insert(self.id, self.item);
         drop(active);
+        drop(work);
         registry.publish();
         Ok(())
     }
@@ -605,6 +613,7 @@ mod tests {
         reg.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                work: crate::services::operations::WorkLifetime::current(),
                 lifetime: None,
                 admitted: Arc::new(AtomicBool::new(true)),
                 identity: uuid::Uuid::new_v4().to_string(),
@@ -647,6 +656,7 @@ async fn open_uncommitted_forward(
         .map(|(id, generation)| (Some(id), Some(generation)))
         .unwrap_or_default();
     let (cancel, mut cancelled) = watch::channel(false);
+    crate::services::operations::WorkLifetime::check()?;
     let listener = if rule.mode == "local" {
         let listener = TcpListener::bind((rule.bind_host.as_str(), rule.bind_port))
             .await
@@ -717,6 +727,7 @@ async fn open_uncommitted_forward(
         // Own cleanup before awaiting the request. Dropping an in-flight setup
         // must revoke the route and cancel a listener the server may yet accept.
         let pending = ActiveForward {
+            work: crate::services::operations::WorkLifetime::current(),
             lifetime,
             admitted,
             identity: uuid::Uuid::new_v4().to_string(),
@@ -732,6 +743,7 @@ async fn open_uncommitted_forward(
                 rule.bind_port,
             )),
         };
+        crate::services::operations::WorkLifetime::check()?;
         let requested = tokio::time::timeout(
             TIMEOUT,
             handle.tcpip_forward(rule.bind_host.clone(), rule.bind_port as u32),
@@ -743,6 +755,7 @@ async fn open_uncommitted_forward(
         return Ok(pending);
     };
     Ok(ActiveForward {
+        work: crate::services::operations::WorkLifetime::current(),
         lifetime,
         admitted,
         identity: uuid::Uuid::new_v4().to_string(),

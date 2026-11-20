@@ -21,10 +21,25 @@ impl PendingStart {
     pub(crate) fn session(&self) -> String {
         self.session_id.clone()
     }
+    /// Observe slow route/keychain state before the caller's short final owner
+    /// gate. The proof cannot be replaced independently of this preparation.
+    pub(crate) async fn observe(self) -> AppResult<ObservedStart> {
+        let observed = self.target.observe_background(&self.app).await?;
+        Ok(ObservedStart {
+            pending: self,
+            observed,
+        })
+    }
     pub(crate) fn commit(self) -> AppResult<()> {
+        self.commit_inner(None)
+    }
+    fn commit_inner(
+        self,
+        observed: Option<crate::ssh::session::review::Observed>,
+    ) -> AppResult<()> {
         let state = self.app.state::<AppState>();
         self.listener.commit(&state.forwards, || {
-            self.target.with_current(&self.app, |conn| {
+            let current = |conn: &rusqlite::Connection| {
                 if !state.ssh.is_active(&self.session_id) {
                     return Err(AppError::validation("ssh.sessionMissing"));
                 }
@@ -37,8 +52,21 @@ impl PendingStart {
                     return Err(AppError::validation("forward.changed"));
                 }
                 state.ssh.publish(&self.session_id)
-            })
+            };
+            match observed {
+                Some(observed) => observed.with_current(&self.app, current),
+                None => self.target.with_current(&self.app, current),
+            }
         })
+    }
+}
+pub(crate) struct ObservedStart {
+    pending: PendingStart,
+    observed: crate::ssh::session::review::Observed,
+}
+impl ObservedStart {
+    pub(crate) fn commit(self) -> AppResult<()> {
+        self.pending.commit_inner(Some(self.observed))
     }
 }
 

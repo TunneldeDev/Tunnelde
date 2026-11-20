@@ -1,11 +1,13 @@
 //! An admitted effect outlives its caller, including nested budget workers.
 //! This is private process-local ownership, never a cancellation capability.
+use super::Authority;
 use crate::error::AppResult;
 use std::{future::Future, sync::Arc};
 
 #[derive(Clone, Default)]
 pub(crate) struct WorkLifetime {
     _guard: Option<Arc<dyn Send + Sync>>,
+    authority: Option<Arc<dyn Authority>>,
 }
 tokio::task_local! {
     static CURRENT: WorkLifetime;
@@ -14,6 +16,37 @@ impl WorkLifetime {
     pub(crate) fn new(guard: impl Send + Sync + 'static) -> Self {
         Self {
             _guard: Some(Arc::new(guard)),
+            authority: None,
+        }
+    }
+    pub(crate) fn authorized(authority: Arc<dyn Authority>) -> Self {
+        Self {
+            _guard: None,
+            authority: Some(authority),
+        }
+    }
+    pub(crate) fn check() -> AppResult<()> {
+        Self::with_current(|| Ok(()))
+    }
+    pub(crate) fn with_current<T>(effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        let current = Self::current();
+        let Some(authority) = current.authority else {
+            return effect();
+        };
+        let mut effect = Some(effect);
+        let mut result = None;
+        authority.with_current(&mut || {
+            result = Some(effect.take().expect("authority commits at most once")()?);
+            Ok(())
+        })?;
+        Ok(result.expect("authority must admit the effect before succeeding"))
+    }
+    /// Cleanup cannot need fresh consent from an already retired origin. Keep
+    /// its fence as an opaque guard, but do not authorize NEW work under it.
+    pub(crate) fn retirement(self) -> Self {
+        Self {
+            _guard: Some(Arc::new(self)),
+            authority: None,
         }
     }
     pub(crate) fn current() -> Self {

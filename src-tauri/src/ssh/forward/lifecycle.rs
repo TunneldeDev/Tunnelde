@@ -76,6 +76,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let (cancel, _) = watch::channel(false);
         let item = ActiveForward {
+            work: crate::services::operations::WorkLifetime::current(),
             lifetime: None,
             admitted: Arc::new(AtomicBool::new(true)),
             identity: "instance".into(),
@@ -121,6 +122,7 @@ mod tests {
         registry.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                work: crate::services::operations::WorkLifetime::current(),
                 lifetime: None,
                 admitted: Arc::new(AtomicBool::new(true)),
                 identity: "replacement".into(),
@@ -155,6 +157,7 @@ mod automation_tests {
         registry.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                work: crate::services::operations::WorkLifetime::current(),
                 lifetime: None,
                 admitted: Arc::new(AtomicBool::new(true)),
                 identity: "runtime".into(),

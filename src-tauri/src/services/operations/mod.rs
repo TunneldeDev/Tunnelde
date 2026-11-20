@@ -9,6 +9,8 @@ use tokio::sync::Semaphore;
 
 mod delivery;
 pub(crate) use delivery::Delivery;
+mod authority;
+pub(crate) use authority::Authority;
 mod lifetime;
 pub(crate) use lifetime::WorkLifetime;
 
@@ -106,6 +108,7 @@ impl Budget {
                 // queued, after an outer timeout, and through nested workers.
                 let _permit = permit;
                 cancellation.check()?;
+                WorkLifetime::check()?;
                 operation(&cancellation)
             });
             lifetime.finish(result)
@@ -135,6 +138,7 @@ impl Budget {
                 .scope(async move {
                     let _permit = permit;
                     cancellation.check()?;
+                    WorkLifetime::check()?;
                     operation(cancellation).await
                 })
                 .await;

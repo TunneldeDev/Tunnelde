@@ -17,6 +17,7 @@ async fn pending(
     let admitted = Arc::new(AtomicBool::new(false));
     let (cancel, cancelled) = watch::channel(false);
     let item = ActiveForward {
+        work: crate::services::operations::WorkLifetime::current(),
         lifetime: None,
         admitted: admitted.clone(),
         identity: uuid::Uuid::new_v4().to_string(),
@@ -177,4 +178,30 @@ async fn assert_disposal_outside_lock(stop: impl Fn(&ForwardRegistry)) {
         assert!(registry.snapshot().unwrap().is_empty());
         released(address, cancelled).await;
     }
+}
+
+#[tokio::test]
+async fn admitted_listener_keeps_transport_but_releases_its_start_effect() {
+    struct Fence(Arc<AtomicUsize>);
+    impl Drop for Fence {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = ForwardRegistry::default();
+    let released = Arc::new(AtomicUsize::new(0));
+    let (pending, address, _, cancelled) =
+        crate::services::operations::WorkLifetime::new(Fence(released.clone()))
+            .scope(pending(&registry, "scoped"))
+            .await;
+    assert_eq!(released.load(Ordering::SeqCst), 0);
+    pending.commit(&registry, || Ok(())).unwrap();
+    assert_eq!(
+        released.load(Ordering::SeqCst),
+        1,
+        "admitted runtime must not pin panel forever"
+    );
+    assert!(TcpListener::bind(address).await.is_err());
+    registry.stop("scoped").await.unwrap();
+    self::released(address, cancelled).await;
 }

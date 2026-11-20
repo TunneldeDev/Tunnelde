@@ -8,7 +8,8 @@ impl SessionDisposal {
     pub(super) fn start(handle: SessionHandle, session_id: String) -> Self {
         let _ = handle.writer.try_send(WriterMsg::Close);
         handle.task.abort();
-        Self(tauri::async_runtime::spawn(async move {
+        let work = crate::services::operations::WorkLifetime::current();
+        Self(tauri::async_runtime::spawn(work.retirement().scope(async move {
             close_transports(
                 std::iter::once(&handle.handle)
                     .chain(handle._jumps.iter().rev())
@@ -16,21 +17,33 @@ impl SessionDisposal {
                 Some(&session_id),
             )
             .await;
+            let mut task = handle.task;
             let result = tokio::time::timeout(Duration::from_secs(5), async {
                 while !handle.handle.is_closed()
                     || handle._jumps.iter().any(|jump| !jump.is_closed())
                 {
                     tokio::time::sleep(Duration::from_millis(5)).await;
                 }
-                let _ = handle.task.await;
+                let _ = (&mut task).await;
             })
             .await;
             if result.is_err() {
                 tracing::warn!(%session_id, "SSH transport cleanup did not settle before its deadline");
+                // A timeout is not proof of retirement. Delivery may report an
+                // incomplete cleanup, but keep the inherited effect and exact
+                // original handles in a descendant until closure is observed.
+                let work = crate::services::operations::WorkLifetime::current();
+                tauri::async_runtime::spawn(work.retirement().scope(async move {
+                    while !handle.handle.is_closed()
+                        || handle._jumps.iter().any(|jump| !jump.is_closed()) {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                    let _ = task.await;
+                }));
                 return Err(AppError::Ssh("plugin.resources.cleanupIncomplete".into()));
             }
             Ok(())
-        }))
+        })))
     }
     pub(crate) async fn finish(self) -> AppResult<()> {
         self.0
