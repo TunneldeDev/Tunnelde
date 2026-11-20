@@ -1,4 +1,5 @@
 import { createPanelViewState, PanelViewStateScope } from "@/lib/panels/viewState";
+import { PanelStateLossRequired } from "@/lib/panels/stateLoss";
 import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode, useEffect, useLayoutEffect } from "react";
@@ -207,11 +208,16 @@ it("never transfers a provider-owned draft as unprivileged native editor state",
     </PanelViewStateScope>,
   );
   await waitFor(() => expect(retained.snapshot.total).toBe(1));
-  expect(JSON.stringify(state.capture())).not.toContain("token");
+  await state.waitReady(new AbortController().signal);
+  const loss = await state.captureAsync().catch((error: unknown) => error);
+  expect(loss).toBeInstanceOf(PanelStateLossRequired);
+  const options = { consentedStateLoss: new Set((loss as PanelStateLossRequired).views) };
+  expect(JSON.stringify(await state.captureAsync(undefined, options))).not.toContain("token");
   act(() => retained.requestEdit("rule"));
-  expect(() => state.capture()).toThrow("panels.finishInteractionBeforeMoving");
-  await expect(state.captureAsync()).rejects.toThrow("panels.finishInteractionBeforeMoving");
+  await expect(state.captureAsync(undefined, options)).rejects.toThrow(
+    "panels.finishInteractionBeforeMoving",
+  );
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(() => state.capture()).not.toThrow();
+  await expect(state.captureAsync(undefined, options)).resolves.toBeDefined();
   expect(invoke).not.toHaveBeenCalledWith("forwarding_save", expect.anything());
 });

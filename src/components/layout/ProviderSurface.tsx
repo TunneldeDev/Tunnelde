@@ -1,5 +1,6 @@
 import {
   Component,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -24,6 +25,7 @@ import type { FrontendTerminal } from "@/lib/extensions/contracts/terminal/surfa
 import type { FrontendHistory } from "@/lib/extensions/contracts/history/provider";
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
+import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
 import type { HistoryContext } from "@/lib/extensions/history/context";
 import type { FilePreviewContext } from "@/lib/extensions/files/preview/context";
 import type { FrontendFilePreview } from "@/lib/extensions/contracts/files/preview/provider";
@@ -210,6 +212,22 @@ export function ProviderSurface({
       processes?.snapshot.sessionId,
       selectionEpoch,
     ],
+  );
+  const [renderedLease, setRenderedLease] = useState<object | null>(null);
+  const mounted = useCallback(() => setRenderedLease(accessLease), [accessLease]);
+  const readinessError = selection
+    ? failed
+      ? (failure.error ?? new Error("plugin.frontend.viewUnavailable"))
+      : !available
+        ? new Error("plugin.frontend.viewUnavailable")
+        : undefined
+    : undefined;
+  // A registered component or async factory shell is not yet an admitted view.
+  // Wait for the original mount and its child capture/readiness bindings first.
+  usePanelReadiness(
+    target === "forwarding" ? "forwarding.selection" : null,
+    !selection || (active && !!token && renderedLease === accessLease),
+    readinessError,
   );
   useLayoutEffect(() => {
     accessLease.activate();
@@ -400,6 +418,11 @@ export function ProviderSurface({
               retain={accessLease.retain}
               validation={validation || undefined}
               onFailure={fail}
+              onMounted={target === "forwarding" ? mounted : undefined}
+              captureLegacyState={
+                target === "forwarding" &&
+                !frontendRuntime.isFactoryView(selected!.plugin.id, selected!.view.id, View)
+              }
               fallback={keepFallback ? null : children}
               viewProps={{
                 pluginId: selected!.plugin.id,

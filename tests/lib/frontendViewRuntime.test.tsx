@@ -412,6 +412,38 @@ it("does not mistake an async factory shell for a synchronous native provider re
   f.runtime.dispose();
 });
 
+it("adapts factory-only forwarding providers without opting synchronous-slot providers or legacy registrations in", async () => {
+  const factory = vi.fn(() => ({ component: Component }));
+  const f = fixture(factory);
+  const provider: PluginInfo = {
+    ...plugin,
+    views: [
+      { ...plugin.views[0]!, provider: "forwarding" },
+      { ...plugin.views[0]!, id: "layout", provider: "workbench" },
+      { ...plugin.views[0]!, id: "registered", provider: "forwarding" },
+    ],
+  };
+  f.activate.mockImplementation((ctx) => {
+    ctx.views.register("registered", Component);
+  });
+  await f.runtime.ensure(provider);
+  const View = f.runtime.view("custom", "main")!;
+  expect(View).toBeTypeOf("function");
+  expect(View).not.toBe(Component);
+  expect(f.runtime.isFactoryView("custom", "main", View)).toBe(true);
+  expect(f.runtime.isFactoryView("custom", "main", Component)).toBe(false);
+  expect(f.runtime.isFactoryView("custom", "registered", Component)).toBe(false);
+  expect(f.runtime.view("custom", "registered")).toBe(Component);
+  expect(f.runtime.view("custom", "layout")).toBeUndefined();
+  expect(f.runtime.factoryOwner("custom", "main")).toBeUndefined();
+  expect(factory).not.toHaveBeenCalled();
+  expect(f.transport.openView).not.toHaveBeenCalled();
+  vi.mocked(f.transport.current).mockReturnValue(false);
+  expect(f.runtime.isFactoryView("custom", "main", View)).toBe(false);
+  f.runtime.stop("custom");
+  expect(f.runtime.isFactoryView("custom", "main", View)).toBe(false);
+});
+
 it("hands factory state through the panel capsule and waits for real async restore before renderer readiness", async () => {
   const { act, fireEvent, render, screen } = await import("@testing-library/react");
   const { useState } = await import("react");

@@ -212,10 +212,14 @@ export function createFrontendRuntime(transport: FrontendTransport) {
           // Factory-only declarations gain a stable per-mounted-view adapter.
           if (current.viewFactory && transport.openView) {
             for (const view of plugin.views) {
-              // Providers require post-mount slot validation and domain-specific
-              // handles. Do not silently put an async shell in their synchronous
-              // native Workspace/Screen mount contract.
-              if (view.kind !== "component" || view.provider || current.views.has(view.id))
+              // Forwarding's explicit host context has no synchronous required
+              // Workspace/Screen slot. Other providers still need their own
+              // async slot/handle admission; never opt them in implicitly.
+              if (
+                view.kind !== "component" ||
+                (view.provider && view.provider !== "forwarding") ||
+                current.views.has(view.id)
+              )
                 continue;
               const View = createFrontendFactoryComponent((signal, state) =>
                 mountView(plugin.id, view.id, session.token, state, signal),
@@ -319,6 +323,18 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         (fingerprint === undefined || runtime.plugin.fingerprint === fingerprint)
         ? runtime.views.get(viewId)
         : undefined;
+    },
+    /** Exact renderer identity only; not native adapter admission or authority. */
+    isFactoryView(id: string, viewId: string, component: ComponentType<FrontendViewProps>) {
+      const runtime = runtimes.get(id);
+      return !!(
+        runtime?.activated &&
+        !runtime.retiring &&
+        !runtime.scope.signal.aborted &&
+        transport.current(runtime.plugin) &&
+        runtime.factoryViews.get(viewId) === component &&
+        runtime.views.get(viewId) === component
+      );
     },
     /** Main-host admission candidates only; this neither opens nor activates a
      * module. Legacy registered renderers are NOT silently swapped for factories.

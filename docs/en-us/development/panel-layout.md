@@ -1012,3 +1012,19 @@ retry creates a fresh provider factory; old rejected waits stay rejected.
 The `forwarding.selection` capture field is only a null admission marker, never
 plugin state, credentials or action authority. These readiness tests do not replace
 real native handoff acceptance or enable the transferable adapter allowlist.
+
+The main forwarding provider path now uses the same `plugin.factory` capture
+contract for factory-only contributions. Its private selection gate waits for
+the original committed view scope and child readiness before acknowledging a
+source or restored view. A visible builtin recovery surface after provider failure
+is not permission to capture that failure as an ordinary builtin panel. Providers
+with synchronous required Workspace/Screen slots are not opted into this path.
+
+Existing `views.register` renderers retain their original component and activation.
+Their source capture requires exact per-instance state-loss consent and records
+only an explicit reset, not invented empty state. If the module also exports
+`createView`, that reset can open a fresh scoped destination factory without
+another singleton activation. A module with no factory is still not remotely
+renderable: destination staging rejects it and preserves the original source.
+Full no-factory legacy presentation and real native handoff acceptance remain
+required; this source compatibility guard does not claim to complete them.
