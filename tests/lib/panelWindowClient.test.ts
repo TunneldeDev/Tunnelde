@@ -367,3 +367,42 @@ it("shares one native attachment client per document and closes children on docu
   ).toHaveLength(1);
   expect(() => client.pluginViews(vi.fn())).toThrow("disposed");
 });
+
+it("submits builtin forwarding mutations through an exact private document/lease without fallback", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 9 };
+  const request = { operation: "stop" as const, id: "rule", revision: "one", runtimeId: null };
+  let resolve!: (value: unknown) => void;
+  native.invoke.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const pending = client.forwardingMutation(lease, request);
+  request.id = "replacement";
+  lease.generation = 10;
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_forwarding", {
+    document: identity.document,
+    lease: { panelId: "forwarding", windowId: identity.windowId, generation: 9 },
+    request: { operation: "stop", id: "rule", revision: "one", runtimeId: null },
+  });
+  client.dispose();
+  resolve(null);
+  await expect(pending).rejects.toThrow("disposed");
+  await expect(client.forwardingMutation(lease, request)).rejects.toThrow("disposed");
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+});
+
+it("preserves native forwarding rejection rather than retrying an ordinary forwarding command", async () => {
+  const client = createPanelWindowClient(identity);
+  native.invoke.mockRejectedValue(new Error("stale panel owner"));
+  await expect(
+    client.forwardingMutation(
+      { panelId: "forwarding", windowId: identity.windowId, generation: 1 },
+      { operation: "removeGroup", id: "group", revision: "current" },
+    ),
+  ).rejects.toThrow("stale panel owner");
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+  client.dispose();
+});

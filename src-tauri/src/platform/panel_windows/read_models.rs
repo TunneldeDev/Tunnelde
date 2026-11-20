@@ -172,6 +172,28 @@ mod tests {
         assert!(registry.read_model("target", &target, &moved).is_err());
     }
     #[test]
+    fn removal_preserves_direct_native_cleanup_fences_across_main_reload() {
+        let mut registry = Ownership::default();
+        let main = registry.register("main").unwrap();
+        registry.ready("main", &main).unwrap();
+        let lease = registry.add_panel("main", &main, "connections").unwrap();
+        let id = registry.begin_native_action("main", &main, &lease).unwrap();
+        assert!(registry.remove_panel("main", &main, "connections").is_err());
+        let main = registry.register("main").unwrap();
+        registry.ready("main", &main).unwrap();
+        assert!(registry.remove_panel("main", &main, "connections").is_err());
+        assert!(registry.add_panel("main", &main, "connections").is_err());
+        let unrelated = registry.add_panel("main", &main, "output").unwrap();
+        registry
+            .remove_panel("main", &main, &unrelated.panel_id)
+            .unwrap();
+        registry.finish_native_action("connections", "wrong-id");
+        assert!(registry.remove_panel("main", &main, "connections").is_err());
+        registry.finish_native_action("connections", &id);
+        registry.remove_panel("main", &main, "connections").unwrap();
+        registry.add_panel("main", &main, "connections").unwrap();
+    }
+    #[test]
     fn native_actions_freeze_transfers_across_reload_until_cleanup_finishes() {
         let mut registry = Ownership::default();
         let main = registry.register("main").unwrap();

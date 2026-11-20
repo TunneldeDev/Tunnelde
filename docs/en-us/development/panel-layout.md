@@ -673,3 +673,27 @@ returning its delivery handle and retains the listener's group-connection owner
 until shutdown. Historical callers omitting both tokens retain their existing
 behavior; instance-only requests reject, never fall back to a blind stop. These
 are domain correctness guarantees, not native-window action/origin admission.
+
+### Builtin forwarding native mutation ingress
+
+The private `panel_window_forwarding` grammar currently accepts rule saves,
+exact-snapshot stops, group saves and empty-group removal. It accepts neither a
+provider origin nor credentials, SSH IDs, arbitrary command names or caller
+window labels. Save binds revision/group/automation explicitly; non-loopback
+exposure requires a current interaction from that same document and panel lease.
+
+Admission checks the native IPC label, document, exact lease and live panel;
+a worker rechecks them while holding ownership over the synchronous domain
+transaction (ownership → automation for stop → forwarding registry → database).
+Only one direct operation per panel is admitted. The actual-effect guard lives
+inside the native worker, not the JS response; stop retains it through already
+spawned listener/connection cleanup. Reload or lost consent before the final gate
+rejects; cancellation after commit is not rollback. Removal cannot erase a direct
+native effect's sole fence. Historical relay jobs keep their separate settlement
+and unknown-outcome quarantine across panel removal.
+
+This ingress and its typed document client do not constitute a complete native
+forwarding adapter: connection/prompt and provider handles, active-rule removal,
+clipboard/host dialogs and the satellite renderer still require integration and
+acceptance. Forwarding transfer discovery remains disabled. Never add per-method
+raw-command fallbacks to make an incomplete remote service look complete.

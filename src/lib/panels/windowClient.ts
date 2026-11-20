@@ -1,3 +1,4 @@
+import type { ForwardingWindowMutation } from "@/features/forwarding/runtime/windowProtocol";
 import { createNativePluginViewClient } from "./windowPluginClient";
 import type { NativePluginUiPrompt } from "./windowPluginUi";
 import { invoke } from "@tauri-apps/api/core";
@@ -161,6 +162,22 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
             request: { action: "cancelAction", id },
           }).catch(() => {});
       }
+    },
+    async forwardingMutation<T = unknown>(
+      lease: PanelLease,
+      request: ForwardingWindowMutation,
+    ): Promise<T> {
+      check();
+      // Snapshot the target and editable values at submission; later UI edits
+      // cannot retarget an already admitted native effect. Native still checks
+      // document/lease/consent again at the actual synchronous transaction.
+      const payload = structuredClone({ lease, request });
+      const result = await invoke<T>("panel_window_forwarding", {
+        document: identity.document,
+        ...payload,
+      });
+      check();
+      return result;
     },
     async claimPresentations() {
       check();

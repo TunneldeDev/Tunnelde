@@ -1,0 +1,169 @@
+use super::*;
+use serde_json::json;
+
+fn stop() -> Request {
+    serde_json::from_value(
+        json!({"operation":"stop","id":"rule","revision":"one","runtimeId":null}),
+    )
+    .unwrap()
+}
+fn save(bind: &str, interaction: Option<&str>) -> Value {
+    json!({"operation":"save","rule":{"id":"","hostId":"host","name":"Forward","mode":"local","bindHost":bind,"bindPort":8080,"targetHost":"localhost","targetPort":80},"revision":null,"groupId":null,"automation":{"autoStart":false,"autoRetry":true},"interaction":interaction})
+}
+#[test]
+fn closed_grammar_and_bounded_targets_never_accept_authority_or_arbitrary_commands() {
+    assert!(stop().validate().is_ok());
+    let loopback: Request = serde_json::from_value(save("127.0.0.1", None)).unwrap();
+    assert!(loopback.validate().is_ok());
+    let exposed: Request = serde_json::from_value(save("0.0.0.0", None)).unwrap();
+    assert!(exposed.validate().is_err());
+    for invalid in [
+        json!({"operation":"invoke","command":"ssh_connect"}),
+        json!({"operation":"stop","id":"rule","revision":"one","origin":{"token":"provider","scope":"scope"}}),
+        json!({"operation":"stop","id":"rule","revision":"one","window":"main"}),
+        json!({"operation":"stop","id":"rule","revision":"one","password":"secret"}),
+        json!({"operation":"start","id":"rule","revision":"one"}),
+    ] {
+        assert!(serde_json::from_value::<Request>(invalid).is_err());
+    }
+    for (field, value) in [
+        ("id", json!("")),
+        ("revision", json!("")),
+        ("runtimeId", json!("x".repeat(129))),
+    ] {
+        let mut wire = json!({"operation":"stop","id":"rule","revision":"one","runtimeId":null});
+        wire[field] = value;
+        assert!(serde_json::from_value::<Request>(wire)
+            .unwrap()
+            .validate()
+            .is_err());
+    }
+    let mut existing = save("localhost", None);
+    existing["rule"]["id"] = json!("existing");
+    assert!(serde_json::from_value::<Request>(existing.clone())
+        .unwrap()
+        .validate()
+        .is_err());
+    existing["revision"] = json!("current");
+    assert!(serde_json::from_value::<Request>(existing)
+        .unwrap()
+        .validate()
+        .is_ok());
+    for wire in [
+        json!({"operation":"saveGroup","hostId":"host","name":"Group","id":"group"}),
+        json!({"operation":"saveGroup","hostId":"host","name":"Group","revision":"one"}),
+        json!({"operation":"removeGroup","id":"group","revision":""}),
+    ] {
+        assert!(serde_json::from_value::<Request>(wire)
+            .unwrap()
+            .validate()
+            .is_err());
+    }
+}
+#[test]
+fn admission_and_final_gate_require_exact_window_document_lease_and_consent() {
+    let mut registry = Ownership::default();
+    let main = registry.register("main").unwrap();
+    let other = registry.register("other").unwrap();
+    registry.ready("main", &main).unwrap();
+    registry.ready("other", &other).unwrap();
+    let lease = registry.add_panel("main", &main, "forwarding").unwrap();
+    let wrong = registry.add_panel("main", &main, "connections").unwrap();
+    assert!(registry
+        .begin_forwarding("main", &main, &wrong, &stop())
+        .is_err());
+    assert!(registry
+        .begin_forwarding("other", &other, &lease, &stop())
+        .is_err());
+    assert!(registry
+        .begin_forwarding("main", "old-document", &lease, &stop())
+        .is_err());
+    let mut stale = lease.clone();
+    stale.generation += 1;
+    assert!(registry
+        .begin_forwarding("main", &main, &stale, &stop())
+        .is_err());
+    registry.block("main", &main, "forwarding", true).unwrap();
+    assert!(registry
+        .begin_forwarding("main", &main, &lease, &stop())
+        .is_err());
+    registry.block("main", &main, "forwarding", false).unwrap();
+    let interaction = registry.begin_interaction("main", &main, &lease).unwrap();
+    let exposed: Request = serde_json::from_value(save("0.0.0.0", Some(&interaction))).unwrap();
+    let id = registry
+        .begin_forwarding("main", &main, &lease, &exposed)
+        .unwrap();
+    assert!(registry
+        .begin_forwarding("main", &main, &lease, &stop())
+        .is_err());
+    assert!(registry
+        .forwarding_current("main", &main, &lease, &exposed)
+        .is_ok());
+    registry
+        .end_interaction("main", &main, &lease, &interaction)
+        .unwrap();
+    // Consent disappearance before the blocking worker reaches CAS rejects.
+    assert!(registry
+        .forwarding_current("main", &main, &lease, &exposed)
+        .is_err());
+    assert!(registry.panels["forwarding"].native_actions.contains(&id));
+    registry.finish_native_action("forwarding", &id);
+    let fake: Request = serde_json::from_value(save("0.0.0.0", Some("fake"))).unwrap();
+    assert!(registry
+        .begin_forwarding("main", &main, &lease, &fake)
+        .is_err());
+    let id = registry
+        .begin_forwarding("main", &main, &lease, &stop())
+        .unwrap();
+    let replacement = registry.register("main").unwrap();
+    registry.ready("main", &replacement).unwrap();
+    assert!(registry
+        .forwarding_current("main", &main, &lease, &stop())
+        .is_err());
+    assert!(registry.panels["forwarding"].native_actions.contains(&id));
+    let current = registry.panels["forwarding"].lease.clone();
+    assert!(registry
+        .begin_forwarding("main", &replacement, &current, &stop())
+        .is_err());
+    assert!(registry
+        .remove_panel("main", &replacement, "forwarding")
+        .is_err());
+    registry.finish_native_action("forwarding", &id);
+    registry
+        .begin_forwarding("main", &replacement, &current, &stop())
+        .unwrap();
+}
+#[test]
+fn unready_source_never_gets_resource_admission_and_discovery_stays_closed() {
+    let mut registry = Ownership::default();
+    let main = registry.register("main").unwrap();
+    let target = registry.register("target").unwrap();
+    let lease = registry.add_panel("main", &main, "forwarding").unwrap();
+    assert!(registry
+        .begin_forwarding("main", &main, &lease, &stop())
+        .is_err());
+    registry.ready("main", &main).unwrap();
+    registry.ready("target", &target).unwrap();
+    // This is a gateway prerequisite, NOT permission to transfer a view for
+    // which prompts/providers/renderer are not yet integrated.
+    assert!(!super::super::ownership::transferable("forwarding"));
+    assert!(registry
+        .authorize_creation("main", &main, Some(&lease))
+        .is_err());
+    // Internal ownership preparation is not discovery admission. Exercise the
+    // frozen and staged gates using it, without changing public transferability.
+    let now = std::time::Instant::now();
+    let offer = registry
+        .prepare("main", &main, &lease, "target", Value::Null, now)
+        .unwrap();
+    assert!(registry
+        .begin_forwarding("main", &main, &lease, &stop())
+        .is_err());
+    assert!(registry
+        .begin_forwarding("target", &target, &lease, &stop())
+        .is_err());
+    registry.cancel("main", &main, &offer.id).unwrap();
+    assert!(registry
+        .begin_forwarding("main", &main, &lease, &stop())
+        .is_ok());
+}

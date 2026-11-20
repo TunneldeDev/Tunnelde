@@ -18,6 +18,7 @@ fn allowed(label: &str, command: &str, registered: bool) -> bool {
                     | "panel_window_drop_target"
                     | "panel_window_release_drag"
                     | "panel_window_disconnect"
+                    | "panel_window_forwarding"
                     | "panel_window_focus"
                     | "panel_window_plugin_view"
             ))
@@ -53,6 +54,11 @@ mod tests {
             "host_create",
             "ssh_connect",
             "ssh_disconnect",
+            "forwarding_save",
+            "forwarding_stop",
+            "forwarding_group_save",
+            "forwarding_group_remove",
+            "forwarding_start_managed",
             "clipboard_read_text",
             "plugin_frontend_open",
             "plugin_frontend_view_open",
@@ -75,6 +81,7 @@ mod tests {
             "panel_window_drop_target",
             "panel_window_release_drag",
             "panel_window_disconnect",
+            "panel_window_forwarding",
             "panel_window_focus",
             "panel_window_plugin_view",
         ] {

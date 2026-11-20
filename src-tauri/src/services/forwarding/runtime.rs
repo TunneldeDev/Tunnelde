@@ -220,18 +220,26 @@ pub(crate) fn take_checked(
 ) -> AppResult<crate::ssh::forward::StoppedForward> {
     service(&app.state::<AppState>()).take_checked(id, revision, Some(runtime))
 }
+pub(crate) fn take_manual_stop(
+    app: &AppHandle,
+    id: &str,
+    revision: &str,
+    runtime: Option<&str>,
+) -> AppResult<crate::ssh::forward::StoppedForward> {
+    let state = app.state::<AppState>();
+    // Automation -> registry -> DB. Native-window ingress additionally holds
+    // exact document/lease authority over this entire synchronous transaction.
+    state
+        .forward_automation
+        .pause_after(id, || service(&state).take_checked(id, revision, runtime))
+}
 pub(crate) async fn stop_checked(
     app: &AppHandle,
     id: &str,
     revision: &str,
     runtime: Option<&str>,
 ) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    // Automation -> registry -> DB. Do not pause before CAS validation and do
-    // not release automation between taking the listener and pausing recovery.
-    let stopping = state
-        .forward_automation
-        .pause_after(id, || service(&state).take_checked(id, revision, runtime))?;
+    let stopping = take_manual_stop(app, id, revision, runtime)?;
     super::automation::changed(app);
     // take_checked already spawned cleanup, so cancelling delivery cannot
     // abandon the taken listener or its group-connection lifetime.

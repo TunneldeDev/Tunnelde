@@ -351,6 +351,17 @@ impl Ownership {
         self.remove_presentation_panel(panel_id)?;
         self.retire_panel_actions(panel_id);
         self.retire_panel_moves(panel_id);
+        // Relayed jobs retain their own settlement/quarantine across removal.
+        // A direct native effect instead owns this panel's fence: keep that
+        // record alive across reload until its actual cleanup has settled.
+        if self.panels.get(panel_id).is_some_and(|panel| {
+            panel
+                .native_actions
+                .iter()
+                .any(|id| !self.retains_relay_fence(id))
+        }) {
+            return Err("panel interaction in progress");
+        }
         self.panels.remove(panel_id).ok_or("panel not found")?;
         self.remove_plugin_adapter(panel_id);
         self.transfers

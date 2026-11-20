@@ -500,6 +500,11 @@ impl Ownership {
             self.drop_action(&id);
         }
     }
+    /// Relayed jobs retain settlement/quarantine independently of panel records.
+    /// Direct native effects have no such side-table and must retain the panel.
+    pub(super) fn retains_relay_fence(&self, id: &str) -> bool {
+        self.actions.contains_key(id) || self.interrupted.contains_key(id)
+    }
     pub(super) fn panel_interrupted(&self, panel_id: &str) -> bool {
         self.interrupted.values().any(|id| id == panel_id)
     }

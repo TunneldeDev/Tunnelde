@@ -174,6 +174,7 @@ pub fn run() {
             platform::panel_windows::native::panel_window_drop_target,
             platform::panel_windows::native::panel_window_release_drag,
             platform::panel_windows::native::panel_window_disconnect,
+            platform::panel_windows::forwarding::panel_window_forwarding,
             platform::panel_windows::native::panel_window_focus,
             platform::restart::app_restart,
             platform::application_actions::application_action_claim,
