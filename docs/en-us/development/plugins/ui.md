@@ -385,6 +385,19 @@ Bus ownership stays with the approved plugin runtime. There is still only one
 outstanding receiver per runtime, so background subscriptions should normally stay
 in `activate`, not be duplicated by each view.
 
+The internal gateway also admits explicitly reviewed owned-data methods:
+`storage.get/set/delete/observe`, all seven `configuration.*` schema/CAS/backup
+methods, and `secrets.get/set/delete`. They remain committed-only, retain their
+panel effect fence until actual I/O settlement, and use the same plugin identity,
+permissions, generation and configuration revisions as the coordinator. A native
+view does not gain access to another plugin's data or SSH credentials. Configuration
+awaits its blocking worker; keyring access awaits the bounded credential worker;
+KV reads/writes await filesystem operations under their existing serialization
+lock. No nested timeout releases the outer fence while these workers still run.
+Cancellation suppresses delivery, not already accepted disk/keyring effects.
+Storage-location/recovery consent APIs are **not** implicitly admitted by this
+allowlist and still require separate origin/lifetime integration.
+
 The host's scoped view client uses only this closed gateway, reserves cancellation
 tickets before dispatch, cancels outstanding calls on document disposal and cleans
 up late-opened attachments. Module URLs encode each relative segment separately.

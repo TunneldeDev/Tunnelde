@@ -561,3 +561,57 @@ fn resource_consumption_rechecks_blocks_reload_and_exact_document_without_fencin
         .is_err());
     f.r.settle_native_view_call(&effect);
 }
+
+#[test]
+fn persistent_data_effects_require_committed_ownership_and_fence_actual_settlement() {
+    let mut f = Fixture::new();
+    f.owned("source");
+    let (_, effect) =
+        f.r.native_view_call("main", &f.main, "source", CallPolicy::OwnedData, f.now)
+            .unwrap();
+    assert!(f.r.native_view_busy(&f.lease.panel_id));
+    assert!(f
+        .r
+        .prepare("main", &f.main, &f.lease, "target", Value::Null, f.now)
+        .is_err());
+    assert!(f
+        .r
+        .remove_panel("main", &f.main, &f.lease.panel_id)
+        .is_err());
+    // Retiring the JS attachment is NOT evidence that a disk/keyring worker
+    // stopped; another attachment cannot move the panel past it.
+    f.r.close_native_view("main", &f.main, "source").unwrap();
+    assert!(f.r.native_view_busy(&f.lease.panel_id));
+    f.r.settle_native_view_call(&effect);
+    assert!(!f.r.native_view_busy(&f.lease.panel_id));
+    let offer = f.offer();
+    f.staged(&offer, "destination");
+    assert!(f
+        .r
+        .native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::OwnedData,
+            f.now,
+        )
+        .is_err());
+    let lease = f.commit(&offer);
+    assert!(f
+        .r
+        .native_view_call("main", &f.main, "source", CallPolicy::OwnedData, f.now,)
+        .is_err());
+    let (_, effect) =
+        f.r.native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::OwnedData,
+            f.now,
+        )
+        .unwrap();
+    assert!(f.r.begin_close("target", &f.target).is_err());
+    f.r.settle_native_view_call(&effect);
+    assert!(!f.r.native_view_busy(&lease.panel_id));
+    f.r.begin_close("target", &f.target).unwrap();
+}

@@ -6,6 +6,8 @@ pub(crate) enum CallPolicy {
     BusEffect,
     BusReceive,
     OriginUi,
+    /// Owned persistent data; all nested I/O is awaited through settlement.
+    OwnedData,
 }
 impl CallPolicy {
     pub(crate) fn staged(self) -> bool {
@@ -28,6 +30,25 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         // receiver permit; each eventual queue drain rechecks native ownership.
         "bus.receive" => Some(CallPolicy::BusReceive),
         "ui.confirm" | "ui.showMessage" => Some(CallPolicy::OriginUi),
+        // KV uses awaited tokio::fs operations under its serialization lock.
+        // Configuration awaits the blocking worker (no nested timeout/early
+        // reply); keyring access awaits the bounded credential worker. None
+        // requires a main-window UI relay or owns a background provider handle.
+        // Even reads remain committed-only: names never establish staging safety.
+        "storage.get"
+        | "storage.set"
+        | "storage.delete"
+        | "storage.observe"
+        | "configuration.schema"
+        | "configuration.snapshot"
+        | "configuration.update"
+        | "configuration.migrate"
+        | "configuration.backups"
+        | "configuration.restore"
+        | "configuration.deleteBackup"
+        | "secrets.get"
+        | "secrets.set"
+        | "secrets.delete" => Some(CallPolicy::OwnedData),
         _ => None,
     }
 }
@@ -66,6 +87,58 @@ mod tests {
             "bus.receive.extra",
             "bus.publish\0",
             "bus.get",
+        ] {
+            assert!(call_policy(method).is_none(), "{method}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod owned_data_tests {
+    use super::*;
+    #[test]
+    fn owned_data_methods_have_explicit_committed_retained_lifetimes() {
+        let methods = [
+            "storage.get",
+            "storage.set",
+            "storage.delete",
+            "storage.observe",
+            "configuration.schema",
+            "configuration.snapshot",
+            "configuration.update",
+            "configuration.migrate",
+            "configuration.backups",
+            "configuration.restore",
+            "configuration.deleteBackup",
+            "secrets.get",
+            "secrets.set",
+            "secrets.delete",
+        ];
+        assert_eq!(methods.len(), 14);
+        for method in methods {
+            assert!(
+                crate::plugins::api::method_info(method).is_some(),
+                "{method}"
+            );
+            let policy = call_policy(method).unwrap();
+            assert_eq!(policy, CallPolicy::OwnedData);
+            assert!(!policy.staged(), "{method}");
+            assert!(policy.blocks_move(), "{method}");
+            assert!(policy.retained(), "{method}");
+        }
+        // Consent/migration control and future APIs require separate audits;
+        // no prefix, permission, or get/observe heuristic widens admission.
+        for method in [
+            "storage.locations.schedule",
+            "storage.locations.observe",
+            "storage.recovery.request",
+            "storage.recovery.observe",
+            "storage.get.extra",
+            "configuration.observe",
+            "configuration.update.extra",
+            "secrets.getOther",
+            "secrets.get\0",
+            "settings.get",
         ] {
             assert!(call_policy(method).is_none(), "{method}");
         }

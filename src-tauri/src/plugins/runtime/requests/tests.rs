@@ -290,3 +290,40 @@ async fn consent_cancel_waiter_observes_request_drop_and_expired_deadline() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn retained_disk_or_keyring_worker_keeps_request_reserved_until_blocking_exit() {
+    let registry = Requests::default();
+    registry.reserve("view", "persistent-data").unwrap();
+    let mut request = registry.claim("view", "persistent-data").unwrap();
+    let (started, entered) = tokio::sync::oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    let mut task = tokio::spawn(async move {
+        request
+            .run_retained(async {
+                // This matches the audited configuration/credential dispatch:
+                // the domain awaits its actual blocking JoinHandle, with no
+                // timeout or detached reply hiding a still-running mutation.
+                tokio::task::spawn_blocking(move || {
+                    started.send(()).unwrap();
+                    wait.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(())
+                })
+                .await
+                .unwrap()
+            })
+            .await
+    });
+    entered.await.unwrap();
+    assert!(registry.cancel("view", "persistent-data"));
+    assert!(tokio::time::timeout(Duration::from_millis(10), &mut task)
+        .await
+        .is_err());
+    assert!(registry.reserve("view", "persistent-data").is_err());
+    release.send(()).unwrap();
+    assert_eq!(
+        task.await.unwrap().unwrap_err().to_string(),
+        "plugin.api.cancelled"
+    );
+    registry.reserve("view", "persistent-data").unwrap();
+}
