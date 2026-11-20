@@ -71,12 +71,13 @@ pub(super) async fn filesystem_present(mount_point: &str) -> AppResult<bool> {
     }
     #[cfg(target_os = "macos")]
     {
-        let output = tokio::time::timeout(
+        let output = helper::output(
+            command("/sbin/mount"),
             std::time::Duration::from_secs(2),
-            command("/sbin/mount").kill_on_drop(true).output(),
+            4 * 1024 * 1024,
+            "mounts.unmountTimeout",
         )
-        .await
-        .map_err(|_| AppError::validation("mounts.unmountTimeout"))??;
+        .await?;
         if !output.status.success() {
             return Err(AppError::internal("mounts.unmountProbeFailed"));
         }

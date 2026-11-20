@@ -478,6 +478,14 @@ projected for these panels, under an approval-revision-bound model producer;
 plugin data still goes through its own authorized APIs. Satellite titles use
 the approved display descriptor without hydrating a plugin store.
 
+On macOS, mount-table presence probes also use a bounded OS-helper worker.
+Both output streams have a hard limit; a timeout, malformed pipe or excessive
+output kills and reaps the child before its inherited effect fence retires.
+Cancelling result delivery does not release actual worker capacity. Probe errors
+never establish that a mount is absent. Dismount commands are a separate review:
+they must retain the entire mount transaction, not just a detached helper, and
+force-unmount RPC is not admitted by this change.
+
 Factories without capture/restore now require an explicit state-loss confirmation
 in their source document on each move and satellite close/return. Cancel is the
 default focus; dismissal, replacement, cancellation or renderer retirement deny

@@ -2,6 +2,8 @@
 //! unauthenticated local listening sockets are exposed to the mount program.
 #[cfg(all(test, unix))]
 mod dependency_tests;
+#[cfg(any(target_os = "macos", all(test, unix)))]
+mod helper;
 mod lifecycle;
 mod managed;
 pub(crate) use managed::open_managed;
@@ -481,12 +483,13 @@ async fn mount_visible(mount_point: &str) -> AppResult<bool> {
     }
     #[cfg(target_os = "macos")]
     {
-        let output = tokio::time::timeout(
+        let output = helper::output(
+            command("/sbin/mount"),
             std::time::Duration::from_secs(2),
-            command("/sbin/mount").kill_on_drop(true).output(),
+            4 * 1024 * 1024,
+            "mounts.startTimeout",
         )
-        .await
-        .map_err(|_| AppError::validation("mounts.startTimeout"))??;
+        .await?;
         let marker = format!(" on {mount_point} (");
         return Ok(output.status.success()
             && String::from_utf8_lossy(&output.stdout)
