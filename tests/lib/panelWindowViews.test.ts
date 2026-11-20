@@ -30,11 +30,11 @@ function fixture() {
   fixtures.push(views);
   return { client, views };
 }
-it("tracks production forwarding capture/staging independently of unaccepted public movement admission", async () => {
+it("preserves forwarding state through the publicly admitted capture/stage/commit lifecycle", async () => {
   const { views } = fixture();
   const original = { ...lease, panelId: "forwarding" };
   expect(renderablePanel("forwarding")).toBe(true);
-  expect(transferablePanel("forwarding")).toBe(false);
+  expect(transferablePanel("forwarding")).toBe(true);
   expect(renderablePanel("hosts")).toBe(false);
   await views.reconcile(snapshot([original]));
   const source = useWindowViews.getState().entries.get("forwarding")!;
@@ -63,7 +63,7 @@ it("tracks production forwarding capture/staging independently of unaccepted pub
   await stage;
   await views.reconcile(snapshot([{ ...original, generation: 8 }]));
   expect(useWindowViews.getState().entries.get("forwarding")!.controller).toBe(target.controller);
-  expect(transferablePanel("forwarding")).toBe(false);
+  expect(transferablePanel("forwarding")).toBe(true);
 });
 it("captures explicit fields and DOM only; checkpoint revisions are generation scoped", async () => {
   const { client, views } = fixture();

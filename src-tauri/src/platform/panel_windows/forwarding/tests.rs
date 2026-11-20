@@ -134,7 +134,7 @@ fn admission_and_final_gate_require_exact_window_document_lease_and_consent() {
         .unwrap();
 }
 #[test]
-fn unready_source_never_gets_resource_admission_and_discovery_stays_closed() {
+fn forwarding_move_admission_requires_ready_ownership_and_keeps_staged_resource_calls_denied() {
     let mut registry = Ownership::default();
     let main = registry.register("main").unwrap();
     let target = registry.register("target").unwrap();
@@ -142,16 +142,17 @@ fn unready_source_never_gets_resource_admission_and_discovery_stays_closed() {
     assert!(registry
         .begin_forwarding("main", &main, &lease, &stop())
         .is_err());
-    registry.ready("main", &main).unwrap();
-    registry.ready("target", &target).unwrap();
-    // This is a gateway prerequisite, NOT permission to transfer a view for
-    // which prompts/providers/renderer are not yet integrated.
-    assert!(!super::super::ownership::transferable("forwarding"));
     assert!(registry
         .authorize_creation("main", &main, Some(&lease))
         .is_err());
-    // Internal ownership preparation is not discovery admission. Exercise the
-    // frozen and staged gates using it, without changing public transferability.
+    registry.ready("main", &main).unwrap();
+    registry.ready("target", &target).unwrap();
+    assert!(super::super::ownership::transferable("forwarding"));
+    assert!(registry
+        .authorize_creation("main", &main, Some(&lease))
+        .is_ok());
+    // Public presentation admission never authorizes resource effects from
+    // the frozen source or the staged destination.
     let now = std::time::Instant::now();
     let offer = registry
         .prepare("main", &main, &lease, "target", Value::Null, now)

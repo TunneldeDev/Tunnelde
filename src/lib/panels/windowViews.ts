@@ -26,12 +26,12 @@ export const transferablePanel = (id: string, snapshot = usePanelWindows.getStat
   id === "tasks" ||
   id === "output" ||
   id === "knownHosts" ||
+  id === "forwarding" ||
   !!pluginPanelDescriptor(id, snapshot);
-/** A production renderer can participate in capture/staging before its public
- * movement adapter is accepted. This does NOT grant drag/create/move permission;
- * the native transferable allowlist remains the independent admission authority. */
+/** Rendering and movement remain explicit opt-ins. The native allowlist is the
+ * independent authority; never infer support from the existence of a renderer. */
 export const renderablePanel = (id: string, snapshot = usePanelWindows.getState().snapshot) =>
-  id === "forwarding" || transferablePanel(id, snapshot);
+  transferablePanel(id, snapshot);
 export interface WindowViewRecord {
   key: string;
   panelId: string;
