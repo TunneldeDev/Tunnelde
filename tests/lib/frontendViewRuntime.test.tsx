@@ -711,3 +711,48 @@ it("does not advertise legacy registered sidebars as native factories even when 
   expect(f.runtime.factoryOwner(plugin.id, "main")).toBeUndefined();
   f.runtime.dispose();
 });
+
+it("reopens a captureless factory only with exact per-instance consent and an explicit reset capsule", async () => {
+  const { render, screen } = await import("@testing-library/react");
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const { PanelStateLossRequired } = await import("@/lib/panels/stateLoss");
+  const f = fixture(() => ({ component: () => <span>captureless factory</span> }));
+  await f.runtime.ensure(plugin);
+  const source = createPanelViewState();
+  const View = f.runtime.view("custom", "main")!;
+  const ui = render(
+    <PanelViewStateScope controller={source}>
+      <View pluginId="custom" viewId="main" visible />
+    </PanelViewStateScope>,
+  );
+  await screen.findByText("captureless factory");
+  const error = await source.captureAsync().catch((cause: unknown) => cause);
+  expect(error).toBeInstanceOf(PanelStateLossRequired);
+  const consent = new Set((error as InstanceType<typeof PanelStateLossRequired>).views);
+  const capsule = await source.captureAsync(undefined, { consentedStateLoss: consent });
+  expect(capsule.fields["plugin.factory"]).toEqual({
+    version: 1,
+    pluginId: "custom",
+    viewId: "main",
+    reset: true,
+  });
+  await expect(source.captureAsync()).rejects.toThrow("viewStateUnavailable");
+  ui.unmount();
+  const destination = createPanelViewState(capsule);
+  const target = render(
+    <PanelViewStateScope controller={destination}>
+      <View pluginId="custom" viewId="main" visible />
+    </PanelViewStateScope>,
+  );
+  await screen.findByText("captureless factory");
+  await destination.waitReady(new AbortController().signal);
+  await expect(
+    destination.captureAsync(undefined, { consentedStateLoss: consent }),
+  ).rejects.toThrow("viewStateUnavailable");
+  expect(f.activate).toHaveBeenCalledOnce();
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  target.unmount();
+  source.dispose();
+  destination.dispose();
+  f.runtime.dispose();
+});

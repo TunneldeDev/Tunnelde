@@ -12,6 +12,7 @@ export function ConfirmDialogHost() {
       confirmLabel={dialog.confirmLabel}
       danger={dialog.danger}
       preformatted={dialog.preformatted}
+      focusCancel={dialog.focusCancel}
       onConfirm={dialog.onConfirm}
       onClose={() => {
         const current = useDialogs.getState().dialog;

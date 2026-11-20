@@ -123,12 +123,14 @@ export function startSatelliteViews(
       panels = snapshot.panels.filter((panel) => panel.windowId === client.windowId);
       closePanels = panels;
       for (const panel of panels) views.setMoving(panel.panelId, true, panel);
-      const states = await Promise.all(
-        panels.map(async (panel) => ({
+      const states = [];
+      // One document-local consent at a time. No panel is submitted unless
+      // every capture/reset decision succeeds and beginClose freezes the set.
+      for (const panel of panels)
+        states.push({
           panel,
-          state: await views.captureAsync(panel.panelId, lifetime.signal),
-        })),
-      );
+          state: await views.captureForMove(panel.panelId, lifetime.signal),
+        });
       if (disposed) return;
       nativeClosing = true;
       const frozen = await client.control<NativePanelSnapshot["panels"]>({ action: "beginClose" });

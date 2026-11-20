@@ -45,7 +45,7 @@ function fixture() {
   } as unknown as PanelWindowClient;
   const views = {
     reconcile: vi.fn().mockResolvedValue(null),
-    captureAsync: vi.fn().mockResolvedValue("captured"),
+    captureForMove: vi.fn().mockResolvedValue("captured"),
     setMoving: vi.fn(),
     stage: vi.fn().mockResolvedValue(null),
   } as unknown as WindowViews;
@@ -125,7 +125,7 @@ it("captures before close, prepares all returns, then destroys only an empty com
   await settle();
   await f.session.close();
   await settle();
-  expect(f.views.captureAsync).toHaveBeenCalledWith("connections", expect.any(AbortSignal));
+  expect(f.views.captureForMove).toHaveBeenCalledWith("connections", expect.any(AbortSignal));
   expect(f.control).toHaveBeenCalledWith({
     action: "prepare",
     lease,
@@ -178,10 +178,12 @@ it("waits for every asynchronous capture before freezing native membership or pr
   f.set({ windows: [], panels: leases, transfers: [] });
   await settle();
   const finish: ((value: unknown) => void)[] = [];
-  vi.mocked(f.views.captureAsync).mockImplementation(
+  vi.mocked(f.views.captureForMove).mockImplementation(
     () =>
       new Promise((resolve) => {
-        finish.push((value) => resolve(value as Awaited<ReturnType<WindowViews["captureAsync"]>>));
+        finish.push((value) =>
+          resolve(value as Awaited<ReturnType<WindowViews["captureForMove"]>>),
+        );
       }),
   );
   const pending = f.session.close();
@@ -208,10 +210,10 @@ it("rejects membership changed during capture instead of returning only the capt
   f.set({ windows: [], panels: [lease], transfers: [] });
   await settle();
   let finish!: (value: unknown) => void;
-  vi.mocked(f.views.captureAsync).mockImplementationOnce(
+  vi.mocked(f.views.captureForMove).mockImplementationOnce(
     () =>
       new Promise((resolve) => {
-        finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureAsync"]>>);
+        finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureForMove"]>>);
       }),
   );
   const pending = f.session.close();
@@ -238,7 +240,7 @@ it("rolls back all locally frozen leases on capture failure and permits a later 
   const lease = { panelId: "connections", windowId: "panel-one", generation: 3 };
   f.set({ windows: [], panels: [lease], transfers: [] });
   await settle();
-  vi.mocked(f.views.captureAsync).mockRejectedValueOnce(new Error("capture failed"));
+  vi.mocked(f.views.captureForMove).mockRejectedValueOnce(new Error("capture failed"));
   await f.session.close();
   expect(f.views.setMoving).toHaveBeenLastCalledWith("connections", false, lease);
   expect(f.control).not.toHaveBeenCalledWith({ action: "beginClose" });
@@ -276,10 +278,10 @@ it("cannot submit late captures after the source document is disposed", async ()
   f.set({ windows: [], panels: [lease], transfers: [] });
   await settle();
   let finish!: (value: unknown) => void, signal!: AbortSignal;
-  vi.mocked(f.views.captureAsync).mockImplementationOnce((_id, current) => {
+  vi.mocked(f.views.captureForMove).mockImplementationOnce((_id, current) => {
     signal = current!;
     return new Promise((resolve) => {
-      finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureAsync"]>>);
+      finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureForMove"]>>);
     });
   });
   const pending = f.session.close();
@@ -299,7 +301,7 @@ it("a capture failure before beginClose does not cancel unrelated native transfe
   const lease = { panelId: "connections", windowId: "panel-one", generation: 3 };
   f.set({ windows: [], panels: [lease], transfers: [] });
   await settle();
-  vi.mocked(f.views.captureAsync).mockRejectedValueOnce(new Error("not ready"));
+  vi.mocked(f.views.captureForMove).mockRejectedValueOnce(new Error("not ready"));
   await f.session.close();
   expect(f.control).not.toHaveBeenCalledWith({ action: "cancelClose" });
   expect(f.views.setMoving).toHaveBeenLastCalledWith("connections", false, lease);

@@ -8,6 +8,7 @@ export interface ConfirmOptions {
   confirmLabel: string;
   danger?: boolean;
   preformatted?: boolean;
+  focusCancel?: boolean;
   onConfirm: () => void | Promise<void>;
 }
 

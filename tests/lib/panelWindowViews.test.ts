@@ -1,3 +1,4 @@
+import type { PanelCaptureOptions } from "@/lib/panels/stateLoss";
 import { afterEach, expect, it, vi } from "vitest";
 import { createWindowViews, useWindowViews } from "@/lib/panels/windowViews";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
@@ -329,5 +330,93 @@ it("withdrawal immediately rejects staged readiness and cannot retain an unappro
   expect(useWindowViews.getState().entries.has(plugin.panelId)).toBe(false);
   await expect(views.stage(offer, null, new AbortController().signal)).rejects.toThrow(
     "unsupportedView",
+  );
+});
+
+async function lossFixture() {
+  const { useDialogs } = await import("@/store/dialogs");
+  const { PanelStateLossRequired } = await import("@/lib/panels/stateLoss");
+  const f = fixture();
+  await f.views.reconcile(snapshot([lease]));
+  f.views.registerRoot(lease.panelId, () => dom);
+  const record = useWindowViews.getState().entries.get(lease.panelId)!;
+  const loss = { pluginId: "captureless", viewId: "files" };
+  const capture = vi.fn((_signal: AbortSignal, options?: PanelCaptureOptions) => {
+    if (!options?.consentedStateLoss?.has(loss)) throw new PanelStateLossRequired([loss]);
+    return { version: 1, pluginId: loss.pluginId, viewId: loss.viewId, reset: true };
+  });
+  record.controller.registerAsync("plugin.factory", capture);
+  const dialog = async () => {
+    await vi.waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("confirm"));
+    const current = useDialogs.getState().dialog;
+    if (current.kind !== "confirm") throw new Error("missing consent");
+    return current;
+  };
+  return { ...f, capture, loss, dialog, useDialogs };
+}
+it("fences consent and emits an explicit reset capsule without old DOM offsets", async () => {
+  const f = await lossFixture();
+  const pending = f.views.captureForMove(lease.panelId);
+  await (await f.dialog()).onConfirm();
+  expect(await pending).toEqual({
+    version: 1,
+    view: {
+      version: 1,
+      fields: {
+        "plugin.factory": {
+          version: 1,
+          pluginId: "captureless",
+          viewId: "files",
+          reset: true,
+        },
+      },
+    },
+    dom: { version: 1, scroll: {}, focus: null },
+  });
+  expect(f.client.control).toHaveBeenCalledWith({ action: "beginInteraction", lease });
+  expect(f.client.control).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "endInteraction", lease }),
+  );
+  expect(f.capture).toHaveBeenCalledTimes(2);
+  await expect(f.views.checkpoint(lease.panelId)).rejects.toThrow("viewStateUnavailable");
+  expect(f.useDialogs.getState().dialog.kind).toBe("none");
+});
+it("cancelling reset leaves the original instance alone and releases its interaction", async () => {
+  const f = await lossFixture();
+  const pending = f.views.captureForMove(lease.panelId);
+  const rejected = expect(pending).rejects.toThrow("cancelled");
+  await f.dialog();
+  f.useDialogs.getState().close();
+  await rejected;
+  expect(f.capture).toHaveBeenCalledOnce();
+  expect(f.client.control).toHaveBeenLastCalledWith(
+    expect.objectContaining({ action: "endInteraction", lease }),
+  );
+});
+it("late consent cannot reset a retired controller or a newer owner generation", async () => {
+  const f = await lossFixture();
+  const pending = f.views.captureForMove(lease.panelId);
+  const rejected = expect(pending).rejects.toThrow("cancelled");
+  const dialog = await f.dialog();
+  await f.views.reconcile(snapshot([{ ...lease, generation: lease.generation + 1 }]));
+  await dialog.onConfirm();
+  await rejected;
+  expect(f.capture).toHaveBeenCalledOnce();
+});
+it("real capture errors do not offer consent, even with the same translated message", async () => {
+  const { useDialogs } = await import("@/store/dialogs");
+  const f = fixture();
+  await f.views.reconcile(snapshot([lease]));
+  f.views.registerRoot(lease.panelId, () => dom);
+  useWindowViews
+    .getState()
+    .entries.get(lease.panelId)!
+    .controller.registerAsync("broken", () => {
+      throw new Error("plugin.frontend.viewStateUnavailable");
+    });
+  await expect(f.views.captureForMove(lease.panelId)).rejects.toThrow("viewStateUnavailable");
+  expect(useDialogs.getState().dialog.kind).toBe("none");
+  expect(f.client.control).not.toHaveBeenCalledWith(
+    expect.objectContaining({ action: "beginInteraction" }),
   );
 });

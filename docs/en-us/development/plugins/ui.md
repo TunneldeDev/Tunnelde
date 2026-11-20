@@ -476,9 +476,22 @@ native reclaims the now-unrenderable lease to the main window, so it cannot
 strand an empty, uncloseable satellite. Only appearance/language/platform is
 projected for these panels, under an approval-revision-bound model producer;
 plugin data still goes through its own authorized APIs. Satellite titles use
-the approved display descriptor without hydrating a plugin store. Legacy
-registered renderers and factories without capture/restore are not silently
-claimed as lossless; their explicit state-loss UX remains separate work.
+the approved display descriptor without hydrating a plugin store.
+
+Factories without capture/restore now require an explicit state-loss confirmation
+in their source document on each move and satellite close/return. Cancel is the
+default focus; dismissal, replacement, cancellation or renderer retirement deny
+the reset. The host retains an exact native interaction while asking; accepting
+only retries that exact factory instance and emits an explicit `reset: true`
+marker, never an empty capsule claiming preserved drafts. New factories reopen
+without restoration, and obsolete DOM/caret offsets are discarded. Cancel keeps
+the existing tree and drafts, and no empty destination is created before consent.
+Ordinary checkpoints never prompt or silently reset, and actual capture errors,
+timeouts or oversized state are never downgraded to reset offers. Multiple
+captureless children are collected; any genuine capture failure takes priority.
+Legacy registered renderers without `createView` still require their separate
+native adapter/lifecycle integration; they remain unsupported for cross-window
+moves rather than being falsely advertised as lossless.
 
 This is not yet the public independent-window renderer capability. The allowlist
 is explicit, never inferred from read permissions or get/list names. Full resource

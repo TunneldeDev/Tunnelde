@@ -39,6 +39,8 @@ export async function movePanelToWindow(
       throw new Error("panel.window.staleOwner");
     source = lease;
     views.setMoving(panelId, true, lease);
+    const state = await views.captureForMove(panelId, signal);
+    if (signal?.aborted) throw new Error("panel.window.cancelled");
     if (!target) {
       // Native checks this exact document/lease before AND after platform window
       // construction. Satellites cannot create arbitrary unowned windows.
@@ -56,7 +58,6 @@ export async function movePanelToWindow(
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
     }
-    const state = await views.captureAsync(panelId, signal);
     if (signal?.aborted) throw new Error("panel.window.cancelled");
     const offer = await client.control<{ id: string }>(
       operationId

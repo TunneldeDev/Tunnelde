@@ -1,3 +1,4 @@
+import { PanelStateLossRequired, type PanelCaptureOptions } from "@/lib/panels/stateLoss";
 import { useLayoutEffect, useRef, useState } from "react";
 import { usePanelViewController } from "@/lib/panels/viewState";
 import { awaitPanelWork } from "@/lib/panels/viewCapture";
@@ -5,6 +6,7 @@ import type { MountedFrontendView } from "./frontend";
 
 const KEY = "plugin.factory";
 function binding(pluginId: string, viewId: string) {
+  const loss = Object.freeze({ pluginId, viewId });
   let view: MountedFrontendView | null = null,
     disposed = false,
     resolve!: () => void,
@@ -25,10 +27,13 @@ function binding(pluginId: string, viewId: string) {
       reject(error);
     },
     ready: (signal: AbortSignal) => awaitPanelWork(ready, signal),
-    async capture(signal: AbortSignal) {
+    async capture(signal: AbortSignal, options?: PanelCaptureOptions) {
       await awaitPanelWork(ready, signal);
       if (disposed || signal.aborted || !view) throw new Error("panel.window.cancelled");
-      if (!view.stateful) throw new Error("plugin.frontend.viewStateUnavailable");
+      if (!view.stateful) {
+        if (!options?.consentedStateLoss?.has(loss)) throw new PanelStateLossRequired([loss]);
+        return { version: 1, pluginId, viewId, reset: true };
+      }
       const state = await view.captureState();
       if (disposed || signal.aborted) throw new Error("panel.window.cancelled");
       return { version: 1, pluginId, viewId, state };
@@ -63,11 +68,17 @@ export function useFactoryPanelState(pluginId: string, viewId: string, parent?: 
       incoming.version !== 1 ||
       incoming.pluginId !== pluginId ||
       incoming.viewId !== viewId ||
-      !Object.prototype.hasOwnProperty.call(incoming, "state") ||
-      Object.keys(incoming).some((key) => !["version", "pluginId", "viewId", "state"].includes(key))
+      (incoming.reset === true
+        ? Object.keys(incoming).some(
+            (key) => !["version", "pluginId", "viewId", "reset"].includes(key),
+          )
+        : !Object.prototype.hasOwnProperty.call(incoming, "state") ||
+          Object.keys(incoming).some(
+            (key) => !["version", "pluginId", "viewId", "state"].includes(key),
+          ))
     )
       throw new Error("panel.viewState.invalid");
-    return { value: incoming.state };
+    return incoming.reset === true ? undefined : { value: incoming.state };
   });
   const current = useRef<ReturnType<typeof binding> | null>(null);
   useLayoutEffect(() => {

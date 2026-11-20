@@ -1,6 +1,10 @@
+import { PanelStateLossRequired, type PanelCaptureOptions } from "./stateLoss";
 import { createResourceScope } from "@/lib/extensions/resourceScope";
 
-export type AsyncPanelCapture = (signal: AbortSignal) => unknown | Promise<unknown>;
+export type AsyncPanelCapture = (
+  signal: AbortSignal,
+  options?: PanelCaptureOptions,
+) => unknown | Promise<unknown>;
 export type PanelReady = (signal: AbortSignal) => void | Promise<void>;
 interface Field {
   sync?: () => unknown;
@@ -39,7 +43,8 @@ export function createPanelCaptures<T>(
   const scope = createResourceScope({ limit: 1 });
   let membership = 0,
     revision = 0,
-    pending: Promise<T> | undefined;
+    pending: Promise<T> | undefined,
+    pendingOptions: PanelCaptureOptions["consentedStateLoss"];
   const check = (size = true) => {
     if (scope.signal.aborted) throw new Error("panel.viewState.disposed");
     if (size && fields.size > maxFields) throw new Error("panel.viewState.tooManyFields");
@@ -73,10 +78,13 @@ export function createPanelCaptures<T>(
         ),
       );
     },
-    async captureAsync(signal?: AbortSignal): Promise<T> {
+    async captureAsync(signal?: AbortSignal, options?: PanelCaptureOptions): Promise<T> {
       if (signal?.aborted) return Promise.reject(new Error("panel.window.cancelled"));
       check();
+      if (pending && pendingOptions !== options?.consentedStateLoss)
+        throw new Error("panel.window.moveInProgress");
       if (!pending) {
+        pendingOptions = options?.consentedStateLoss;
         const capturedRevision = revision;
         const selected = [...fields];
         pending = scope.run(
@@ -84,13 +92,20 @@ export function createPanelCaptures<T>(
             const results = await Promise.allSettled(
               selected.map(
                 async ([key, field]) =>
-                  [key, field.async ? await field.async(work) : field.sync!()] as const,
+                  [key, field.async ? await field.async(work, options) : field.sync!()] as const,
               ),
             );
             // Wait for EVERY callback, even after one fails. Otherwise a slow,
             // cancellation-ignoring sibling could overlap the next capture.
-            const failed = results.find((result) => result.status === "rejected");
-            if (failed?.status === "rejected") throw failed.reason;
+            const failures = results.filter((result) => result.status === "rejected");
+            const failed = failures.find(
+              (result) => !(result.reason instanceof PanelStateLossRequired),
+            );
+            if (failed) throw failed.reason;
+            if (failures.length)
+              throw new PanelStateLossRequired(
+                failures.flatMap((result) => (result.reason as PanelStateLossRequired).views),
+              );
             const values = results.map((result) => {
               if (result.status !== "fulfilled") throw new Error("panel.viewState.invalid");
               return result.value;

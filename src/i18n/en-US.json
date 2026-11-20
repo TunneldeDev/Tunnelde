@@ -2837,6 +2837,9 @@
     "exportChanged": "Host configuration changed during export. Try exporting again."
   },
   "panels": {
+    "stateLossTitle": "Reopen this view in another window?",
+    "stateLossBody": "{{views}} does not support preserving its view state. Moving or returning it will reopen the view and discard unsaved input, selections and other temporary state. Saved data and host-managed connections are not closed. Cancel to keep the current view.",
+    "stateLossConfirm": "Reopen without view state",
     "actionInterrupted": "The coordinator reloaded during an action. Its outcome is unknown, so this panel is locked to prevent repetition. Check the resource state before restarting Tunnelde to clear the safety lock.",
     "moveToGroup": "Move to group {{index}}",
     "inOtherWindow": "This panel is open in another window.",

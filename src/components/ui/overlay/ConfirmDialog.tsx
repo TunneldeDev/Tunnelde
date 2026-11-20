@@ -11,6 +11,7 @@ export function ConfirmDialog({
   confirmLabel,
   danger,
   preformatted,
+  focusCancel = false,
   onConfirm,
   onClose,
 }: {
@@ -19,6 +20,7 @@ export function ConfirmDialog({
   confirmLabel: string;
   danger?: boolean;
   preformatted?: boolean;
+  focusCancel?: boolean;
   onConfirm: () => void | Promise<void>;
   onClose: () => void;
 }) {
@@ -51,12 +53,12 @@ export function ConfirmDialog({
       dismissible={!busy}
       footer={
         <>
-          <Button variant="ghost" disabled={busy} onClick={onClose}>
+          <Button variant="ghost" autoFocus={focusCancel} disabled={busy} onClick={onClose}>
             {t("common.cancel")}
           </Button>
           <Button
             variant={danger ? "danger" : "primary"}
-            autoFocus
+            autoFocus={!focusCancel}
             disabled={busy}
             onClick={() => void run()}
           >

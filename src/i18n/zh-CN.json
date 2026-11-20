@@ -2837,6 +2837,9 @@
     "exportChanged": "导出期间主机配置发生变化，请重新导出。"
   },
   "panels": {
+    "stateLossTitle": "在另一窗口重新打开此视图？",
+    "stateLossBody": "{{views}} 不支持保留视图状态。迁移或返回窗口时会重新打开视图，丢弃未保存的输入、选区及其他临时状态。已保存的数据和宿主管理的连接不会因此关闭。取消可保留当前视图。",
+    "stateLossConfirm": "丢弃视图状态并重新打开",
     "actionInterrupted": "主窗口在操作期间重载，操作结果未知。为避免重复执行，此面板已锁定。请先检查资源状态，再重启 Tunnelde 解除保护。",
     "moveToGroup": "移至分组 {{index}}",
     "inOtherWindow": "此面板已在另一个窗体中打开。",

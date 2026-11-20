@@ -23,7 +23,7 @@ function fixture(fail = false) {
   mock.views = {
     client: { windowId: "main", snapshot, control },
     setMoving,
-    captureAsync: vi.fn().mockReturnValue({ version: 1 }),
+    captureForMove: vi.fn().mockReturnValue({ version: 1 }),
   } as unknown as WindowViews;
   return { setMoving };
 }
@@ -62,7 +62,7 @@ it("can detach again from a satellite using its own exact lease, not coordinator
     });
   mock.views = {
     client: { windowId: "satellite-one", create, snapshot, control },
-    captureAsync: vi.fn().mockReturnValue({ version: 1 }),
+    captureForMove: vi.fn().mockReturnValue({ version: 1 }),
     setMoving: vi.fn(),
   } as unknown as WindowViews;
   await movePanelToWindow("tasks");
@@ -89,7 +89,7 @@ it("cleans up only the destination it created when handoff preparation fails", a
       control: vi.fn().mockRejectedValue(new Error("blocked")),
       destroy,
     },
-    captureAsync: vi.fn().mockReturnValue({ version: 1 }),
+    captureForMove: vi.fn().mockReturnValue({ version: 1 }),
     setMoving: vi.fn(),
   } as unknown as WindowViews;
   await expect(movePanelToWindow("tasks")).rejects.toThrow("blocked");
@@ -105,7 +105,7 @@ it("does not silently move a newer lease incarnation after a native drag release
       generation: 99,
     }),
   ).rejects.toThrow("panel.window.staleOwner");
-  expect(mock.views.captureAsync).not.toHaveBeenCalled();
+  expect(mock.views.captureForMove).not.toHaveBeenCalled();
   expect(mock.views.client.control).not.toHaveBeenCalled();
 });
 
@@ -123,10 +123,10 @@ it("uses the host-bound source job instead of accepting a plugin supplied lease 
 it("does not prepare before async capture completes, and cancellation cannot submit that late capsule", async () => {
   fixture();
   let finish!: (state: unknown) => void;
-  vi.mocked(mock.views.captureAsync).mockImplementationOnce(
+  vi.mocked(mock.views.captureForMove).mockImplementationOnce(
     () =>
       new Promise((resolve) => {
-        finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureAsync"]>>);
+        finish = (value) => resolve(value as Awaited<ReturnType<WindowViews["captureForMove"]>>);
       }),
   );
   const abort = new AbortController();

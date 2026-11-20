@@ -1,3 +1,5 @@
+import { confirmPanelStateLoss } from "./stateLossConsent";
+import { PanelStateLossRequired, type PanelCaptureOptions } from "./stateLoss";
 import { usePanelWindows } from "@/store/panelWindows";
 import { create } from "zustand";
 import type { PanelWindowClient } from "./windowClient";
@@ -88,7 +90,11 @@ export function createWindowViews(client: PanelWindowClient) {
     records.set(panelId, record);
     return record;
   };
-  const captureAsync = async (panelId: string, signal?: AbortSignal) => {
+  const captureAsync = async (
+    panelId: string,
+    signal?: AbortSignal,
+    options?: PanelCaptureOptions,
+  ) => {
     const record = records.get(panelId),
       root = roots.get(panelId);
     if (!record?.lease || record.staged || record.failed || !root || disposed)
@@ -103,7 +109,7 @@ export function createWindowViews(client: PanelWindowClient) {
       for (;;) {
         let view;
         try {
-          view = await record.controller.captureAsync(controller.signal);
+          view = await record.controller.captureAsync(controller.signal, options);
         } catch (error) {
           if (
             !controller.signal.aborted &&
@@ -241,6 +247,48 @@ export function createWindowViews(client: PanelWindowClient) {
       const state = await captureAsync(panelId);
       if (disposed || records.get(panelId)?.controller !== record.controller) return;
       await client.control({ action: "checkpoint", lease: record.lease, revision, state });
+    },
+    async captureForMove(panelId: string, signal?: AbortSignal) {
+      const record = records.get(panelId);
+      const owner = record?.lease;
+      const valid = () => {
+        const current = records.get(panelId);
+        return (
+          !disposed &&
+          !!owner &&
+          !!current &&
+          current.controller === record?.controller &&
+          current.key === record?.key &&
+          current.lease?.generation === owner.generation &&
+          current.lease.windowId === owner.windowId &&
+          !current.staged &&
+          !current.failed &&
+          !signal?.aborted
+        );
+      };
+      try {
+        return await captureAsync(panelId, signal);
+      } catch (error) {
+        // A failed/oversized/timed-out real capture is NEVER a reset offer.
+        if (!(error instanceof PanelStateLossRequired) || !valid()) throw error;
+        const lease = record!.lease!;
+        const id = await client.control<string>({ action: "beginInteraction", lease });
+        let accepted = false;
+        try {
+          accepted = await confirmPanelStateLoss(error.views, valid, signal);
+        } finally {
+          await client.control({ action: "endInteraction", lease, id });
+        }
+        if (!accepted || !valid()) throw new Error("panel.window.cancelled");
+        // This exact binding only, for this retry only. A replacement renderer
+        // or newly registered captureless child requires fresh consent.
+        const captured = await captureAsync(panelId, signal, {
+          consentedStateLoss: new Set(error.views),
+        });
+        // Lost drafts cannot safely inherit caret/scroll offsets from a
+        // different, freshly initialized component instance.
+        return { ...captured, dom: { version: 1 as const, scroll: {}, focus: null } };
+      }
     },
     captureAsync,
     capture(panelId: string) {
