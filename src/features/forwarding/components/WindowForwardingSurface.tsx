@@ -74,19 +74,22 @@ function SelectedProvider({
     selectionError;
   usePanelReadiness("forwarding.selection", !snapshot.loading && cause === undefined, cause);
   useEffect(() => selection.start(), [selection]);
+  // The native invalidation may precede the coordinator's local lease commit.
+  // Revalidate that commit too, without replacing the restored provider child.
+  useEffect(() => selection.revalidate(), [selection, service]);
   const source = snapshot.source;
   const scopeOwner = useMemo(() => source && { service, check: source.check }, [source, service]);
-  const failed = (error: unknown) => (
+  const failed = (error: unknown, retry = selection.refresh) => (
     <div role="alert">
       <p>{translateError(error)}</p>
-      <Button size="sm" onClick={selection.refresh}>
+      <Button size="sm" onClick={retry}>
         {t("common.retry")}
       </Button>
     </div>
   );
   if (!source)
     return discoveryFailed ? (
-      failed(snapshot.error)
+      failed(snapshot.error, selection.revalidate)
     ) : snapshot.loading ? (
       <p role="status">{t("common.loading")}</p>
     ) : (
@@ -95,7 +98,7 @@ function SelectedProvider({
   const View = source.View;
   return (
     <>
-      {discoveryFailed ? failed(snapshot.error) : null}
+      {discoveryFailed ? failed(snapshot.error, selection.revalidate) : null}
       <Boundary
         key={source.id}
         failed={failed}

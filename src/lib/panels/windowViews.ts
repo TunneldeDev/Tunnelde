@@ -27,6 +27,11 @@ export const transferablePanel = (id: string, snapshot = usePanelWindows.getStat
   id === "output" ||
   id === "knownHosts" ||
   !!pluginPanelDescriptor(id, snapshot);
+/** A production renderer can participate in capture/staging before its public
+ * movement adapter is accepted. This does NOT grant drag/create/move permission;
+ * the native transferable allowlist remains the independent admission authority. */
+export const renderablePanel = (id: string, snapshot = usePanelWindows.getState().snapshot) =>
+  id === "forwarding" || transferablePanel(id, snapshot);
 export interface WindowViewRecord {
   key: string;
   panelId: string;
@@ -148,7 +153,7 @@ export function createWindowViews(client: PanelWindowClient) {
       const currentEpoch = ++epoch;
       descriptors = snapshot;
       const owned = snapshot.panels.filter(
-        (lease) => lease.windowId === client.windowId && transferablePanel(lease.panelId, snapshot),
+        (lease) => lease.windowId === client.windowId && renderablePanel(lease.panelId, snapshot),
       );
       const incoming = new Set(
         snapshot.transfers
@@ -181,7 +186,7 @@ export function createWindowViews(client: PanelWindowClient) {
     },
     stage(offer: PanelTransferOffer, state: unknown, signal: AbortSignal): Promise<void> {
       if (disposed || signal.aborted) return Promise.reject(new Error("panel.window.disposed"));
-      if (!transferablePanel(offer.lease.panelId, descriptors))
+      if (!renderablePanel(offer.lease.panelId, descriptors))
         return Promise.reject(new Error("panel.window.unsupportedView"));
       const existing = records.get(offer.lease.panelId);
       if (existing) return Promise.reject(new Error("panel.window.duplicateView"));

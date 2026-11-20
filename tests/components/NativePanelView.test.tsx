@@ -42,91 +42,94 @@ it("shows an explicit unknown-outcome safety boundary after coordinator loss ins
   expect(screen.getByRole("alert").textContent).toContain("restarting Tunnelde");
 });
 
-it("does not restore focus into a loading shell; readiness and commit both gate focus", async () => {
-  const { act } = await import("@testing-library/react");
-  const { createWindowViews, installWindowViews } = await import("@/lib/panels/windowViews");
-  const { usePanelViewController } = await import("@/lib/panels/viewState");
-  const { useLayoutEffect, useState } = await import("react");
-  const { vi } = await import("vitest");
-  const lease = { panelId: "tasks", windowId: "source", generation: 1 };
-  const offer = { id: "async-focus", lease, targetWindow: "target" };
-  const client = {
-    windowId: "target",
-    control: vi.fn(),
-  } as unknown as PanelWindowClient;
-  const views = createWindowViews(client),
-    uninstall = installWindowViews(views);
-  let ready!: () => void, show!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    ready = resolve;
-  });
-  function Renderer() {
-    const controller = usePanelViewController();
-    const [loaded, set] = useState(false);
-    show = () => set(true);
-    useLayoutEffect(
-      () =>
-        controller?.registerAsync(
-          "factory",
-          async () => null,
-          () => gate,
-        ),
-      [controller],
+it.each(["tasks", "forwarding"])(
+  "does not restore %s focus into a loading shell; readiness and commit both gate focus",
+  async (panelId) => {
+    const { act } = await import("@testing-library/react");
+    const { createWindowViews, installWindowViews } = await import("@/lib/panels/windowViews");
+    const { usePanelViewController } = await import("@/lib/panels/viewState");
+    const { useLayoutEffect, useState } = await import("react");
+    const { vi } = await import("vitest");
+    const lease = { panelId, windowId: "source", generation: 1 };
+    const offer = { id: "async-focus", lease, targetWindow: "target" };
+    const client = {
+      windowId: "target",
+      control: vi.fn(),
+    } as unknown as PanelWindowClient;
+    const views = createWindowViews(client),
+      uninstall = installWindowViews(views);
+    let ready!: () => void, show!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    function Renderer() {
+      const controller = usePanelViewController();
+      const [loaded, set] = useState(false);
+      show = () => set(true);
+      useLayoutEffect(
+        () =>
+          controller?.registerAsync(
+            "factory",
+            async () => null,
+            () => gate,
+          ),
+        [controller],
+      );
+      return loaded ? (
+        <input aria-label="restored draft" data-panel-focus="draft" defaultValue="abcdef" />
+      ) : (
+        <span>loading shell</span>
+      );
+    }
+    usePanelWindows.setState({ available: true });
+    const dom = {
+      version: 1,
+      scroll: {},
+      focus: { key: "draft", selection: { start: 1, end: 4, direction: "forward" } },
+    };
+    const staged = views.stage(
+      offer,
+      { version: 1, view: { version: 1, fields: {} }, dom },
+      new AbortController().signal,
     );
-    return loaded ? (
-      <input aria-label="restored draft" data-panel-focus="draft" defaultValue="abcdef" />
-    ) : (
-      <span>loading shell</span>
+    let complete = false;
+    void staged.then(() => {
+      complete = true;
+    });
+    const ui = render(
+      <NativePanelView panelId={panelId}>
+        <Renderer />
+      </NativePanelView>,
     );
-  }
-  usePanelWindows.setState({ available: true });
-  const dom = {
-    version: 1,
-    scroll: {},
-    focus: { key: "draft", selection: { start: 1, end: 4, direction: "forward" } },
-  };
-  const staged = views.stage(
-    offer,
-    { version: 1, view: { version: 1, fields: {} }, dom },
-    new AbortController().signal,
-  );
-  let complete = false;
-  void staged.then(() => {
-    complete = true;
-  });
-  const ui = render(
-    <NativePanelView panelId="tasks">
-      <Renderer />
-    </NativePanelView>,
-  );
-  try {
-    expect(complete).toBe(false);
-    // Commit cannot grant focus to an unresolved async tree either.
-    await act(async () => {
-      await views.reconcile({
-        windows: [],
-        panels: [{ ...lease, windowId: "target", generation: 2 }],
-        transfers: [],
+    try {
+      expect(complete).toBe(false);
+      // Commit cannot grant focus to an unresolved async tree either.
+      await act(async () => {
+        await views.reconcile({
+          windows: [],
+          panels: [{ ...lease, windowId: "target", generation: 2 }],
+          transfers: [],
+        });
       });
-    });
-    expect(complete).toBe(false);
-    await act(async () => {
-      show();
-    });
-    expect(screen.getByRole("textbox")).not.toBe(document.activeElement);
-    await act(async () => {
-      ready();
-      await staged;
-    });
-    expect(screen.getByRole("textbox")).toBe(document.activeElement);
-    expect(screen.getByRole("textbox")).toHaveProperty("selectionStart", 1);
-    expect(screen.getByRole("textbox")).toHaveProperty("selectionEnd", 4);
-    expect(complete).toBe(true);
-  } finally {
-    ui.unmount();
-    uninstall();
-  }
-});
+      expect(complete).toBe(false);
+      await act(async () => {
+        show();
+      });
+      expect(screen.getByRole("textbox")).not.toBe(document.activeElement);
+      await act(async () => {
+        ready();
+        await staged;
+      });
+      expect(screen.getByRole("textbox")).toBe(document.activeElement);
+      expect(screen.getByRole("textbox")).toHaveProperty("selectionStart", 1);
+      expect(screen.getByRole("textbox")).toHaveProperty("selectionEnd", 4);
+      expect(complete).toBe(true);
+    } finally {
+      ui.unmount();
+      uninstall();
+    }
+  },
+);
 
 it("rolls back a throwing staged renderer without taking sibling panels down or ACKing an error fallback", async () => {
   const { act } = await import("@testing-library/react");

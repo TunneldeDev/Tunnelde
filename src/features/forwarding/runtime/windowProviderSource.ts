@@ -5,6 +5,14 @@ import type { NativeForwardingProviderDescriptor } from "@/lib/panels/windowProt
 import type { NativePluginViewTarget } from "@/lib/panels/windowPluginClient";
 import { openWindowForwardingProviderView } from "./windowProvider";
 
+function targetKey(target: NativePluginViewTarget) {
+  return JSON.stringify(
+    target.kind === "staged"
+      ? [target.kind, target.id]
+      : [target.kind, target.lease.panelId, target.lease.windowId, target.lease.generation],
+  );
+}
+
 export interface WindowForwardingViewOwner {
   client: PanelWindowClient;
   target(): NativePluginViewTarget;
@@ -59,6 +67,7 @@ export function createWindowForwardingProviderSource(
       };
     },
     refresh: () => active?.refresh(true),
+    revalidate: () => active?.refresh(),
     start() {
       active?.stop();
       let stopped = false,
@@ -81,9 +90,30 @@ export function createWindowForwardingProviderSource(
               const force = reset;
               reset = false;
               owner.check(false);
-              const descriptor = await client.describeForwardingProvider(owner.target());
+              const target = structuredClone(owner.target());
+              let descriptor: NativeForwardingProviderDescriptor | null;
+              try {
+                descriptor = await client.describeForwardingProvider(target);
+              } catch (error) {
+                if (stopped) return;
+                owner.check(false);
+                // Native promotion can retire a staged target while its read is
+                // in flight. Retry only for this display owner's changed target,
+                // never by weakening native authorization or resetting its draft.
+                if (targetKey(target) !== targetKey(owner.target())) {
+                  queued = true;
+                  reset ||= force;
+                  continue;
+                }
+                throw error;
+              }
               if (stopped) return;
               owner.check(false);
+              if (targetKey(target) !== targetKey(owner.target())) {
+                queued = true;
+                reset ||= force;
+                continue;
+              }
               if (
                 force ||
                 descriptorKey(current?.descriptor ?? null) !== descriptorKey(descriptor)

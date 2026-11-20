@@ -1035,3 +1035,29 @@ rows while discarding `plugin.factory`; the destination rejects and leaves the
 source available. This obligation clears only when the matching selection has
 committed its renderer (whose own factory binding still owns restoration/readiness),
 so subsequent explicit user deselection of an already restored view remains valid.
+
+### Forwarding renderer integration and native handoff checks
+
+`renderablePanel` separates production capture/staging integration from public
+movement admission. Forwarding now uses the actual `NativePanelView` interaction,
+readiness, DOM/focus and checkpoint shell in both documents, but remains outside
+`transferablePanel` and the native movement allowlist. A renderable view is not a
+new permission to create or move a window.
+
+Provider discovery snapshots its exact staged/owned target. A reply or failure
+from a target retired during promotion is revalidated against the current target,
+not applied as a new provider selection. The committed action-service lifecycle
+also triggers metadata revalidation: native invalidation can arrive before the
+local coordinator commits the new lease. Neither route resets the provider child.
+A discovery-error Retry rechecks metadata while preserving the existing draft;
+only an explicit factory-render retry replaces a failed factory. Actual current
+discovery failures still block readiness/capture and never authorize mutations.
+
+An isolated macOS check exercised the real production `SatelliteApp`, original
+capture/restore and native coordinator ACK/commit for two main/native round trips.
+Edited provider drafts survived both directions, the original managed SSH group
+session and forwarded TCP echo remained live, and singleton activation stayed at
+one. The check used explicit first-party prepare/commit, not an OS pointer drag.
+It does not cover no-factory legacy views, FUSE continuity, Windows/Linux pointer
+release, mixed DPI or the remaining page/provider adapters. Full parity acceptance
+is still required before enabling native-window discovery or public movement.

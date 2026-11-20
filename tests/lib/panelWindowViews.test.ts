@@ -1,6 +1,11 @@
 import type { PanelCaptureOptions } from "@/lib/panels/stateLoss";
 import { afterEach, expect, it, vi } from "vitest";
-import { createWindowViews, useWindowViews } from "@/lib/panels/windowViews";
+import {
+  createWindowViews,
+  useWindowViews,
+  renderablePanel,
+  transferablePanel,
+} from "@/lib/panels/windowViews";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { PanelDomState } from "@/lib/panels/domState";
 import type { NativePanelSnapshot, PanelLease } from "@/lib/panels/windowProtocol";
@@ -25,6 +30,41 @@ function fixture() {
   fixtures.push(views);
   return { client, views };
 }
+it("tracks production forwarding capture/staging independently of unaccepted public movement admission", async () => {
+  const { views } = fixture();
+  const original = { ...lease, panelId: "forwarding" };
+  expect(renderablePanel("forwarding")).toBe(true);
+  expect(transferablePanel("forwarding")).toBe(false);
+  expect(renderablePanel("hosts")).toBe(false);
+  await views.reconcile(snapshot([original]));
+  const source = useWindowViews.getState().entries.get("forwarding")!;
+  expect(source.lease).toEqual(original);
+  source.controller.register("draft", () => "real forwarding draft");
+  views.registerRoot("forwarding", () => dom);
+  const captured = await views.captureAsync("forwarding");
+  expect(captured.view.fields.draft).toBe("real forwarding draft");
+  await views.reconcile(snapshot());
+  const offer = {
+    id: "forwarding-stage",
+    lease: { ...original, windowId: "source" },
+    targetWindow: "main",
+  };
+  let rendered = false;
+  const stage = views.stage(offer, captured, new AbortController().signal).then(() => {
+    rendered = true;
+  });
+  await Promise.resolve();
+  const target = useWindowViews.getState().entries.get("forwarding")!;
+  expect(rendered).toBe(false);
+  expect(
+    target.controller.read("draft", (value): value is string => typeof value === "string"),
+  ).toBe("real forwarding draft");
+  views.rendered(offer.id);
+  await stage;
+  await views.reconcile(snapshot([{ ...original, generation: 8 }]));
+  expect(useWindowViews.getState().entries.get("forwarding")!.controller).toBe(target.controller);
+  expect(transferablePanel("forwarding")).toBe(false);
+});
 it("captures explicit fields and DOM only; checkpoint revisions are generation scoped", async () => {
   const { client, views } = fixture();
   await views.reconcile(snapshot([lease]));

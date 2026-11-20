@@ -143,10 +143,14 @@ function fixture(staged = true, capsule?: PanelViewCapsule) {
   );
   const mutation = vi.fn(async () => ({ id: "group" }));
   const refresh = vi.fn(async () => null);
+  let notifyProvider = () => {};
   const client = {
     windowId: "satellite",
     pluginViews: () => provider,
-    subscribeForwardingProvider: async () => () => {},
+    subscribeForwardingProvider: async (changed: () => void) => {
+      notifyProvider = changed;
+      return () => {};
+    },
     forwardingMutation: mutation,
     action: refresh,
   } as unknown as PanelWindowClient;
@@ -181,6 +185,7 @@ function fixture(staged = true, capsule?: PanelViewCapsule) {
     restore,
     mutation,
     refresh,
+    notifyProvider: () => notifyProvider(),
     forwarding: () => forwarding,
     update: (next: Partial<WindowViewRecord>) => {
       record = { ...record, ...next };
@@ -246,6 +251,60 @@ it("does not recreate factories on live model refresh or reuse a retired action 
   expect(f.createView).toHaveBeenCalledOnce();
   expect(f.activate).not.toHaveBeenCalled();
   expect(f.mutation).not.toHaveBeenCalled();
+});
+
+it("recovers a metadata failure on the local promotion commit without resetting the edited provider", async () => {
+  const f = fixture();
+  const view = render(f.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  await screen.findByText("Real native provider");
+  fireEvent.change(screen.getByLabelText("Provider draft"), {
+    target: { value: "keep edited staged draft" },
+  });
+  f.invoke.mockRejectedValueOnce(new Error("native ownership already promoted"));
+  act(() => f.notifyProvider());
+  await screen.findByText("native ownership already promoted");
+  await expect(f.controller.captureAsync()).rejects.toThrow("native ownership already promoted");
+  act(() => {
+    f.update({ staged: false, lease: f.lease });
+    view.rerender(f.tree());
+  });
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  await waitFor(() => expect(f.forwarding().capabilities.write).toBe(true));
+  expect(screen.getByLabelText("Provider draft")).toHaveProperty(
+    "value",
+    "keep edited staged draft",
+  );
+  expect(JSON.stringify(await f.controller.captureAsync())).toContain("keep edited staged draft");
+  expect(f.createView).toHaveBeenCalledOnce();
+  expect(f.disposeInstance).not.toHaveBeenCalled();
+  expect(f.activate).not.toHaveBeenCalled();
+});
+
+it("a discovery Retry preserves the existing provider draft and child instead of invoking factory reset", async () => {
+  const f = fixture(false);
+  render(f.tree());
+  fireEvent.click(screen.getByRole("button", { name: "Server" }));
+  await screen.findByText("Real native provider");
+  fireEvent.change(screen.getByLabelText("Provider draft"), {
+    target: { value: "unsaved draft before metadata failure" },
+  });
+  f.invoke.mockRejectedValueOnce(new Error("temporary discovery error"));
+  act(() => f.notifyProvider());
+  await screen.findByText("temporary discovery error");
+  await expect(f.controller.captureAsync()).rejects.toThrow("temporary discovery error");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(screen.getByLabelText("Provider draft")).toHaveProperty(
+    "value",
+    "unsaved draft before metadata failure",
+  );
+  expect(JSON.stringify(await f.controller.captureAsync())).toContain(
+    "unsaved draft before metadata failure",
+  );
+  expect(f.createView).toHaveBeenCalledOnce();
+  expect(f.disposeInstance).not.toHaveBeenCalled();
+  expect(f.activate).not.toHaveBeenCalled();
 });
 
 it("captures and restores provider state, selected host and builtin editor fields without credentials or action authority", async () => {

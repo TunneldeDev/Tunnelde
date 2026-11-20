@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createWindowForwardingProviderSource } from "@/features/forwarding/runtime/windowProviderSource";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { NativeForwardingProviderDescriptor } from "@/lib/panels/windowProtocol";
+import type { NativePluginViewTarget } from "@/lib/panels/windowPluginClient";
 const stops: (() => void)[] = [];
 afterEach(() => {
   for (const stop of stops.splice(0)) stop();
@@ -32,13 +33,14 @@ function fixture() {
     kind: "owned" as const,
     lease: { panelId: "forwarding", windowId: "satellite", generation: 7 },
   };
+  let currentTarget: NativePluginViewTarget = target;
   const check = vi.fn();
   const client = {
     pluginViews: vi.fn(() => ({ describeForwardingProvider: describe })),
     subscribeForwardingProvider: subscribe,
   } as unknown as PanelWindowClient;
   const source = createWindowForwardingProviderSource(
-    { client, check, target: () => target },
+    { client, check, target: () => currentTarget },
     "host",
     vi.fn(),
   );
@@ -55,6 +57,9 @@ function fixture() {
     check,
     unsubscribe,
     target,
+    setTarget: (next: NativePluginViewTarget) => {
+      currentTarget = next;
+    },
     notify: () => changed(),
     selected: () => descriptor!,
     set: (next: NativeForwardingProviderDescriptor | null) => {
@@ -166,4 +171,46 @@ it("only an explicit retry replaces an unchanged failed factory identity", async
   f.source.refresh();
   await vi.waitFor(() => expect(f.source.snapshot().source).not.toBe(first));
   expect(() => first.check(false)).toThrow("expired");
+});
+
+it.each(["failure", "obsolete deselection"])(
+  "revalidates a promoted target instead of applying its staged read's %s to the restored draft",
+  async (outcome) => {
+    const f = fixture();
+    f.setTarget({ kind: "staged", id: "original-offer" });
+    f.start();
+    await vi.waitFor(() => expect(f.describe).toHaveBeenCalledTimes(2));
+    const original = f.source.snapshot().source!;
+    let settle!: () => void;
+    f.describe.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          settle = () =>
+            outcome === "failure" ? reject(new Error("expired staged target")) : resolve(null);
+        }),
+    );
+    f.notify();
+    await vi.waitFor(() => expect(f.describe).toHaveBeenCalledTimes(3));
+    f.setTarget(f.target);
+    settle();
+    await vi.waitFor(() => expect(f.describe).toHaveBeenCalledTimes(4));
+    expect(f.describe).toHaveBeenLastCalledWith(f.target);
+    expect(f.source.snapshot()).toEqual({ loading: false, source: original, error: null });
+    original.check(false);
+  },
+);
+
+it("revalidates a late local lease commit and discovery retries without replacing an unchanged factory", async () => {
+  const f = fixture();
+  f.start();
+  await vi.waitFor(() => expect(f.describe).toHaveBeenCalledTimes(2));
+  const original = f.source.snapshot().source!;
+  f.describe.mockRejectedValueOnce(new Error("native promotion precedes local commit"));
+  f.notify();
+  await vi.waitFor(() => expect(f.source.snapshot().error).toBeInstanceOf(Error));
+  f.target.lease.generation++;
+  f.source.revalidate();
+  await vi.waitFor(() => expect(f.source.snapshot().error).toBeNull());
+  expect(f.source.snapshot().source).toBe(original);
+  original.check(false);
 });

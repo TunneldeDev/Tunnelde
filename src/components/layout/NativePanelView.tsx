@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { capturePanelDomState, restorePanelDomState } from "@/lib/panels/domState";
 import { PanelViewStateScope } from "@/lib/panels/viewState";
 import {
-  transferablePanel,
+  renderablePanel,
   useWindowViews,
   windowViews,
   type WindowViewRecord,
@@ -146,7 +146,7 @@ export function NativePanelView({ panelId, children }: { panelId: string; childr
   const { t } = useTranslation();
   const available = usePanelWindows((s) => s.available);
   const record = useWindowViews((s) => s.entries.get(panelId));
-  if (!available || !transferablePanel(panelId)) return children;
+  if (!available || !renderablePanel(panelId)) return children;
   if (!record)
     return (
       <div className="native-panel-placeholder" role="status">
