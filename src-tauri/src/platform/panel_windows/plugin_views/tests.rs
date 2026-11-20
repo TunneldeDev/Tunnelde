@@ -160,15 +160,27 @@ fn staged_view_promotes_only_inside_the_exact_successful_commit() {
     f.staged(&id, "destination");
     assert!(f
         .r
-        .native_view_call("main", &f.main, "source", true, f.now)
+        .native_view_call("main", &f.main, "source", CallPolicy::Metadata, f.now)
         .is_err());
     assert!(f
         .r
-        .native_view_call("target", &f.target, "destination", false, f.now)
+        .native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::BusEffect,
+            f.now
+        )
         .is_err());
     let (_, call) =
-        f.r.native_view_call("target", &f.target, "destination", true, f.now)
-            .unwrap();
+        f.r.native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::Metadata,
+            f.now,
+        )
+        .unwrap();
     f.r.acknowledge("target", &f.target, &id, f.now).unwrap();
     assert!(f.r.commit("main", &f.main, &id, f.now).is_err());
     f.r.settle_native_view_call(&call);
@@ -180,8 +192,14 @@ fn staged_view_promotes_only_inside_the_exact_successful_commit() {
     assert!(f.owner("main", &f.main, "source").is_err());
     assert_eq!(f.prune(), ["source"]);
     let (_, call) =
-        f.r.native_view_call("target", &f.target, "destination", false, f.now)
-            .unwrap();
+        f.r.native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::BusEffect,
+            f.now,
+        )
+        .unwrap();
     assert!(f.r.begin_close("target", &f.target).is_err());
     assert!(f
         .r
@@ -251,7 +269,7 @@ fn reload_block_remove_expiry_and_native_destruction_revoke_without_promoting() 
         }
         assert!(f.owner("target", &f.target, "stage").is_err(), "{kind}");
         assert!(
-            f.r.native_view_call("target", &f.target, "stage", false, f.now)
+            f.r.native_view_call("target", &f.target, "stage", CallPolicy::BusEffect, f.now)
                 .is_err(),
             "{kind}"
         );
@@ -263,7 +281,7 @@ fn admitted_call_fence_survives_close_retirement_reload_and_cannot_remove_readd_
     let mut f = Fixture::new();
     f.owned("view");
     let (_, id) =
-        f.r.native_view_call("main", &f.main, "view", false, f.now)
+        f.r.native_view_call("main", &f.main, "view", CallPolicy::BusEffect, f.now)
             .unwrap();
     assert!(f.r.close_native_view("main", &f.main, "view").unwrap());
     assert!(f.r.native_view_busy(&f.lease.panel_id));
@@ -300,7 +318,7 @@ fn runtime_retirement_uses_captured_generation_and_does_not_release_running_call
     let mut f = Fixture::new();
     f.owned("old");
     let (_, id) =
-        f.r.native_view_call("main", &f.main, "old", false, f.now)
+        f.r.native_view_call("main", &f.main, "old", CallPolicy::BusEffect, f.now)
             .unwrap();
     f.plugin.generation += 1;
     f.owned("new");
@@ -336,22 +354,22 @@ fn native_view_and_actual_call_limits_are_bounded_and_recover_only_on_real_settl
     let mut calls = Vec::new();
     for _ in 0..8 {
         calls.push(
-            f.r.native_view_call("main", &f.main, "v0", false, f.now)
+            f.r.native_view_call("main", &f.main, "v0", CallPolicy::BusEffect, f.now)
                 .unwrap()
                 .1,
         );
     }
     assert!(f
         .r
-        .native_view_call("main", &f.main, "v1", false, f.now)
+        .native_view_call("main", &f.main, "v1", CallPolicy::BusEffect, f.now)
         .is_err());
     f.r.close_native_view("main", &f.main, "v0").unwrap();
     assert!(f
         .r
-        .native_view_call("main", &f.main, "v1", false, f.now)
+        .native_view_call("main", &f.main, "v1", CallPolicy::BusEffect, f.now)
         .is_err());
     f.r.settle_native_view_call(&calls.remove(0));
-    f.r.native_view_call("main", &f.main, "v1", false, f.now)
+    f.r.native_view_call("main", &f.main, "v1", CallPolicy::BusEffect, f.now)
         .unwrap();
 }
 #[test]
@@ -393,20 +411,153 @@ fn global_call_budget_is_independent_of_bindings_and_recovers_without_cross_pane
         if panel < 8 {
             for _ in 0..8 {
                 let (_, call) =
-                    f.r.native_view_call("main", &f.main, &token, false, f.now)
+                    f.r.native_view_call("main", &f.main, &token, CallPolicy::BusEffect, f.now)
                         .unwrap();
                 first.get_or_insert(call);
             }
         } else {
             assert!(f
                 .r
-                .native_view_call("main", &f.main, &token, false, f.now)
+                .native_view_call("main", &f.main, &token, CallPolicy::BusEffect, f.now)
                 .is_err());
         }
     }
     f.r.settle_native_view_call(&first.unwrap());
-    f.r.native_view_call("main", &f.main, "token8", false, f.now)
+    f.r.native_view_call("main", &f.main, "token8", CallPolicy::BusEffect, f.now)
         .unwrap();
     assert!(f.r.native_view_busy("plugin:sample:view0"));
     assert!(f.r.native_view_busy("plugin:sample:view8"));
+}
+
+#[test]
+fn passive_receivers_do_not_block_move_and_cannot_drain_from_staged_frozen_or_old_owners() {
+    let mut f = Fixture::new();
+    f.owned("source");
+    let (_, receive) =
+        f.r.native_view_call("main", &f.main, "source", CallPolicy::BusReceive, f.now)
+            .unwrap();
+    assert!(!f.r.native_view_busy(&f.lease.panel_id));
+    assert_eq!(
+        f.r.native_view_resource("main", &f.main, "source", f.now)
+            .unwrap(),
+        f.plugin
+    );
+    let offer = f.offer();
+    assert!(f
+        .r
+        .native_view_resource("main", &f.main, "source", f.now)
+        .is_err());
+    f.staged(&offer, "destination");
+    assert!(f
+        .r
+        .native_view_resource("target", &f.target, "destination", f.now)
+        .is_err());
+    for policy in [CallPolicy::BusEffect, CallPolicy::BusReceive] {
+        assert!(f
+            .r
+            .native_view_call("target", &f.target, "destination", policy, f.now)
+            .is_err());
+    }
+    let lease = f.commit(&offer);
+    // No pruning/JS cancellation is needed for the final consumption gate.
+    assert!(f
+        .r
+        .native_view_resource("main", &f.main, "source", f.now)
+        .is_err());
+    assert_eq!(
+        f.r.native_view_resource("target", &f.target, "destination", f.now)
+            .unwrap(),
+        f.plugin
+    );
+    let (_, effect) =
+        f.r.native_view_call(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::BusEffect,
+            f.now,
+        )
+        .unwrap();
+    f.r.settle_native_view_call(&receive);
+    assert!(f.r.native_view_busy(&lease.panel_id));
+    assert!(f.r.begin_close("target", &f.target).is_err());
+    f.r.settle_native_view_call(&effect);
+    assert!(!f.r.native_view_busy(&lease.panel_id));
+}
+
+#[test]
+fn passive_calls_still_obey_budgets_and_late_settlement_cannot_release_a_replacement_effect() {
+    let mut f = Fixture::new();
+    f.owned("source");
+    let mut calls = Vec::new();
+    for _ in 0..8 {
+        calls.push(
+            f.r.native_view_call("main", &f.main, "source", CallPolicy::BusReceive, f.now)
+                .unwrap()
+                .1,
+        );
+    }
+    assert!(f
+        .r
+        .native_view_call("main", &f.main, "source", CallPolicy::BusReceive, f.now)
+        .is_err());
+    assert!(!f.r.native_view_busy(&f.lease.panel_id));
+    f.r.remove_panel("main", &f.main, &f.lease.panel_id)
+        .unwrap();
+    f.lease = f.r.add_panel("main", &f.main, &f.lease.panel_id).unwrap();
+    f.owned("new");
+    assert!(f
+        .r
+        .native_view_resource("main", &f.main, "source", f.now)
+        .is_err());
+    // A new token/document cannot evade the still-live per-panel call budget.
+    assert!(f
+        .r
+        .native_view_call("main", &f.main, "new", CallPolicy::BusEffect, f.now)
+        .is_err());
+    f.r.settle_native_view_call(&calls.remove(0));
+    let (_, effect) =
+        f.r.native_view_call("main", &f.main, "new", CallPolicy::BusEffect, f.now)
+            .unwrap();
+    for call in calls {
+        f.r.settle_native_view_call(&call);
+    }
+    assert!(f.r.native_view_busy(&f.lease.panel_id));
+    f.r.settle_native_view_call(&effect);
+    assert!(!f.r.native_view_busy(&f.lease.panel_id));
+}
+
+#[test]
+fn resource_consumption_rechecks_blocks_reload_and_exact_document_without_fencing_itself_out() {
+    let mut f = Fixture::new();
+    f.owned("source");
+    let (_, effect) =
+        f.r.native_view_call("main", &f.main, "source", CallPolicy::BusEffect, f.now)
+            .unwrap();
+    assert!(f
+        .r
+        .native_view_resource("main", &f.main, "source", f.now)
+        .is_ok());
+    assert!(f
+        .r
+        .native_view_resource("target", &f.target, "source", f.now)
+        .is_err());
+    f.r.block("main", &f.main, &f.lease.panel_id, true).unwrap();
+    assert!(f
+        .r
+        .native_view_resource("main", &f.main, "source", f.now)
+        .is_err());
+    f.r.block("main", &f.main, &f.lease.panel_id, false)
+        .unwrap();
+    assert!(f
+        .r
+        .native_view_resource("main", &f.main, "source", f.now)
+        .is_ok());
+    f.main = f.r.register("main").unwrap();
+    f.r.ready("main", &f.main).unwrap();
+    assert!(f
+        .r
+        .native_view_resource("main", &f.main, "source", f.now)
+        .is_err());
+    f.r.settle_native_view_call(&effect);
 }

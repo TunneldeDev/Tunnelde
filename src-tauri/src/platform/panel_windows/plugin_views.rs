@@ -1,7 +1,7 @@
 //! Private native view authority. A frontend token alone is never a window,
 //! document, panel lease, or incoming-offer capability.
 use super::ownership::{Lease, Ownership};
-use crate::plugins::security::Lease as PluginLease;
+use crate::plugins::{frontend::native::CallPolicy, security::Lease as PluginLease};
 use std::{collections::HashMap, time::Instant};
 
 type Result<T> = std::result::Result<T, &'static str>;
@@ -31,7 +31,11 @@ pub(super) struct Views {
     bindings: HashMap<String, View>,
     // Accepted work is independent of the view's lifetime. Closing a token,
     // reloading a document or revoking a plugin cannot release a native effect.
-    calls: HashMap<String, String>,
+    calls: HashMap<String, NativeCall>,
+}
+struct NativeCall {
+    panel_id: String,
+    fenced: bool,
 }
 impl Ownership {
     pub(super) fn native_view_target(
@@ -132,12 +136,28 @@ impl Ownership {
             .plugin
             .clone())
     }
+    /// Final native authority for an actual domain transaction, including one
+    /// resumed after a passive async wait. Never allows a staged destination.
+    pub(super) fn native_view_resource(
+        &self,
+        window: &str,
+        document: &str,
+        token: &str,
+        now: Instant,
+    ) -> Result<PluginLease> {
+        let view = self.native_view(window, document, token, now)?;
+        let Authority::Owned(lease) = &view.authority else {
+            return Err("plugin.frontend.viewNotCommitted");
+        };
+        self.resource_action(window, document, lease)?;
+        Ok(view.plugin.clone())
+    }
     pub(super) fn native_view_call(
         &mut self,
         window: &str,
         document: &str,
         token: &str,
-        metadata_only: bool,
+        policy: CallPolicy,
         now: Instant,
     ) -> Result<(PluginLease, String)> {
         let view = self.native_view(window, document, token, now)?;
@@ -145,7 +165,7 @@ impl Ownership {
             Authority::Owned(lease) => {
                 self.action(window, document, lease)?;
             }
-            Authority::Staged { .. } if !metadata_only => {
+            Authority::Staged { .. } if !policy.staged() => {
                 return Err("plugin.frontend.viewNotCommitted")
             }
             Authority::Staged { .. } => {}
@@ -157,24 +177,36 @@ impl Ownership {
                 .native_views
                 .calls
                 .values()
-                .filter(|p| **p == panel_id)
+                .filter(|call| call.panel_id == panel_id)
                 .count()
                 >= 8
         {
             return Err("plugin.frontend.busy");
         }
         let id = uuid::Uuid::new_v4().to_string();
-        self.relay_fence(&panel_id, &id, true)?;
-        self.native_views.calls.insert(id.clone(), panel_id);
+        let fenced = policy.blocks_move();
+        if fenced {
+            self.relay_fence(&panel_id, &id, true)?;
+        } else {
+            self.native_view_resource(window, document, token, now)?;
+        }
+        self.native_views
+            .calls
+            .insert(id.clone(), NativeCall { panel_id, fenced });
         Ok((plugin, id))
     }
     pub(super) fn settle_native_view_call(&mut self, id: &str) {
-        if let Some(panel) = self.native_views.calls.remove(id) {
-            let _ = self.relay_fence(&panel, id, false);
+        if let Some(call) = self.native_views.calls.remove(id) {
+            if call.fenced {
+                let _ = self.relay_fence(&call.panel_id, id, false);
+            }
         }
     }
     pub(super) fn native_view_busy(&self, panel_id: &str) -> bool {
-        self.native_views.calls.values().any(|p| p == panel_id)
+        self.native_views
+            .calls
+            .values()
+            .any(|call| call.fenced && call.panel_id == panel_id)
     }
     pub(super) fn close_native_view(
         &mut self,
@@ -248,5 +280,6 @@ impl Ownership {
 }
 
 pub(crate) mod gateway;
+pub(crate) mod origin;
 #[cfg(test)]
 mod tests;

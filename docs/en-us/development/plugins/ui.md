@@ -365,16 +365,33 @@ current document authority; satellites cannot import activation/coordinator
 module URLs. A token cannot be used by another window/document or through the raw
 frontend/provider commands, and cannot acknowledge activation or create children.
 
-Accepted calls have an independent native effect fence. Closing the view,
+Accepted effect calls have an independent native fence. Closing the view,
 cancelling its request, retiring its plugin or reloading its document does not
 release that fence before the actual worker settles. Panel removal cannot bypass
 it by removing and reusing a panel ID. Request admission occurs while ownership
 is still locked; locks are released before asynchronous work. Cancellation
 suppresses late delivery rather than claiming to undo accepted effects.
 
-This is not yet the public independent-window renderer capability. The gateway
-currently admits only the explicitly reviewed `api.describe` and
-`extensions.describe` metadata methods, not methods inferred safe from read
-permissions or get/list names. Provider handles and origin-window dialogs require
-domain-specific adapters; `nativeWindows: false` remains accurate until those
-paths and the real factory renderer are integrated and verified.
+The reviewed allowlist includes `api.describe`, `extensions.describe` and the
+existing Bus methods. Only the two metadata methods may run in staged views;
+Bus snapshot/discovery and queue consumption are deliberately committed-only.
+Bus effects retain their settlement fence. `bus.receive` is a cancellable passive
+wait: it still consumes the bounded call quota, but does not block panel movement.
+Every actual Bus transaction, including a queue drain after waiting, rechecks exact
+native origin under ownership -> plugin policy -> Bus registry locks. A frozen or
+retired source cannot consume messages for the destination. View closure never
+implicitly leaves a channel, removes subscriptions or reactivates the singleton;
+Bus ownership stays with the approved plugin runtime. There is still only one
+outstanding receiver per runtime, so background subscriptions should normally stay
+in `activate`, not be duplicated by each view.
+
+The host's scoped view client uses only this closed gateway, reserves cancellation
+tickets before dispatch, cancels outstanding calls on document disposal and cleans
+up late-opened attachments. Module URLs encode each relative segment separately.
+It needs neither a fake activation token nor a second frontend runtime.
+
+This is not yet the public independent-window renderer capability. The allowlist
+is explicit, never inferred from read permissions or get/list names. Full resource
+RPC, provider handles, origin-window dialogs and production panel integration
+remain required; `nativeWindows: false` remains accurate until those paths are
+integrated and verified.

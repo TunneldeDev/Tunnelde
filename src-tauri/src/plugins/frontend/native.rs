@@ -1,11 +1,13 @@
 //! Private half of the document/panel gateway. Never serialize activation
 //! credentials or accept them from a satellite. No second runtime is started.
+mod policy;
 use super::{authorized, FrontendSession, Registry, UI_SDK_VERSION};
 use crate::{
     error::{AppError, AppResult},
     plugins::{api::HostContext, security::Lease, PluginStatus},
     state::AppState,
 };
+pub(crate) use policy::{call_policy, CallPolicy};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
@@ -154,15 +156,11 @@ pub(crate) fn prepare(app: &AppHandle, token: &str, owner: &Lease) -> AppResult<
 pub(crate) fn cancel(app: &AppHandle, token: &str, request: &str) -> bool {
     app.state::<Registry>().calls.cancel(token, request)
 }
-/// Deliberately closed while the real adapter and origin-window domain services
-/// are being wired. Never infer staging safety from get/list or read permissions.
-pub(crate) fn metadata_method(method: &str) -> bool {
-    matches!(method, "api.describe" | "extensions.describe")
-}
-pub(crate) struct MetadataCall {
+pub(crate) struct NativeCall {
     lifetime: super::super::runtime::requests::Request,
     owner: Lease,
     token: String,
+    policy: CallPolicy,
 }
 /// Claim while the gateway still holds native ownership. There must not be a
 /// document reload between final view authorization and request admission.
@@ -171,24 +169,26 @@ pub(crate) fn claim(
     token: &str,
     owner: &Lease,
     request: &str,
-) -> AppResult<MetadataCall> {
+    policy: CallPolicy,
+) -> AppResult<NativeCall> {
     let lifetime = with_owner(app, token, owner, || {
         app.state::<Registry>().calls.claim(token, request)
     })?;
-    Ok(MetadataCall {
+    Ok(NativeCall {
         lifetime,
         owner: owner.clone(),
         token: token.into(),
+        policy,
     })
 }
-impl MetadataCall {
+impl NativeCall {
     pub(crate) async fn run(
         mut self,
         app: &AppHandle,
         method: &str,
         params: Value,
     ) -> AppResult<Value> {
-        if !metadata_method(method) {
+        if call_policy(method) != Some(self.policy) {
             return Err(AppError::validation(
                 "plugin.frontend.nativeMethodUnavailable",
             ));
@@ -202,10 +202,12 @@ impl MetadataCall {
             tool_client: None,
             tool_request: None,
         };
-        let result = self
-            .lifetime
-            .run_retained(crate::plugins::api::dispatch(&context, method, params))
-            .await?;
+        let work = crate::plugins::api::dispatch(&context, method, params);
+        let result = if self.policy.retained() {
+            self.lifetime.run_retained(work).await?
+        } else {
+            self.lifetime.run(work).await?
+        };
         with_owner(app, &self.token, &self.owner, || Ok(result))
     }
 }

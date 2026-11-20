@@ -350,7 +350,7 @@ fn native_view_tokens_cannot_use_raw_frontend_calls_providers_or_singleton_autho
 #[test]
 fn staged_metadata_policy_is_explicit_not_name_or_permission_inference() {
     for method in ["api.describe", "extensions.describe"] {
-        assert!(super::super::native::metadata_method(method));
+        assert!(super::super::native::call_policy(method).is_some_and(|p| p.staged()));
     }
     for method in [
         "hosts.snapshot",
@@ -363,7 +363,10 @@ fn staged_metadata_policy_is_explicit_not_name_or_permission_inference() {
         "api.describe.extra",
         "extensions.describe\0",
     ] {
-        assert!(!super::super::native::metadata_method(method), "{method}");
+        assert!(
+            !super::super::native::call_policy(method).is_some_and(|p| p.staged()),
+            "{method}"
+        );
     }
 }
 

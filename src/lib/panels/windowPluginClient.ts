@@ -1,0 +1,152 @@
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import type { FrontendSession } from "@/lib/extensions/frontendRuntime";
+import type { FrontendModule } from "@/lib/extensions/uiSdk";
+import type { FrontendViewTransport } from "@/lib/extensions/runtime/views/frontend";
+import { ResourceScopeClosed } from "@/lib/extensions/runtime/scopes/errors";
+import { callScopedRequest } from "@/lib/extensions/runtime/requests/frontend";
+import type { NativePanelIdentity, PanelLease } from "./windowProtocol";
+
+export type NativePluginViewTarget =
+  { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
+type Request =
+  | {
+      action: "open";
+      target: NativePluginViewTarget;
+      pluginId: string;
+      runtimeId: string;
+      viewId: string;
+    }
+  | { action: "prepareCall" | "close"; token: string }
+  | { action: "cancelCall"; token: string; requestId: string }
+  | {
+      action: "call";
+      token: string;
+      requestId: string;
+      method: string;
+      params: Record<string, unknown>;
+    };
+type NativeInvoke = <T>(
+  command: "panel_window_plugin_view",
+  args: { document: string; request: Request },
+) => Promise<T>;
+
+/** A document's view attachments, not a second plugin runtime. Only this closed
+ * gateway is reachable; the singleton activation token is never needed. */
+export function createNativePluginViewClient(
+  identity: NativePanelIdentity,
+  options: {
+    report: (error: unknown) => void;
+    invoke?: NativeInvoke;
+    load?: (url: string) => Promise<FrontendModule>;
+  },
+) {
+  const document = identity.document;
+  const native = options.invoke ?? invoke;
+  const load = options.load ?? ((url: string) => import(/* @vite-ignore */ url));
+  const tokens = new Set<string>();
+  const calls = new Set<AbortController>();
+  let disposed = false;
+  const check = (token?: string) => {
+    if (disposed || (token !== undefined && !tokens.has(token))) throw new ResourceScopeClosed();
+  };
+  const request = <T>(request: Request) =>
+    native<T>("panel_window_plugin_view", { document, request });
+  const close = async (token: string) => {
+    if (!tokens.delete(token)) return;
+    // Cleanup remains possible after disposal and does not touch background
+    // runtime resources, subscriptions or private Bus membership.
+    await request({ action: "close", token });
+  };
+  const transport: FrontendViewTransport = {
+    close,
+    async load(session) {
+      check(session.token);
+      const base = convertFileSrc(session.token, "tunnelde-ui");
+      const module = await load(
+        `${base}/${session.entry.split("/").map(encodeURIComponent).join("/")}`,
+      );
+      check(session.token);
+      return module;
+    },
+    async call<T>(
+      token: string,
+      method: string,
+      params: Record<string, unknown>,
+      signal?: AbortSignal,
+    ) {
+      check(token);
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (signal?.aborted) abort();
+      signal?.addEventListener("abort", abort, { once: true });
+      calls.add(controller);
+      try {
+        const value = await callScopedRequest<T>(
+          {
+            prepare: (token) => request<string>({ action: "prepareCall", token }),
+            cancel: (token, requestId) =>
+              tokens.has(token)
+                ? request({ action: "cancelCall", token, requestId })
+                : Promise.resolve(false),
+            call: <R>(
+              token: string,
+              requestId: string,
+              method: string,
+              params: Record<string, unknown>,
+            ) => request<R>({ action: "call", token, requestId, method, params }),
+          },
+          options.report,
+          token,
+          method,
+          params,
+          controller.signal,
+        );
+        check(token);
+        return value;
+      } finally {
+        calls.delete(controller);
+        signal?.removeEventListener("abort", abort);
+      }
+    },
+  };
+  return {
+    transport,
+    async open(
+      target: NativePluginViewTarget,
+      pluginId: string,
+      runtimeId: string,
+      viewId: string,
+    ) {
+      check();
+      const session = await request<FrontendSession>({
+        action: "open",
+        target,
+        pluginId,
+        runtimeId,
+        viewId,
+      });
+      if (!session || typeof session.token !== "string" || !session.token)
+        throw new ResourceScopeClosed();
+      tokens.add(session.token);
+      if (disposed) {
+        await close(session.token);
+        throw new ResourceScopeClosed();
+      }
+      return session;
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const controller of calls) controller.abort();
+      for (const token of tokens) {
+        void close(token).catch((error) => {
+          try {
+            options.report(error);
+          } catch {
+            /* Cleanup is terminal. */
+          }
+        });
+      }
+    },
+  };
+}

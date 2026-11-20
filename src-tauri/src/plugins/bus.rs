@@ -95,11 +95,15 @@ async fn call(
         generation: lease.generation,
     };
     let admitted = |f: &mut dyn FnMut(&mut Book) -> AppResult<Value>| {
-        security.with_authorized(lease, PERMISSION, || bus.edit(f))
+        crate::platform::panel_windows::plugin_views::origin::with_current(|| {
+            security.with_authorized(lease, PERMISSION, || bus.edit(f))
+        })
     };
     if method == "bus.receive" {
         let signal: Arc<Signal> =
-            security.with_authorized(lease, PERMISSION, || bus.edit(|book| book.signal(&peer)))?;
+            crate::platform::panel_windows::plugin_views::origin::with_current(|| {
+                security.with_authorized(lease, PERMISSION, || bus.edit(|book| book.signal(&peer)))
+            })?;
         let _receiver = signal
             .receiver
             .try_acquire()

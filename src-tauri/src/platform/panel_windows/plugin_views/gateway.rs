@@ -1,6 +1,6 @@
 //! Closed native IPC, not an arbitrary application-command relay. The browser
 //! cannot choose a caller label, share activation secrets, or promote itself.
-use super::{Ownership, Target};
+use super::{origin, Ownership, Target};
 use crate::{
     error::{AppError, AppResult},
     platform::panel_windows::native,
@@ -135,24 +135,18 @@ pub(crate) async fn panel_window_plugin_view(
             method,
             params,
         } => {
-            // This tranche exposes only the two reviewed metadata methods.
-            // Keep nativeWindows discovery false until real renderer/domain
-            // parity is wired; do not grant RPCs based on namespace heuristics.
-            if !frontend::metadata_method(&method) {
-                return Err(AppError::validation(
-                    "plugin.frontend.nativeMethodUnavailable",
-                ));
-            }
-            let (call, id) = {
+            let policy = frontend::call_policy(&method)
+                .ok_or_else(|| AppError::validation("plugin.frontend.nativeMethodUnavailable"))?;
+            let (call, id, owner) = {
                 let mut ownership = native::lock(&registry);
                 let owner = current(&ownership, window.label(), &document, &token)?;
-                let call = frontend::claim(app, &token, &owner, &request_id)?;
+                let call = frontend::claim(app, &token, &owner, &request_id, policy)?;
                 let (_, id) = frontend::with_owner(app, &token, &owner, || {
                     ownership
-                        .native_view_call(window.label(), &document, &token, true, Instant::now())
+                        .native_view_call(window.label(), &document, &token, policy, Instant::now())
                         .map_err(native::invalid)
                 })?;
-                (call, id)
+                (call, id, owner)
             };
             let accepted = AcceptedCall {
                 app: app.clone(),
@@ -171,7 +165,14 @@ pub(crate) async fn panel_window_plugin_view(
                     &document,
                     &token,
                 )?;
-                let result = call.run(&app, &method, params).await?;
+                let origin = origin::Origin::new(
+                    app.clone(),
+                    label.clone(),
+                    document.clone(),
+                    token.clone(),
+                    owner,
+                );
+                let result = origin::scope(origin, call.run(&app, &method, params)).await?;
                 current(
                     &native::lock(&app.state::<native::Registry>()),
                     &label,

@@ -324,6 +324,18 @@ impl Ownership {
         }
         Ok(())
     }
+    pub(super) fn resource_action(
+        &self,
+        window: &str,
+        document: &str,
+        lease: &Lease,
+    ) -> Result<()> {
+        self.action(window, document, lease)?;
+        if self.panels[&lease.panel_id].blocked {
+            return Err("panel interaction in progress");
+        }
+        Ok(())
+    }
     pub fn remove_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<()> {
         self.main(window, document)?;
         if self.native_view_busy(panel_id) {
