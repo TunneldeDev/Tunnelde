@@ -173,6 +173,7 @@ struct ActiveMount {
     generation: u64,
     child: Child,
     bridge: JoinHandle<()>,
+    bridge_joined: bool,
     #[cfg(windows)]
     device_mapping: Option<Vec<u16>>,
     #[cfg(target_os = "linux")]
@@ -718,6 +719,7 @@ impl MountRegistry {
                 generation,
                 child,
                 bridge,
+                bridge_joined: false,
                 #[cfg(windows)]
                 device_mapping: None,
                 #[cfg(target_os = "linux")]
@@ -808,7 +810,7 @@ impl MountRegistry {
             return Err(AppError::validation("plugin.resources.unavailable"));
         }
         check()?;
-        if !mount_visible(&active.info.mount_point).await? {
+        if !lifecycle::filesystem_present(&active.info.mount_point).await? {
             lifecycle::settle_process(active).await?;
             mounts.remove(id);
             return Ok(());
@@ -823,43 +825,7 @@ impl MountRegistry {
             Some(dismount_windows(&active.info.mount_point)?)
         };
         if !cfg!(windows) {
-            let mut cmd = if cfg!(target_os = "macos") {
-                let mut cmd = command("diskutil");
-                cmd.arg("unmount");
-                if force {
-                    cmd.arg("force");
-                }
-                cmd
-            } else {
-                let mut cmd = command("fusermount3");
-                cmd.arg(if force { "-uz" } else { "-u" });
-                cmd
-            };
-            cmd.arg(&active.info.mount_point).kill_on_drop(true);
-            let mut output = tokio::time::timeout(std::time::Duration::from_secs(5), cmd.output())
-                .await
-                .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
-            if cfg!(target_os = "linux")
-                && output
-                    .as_ref()
-                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-            {
-                output = tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    command("fusermount")
-                        .arg(if force { "-uz" } else { "-u" })
-                        .arg(&active.info.mount_point)
-                        .kill_on_drop(true)
-                        .output(),
-                )
-                .await
-                .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
-            }
-            let output = output?;
-            if !output.status.success() {
-                tracing::warn!(stderr = %String::from_utf8_lossy(&output.stderr).chars().take(2048).collect::<String>(), "SSHFS unmount failed");
-                return Err(AppError::validation("mounts.busy"));
-            }
+            lifecycle::unmount_filesystem(&active.info.mount_point, force).await?;
         }
         // Only the owned SSHFS process is stopped; other applications are never killed.
         lifecycle::settle_process(active).await?;
@@ -899,20 +865,29 @@ impl MountRegistry {
         }
     }
     async fn stop_resource(&self, mount: &MountInfo) {
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            self.unmount(&mount.owner, &mount.id, false),
-        )
-        .await
-        .unwrap_or_else(|_| Err(AppError::internal("mounts.unmountTimeout")));
-        if let Err(error) = result {
-            tracing::warn!(%error, mount_id = mount.id, "SSHFS unmount failed; revoking transport");
-            // Busy mounts must not keep authenticated access after revocation.
-            // Retain a cleanup record so the user can explicitly retry unmount.
-            if let Some(active) = self.mounts.lock().await.get_mut(&mount.id) {
-                active.bridge.abort();
-                let _ = active.child.kill().await;
-                active.info.cleanup_error = Some(error.to_string());
+        let attempt = || async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                self.unmount(&mount.owner, &mount.id, false),
+            )
+            .await
+            .unwrap_or_else(|_| Err(AppError::internal("mounts.unmountTimeout")))
+        };
+        if let Err(error) = attempt().await {
+            // Revocation and SSHFS's EOF/exit cleanup race the normal unmount.
+            // Settle only our workers, then retry normal (never force/lazy)
+            // cleanup. A genuinely busy or replaced mount stays recorded.
+            if lifecycle::revoke_failed_unmount(self, mount, &error).await {
+                if let Err(error) = attempt().await {
+                    let mut mounts = self.mounts.lock().await;
+                    if let Some(active) = mounts
+                        .get_mut(&mount.id)
+                        .filter(|active| active.info.owner == mount.owner)
+                    {
+                        active.info.cleanup_error = Some(error.to_string());
+                        tracing::warn!(%error, mount_id = mount.id, "SSHFS cleanup still requires explicit unmount");
+                    }
+                }
             }
         }
     }

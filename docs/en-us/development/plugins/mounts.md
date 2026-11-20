@@ -86,6 +86,12 @@ Runtime reports saved revision, runtimeId, desired state and categorized errors
 Cleanup failure preserves its mount reservation and configuration. Force unmount
 requires native confirmation. Open/reveal verifies live identity and containment.
 
+Revocation severs authenticated access even if normal unmount fails. Cleanup
+settles only the exact owner's workers, then retries normal unmount once; it never
+automatically force/lazy-unmounts a busy filesystem. A failed helper exit counts
+as reconciled only when a fresh OS probe confirms the mount is absent. A still
+mounted or uncertain filesystem keeps its cleanup record for explicit retry.
+
 With autoReconnect enabled, the host restores previously requested connections and
 desired rules using 2/4/8/16/32/60-second backoff, up to four groups concurrently,
 and a 90-second connection timeout. Manual stop/disconnect pauses recovery.

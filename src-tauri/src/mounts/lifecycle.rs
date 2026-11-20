@@ -56,6 +56,124 @@ impl MountRegistry {
     }
 }
 
+/// Cleanup needs absence of *any* filesystem at this exact path. A stacked or
+/// foreign mount is not absence merely because it fails SSHFS identity checks.
+#[cfg(any(target_os = "linux", test))]
+fn any_mount_in_table(table: &str, mount_point: &str) -> bool {
+    mount_entries(table).any(|(_, path, _)| path == mount_point)
+}
+
+pub(super) async fn filesystem_present(mount_point: &str) -> AppResult<bool> {
+    #[cfg(target_os = "linux")]
+    {
+        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+        Ok(any_mount_in_table(&table, mount_point))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            command("/sbin/mount").kill_on_drop(true).output(),
+        )
+        .await
+        .map_err(|_| AppError::validation("mounts.unmountTimeout"))??;
+        if !output.status.success() {
+            return Err(AppError::internal("mounts.unmountProbeFailed"));
+        }
+        let table = std::str::from_utf8(&output.stdout)
+            .map_err(|_| AppError::internal("mounts.unmountProbeFailed"))?;
+        let marker = format!(" on {mount_point} (");
+        Ok(table.lines().any(|line| line.contains(&marker)))
+    }
+    #[cfg(windows)]
+    {
+        mount_visible(mount_point).await
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    Err(AppError::validation("mounts.dependencies.required"))
+}
+
+/// A failed helper exit can mean SSHFS already removed the filesystem while
+/// handling EOF. Only a fresh, successful absence probe may reconcile that
+/// failure; stderr text and a dead worker are not proof of an unmounted volume.
+async fn reconcile_unmount(
+    result: AppResult<()>,
+    visible: impl std::future::Future<Output = AppResult<bool>>,
+) -> AppResult<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => match visible.await {
+            Ok(false) => Ok(()),
+            Ok(true) | Err(_) => Err(error),
+        },
+    }
+}
+
+pub(super) async fn unmount_filesystem(mount_point: &str, force: bool) -> AppResult<()> {
+    let attempt = async {
+        let mut cmd = if cfg!(target_os = "macos") {
+            let mut cmd = command("diskutil");
+            cmd.arg("unmount");
+            if force {
+                cmd.arg("force");
+            }
+            cmd
+        } else {
+            let mut cmd = command("fusermount3");
+            cmd.arg(if force { "-uz" } else { "-u" });
+            cmd
+        };
+        cmd.arg(mount_point).kill_on_drop(true);
+        let mut output = tokio::time::timeout(std::time::Duration::from_secs(5), cmd.output())
+            .await
+            .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
+        if cfg!(target_os = "linux")
+            && output
+                .as_ref()
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        {
+            output = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                command("fusermount")
+                    .arg(if force { "-uz" } else { "-u" })
+                    .arg(mount_point)
+                    .kill_on_drop(true)
+                    .output(),
+            )
+            .await
+            .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
+        }
+        let output = output?;
+        if !output.status.success() {
+            tracing::warn!(stderr = %String::from_utf8_lossy(&output.stderr).chars().take(2048).collect::<String>(), "SSHFS unmount helper failed");
+            return Err(AppError::validation("mounts.busy"));
+        }
+        Ok(())
+    };
+    reconcile_unmount(attempt.await, filesystem_present(mount_point)).await
+}
+
+/// Failed normal unmount must still revoke authenticated access. Never kill a
+/// record adopted by another owner while the earlier attempt was pending. The
+/// caller retries normal unmount only after the exact owned workers settle.
+pub(super) async fn revoke_failed_unmount(
+    registry: &MountRegistry,
+    mount: &MountInfo,
+    error: &AppError,
+) -> bool {
+    let mut mounts = registry.mounts.lock().await;
+    let Some(active) = mounts
+        .get_mut(&mount.id)
+        .filter(|active| active.info.owner == mount.owner)
+    else {
+        return false;
+    };
+    tracing::warn!(%error, mount_id = mount.id, "SSHFS unmount failed; revoking transport before cleanup retry");
+    active.info.cleanup_error = Some(error.to_string());
+    active.bridge.abort();
+    settle_process(active).await.is_ok()
+}
+
 /// Never report disposal complete while the owned SSHFS worker is still live.
 pub(super) async fn settle_process(active: &mut ActiveMount) -> AppResult<()> {
     if let Err(error) = active.child.kill().await {
@@ -63,7 +181,13 @@ pub(super) async fn settle_process(active: &mut ActiveMount) -> AppResult<()> {
         return Err(error.into());
     }
     active.bridge.abort();
-    let _ = (&mut active.bridge).await;
+    // A failed OS cleanup may keep this record for a later retry. Joining an
+    // already-consumed JoinHandle panics; cancellation before Ready is safe to
+    // retry, and there is no await between consuming Ready and marking it.
+    if !active.bridge_joined {
+        let _ = (&mut active.bridge).await;
+        active.bridge_joined = true;
+    }
     Ok(())
 }
 
@@ -92,9 +216,7 @@ mod tests {
             self.0.store(true, Ordering::SeqCst);
         }
     }
-    #[tokio::test]
-    async fn lifecycle_rechecks_owner_generation_and_policy_before_settling_owned_workers() {
-        let registry = MountRegistry::default();
+    fn active_mount(owner: &str, generation: u64) -> (ActiveMount, Arc<AtomicBool>) {
         let mut cmd = if cfg!(windows) {
             let mut c = command("powershell.exe");
             c.args([
@@ -116,32 +238,38 @@ mod tests {
             let _guard = guard;
             std::future::pending::<()>().await;
         });
-        registry.mounts.lock().await.insert(
-            "mount".into(),
-            ActiveMount {
-                info: MountInfo {
-                    id: "mount".into(),
-                    owner: "owner".into(),
-                    session_id: "session".into(),
-                    remote_path: "/qa".into(),
-                    mount_point: std::env::temp_dir()
-                        .join(uuid::Uuid::new_v4().to_string())
-                        .to_string_lossy()
-                        .into_owned(),
-                    read_only: true,
-                    cleanup_error: None,
-                },
-                generation: 1,
-                child,
-                bridge,
-                #[cfg(windows)]
-                device_mapping: None,
-                #[cfg(target_os = "linux")]
-                mount_id: None,
-                #[cfg(target_os = "macos")]
-                mount_device: None,
+        let active = ActiveMount {
+            info: MountInfo {
+                id: "mount".into(),
+                owner: owner.into(),
+                session_id: "session".into(),
+                remote_path: "/qa".into(),
+                mount_point: std::env::temp_dir()
+                    .join(uuid::Uuid::new_v4().to_string())
+                    .to_string_lossy()
+                    .into_owned(),
+                read_only: true,
+                cleanup_error: None,
             },
-        );
+            generation,
+            child,
+            bridge,
+            bridge_joined: false,
+            #[cfg(windows)]
+            device_mapping: None,
+            #[cfg(target_os = "linux")]
+            mount_id: None,
+            #[cfg(target_os = "macos")]
+            mount_device: None,
+        };
+        (active, settled)
+    }
+
+    #[tokio::test]
+    async fn lifecycle_rechecks_owner_generation_and_policy_before_settling_owned_workers() {
+        let registry = MountRegistry::default();
+        let (active, settled) = active_mount("owner", 1);
+        registry.mounts.lock().await.insert("mount".into(), active);
         assert!(registry
             .owned_resources("other", 1)
             .await
@@ -197,5 +325,79 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn cleanup_presence_never_confuses_foreign_or_stacked_mounts_with_absence() {
+        let table = "1 0 0:1 / /media/ssh\\040files rw - fuse.sshfs Tunnelde rw\n2 0 0:2 / /media/local rw - ext4 /dev/sda rw";
+        assert!(any_mount_in_table(table, "/media/ssh files"));
+        assert!(any_mount_in_table(table, "/media/local"));
+        assert!(!any_mount_in_table(table, "/media/ssh"));
+        let stacked = format!("{table}\n3 0 0:3 / /media/ssh\\040files rw - ext4 /dev/sda rw");
+        assert!(mount_id_in_table(&stacked, "/media/ssh files").is_none());
+        assert!(any_mount_in_table(&stacked, "/media/ssh files"));
+    }
+
+    #[tokio::test]
+    async fn failed_helper_is_reconciled_only_by_confirmed_filesystem_absence() {
+        let busy = || Err(AppError::validation("mounts.busy"));
+        reconcile_unmount(busy(), async { Ok(false) })
+            .await
+            .unwrap();
+        assert_eq!(
+            reconcile_unmount(busy(), async { Ok(true) })
+                .await
+                .unwrap_err()
+                .to_string(),
+            "mounts.busy"
+        );
+        assert_eq!(
+            reconcile_unmount(busy(), async { Err(AppError::internal("probe failed")) })
+                .await
+                .unwrap_err()
+                .to_string(),
+            "mounts.busy"
+        );
+        reconcile_unmount(Ok(()), async { panic!("successful helper needs no probe") })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_unmount_revokes_and_settles_only_the_exact_owner_then_keeps_cleanup_record() {
+        let registry = MountRegistry::default();
+        let (active, settled) = active_mount("adopted", 0);
+        let mut previous = active.info.clone();
+        previous.owner = "previous".into();
+        registry.mounts.lock().await.insert("mount".into(), active);
+        let busy = AppError::validation("mounts.busy");
+        assert!(!revoke_failed_unmount(&registry, &previous, &busy).await);
+        assert!(!settled.load(Ordering::SeqCst));
+        {
+            let mut mounts = registry.mounts.lock().await;
+            let active = mounts.get_mut("mount").unwrap();
+            assert!(active.child.try_wait().unwrap().is_none());
+            assert!(active.info.cleanup_error.is_none());
+        }
+        previous.owner = "adopted".into();
+        assert!(revoke_failed_unmount(&registry, &previous, &busy).await);
+        assert!(settled.load(Ordering::SeqCst));
+        assert!(revoke_failed_unmount(&registry, &previous, &busy).await);
+        {
+            let mut mounts = registry.mounts.lock().await;
+            let active = mounts.get_mut("mount").unwrap();
+            assert!(active.child.try_wait().unwrap().is_some());
+            assert!(active.bridge.is_finished());
+            assert_eq!(active.info.cleanup_error.as_deref(), Some("mounts.busy"));
+        }
+        // No physical filesystem was mounted. A fresh absence check may now
+        // remove the old record, not merely the fact that its workers exited.
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            registry.unmount("adopted", "mount", false).await.unwrap();
+            assert!(registry.list(None).await.is_empty());
+        }
+        registry.mounts.lock().await.clear();
+        assert!(!revoke_failed_unmount(&registry, &previous, &busy).await);
     }
 }
