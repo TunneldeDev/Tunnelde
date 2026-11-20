@@ -803,3 +803,38 @@ it("keeps Add forwarding and New group adjacent and preserves group creation/rev
     expectedRevision: "g2",
   });
 });
+
+it("shares one group snapshot across host surfaces and keeps empty groups host-scoped", async () => {
+  const implementation = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((command, args) =>
+    command === "forwarding_groups_list"
+      ? Promise.resolve([
+          { id: "one-group", hostId: "host", name: "First empty group", revision: "one" },
+          { id: "two-group", hostId: "other", name: "Second empty group", revision: "two" },
+        ])
+      : implementation(command, args),
+  );
+  const view = render(
+    <>
+      <ForwardingSection host={host} />
+      <ForwardingSection host={{ ...host, id: "other", name: "Other" }} />
+    </>,
+  );
+  const first = await screen.findByRole("region", { name: "First empty group" });
+  const second = await screen.findByRole("region", { name: "Second empty group" });
+  expect(first.closest(".forwarding")).not.toBe(second.closest(".forwarding"));
+  expect(
+    within(first.closest(".forwarding") as HTMLElement).queryByRole("region", {
+      name: "Second empty group",
+    }),
+  ).toBeNull();
+  expect(
+    invokeMock.mock.calls.filter(([command]) => command === "forwarding_groups_list"),
+  ).toHaveLength(1);
+  view.unmount();
+  render(<ForwardingSection host={host} />);
+  await screen.findByRole("region", { name: "First empty group" });
+  expect(
+    invokeMock.mock.calls.filter(([command]) => command === "forwarding_groups_list"),
+  ).toHaveLength(2);
+});

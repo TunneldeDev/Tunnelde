@@ -1,3 +1,4 @@
+import { forwardingGroupsStore } from "../data/groups";
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -34,6 +35,7 @@ export function ForwardGroups({
     } finally {
       setBusy(false);
       forwardingStore.refresh();
+      forwardingGroupsStore.refresh();
     }
   };
   const groups = [

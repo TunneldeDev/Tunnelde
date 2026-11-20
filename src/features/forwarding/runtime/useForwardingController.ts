@@ -1,3 +1,4 @@
+import { forwardingGroupsStore, useForwardingGroupsSnapshot } from "../data/groups";
 import { useForwardingCaptureGuard } from "./useForwardingCaptureGuard";
 import { usePanelViewState } from "@/lib/panels/viewState";
 import { forwardDraft, type ForwardDraft } from "../model/viewState";
@@ -9,7 +10,7 @@ import { isIpcError, type Host, type SshConnectRequest } from "@/lib/api/types";
 import type { ConnectionReview } from "@/lib/api/connections/review";
 import { useSsh } from "@/store/ssh";
 import { useDialogs } from "@/store/dialogs";
-import type { ForwardInfo, ForwardRule, ForwardGroup, RevisionedRule } from "../model/contract";
+import type { ForwardInfo, ForwardRule, RevisionedRule } from "../model/contract";
 import { forwardingSavePayload, initialForwardRule } from "../model/payload";
 import { forwardingStore, useForwardingSnapshot } from "../data/store";
 import type { ForwardingAuthority } from "@/lib/extensions/forwarding/authority";
@@ -35,25 +36,15 @@ export function useForwardingController(host: Host) {
     () => (snapshot.entries ?? []).filter((rule) => rule.hostId === host.id),
     [snapshot.entries, host.id],
   );
-  const [groups, setGroups] = useState<ForwardGroup[]>([]);
-  const [groupError, setGroupError] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    void invoke<ForwardGroup[]>("forwarding_groups_list", { hostId: host.id })
-      .then((value) => {
-        if (active) {
-          setGroups(value ?? []);
-          setGroupError(null);
-        }
-      })
-      .catch((cause) => {
-        if (active) setGroupError(translateError(cause));
-      });
-    return () => {
-      active = false;
-    };
-  }, [host.id, snapshot.entries]);
-  const loading = snapshot.entries === null && snapshot.busy;
+  const groupSnapshot = useForwardingGroupsSnapshot();
+  const groups = useMemo(
+    () => (groupSnapshot.entries ?? []).filter((group) => group.hostId === host.id),
+    [groupSnapshot.entries, host.id],
+  );
+  const groupError = groupSnapshot.error ? translateError(groupSnapshot.error) : null;
+  const loading =
+    (snapshot.entries === null && snapshot.busy) ||
+    (groupSnapshot.entries === null && groupSnapshot.busy);
   const load = forwardingStore.refresh;
   const isActive = (rule: ForwardInfo) =>
     rule.active && sessions.some((item) => item.id === rule.sessionId);
@@ -314,6 +305,7 @@ export function useForwardingController(host: Host) {
     refresh: () => {
       setFailure(null);
       void load();
+      forwardingGroupsStore.refresh();
     },
     add: (authority?: ForwardingAuthority) => {
       authority?.authorize();

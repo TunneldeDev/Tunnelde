@@ -1,3 +1,4 @@
+import { forwardingGroupsStore } from "../data/groups";
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { usePanelViewState } from "@/lib/panels/viewState";
 import { useId, useState } from "react";
@@ -50,6 +51,7 @@ export function ForwardGroupDialog({
     } finally {
       setBusy(false);
       forwardingStore.refresh();
+      forwardingGroupsStore.refresh();
     }
   };
   return (

@@ -608,3 +608,15 @@ editor, pending connection/confirmation, or in-flight rule/group mutation is
 rejected. This capture-time guard is not a native effect fence or proof of a
 complete forwarding native-window adapter: native resource admission, origin UI,
 shared data/action transports and provider handles still require their own gates.
+
+### Forwarding shared read sources
+
+Host details and the global forwarding panel retain the same singleton rule and
+explicit group sources. The private `forwarding_groups_list` command accepts an
+optional host ID; omitting it reads all groups, including groups with no rules.
+Consumers filter by host identity, never infer group existence from rule rows.
+The first subscriber starts observation and a read; the last subscriber retires
+observation, clears the snapshot and fences abandoned responses. Invalidations
+coalesce to one trailing read. Group mutations refresh both sources even after
+partial failure, and manual refresh retries both. This document-local source is
+a prerequisite, not an implementation of cross-window data/action transport.

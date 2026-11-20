@@ -119,12 +119,12 @@ pub async fn forwarding_stop(
 #[tauri::command]
 pub(crate) fn forwarding_groups_list(
     app: AppHandle,
-    host_id: String,
+    host_id: Option<String>,
 ) -> AppResult<Vec<forwarding::groups::Group>> {
     use tauri::Manager;
     app.state::<crate::state::AppState>()
         .db
-        .with(|conn| forwarding::groups::list(conn, Some(&host_id)))
+        .with(|conn| forwarding::groups::list(conn, host_id.as_deref()))
 }
 #[tauri::command]
 pub(crate) fn forwarding_group_save(
