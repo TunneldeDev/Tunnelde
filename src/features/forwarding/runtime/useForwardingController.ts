@@ -17,11 +17,15 @@ import { forwardingSavePayload, initialForwardRule } from "../model/payload";
 import { forwardingStore, useForwardingSnapshot } from "../data/store";
 import type { ForwardingAuthority } from "@/lib/extensions/forwarding/authority";
 import type { FrontendForwardingEntry } from "@/lib/extensions/contracts/forwarding/entry";
+import type { WindowForwardingBatchResult } from "./windowPrompt";
 import type { SshSession } from "@/lib/api/types";
 
-type ConnectionRequest = { rules: readonly RevisionedRule[]; authority?: ForwardingAuthority };
+export type ConnectionRequest = {
+  rules: readonly RevisionedRule[];
+  authority?: ForwardingAuthority;
+};
 /** One host owns its draft, delayed confirmations and independent SSH startup. */
-export function useForwardingController(host: Host) {
+export function useForwardingController(host: Pick<Host, "id" | "name">) {
   const { t } = useTranslation();
   const actions = useForwardingActions();
   const remoteData = useForwardingReadModel();
@@ -46,7 +50,6 @@ export function useForwardingController(host: Host) {
   const loading =
     (snapshot.entries === null && snapshot.busy) ||
     (groupSnapshot.entries === null && groupSnapshot.busy);
-  const load = actions.refresh;
   const isActive = (rule: ForwardInfo) =>
     rule.active && sessions.some((item) => item.id === rule.sessionId);
   const [form, setForm] = usePanelViewState<ForwardDraft | null>(
@@ -64,6 +67,17 @@ export function useForwardingController(host: Host) {
   const [operationFailure, setFailure] = useState<{ target: string; message: string } | null>(null);
   const mutation = useRef(false);
   const live = useRef(true);
+  const load = () => {
+    // The parent may retire the native service while an admitted effect is
+    // still settling. Do not refresh a disposed owner or turn its completion
+    // into an unhandled rejection from a fire-and-forget controller action.
+    if (!live.current) return;
+    try {
+      actions.refresh();
+    } catch (cause) {
+      setFailure({ target: "list", message: translateError(cause) });
+    }
+  };
   const confirm = useForwardingConfirm();
   useForwardingCaptureGuard(
     "controller-admission",
@@ -112,7 +126,11 @@ export function useForwardingController(host: Host) {
     request?: SshConnectRequest,
     review?: ConnectionReview,
   ) => actions.start(rule, authority, request, review);
-  const startTargets = (targets: readonly RevisionedRule[], authority?: ForwardingAuthority) => {
+  const startTargets = (
+    requestedTargets: readonly RevisionedRule[],
+    authority?: ForwardingAuthority,
+  ) => {
+    const targets = requestedTargets.map((rule) => structuredClone(rule));
     if (!targets.length || mutation.current || !live.current) return;
     authority?.authorize();
     void run(targets.length === 1 ? targets[0]!.id : "group", async () => {
@@ -326,6 +344,19 @@ export function useForwardingController(host: Host) {
         setFailure({ target: "group", message: failures.join("; ") });
       void load();
       return connected;
+    },
+    batchCompleted: (connection: ConnectionRequest, result: WindowForwardingBatchResult) => {
+      if (!live.current) return;
+      if (result.failed.length)
+        setFailure({
+          target: "group",
+          message: result.failed
+            .map(
+              (item) =>
+                `${connection.rules.find((rule) => rule.id === item.id)?.name ?? item.id}: ${translateError(item.error)}`,
+            )
+            .join("; "),
+        });
     },
     connected: async (_request: ConnectionRequest, _connected: SshSession) => {
       void load();

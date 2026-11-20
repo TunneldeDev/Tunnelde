@@ -1,3 +1,5 @@
+import type { ComponentProps, ReactNode } from "react";
+import { connectionPromptHost, type ConnectionPromptHost } from "@/features/connect/prompt";
 import { PanelViewStateGroup, usePanelViewState } from "@/lib/panels/viewState";
 import { groupEditor as validGroupEditor, type ForwardGroupEditor } from "./model/viewState";
 import { ForwardGroupDialog } from "./components/ForwardGroupDialog";
@@ -11,7 +13,11 @@ import type { Host } from "@/lib/api/types";
 import { ForwardRuleEditor } from "./components/ForwardRuleEditor";
 import { ForwardingSurface } from "./components/ForwardingSurface";
 import { ForwardGroups } from "./components/ForwardGroups";
-import { useForwardingController } from "./runtime/useForwardingController";
+import {
+  useForwardingController,
+  type ConnectionRequest,
+  type ForwardingController,
+} from "./runtime/useForwardingController";
 import "./forwarding.css";
 
 export type { ForwardRule } from "./model/contract";
@@ -30,12 +36,49 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
       </section>
     );
   return (
+    <ForwardingHostSection
+      {...props}
+      host={connectionPromptHost(props.host)}
+      renderSurface={(surface) => <ForwardingSurface {...surface} />}
+      renderConnection={(connection, controller) => (
+        <ConnectDialog
+          host={props.host}
+          after="background"
+          purpose="forwarding"
+          onClose={controller.closeConnection}
+          connectSession={(request, review) =>
+            controller.connectAndStart(connection, request, review)
+          }
+          onConnected={(connected) => controller.connected(connection, connected)}
+        />
+      )}
+    />
+  );
+}
+
+export interface ForwardingHostSectionProps {
+  host: ConnectionPromptHost;
+  embedded?: boolean;
+  renderSurface(props: ComponentProps<typeof ForwardingSurface>): ReactNode;
+  renderConnection(connection: ConnectionRequest, controller: ForwardingController): ReactNode;
+}
+/** The shared host UI accepts display metadata and explicit presentation
+ * services. A satellite never fabricates a writable Host or falls back to the
+ * main document's dialog/provider runtime. */
+export function ForwardingHostSection(props: ForwardingHostSectionProps) {
+  if (props.host.source) throw new Error("panel.window.unsupportedView");
+  return (
     <PanelViewStateGroup key={props.host.id} name="forwarding-host">
       <SavedForwardingSection {...props} />
     </PanelViewStateGroup>
   );
 }
-function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
+function SavedForwardingSection({
+  host,
+  embedded = false,
+  renderSurface,
+  renderConnection,
+}: ForwardingHostSectionProps) {
   const { t } = useTranslation();
   const controller = useForwardingController(host);
   const [groupEditor, setGroupEditor] = usePanelViewState<ForwardGroupEditor>(
@@ -128,8 +171,11 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           onCancel={controller.cancel}
         />
       ) : null}
-      <ForwardingSurface hostId={host.id} title={host.name} controller={controller}>
-        {loading ? (
+      {renderSurface({
+        hostId: host.id,
+        title: host.name,
+        controller,
+        children: loading ? (
           <p className="forwarding__empty" role="status">
             {t("common.loading")}
           </p>
@@ -139,8 +185,8 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
             hostId={host.id}
             onEditGroup={(group) => setGroupEditor({ hostId: host.id, group })}
           />
-        )}
-      </ForwardingSurface>
+        ),
+      })}
       {failure?.target === "list" ? (
         <p role="alert" className="td-field__error">
           {failure.message}
@@ -154,18 +200,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           onClose={() => setGroupEditor(null)}
         />
       )}
-      {connectingRules && (
-        <ConnectDialog
-          host={host}
-          after="background"
-          purpose="forwarding"
-          onClose={controller.closeConnection}
-          connectSession={(request, review) =>
-            controller.connectAndStart(connectingRules, request, review)
-          }
-          onConnected={(connected) => controller.connected(connectingRules, connected)}
-        />
-      )}
+      {connectingRules && renderConnection(connectingRules, controller)}
     </section>
   );
 }
