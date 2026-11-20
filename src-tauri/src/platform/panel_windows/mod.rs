@@ -9,6 +9,7 @@ mod ownership;
 pub(crate) mod plugin_views;
 mod presentation;
 mod presentation_jobs;
+pub(crate) mod preview;
 mod protocol;
 pub(crate) mod public;
 pub(crate) mod public_moves;

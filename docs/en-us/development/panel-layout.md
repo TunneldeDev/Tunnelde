@@ -153,6 +153,28 @@ require window-aware adapters. Do not
 advertise those capabilities or widen gateway permissions to hide an incomplete adapter.
 The public plugin workspace v1 contract remains unchanged.
 
+### Preview resources and window handles (adapter in progress)
+
+`createPreviewReadSource` moves read/decode/native-ticket lifetime above renderer
+bodies. Displays subscribe to immutable results; subscription/unmount does not
+start or close I/O. A target, provider or retry creates a new owner. Late results
+after cancellation clean only their own ticket and cannot replace newer data or
+close a replacement resource.
+
+Only the coordinator document can `publishPreviewResource`. A destination uses
+`openPreviewHandle` for a read-only attachment bound to its actual document and
+exact lease or live staged offer. The destination never receives the raw media
+ticket. Native `preview` routing validates the caller window and revalidates the
+same handle after asynchronous reads. Commit promotes the staged attachment in
+place. Cancellation, expiry, reload, resource replacement and ABA cannot revive
+old handles. Closing a display never closes its host-owned file; late admission
+replies still need cleanup. Bounded handles stay out of public metadata, plugin
+APIs, the Bus and view capsules.
+
+This is groundwork for complete renderer/provider handoff, not an opt-in for
+`filePreview` movement or proof of PDF-page/playback/native-preview acceptance.
+The public preview v1 contract remains unchanged.
+
 ### Background-task interface providers
 
 Tasks retain the main window's single task registry. The selected `backgroundTasks`

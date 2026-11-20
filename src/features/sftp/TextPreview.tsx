@@ -2,54 +2,37 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { PluginMarkdown } from "@/features/plugins/PluginMarkdown";
-import { createFileReadResource, readFileText } from "@/lib/files/resources/read";
+import type { PreviewReadSource } from "./preview/readSource";
+import { usePreviewReadSource } from "./preview/usePreviewReadSource";
 import { translateError } from "@/lib/api/errors";
 import type { PreviewFile } from "@/store/filePreview";
 
 export function TextPreview({
   file,
+  source,
   onReady,
   onError,
 }: {
   file: PreviewFile;
+  source: PreviewReadSource;
   onReady?: () => void;
   onError?: () => void;
 }) {
   const { t } = useTranslation();
-  const [result, setResult] = useState<{
-    file: PreviewFile;
-    fileData?: { content: string; encoding?: string };
-    cause?: unknown;
-  } | null>(null);
+  const result = usePreviewReadSource(source);
   useEffect(() => {
-    const resource = createFileReadResource(file.path, file.source);
-    void readFileText(resource, "preview").then(
-      (fileData) => {
-        if (!resource.scope.signal.aborted) {
-          setResult({ file, fileData });
-          onReady?.();
-        }
-      },
-      (cause) => {
-        if (!resource.scope.signal.aborted) {
-          setResult({ file, cause });
-          onError?.();
-        }
-      },
-    );
-    return resource.scope.dispose;
-  }, [file, onReady, onError]);
-  const fileData = result?.file === file ? result.fileData : undefined;
-  const error = result?.file === file && "cause" in result ? translateError(result.cause) : "";
-  return error ? (
-    <p role="alert">{error}</p>
-  ) : fileData === undefined ? (
+    if (result.status === "ready") onReady?.();
+    else if (result.status === "error") onError?.();
+  }, [result, onReady, onError]);
+  return result.status === "error" ? (
+    <p role="alert">{translateError(result.cause)}</p>
+  ) : result.status !== "ready" || result.value.content == null ? (
     <p role="status">{t("common.loading")}</p>
   ) : (
     <TextContent
       file={file}
-      content={fileData.content}
-      encoding={fileData.encoding ?? "utf-8"}
+      content={result.value.content}
+      encoding={result.value.encoding ?? "utf-8"}
       markdown={/\.(md|markdown)$/i.test(file.path)}
     />
   );

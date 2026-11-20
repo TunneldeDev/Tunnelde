@@ -65,6 +65,43 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       return (pluginViews ??= createNativePluginViewClient(identity, { report }));
     },
     control,
+    /** Host-only view attachment. A late reply must still be retired even when
+     * the display/document was disposed while native admission was pending. */
+    async openPreviewHandle(
+      target: Extract<PanelWindowCommand, { action: "openPreviewHandle" }>["target"],
+      resourceId: string,
+      signal?: AbortSignal,
+    ) {
+      check();
+      signal?.throwIfAborted();
+      let id: string | undefined;
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        signal?.removeEventListener("abort", close);
+        cleanups.delete(close);
+        if (id)
+          void invoke("panel_window_control", {
+            document: identity.document,
+            request: { action: "closePreviewHandle", id },
+          }).catch(() => {});
+      };
+      try {
+        id = await invoke<string>("panel_window_control", {
+          document: identity.document,
+          request: { action: "openPreviewHandle", target, resourceId },
+        });
+        cleanups.add(close);
+        signal?.addEventListener("abort", close, { once: true });
+        check();
+        signal?.throwIfAborted();
+        return Object.freeze({ id, dispose: close });
+      } catch (error) {
+        close();
+        throw error;
+      }
+    },
     snapshot: () => control<NativePanelSnapshot>({ action: "snapshot" }),
     async subscribe(changed: () => void) {
       check();

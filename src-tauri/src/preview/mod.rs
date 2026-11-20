@@ -207,6 +207,10 @@ fn response(status: u16, body: Vec<u8>, origin: &str) -> http::Response<Vec<u8>>
         .expect("fixed preview response headers")
 }
 
+pub(crate) fn denied(origin: &str) -> http::Response<Vec<u8>> {
+    response(403, vec![], origin)
+}
+
 pub async fn serve(
     registry: &Registry,
     request: http::Request<Vec<u8>>,

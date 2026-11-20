@@ -24,6 +24,7 @@ import { useWorkspace } from "@/store/workspace";
 import { usePreviewSession } from "./preview/usePreviewSession";
 import { PreviewSurface } from "./preview/PreviewSurface";
 import { PreviewFrame } from "./preview/PreviewFrame";
+import { usePreviewReadOwner } from "./preview/usePreviewReadSource";
 
 export function FilePreview() {
   const file = useFilePreview((state) => state.file);
@@ -89,6 +90,7 @@ function Preview({
     onReadError,
     onDecodeError,
   } = usePreviewSession(file, id, providers, presentation);
+  const readSource = usePreviewReadOwner(file, kind, attemptId, provider);
   const text = kind === "text" || kind === "markdown";
   const session = useSsh((state) =>
     state.sessions.find(
@@ -152,13 +154,20 @@ function Preview({
               key={attemptId}
               file={file}
               provider={provider}
+              source={readSource}
               onReady={onReady}
               onReadError={onReadError}
               onDecodeError={onDecodeError}
               onRetry={context.retry}
             />
           ) : text ? (
-            <TextPreview key={attemptId} file={file} onReady={onReady} onError={onReadError} />
+            <TextPreview
+              key={attemptId}
+              file={file}
+              source={readSource}
+              onReady={onReady}
+              onError={onReadError}
+            />
           ) : (
             <div className="file-preview__empty">
               <p>{t("preview.installHint")}</p>

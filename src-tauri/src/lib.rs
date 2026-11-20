@@ -57,10 +57,13 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
             let app = context.app_handle().clone();
             let origin = platform::protocol_origin::for_app(&app);
+            let caller = context.webview_label().to_owned();
             tauri::async_runtime::spawn(async move {
-                use tauri::Manager;
                 responder.respond(
-                    preview::serve(&app.state::<preview::Registry>(), request, origin).await,
+                    platform::panel_windows::preview::serve_in_window(
+                        &app, &caller, request, origin,
+                    )
+                    .await,
                 );
             });
         })
