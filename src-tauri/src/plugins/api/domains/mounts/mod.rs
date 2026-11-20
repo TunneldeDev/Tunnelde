@@ -254,9 +254,13 @@ pub(in crate::plugins::api) async fn dispatch(
             }
             state
                 .mounts
-                .unmount_checked(runtime::OWNER, &runtime_id, true, Some(0), || {
-                    authority.check(app)
-                })
+                .unmount_checked(
+                    runtime::OWNER,
+                    &runtime_id,
+                    true,
+                    Some(0),
+                    authority.unmount_policy(app),
+                )
                 .await?;
             runtime::stop(app, &id, Some(&runtime_id), &authority).await?;
             Ok(json!({"confirmed":true}))

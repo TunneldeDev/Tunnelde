@@ -327,3 +327,25 @@ async fn retained_disk_or_keyring_worker_keeps_request_reserved_until_blocking_e
     );
     registry.reserve("view", "persistent-data").unwrap();
 }
+
+#[tokio::test]
+async fn retained_unmount_worker_rechecks_the_original_invocation_after_awaiting_probe() {
+    for expire in [false, true] {
+        let registry = Requests::default();
+        registry.reserve("view", "unmount").unwrap();
+        let mut request = registry.claim("view", "unmount").unwrap();
+        let entry = request.entry.clone();
+        let result = request
+            .run_retained(crate::mounts::unmount::tests::cancelled_invocation(
+                move || {
+                    if expire {
+                        entry.lock().unwrap().deadline = Instant::now();
+                    } else {
+                        assert!(registry.cancel("view", "unmount"));
+                    }
+                },
+            ))
+            .await;
+        assert_eq!(result.unwrap_err().to_string(), "plugin.api.cancelled");
+    }
+}

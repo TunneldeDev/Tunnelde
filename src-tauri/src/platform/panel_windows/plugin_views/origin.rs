@@ -33,7 +33,7 @@ impl Origin {
             plugin,
         }
     }
-    fn with_current<T>(&self, operation: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+    pub(crate) fn with_current<T>(&self, operation: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
         let registry = self.app.state::<native::Registry>();
         let ownership = native::lock(&registry);
         self.authorize(&ownership)?;

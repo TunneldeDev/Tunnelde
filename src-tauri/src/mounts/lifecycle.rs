@@ -49,7 +49,7 @@ impl MountRegistry {
         owner: &str,
         generation: u64,
         id: &str,
-        check: impl FnOnce() -> AppResult<()>,
+        check: impl unmount::Policy,
     ) -> AppResult<()> {
         self.unmount_checked(owner, id, false, Some(generation), check)
             .await
@@ -97,6 +97,7 @@ pub(super) async fn filesystem_present(mount_point: &str) -> AppResult<bool> {
 /// A failed helper exit can mean SSHFS already removed the filesystem while
 /// handling EOF. Only a fresh, successful absence probe may reconcile that
 /// failure; stderr text and a dead worker are not proof of an unmounted volume.
+#[cfg(any(not(windows), test))]
 async fn reconcile_unmount(
     result: AppResult<()>,
     visible: impl std::future::Future<Output = AppResult<bool>>,
@@ -110,6 +111,7 @@ async fn reconcile_unmount(
     }
 }
 
+#[cfg(not(windows))]
 pub(super) async fn unmount_filesystem(mount_point: &str, force: bool) -> AppResult<()> {
     let attempt = async {
         let mut cmd = if cfg!(target_os = "macos") {
@@ -124,25 +126,16 @@ pub(super) async fn unmount_filesystem(mount_point: &str, force: bool) -> AppRes
             cmd.arg(if force { "-uz" } else { "-u" });
             cmd
         };
-        cmd.arg(mount_point).kill_on_drop(true);
-        let mut output = tokio::time::timeout(std::time::Duration::from_secs(5), cmd.output())
-            .await
-            .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
+        cmd.arg(mount_point);
+        let mut output = dismount_output(cmd).await;
         if cfg!(target_os = "linux")
-            && output
-                .as_ref()
-                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            && matches!(&output, Err(AppError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound)
         {
-            output = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                command("fusermount")
-                    .arg(if force { "-uz" } else { "-u" })
-                    .arg(mount_point)
-                    .kill_on_drop(true)
-                    .output(),
-            )
-            .await
-            .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
+            let mut fallback = command("fusermount");
+            fallback
+                .arg(if force { "-uz" } else { "-u" })
+                .arg(mount_point);
+            output = dismount_output(fallback).await;
         }
         let output = output?;
         if !output.status.success() {
@@ -152,6 +145,25 @@ pub(super) async fn unmount_filesystem(mount_point: &str, force: bool) -> AppRes
         Ok(())
     };
     reconcile_unmount(attempt.await, filesystem_present(mount_point)).await
+}
+
+/// Must be awaited inside the retained unmount transaction. Never move only
+/// this child to a detached task while releasing the registry's owned guard.
+#[cfg(not(windows))]
+async fn dismount_output(mut command: Command) -> AppResult<std::process::Output> {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    helper::collect(
+        &mut child,
+        std::time::Duration::from_secs(5),
+        32768,
+        "mounts.unmountTimeout",
+    )
+    .await
 }
 
 /// Failed normal unmount must still revoke authenticated access. Never kill a

@@ -2,13 +2,14 @@
 //! unauthenticated local listening sockets are exposed to the mount program.
 #[cfg(all(test, unix))]
 mod dependency_tests;
-#[cfg(any(target_os = "macos", all(test, unix)))]
+#[cfg(not(windows))]
 mod helper;
 mod lifecycle;
 mod managed;
 pub(crate) use managed::open_managed;
 mod negotiation;
 mod transport;
+pub(crate) mod unmount;
 use crate::{
     error::{AppError, AppResult},
     ssh::SshManager,
@@ -218,7 +219,7 @@ impl Drop for ActiveMount {
 #[derive(Default)]
 pub struct MountRegistry {
     closed: std::sync::atomic::AtomicBool,
-    mounts: Mutex<HashMap<String, ActiveMount>>,
+    mounts: unmount::Mounts,
 }
 
 #[derive(Serialize)]
@@ -835,47 +836,6 @@ impl MountRegistry {
         self.unmount_checked(owner, id, force, None, || Ok(()))
             .await
     }
-    pub(crate) async fn unmount_checked(
-        &self,
-        owner: &str,
-        id: &str,
-        force: bool,
-        generation: Option<u64>,
-        check: impl FnOnce() -> AppResult<()>,
-    ) -> AppResult<()> {
-        let mut mounts = self.mounts.lock().await;
-        let active = mounts
-            .get_mut(id)
-            .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
-        if active.info.owner != owner {
-            return Err(AppError::validation("mounts.notOwned"));
-        }
-        if generation.is_some_and(|generation| active.generation != generation) {
-            return Err(AppError::validation("plugin.resources.unavailable"));
-        }
-        check()?;
-        if !lifecycle::filesystem_present(&active.info.mount_point).await? {
-            lifecycle::settle_process(active).await?;
-            mounts.remove(id);
-            return Ok(());
-        }
-        if !active.matches_mount_identity().await? {
-            return Err(AppError::validation("mounts.mountPoint.changed"));
-        }
-        #[cfg(windows)]
-        let _volume_lock = if force {
-            None
-        } else {
-            Some(dismount_windows(&active.info.mount_point)?)
-        };
-        if !cfg!(windows) {
-            lifecycle::unmount_filesystem(&active.info.mount_point, force).await?;
-        }
-        // Only the owned SSHFS process is stopped; other applications are never killed.
-        lifecycle::settle_process(active).await?;
-        mounts.remove(id);
-        Ok(())
-    }
     pub async fn stop_generation(&self, owner: &str, generation: u64) {
         let selected: Vec<_> = self
             .mounts
@@ -1069,13 +1029,18 @@ pub async fn action(
                         .ok_or_else(|| AppError::validation("mounts.id.required"))?;
                     state
                         .mounts
-                        .unmount(
+                        .unmount_checked(
                             &plugin_id,
                             id,
                             params
                                 .get("force")
                                 .and_then(|v| v.as_bool())
                                 .unwrap_or(false),
+                            Some(lease.generation),
+                            unmount::PluginPolicy {
+                                app: app.clone(),
+                                lease: lease.clone(),
+                            },
                         )
                         .await?;
                     Ok(serde_json::Value::Null)

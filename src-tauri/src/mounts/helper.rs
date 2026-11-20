@@ -1,23 +1,24 @@
-//! Short-lived read-only OS probes retain capacity/effect ownership until wait/reap.
-//! Do not use for dismount commands without retaining the whole mount transaction.
+//! Bounded OS helpers retain process ownership until wait/reap.
+//! Dismount collection runs inline in the owned mount transaction, not detached.
 //! kill_on_drop is only a last-resort safeguard, not evidence of settlement.
+#[cfg(any(target_os = "macos", all(test, unix)))]
 use super::Command;
-use crate::{
-    error::{AppError, AppResult},
-    services::operations::{Budget, Errors},
-};
-use std::{process::Output, sync::LazyLock, time::Duration};
+use crate::error::{AppError, AppResult};
+use std::{process::Output, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Child,
 };
 
+#[cfg(any(target_os = "macos", all(test, unix)))]
 pub(super) async fn output(
     mut command: Command,
     timeout: Duration,
     limit: usize,
     timeout_key: &'static str,
 ) -> AppResult<Output> {
+    use crate::services::operations::{Budget, Errors};
+    use std::sync::LazyLock;
     static WORKERS: LazyLock<Budget> = LazyLock::new(|| {
         Budget::new(
             8,
@@ -43,7 +44,7 @@ pub(super) async fn output(
         .await
 }
 
-async fn collect(
+pub(super) async fn collect(
     child: &mut Child,
     timeout: Duration,
     limit: usize,

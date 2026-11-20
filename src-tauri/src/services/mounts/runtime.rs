@@ -26,7 +26,23 @@ pub(crate) const OWNER: &str = "@tunnelde/mount-rules";
 
 #[derive(Clone)]
 pub(crate) struct Authority(pub Option<Lease>);
+struct UnmountAuthority {
+    app: AppHandle,
+    authority: Authority,
+}
+impl crate::mounts::unmount::Policy for UnmountAuthority {
+    fn with_authorized<T>(&self, effect: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        self.authority.commit(&self.app, effect)
+    }
+}
 impl Authority {
+    pub(crate) fn unmount_policy(&self, app: &AppHandle) -> impl crate::mounts::unmount::Policy {
+        UnmountAuthority {
+            app: app.clone(),
+            authority: self.clone(),
+        }
+    }
+
     pub(crate) fn check(&self, app: &AppHandle) -> AppResult<()> {
         self.commit(app, || Ok(()))
     }
@@ -559,7 +575,7 @@ pub(crate) async fn stop(
             {
                 if let Err(error) = state
                     .mounts
-                    .unmount_checked(OWNER, mount, false, Some(0), || authority.check(app))
+                    .unmount_checked(OWNER, mount, false, Some(0), authority.unmount_policy(app))
                     .await
                 {
                     prior.phase = "cleanupRequired".into();

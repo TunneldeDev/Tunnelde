@@ -478,13 +478,29 @@ projected for these panels, under an approval-revision-bound model producer;
 plugin data still goes through its own authorized APIs. Satellite titles use
 the approved display descriptor without hydrating a plugin store.
 
+Unmounting now transfers an owned registry guard into a bounded transaction
+worker, not just a detached OS helper. The exact mount UUID, owner and generation
+stay locked through actual dismount, helper kill/reap and owned SSHFS/bridge
+settlement. Before effect admission, the worker rechecks the original native
+view/document, request invocation and runtime policy after awaited presence and
+mount-identity probes. Cancellation or revocation before that boundary leaves
+the original mount untouched; cancellation after admission stops delivery but
+cannot let another unmount, adoption or replacement overtake cleanup. Windows
+volume locks remain held through settlement, with synchronous volume controls
+on a bounded blocking worker. Unix dismount helpers are awaited inline in that
+transaction, bound both output streams, explicitly kill and reap on failure or
+timeout, and use the Linux fallback only when the preferred executable is absent.
+A failed helper still requires a successful fresh absence probe before it can be
+reconciled as already unmounted. No permission/invocation/ownership locks surround
+filesystem or process I/O; only the mount registry's owned transaction guard does.
+
 On macOS, mount-table presence probes also use a bounded OS-helper worker.
 Both output streams have a hard limit; a timeout, malformed pipe or excessive
 output kills and reaps the child before its inherited effect fence retires.
 Cancelling result delivery does not release actual worker capacity. Probe errors
-never establish that a mount is absent. Dismount commands are a separate review:
-they must retain the entire mount transaction, not just a detached helper, and
-force-unmount RPC is not admitted by this change.
+never establish that a mount is absent. Force-unmount RPC and origin-window
+confirmation still require their explicit native admission and integration review;
+this transaction change does not implicitly open another native-view API.
 
 Factories without capture/restore now require an explicit state-loss confirmation
 in their source document on each move and satellite close/return. Cancel is the
