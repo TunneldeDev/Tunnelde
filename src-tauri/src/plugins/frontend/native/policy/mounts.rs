@@ -66,8 +66,14 @@ pub(super) fn policy(method: &str) -> Option<CallPolicy> {
         // The owned worker retains group/registry gates and host stop intent
         // through actual cleanup even after cancellation or permission loss.
         "mounts.runtime.requestForceUnmount" => Some(CallPolicy::MountForceUnmount),
-        // Remote paths, dependency documentation and legacy one-off transports
-        // have separate native work/UI lifetimes to audit.
+        // Independent read-only SFTP channels bind the original group/session,
+        // carry the admitted effect through library I/O workers and late OPEN,
+        // and retire through peer CLOSE without disconnecting the parent SSH.
+        "mounts.paths.remote.browse" | "mounts.paths.remote.resolve" => {
+            Some(CallPolicy::MountRemotePath)
+        }
+        // Dependency documentation and legacy one-off transports have separate
+        // native work/UI lifetimes to audit.
         _ => None,
     }
 }
@@ -84,6 +90,7 @@ mod tests {
         let mut ui = 0;
         let mut probes = 0;
         let mut force = 0;
+        let mut remote = 0;
         for method in crate::plugins::api::METHODS
             .iter()
             .filter(|m| m.name.starts_with("mounts."))
@@ -105,6 +112,7 @@ mod tests {
                     CallPolicy::OriginUi => ui += 1,
                     CallPolicy::MountDependencyProbe => probes += 1,
                     CallPolicy::MountForceUnmount => force += 1,
+                    CallPolicy::MountRemotePath => remote += 1,
                     other => panic!("unexpected mount policy {other:?}"),
                 }
             }
@@ -116,10 +124,14 @@ mod tests {
         assert_eq!(ui, 1);
         assert_eq!(probes, 2);
         assert_eq!(force, 1);
+        assert_eq!(remote, 2);
         for method in [
             "mounts.runtime.requestForceUnmount.extra",
             "mounts.runtime.requestForceUnmount\0",
             "__mounts.forceUnmount",
+            "mounts.paths.remote.browse.extra",
+            "mounts.paths.remote.resolve\0",
+            "mounts.paths.remote.list",
             "mounts.mount",
             "mounts.unmount",
             "mounts.legacy.convert",

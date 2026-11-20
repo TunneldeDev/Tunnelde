@@ -17,6 +17,8 @@ pub(crate) enum CallPolicy {
     MountPathData,
     /// OS dependency probes retain their worker through process kill and reap.
     MountDependencyProbe,
+    /// Owned SFTP channel/readers retain the original connection and effect until CLOSE.
+    MountRemotePath,
     /// Exact-origin destructive consent followed by an owned force-stop transaction.
     MountForceUnmount,
     /// Fenced through receipt publication; the host owns subsequent steps.

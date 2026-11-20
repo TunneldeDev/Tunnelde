@@ -420,8 +420,8 @@ also explicit admission of committed-only `mounts.paths.local.validate` and
 through nested Budget workers and unreceived result cleanup: a timed-out FUSE
 filesystem query cannot release the panel's move fence before the actual worker
 settles. Caller cancellation still prevents response delivery. This is not
-implicit admission of force-unmount consent, remote path operations, dependency
-documentation or legacy one-off mounts, which still need their own lifetime integration.
+implicit admission of other resource calls: each needs its own lifetime integration.
+The remote-path and force-consent admissions below are separately audited.
 
 `mounts.paths.local.pick` is also committed-only. On macOS/Linux the OS folder
 picker is parented to the exact originating native window, with permission,
@@ -443,6 +443,27 @@ malformed help probe kills and waits for its child before releasing that work;
 cancelling response delivery does not prematurely free its capacity or move
 fence. The existing result shape is unchanged; busy/failure errors are explicit.
 No driver installation or automatic permission approval is performed.
+
+`mounts.paths.remote.browse` and `mounts.paths.remote.resolve` are committed-only,
+retained read operations, never staged snapshots. Each query binds the original
+mount group, host, connection identity and authenticated SSH handle. It does not
+follow a reconnection onto another transport. The original document, plugin
+permissions and invocation are rechecked between SFTP requests and after cleanup,
+including the resolve-only path. Windows drive selection also retains
+`mounts.write` through confirmation and final filesystem validation.
+
+Remote queries use independent SFTP channels, at most four active workers and
+eight pending/retiring channels. A 15-second delivery timeout or cancelled caller
+does not release a late OPEN or a channel awaiting CLOSE. The SFTP library's
+hidden stream halves and the bridge retain the native effect through actual
+teardown. No terminal, user SFTP session or mount-group transport is disconnected.
+Listings allow at most 65,536 decoded entries and 8 MiB of retained string data
+(including repeated canonical parent paths); each response is at most 512 KiB and
+128 entries. `nextOffset` reflects the entries actually returned. Oversized
+listings fail explicitly instead of silently omitting entries. A server which
+never acknowledges closure retains its bounded slot until the parent session
+ends. The temporary, narrowly patched SSH dependency and its acknowledgment
+regressions are documented in `src-tauri/vendor/russh/TUNNELDE-PATCH.md`.
 
 The host's scoped view client uses only this closed gateway, reserves cancellation
 tickets before dispatch, cancels outstanding calls on document disposal and cleans
@@ -498,9 +519,14 @@ On macOS, mount-table presence probes also use a bounded OS-helper worker.
 Both output streams have a hard limit; a timeout, malformed pipe or excessive
 output kills and reaps the child before its inherited effect fence retires.
 Cancelling result delivery does not release actual worker capacity. Probe errors
-never establish that a mount is absent. Force-unmount RPC and origin-window
-confirmation still require their explicit native admission and integration review;
-this transaction change does not implicitly open another native-view API.
+never establish that a mount is absent. The separately audited
+`mounts.runtime.requestForceUnmount` is committed-only: its danger confirmation
+retains `mounts.write` and the exact originating document/invocation. It defaults
+to Cancel and binds rule, group, revision, runtime and session identity. The owned
+transaction atomically commits stop intent with effect admission and retains its
+group/registry guards through helper, child and bridge cleanup. Cancellation after
+admission cannot trigger an automatic remount or release those guards early.
+This does not implicitly open another native-view API.
 
 Factories without capture/restore now require an explicit state-loss confirmation
 in their source document on each move and satellite close/return. Cancel is the

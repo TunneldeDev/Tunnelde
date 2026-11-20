@@ -3,6 +3,7 @@ mod force;
 mod legacy;
 mod paths;
 mod plans;
+mod remote_paths;
 use crate::{
     error::AppResult,
     plugins::{

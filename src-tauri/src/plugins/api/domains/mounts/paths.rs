@@ -17,35 +17,7 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
     let state = app.state::<AppState>();
     match method {
         "paths.remote.browse" | "paths.remote.resolve" => {
-            let group_id: String = field(&params, "groupId")?;
-            let status = state
-                .mount_runtime
-                .connection_states()
-                .into_iter()
-                .find(|s| s.group_id == group_id && s.phase == "connected")
-                .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
-            let session = status
-                .session_id
-                .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
-            let path: Option<String> = optional(&params, "path")?;
-            if path
-                .as_ref()
-                .is_some_and(|p| p.len() > 2048 || p.contains(['\0', '\r', '\n']))
-            {
-                return Err(AppError::validation("mounts.remotePath.invalid"));
-            }
-            if method == "paths.remote.resolve" {
-                return crate::ssh::files::remote_resolve_directory(app, &session, path).await;
-            }
-            let listing = crate::ssh::files::remote_list(app, &session, path).await?;
-            let entries: Vec<_> = listing.entries.into_iter().filter(|e| e.is_dir).collect();
-            let offset: usize = optional(&params, "offset")?.unwrap_or(0);
-            let next_offset =
-                (entries.len().saturating_sub(offset) > 128).then_some(offset.saturating_add(128));
-            authorize(context, &["mounts.read"])?;
-            Ok(
-                json!({"path":listing.path,"entries":entries.into_iter().skip(offset).take(128).collect::<Vec<_>>(),"nextOffset":next_offset}),
-            )
+            super::remote_paths::call(context, method, params).await
         }
         "paths.local.pick" => {
             #[cfg(windows)]
@@ -54,16 +26,18 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
                 let drive = drive.unwrap_or_else(|| "X:\\".into());
                 contract::validate_local_path(&drive)?;
                 let message = format!("Use {drive} as the mount point?");
-                let confirmed = crate::plugins::api::frontend_request(
-                    context,
-                    "ui.confirm",
-                    json!({"message":message}),
-                )
-                .await?;
+                let confirmed =
+                    crate::plugins::api::transport::frontend::frontend_request_with_permissions(
+                        context,
+                        "ui.confirm",
+                        json!({"message":message}),
+                        &["mounts.write"],
+                    )
+                    .await?;
                 if confirmed != true {
                     return Ok(Value::Null);
                 }
-                validate(context, drive).await
+                validate(context, drive, &["mounts.write"]).await
             }
             #[cfg(not(windows))]
             {
@@ -85,12 +59,14 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
                 };
                 authorize(context, &["mounts.write"])?;
                 match picked {
-                    Some(path) => validate(context, path).await,
+                    Some(path) => validate(context, path, &["mounts.write"]).await,
                     None => Ok(Value::Null),
                 }
             }
         }
-        "paths.local.validate" => validate(context, field(&params, "path")?).await,
+        "paths.local.validate" => {
+            validate(context, field(&params, "path")?, &["mounts.read"]).await
+        }
         "paths.conflicts" => {
             let path: String = field(&params, "path")?;
             contract::validate_local_path(&path)?;
@@ -178,7 +154,7 @@ async fn canonical(path: String) -> AppResult<String> {
     .await
     .map_err(|_| AppError::validation("mounts.pathTimeout"))?
 }
-async fn validate(context: &HostContext, path: String) -> AppResult<Value> {
+async fn validate(context: &HostContext, path: String, permissions: &[&str]) -> AppResult<Value> {
     contract::validate_local_path(&path)?;
     let root = canonical(path).await?;
     let path = root.clone();
@@ -214,6 +190,6 @@ async fn validate(context: &HostContext, path: String) -> AppResult<Value> {
     )
     .await
     .map_err(|_| AppError::validation("mounts.pathTimeout"))??;
-    authorize(context, &[])?;
+    authorize(context, permissions)?;
     Ok(json!({"path":root,"valid":true}))
 }

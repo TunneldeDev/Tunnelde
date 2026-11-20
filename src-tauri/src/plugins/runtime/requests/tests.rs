@@ -377,3 +377,98 @@ async fn force_stop_rejects_cancelled_or_expired_admission_but_always_settles_ad
         }
     }
 }
+
+#[tokio::test]
+async fn remote_mount_reads_recheck_real_invocation_cancel_and_expiry_after_stat() {
+    use crate::{
+        services::operations::WorkLifetime,
+        ssh::files::directory::{self, tests::fixture::Fixture, Query},
+    };
+    use tokio::sync::oneshot;
+    struct Retained(Option<oneshot::Sender<()>>);
+    impl Drop for Retained {
+        fn drop(&mut self) {
+            let _ = self.0.take().unwrap().send(());
+        }
+    }
+    for resolve in [false, true] {
+        for expired in [false, true] {
+            let fixture = Fixture::new().await;
+            fixture.seen.delay_stat.store(true, Ordering::SeqCst);
+            fixture.seen.hold_close.store(true, Ordering::SeqCst);
+            let registry = Requests::default();
+            registry.reserve("plugin", "remote-read").unwrap();
+            let mut request = registry.claim("plugin", "remote-read").unwrap();
+            let entry = request.entry.clone();
+            let handle = fixture.handle.clone();
+            let (fence_done, mut done) = oneshot::channel();
+            let task = tokio::spawn(WorkLifetime::new(Retained(Some(fence_done))).scope(
+                async move {
+                    request
+                        .run_retained(async {
+                            let fence = current_invocation_fence().unwrap();
+                            directory::query(
+                                handle,
+                                if resolve {
+                                    Query::Resolve { path: None }
+                                } else {
+                                    Query::Browse {
+                                        path: None,
+                                        offset: 0,
+                                    }
+                                },
+                                move || fence.with_live(|| Ok(())),
+                            )
+                            .await
+                        })
+                        .await
+                },
+            ));
+            tokio::time::timeout(Duration::from_secs(3), fixture.seen.stat.notified())
+                .await
+                .unwrap();
+            if expired {
+                entry.lock().unwrap().deadline = Instant::now();
+            } else {
+                assert!(registry.cancel("plugin", "remote-read"));
+            }
+            fixture.seen.delay_stat.store(false, Ordering::SeqCst);
+            fixture.seen.release_stat.notify_one();
+            tokio::time::timeout(
+                Duration::from_secs(3),
+                fixture.seen.close_received.notified(),
+            )
+            .await
+            .unwrap();
+            assert!(
+                !task.is_finished(),
+                "cleanup must await the actual peer CLOSE"
+            );
+            assert!(done.try_recv().is_err());
+            assert_eq!(fixture.seen.reads.load(Ordering::SeqCst), 0);
+            fixture.seen.hold_close.store(false, Ordering::SeqCst);
+            fixture.seen.release_close.notify_one();
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(3), task)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap_err()
+                    .to_string(),
+                "plugin.api.cancelled"
+            );
+            tokio::time::timeout(Duration::from_secs(3), done)
+                .await
+                .unwrap()
+                .unwrap();
+            directory::query(
+                fixture.handle.clone(),
+                Query::Resolve { path: None },
+                || Ok(()),
+            )
+            .await
+            .unwrap();
+            assert!(!fixture.handle.is_closed());
+        }
+    }
+}
