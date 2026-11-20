@@ -1,3 +1,4 @@
+import type { NativePluginUiPrompt } from "./windowPluginUi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
@@ -84,6 +85,23 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       };
       cleanups.add(release);
       return release;
+    },
+    async listPluginUi() {
+      check();
+      const result = await invoke<NativePluginUiPrompt[]>("panel_window_plugin_view", {
+        document: identity.document,
+        request: { action: "listUi" },
+      });
+      check();
+      return result;
+    },
+    replyPluginUi(id: string, result: boolean | null, error?: string) {
+      // Cleanup-only replies may finish after local disposal. Native validates
+      // the exact document, pending id, policy and invocation at delivery.
+      return invoke<void>("panel_window_plugin_view", {
+        document: identity.document,
+        request: { action: "replyUi", id, result, error },
+      });
     },
     async create(lease?: PanelLease) {
       check();

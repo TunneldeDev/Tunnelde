@@ -56,7 +56,7 @@ pub(super) async fn request(
     request: MoveRequest,
 ) -> AppResult<Value> {
     let valid = |value: &str, max| !value.is_empty() && value.len() <= max && !value.contains('\0');
-    if !valid(&request.panel_id, 256)
+    if !super::ownership::valid_panel_id(&request.panel_id)
         || !valid(&request.window_id, 128)
         || request
             .expected_owner

@@ -467,3 +467,30 @@ captures and prevents late preparation.
 This is the asynchronous state/readiness foundation, **not** a plugin native-view
 gateway. Transferable built-ins remain explicitly opt-in; satellite plugin
 activation/raw RPC, legacy-state warning UX and provider parity are not implied.
+
+### Origin-scoped plugin consent (internal gateway)
+
+A native view's `ui.confirm` / `ui.showMessage` is queued for its exact owning
+window and document, never forwarded to the hidden coordinator. Invalidation
+contains no prompt text or capability. The closed list/reply gateway derives
+native window identity, validates document and request ownership, then rechecks
+panel lease, view token, plugin generation/permissions and invocation cancellation
+inside the final delivery gate. Staged or frozen views cannot request consent.
+The lock order is ownership -> frontend module -> plugin policy -> invocation;
+never reenter security or native ownership inside that synchronous gate.
+
+Consent holds a panel interaction until settlement, blocking handoff. There is
+at most one confirmation per native window, eight queued UI requests per plugin
+and 64 overall. Confirmation times out to false after 55 seconds; messages time
+out after 15 seconds. Transport cancellation and permission/document revocation
+withdraw old consent without permitting a late approval. The shared confirmation
+host runs in both document types without importing the main resource bootstrap.
+Existing user dialogs are never replaced; messages are shown once and acknowledged.
+Advisory refresh plus bounded polling withdraws expired prompts if an event was
+missed. Disposal rejects active consent and ignores late UI replies.
+
+This internal transport and its tests do not declare the production plugin panel
+adapter or resource-RPC/native-window parity complete. Keep discovery conservative
+until real adapters, actual effect lifetimes and native acceptance are finished.
+Panel IDs accept the complete combined plugin/view identity (7 + 128 + 1 + 128
+ASCII bytes); do not truncate distinct IDs to fit an older 256-byte limit.

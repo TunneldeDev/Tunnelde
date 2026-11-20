@@ -10,12 +10,12 @@ use std::future::Future;
 use tauri::{AppHandle, Manager};
 
 #[derive(Clone)]
-pub(super) struct Origin {
+pub(crate) struct Origin {
     app: AppHandle,
-    window: String,
-    document: String,
-    token: String,
-    plugin: Lease,
+    pub(super) window: String,
+    pub(super) document: String,
+    pub(super) token: String,
+    pub(super) plugin: Lease,
 }
 impl Origin {
     pub(super) fn new(
@@ -41,7 +41,7 @@ impl Origin {
         // invoke JS or acquire ownership again inside this synchronous gate.
         operation()
     }
-    fn authorize(&self, ownership: &Ownership) -> AppResult<()> {
+    pub(super) fn authorize(&self, ownership: &Ownership) -> AppResult<()> {
         let plugin = ownership
             .native_view_resource(
                 &self.window,
@@ -61,6 +61,9 @@ tokio::task_local! {
 }
 pub(super) async fn scope<T>(origin: Origin, work: impl Future<Output = T>) -> T {
     CURRENT.scope(origin, work).await
+}
+pub(crate) fn current() -> Option<Origin> {
+    CURRENT.try_with(Clone::clone).ok()
 }
 /// Non-native transports retain their existing domain authority. Native async
 /// observers must use this at the actual consuming/committing transaction, not

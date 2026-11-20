@@ -65,6 +65,16 @@ pub(in crate::plugins::api) async fn frontend_request_with_permissions(
     permissions: &'static [&'static str],
 ) -> AppResult<Value> {
     authorize(context, permissions)?;
+    if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+        return crate::platform::panel_windows::plugin_views::ui::request(
+            origin,
+            context,
+            method,
+            params,
+            permissions,
+        )
+        .await;
+    }
     let request_id = uuid::Uuid::new_v4().to_string();
     let (sender, receiver) = oneshot::channel();
     {

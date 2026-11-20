@@ -5,6 +5,7 @@ pub(crate) enum CallPolicy {
     Metadata,
     BusEffect,
     BusReceive,
+    OriginUi,
 }
 impl CallPolicy {
     pub(crate) fn staged(self) -> bool {
@@ -26,12 +27,27 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         // An async Notify wait has no detached worker. Cancellation drops its
         // receiver permit; each eventual queue drain rechecks native ownership.
         "bus.receive" => Some(CallPolicy::BusReceive),
+        "ui.confirm" | "ui.showMessage" => Some(CallPolicy::OriginUi),
         _ => None,
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn origin_ui_requires_committed_ownership_and_retains_until_settlement() {
+        for method in ["ui.confirm", "ui.showMessage"] {
+            let policy = call_policy(method).unwrap();
+            assert_eq!(policy, CallPolicy::OriginUi);
+            assert!(!policy.staged());
+            assert!(policy.blocks_move());
+            assert!(policy.retained());
+        }
+        for method in ["ui.confirm.extra", "ui.prompt", "ui.openDialog"] {
+            assert!(call_policy(method).is_none());
+        }
+    }
+
     #[test]
     fn all_existing_bus_methods_have_explicit_committed_only_lifetimes() {
         let methods: Vec<_> = crate::plugins::api::METHODS

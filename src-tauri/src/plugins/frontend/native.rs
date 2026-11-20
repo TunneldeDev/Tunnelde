@@ -126,6 +126,21 @@ pub(crate) fn with_owner<T>(
     owner: &Lease,
     operation: impl FnOnce() -> AppResult<T>,
 ) -> AppResult<T> {
+    with_owner_permissions(app, token, owner, &[], operation)
+}
+/// Caller holds native ownership. Acquire module -> policy once for both the
+/// trusted view and the endpoint's extra authority. Never reenter security from
+/// `operation`; consent insertion and final delivery belong inside this gate.
+pub(crate) fn with_owner_permissions<T>(
+    app: &AppHandle,
+    token: &str,
+    owner: &Lease,
+    permissions: &[&str],
+    operation: impl FnOnce() -> AppResult<T>,
+) -> AppResult<T> {
+    let permissions: Vec<_> = std::iter::once("ui.trusted")
+        .chain(permissions.iter().copied())
+        .collect();
     app.state::<Registry>().with_native_lease(token, |lease| {
         if lease != owner {
             return Err(AppError::validation("plugin.frontend.expired"));
@@ -133,7 +148,7 @@ pub(crate) fn with_owner<T>(
         app.state::<AppState>()
             .plugins
             .security
-            .with_authorized(lease, &["ui.trusted"], operation)
+            .with_authorized(lease, &permissions, operation)
     })
 }
 pub(crate) fn close(app: &AppHandle, tokens: Vec<String>) {

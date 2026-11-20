@@ -25,6 +25,12 @@ pub(crate) enum Request {
         runtime_id: String,
         view_id: String,
     },
+    ListUi {},
+    ReplyUi {
+        id: String,
+        result: Value,
+        error: Option<String>,
+    },
     PrepareCall {
         token: String,
     },
@@ -124,6 +130,22 @@ pub(crate) async fn panel_window_plugin_view(
             }
             Ok(json!(session))
         }
+        Request::ListUi {} => {
+            let result = native::lock(&registry).view_ui_list(app, window.label(), &document)?;
+            Ok(json!(result))
+        }
+        Request::ReplyUi { id, result, error } => {
+            native::lock(&registry).view_ui_reply(
+                app,
+                window.label(),
+                &document,
+                &id,
+                result,
+                error,
+            )?;
+            native::changed(app);
+            Ok(Value::Null)
+        }
         Request::PrepareCall { token } => {
             let ownership = native::lock(&registry);
             let owner = current(&ownership, window.label(), &document, &token)?;
@@ -203,10 +225,15 @@ pub(crate) async fn panel_window_plugin_view(
     }
 }
 pub(crate) fn prune(app: &AppHandle) {
-    let tokens = native::lock(&app.state::<native::Registry>())
-        .prune_native_views(Instant::now(), |token, owner| {
+    let tokens = {
+        let registry = app.state::<native::Registry>();
+        let mut ownership = native::lock(&registry);
+        let tokens = ownership.prune_native_views(Instant::now(), |token, owner| {
             frontend::with_owner(app, token, owner, || Ok(())).is_ok()
         });
+        ownership.prune_view_ui(app);
+        tokens
+    };
     frontend::close(app, tokens);
 }
 pub(crate) fn retire(app: &AppHandle, plugin: &str, before: u64) {

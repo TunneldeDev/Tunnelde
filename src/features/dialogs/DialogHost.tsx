@@ -1,4 +1,4 @@
-import { ConfirmDialog } from "@/components/ui/overlay/ConfirmDialog";
+import { ConfirmDialogHost } from "@/components/ui/overlay/ConfirmDialogHost";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -596,20 +596,7 @@ export function DialogHost() {
         />
       );
     case "confirm":
-      return (
-        <ConfirmDialog
-          title={dialog.title}
-          body={dialog.body}
-          confirmLabel={dialog.confirmLabel}
-          danger={dialog.danger}
-          preformatted={dialog.preformatted}
-          onConfirm={dialog.onConfirm}
-          onClose={() => {
-            const current = useDialogs.getState().dialog;
-            if (current.kind === "confirm" && current.onConfirm === dialog.onConfirm) close();
-          }}
-        />
-      );
+      return <ConfirmDialogHost />;
     default:
       return null;
   }

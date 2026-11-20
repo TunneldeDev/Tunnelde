@@ -1,3 +1,5 @@
+import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
+import { ConfirmDialogHost } from "@/components/ui/overlay/ConfirmDialogHost";
 import { startPresentationRequests } from "@/lib/panels/presentationRequests";
 import { registerTaskPresentation } from "@/features/tasks/presentation";
 import { TransferBackgroundTask } from "@/features/sftp/TransferBackgroundTask";
@@ -331,10 +333,14 @@ export function SatelliteApp() {
         const stopFocus = startSourcePanelFocus(current, (error) =>
           reportError("panels.windows", "focus", error),
         );
+        const stopUi = startNativePluginUi(current, (error) =>
+          reportError("panels.windows", "pluginUi", error),
+        );
         const stopDrag = installPanelWindowDrag(current, (error) =>
           toast(translateError(error), "error"),
         );
         cleanup = () => {
+          stopUi();
           stopMoves();
           stopPresentation();
           stopFocus();
@@ -400,6 +406,7 @@ export function SatelliteApp() {
       )}
       <ContextMenuHost />
       <ToastHost />
+      <ConfirmDialogHost />
     </div>
   );
 }

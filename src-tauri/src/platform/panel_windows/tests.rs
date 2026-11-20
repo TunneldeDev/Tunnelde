@@ -823,3 +823,23 @@ fn known_host_action_grammar_is_bounded_and_only_admitted_for_its_own_panel() {
         .prepare(MAIN, &f.main, &lease, "panel-one", json!({}), f.now)
         .is_ok());
 }
+
+#[test]
+fn maximum_combined_plugin_panel_identity_is_preserved_without_truncation() {
+    use super::ownership::{valid_panel_id, Ownership, MAX_PANEL_ID_BYTES};
+    let id = format!("plugin:{}:{}", "p".repeat(128), "v".repeat(128));
+    assert_eq!(id.len(), MAX_PANEL_ID_BYTES);
+    assert!(valid_panel_id(&id));
+    assert!(!valid_panel_id(&(id.clone() + "x")));
+    assert!(!valid_panel_id("plugin:a:b\0"));
+    assert!(!valid_panel_id(""));
+    let mut registry = Ownership::default();
+    let doc = registry.register("main").unwrap();
+    registry.ready("main", &doc).unwrap();
+    let first = registry.add_panel("main", &doc, &id).unwrap();
+    let other = format!("{}w", &id[..id.len() - 1]);
+    let second = registry.add_panel("main", &doc, &other).unwrap();
+    assert_eq!(first.panel_id, id);
+    assert_eq!(second.panel_id, other);
+    assert_ne!(first.panel_id, second.panel_id);
+}

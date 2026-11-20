@@ -310,3 +310,35 @@ it("preserves late source presentation claims and permits cleanup-only completio
     ],
   ]);
 });
+it("fetches consent only for the exact document and permits cleanup replies after disposal", async () => {
+  const client = createPanelWindowClient(identity);
+  const prompt = { id: "prompt", method: "ui.confirm", pluginId: "sample", message: "Question" };
+  native.invoke.mockResolvedValueOnce([prompt]).mockResolvedValue(null);
+  expect(await client.listPluginUi()).toEqual([prompt]);
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_plugin_view", {
+    document: identity.document,
+    request: { action: "listUi" },
+  });
+  client.dispose();
+  await expect(client.listPluginUi()).rejects.toThrow("disposed");
+  await client.replyPluginUi("prompt", false);
+  expect(native.invoke).toHaveBeenLastCalledWith("panel_window_plugin_view", {
+    document: identity.document,
+    request: { action: "replyUi", id: "prompt", result: false, error: undefined },
+  });
+  expect(client).not.toHaveProperty("document");
+});
+it("rejects an in-flight consent list after its document client is disposed", async () => {
+  let finish!: (value: unknown) => void;
+  native.invoke.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        finish = done;
+      }),
+  );
+  const client = createPanelWindowClient(identity);
+  const pending = client.listPluginUi();
+  client.dispose();
+  finish([{ id: "expired", method: "ui.confirm", pluginId: "sample", message: "Question" }]);
+  await expect(pending).rejects.toThrow("disposed");
+});

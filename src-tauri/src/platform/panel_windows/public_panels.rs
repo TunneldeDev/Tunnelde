@@ -106,7 +106,7 @@ pub(crate) async fn request(
     panel: String,
     presentation: Option<Presentation>,
 ) -> AppResult<Value> {
-    if panel.is_empty() || panel.len() > 256 || panel.contains('\0') {
+    if !super::ownership::valid_panel_id(&panel) {
         return Err(AppError::validation("plugin.api.invalid:panelId"));
     }
     let operation = presentation.map_or(PresentationOperation::Close, |presentation| {

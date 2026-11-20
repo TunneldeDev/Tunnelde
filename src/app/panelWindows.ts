@@ -1,3 +1,4 @@
+import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
 import { startPresentationRequests } from "@/lib/panels/presentationRequests";
 import { installPanelWindowDrag } from "@/lib/panels/windowDrag";
 import { toast } from "@/store/toasts";
@@ -52,6 +53,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     failure,
   });
   const stop = [
+    startNativePluginUi(current, failure),
     installSourcePanelPresentation(createMainPanelPresentation()),
     startPanelMoveRequests(current, failure),
     startPresentationRequests(current, failure),

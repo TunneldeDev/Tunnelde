@@ -41,6 +41,20 @@ pub(crate) fn current_invocation_fence() -> Option<InvocationFence> {
     CURRENT_INVOCATION.try_with(Clone::clone).ok()
 }
 impl InvocationFence {
+    /// Consent waits must dismiss promptly even when their enclosing accepted
+    /// RPC is retained until actual settlement. Subscribe while holding the
+    /// same entry lock used by synchronous cancellation/reply admission.
+    pub(crate) async fn cancelled(&self) {
+        let (mut signal, deadline) = {
+            let entry = self.entry.lock().unwrap_or_else(|e| e.into_inner());
+            (entry.signal.subscribe(), entry.deadline)
+        };
+        tokio::select! {
+            _ = signal.wait_for(|cancelled| *cancelled) => {},
+            _ = tokio::time::sleep_until(deadline.into()) => {},
+        }
+    }
+
     pub(crate) fn with_live<T>(&self, commit: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
         let entry = self.entry.lock().unwrap_or_else(|error| error.into_inner());
         if entry.deadline <= Instant::now() || *entry.signal.borrow() {

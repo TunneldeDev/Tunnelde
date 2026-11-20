@@ -11,6 +11,13 @@ pub(super) fn transferable(id: &str) -> bool {
     matches!(id, "connections" | "tasks" | "output" | "knownHosts")
 }
 
+// "plugin:" + a 128-byte plugin ID + ":" + a 128-byte view ID.
+// IDs are identities, never truncate them to make a transport limit fit.
+pub(super) const MAX_PANEL_ID_BYTES: usize = 7 + 128 + 1 + 128;
+pub(super) fn valid_panel_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= MAX_PANEL_ID_BYTES && !id.contains('\0')
+}
+
 pub(super) const MAIN: &str = "main";
 const MAX_WINDOWS: usize = 16;
 const MAX_PANELS: usize = 128;
@@ -270,7 +277,7 @@ impl Ownership {
     }
     pub fn add_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<Lease> {
         self.main(window, document)?;
-        if panel_id.is_empty() || panel_id.len() > 256 || self.panels.len() >= MAX_PANELS {
+        if !valid_panel_id(panel_id) || self.panels.len() >= MAX_PANELS {
             return Err("invalid panel");
         }
         if self.panels.contains_key(panel_id) {

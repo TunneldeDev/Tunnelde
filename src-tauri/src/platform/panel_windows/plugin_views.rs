@@ -29,6 +29,7 @@ struct View {
 #[derive(Default)]
 pub(super) struct Views {
     bindings: HashMap<String, View>,
+    ui: ui::Queue,
     // Accepted work is independent of the view's lifetime. Closing a token,
     // reloading a document or revoking a plugin cannot release a native effect.
     calls: HashMap<String, NativeCall>,
@@ -138,6 +139,20 @@ impl Ownership {
     }
     /// Final native authority for an actual domain transaction, including one
     /// resumed after a passive async wait. Never allows a staged destination.
+    fn native_view_owned_lease(
+        &self,
+        window: &str,
+        document: &str,
+        token: &str,
+        now: Instant,
+    ) -> Result<Lease> {
+        let view = self.native_view(window, document, token, now)?;
+        let Authority::Owned(lease) = &view.authority else {
+            return Err("plugin.frontend.viewNotCommitted");
+        };
+        self.resource_action(window, document, lease)?;
+        Ok(lease.clone())
+    }
     pub(super) fn native_view_resource(
         &self,
         window: &str,
@@ -283,3 +298,4 @@ pub(crate) mod gateway;
 pub(crate) mod origin;
 #[cfg(test)]
 mod tests;
+pub(crate) mod ui;

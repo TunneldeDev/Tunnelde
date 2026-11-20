@@ -241,3 +241,52 @@ async fn retained_admission_never_polls_pre_cancelled_work_and_still_scopes_invo
     drop(request);
     assert!(fence.with_live(|| Ok(())).is_err());
 }
+
+#[tokio::test]
+async fn consent_cancel_waiter_observes_cancellation_before_or_after_subscription() {
+    for already_cancelled in [true, false] {
+        let registry = Requests::default();
+        registry.reserve("view", "consent").unwrap();
+        let request = registry.claim("view", "consent").unwrap();
+        let fence = InvocationFence {
+            entry: request.entry.clone(),
+        };
+        if already_cancelled {
+            assert!(registry.cancel("view", "consent"));
+            tokio::time::timeout(Duration::from_secs(1), fence.cancelled())
+                .await
+                .unwrap();
+        } else {
+            let waiter = tokio::spawn(async move { fence.cancelled().await });
+            tokio::task::yield_now().await;
+            assert!(registry.cancel("view", "consent"));
+            tokio::time::timeout(Duration::from_secs(1), waiter)
+                .await
+                .unwrap()
+                .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn consent_cancel_waiter_observes_request_drop_and_expired_deadline() {
+    let registry = Requests::default();
+    registry.reserve("view", "consent").unwrap();
+    let request = registry.claim("view", "consent").unwrap();
+    let fence = InvocationFence {
+        entry: request.entry.clone(),
+    };
+    drop(request);
+    tokio::time::timeout(Duration::from_secs(1), fence.cancelled())
+        .await
+        .unwrap();
+    registry.reserve("view", "next").unwrap();
+    let request = registry.claim("view", "next").unwrap();
+    request.entry.lock().unwrap().deadline = Instant::now();
+    let fence = InvocationFence {
+        entry: request.entry.clone(),
+    };
+    tokio::time::timeout(Duration::from_secs(1), fence.cancelled())
+        .await
+        .unwrap();
+}
