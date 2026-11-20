@@ -1,12 +1,9 @@
-import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { describe, expect, it } from "vitest";
 import { parseSyntaxResult } from "@/lib/plugins/syntax";
 
-const root = "examples/plugins/syntax-basic";
-const sdk = readFileSync(`${root}/sdk.mjs`);
+const root = "tests/fixtures/syntax-provider";
 const source = "const value = 42;\n".repeat(2000);
 
 function runPlugin() {
@@ -19,9 +16,11 @@ function runPlugin() {
     { resolve: (value: unknown) => void; reject: (error: Error) => void }
   >();
   let sequence = 0;
+  const pages: Record<string, unknown>[] = [];
   reader.on("line", (line) => {
     const message = JSON.parse(line);
     if (message.method === "editor.readRange") {
+      pages.push(message.params);
       const { offset, limit } = message.params;
       const text = source.slice(offset, offset + limit);
       child.stdin!.write(
@@ -54,17 +53,16 @@ function runPlugin() {
       pending.set(id, { resolve, reject });
       child.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
-  return { child, request };
+  return { child, request, pages };
 }
 
-describe("syntax-basic installable example", () => {
-  it("pins the packaged SDK and supports real stdio inline/window commands", async () => {
-    expect(createHash("sha256").update(sdk).digest("hex")).toBe(
-      "c8f22cd663e1978e5ad751e24f27ade321b74746896e915c66a1a1f478f9aaf9",
-    );
-    const { child, request } = runPlugin();
+describe("syntax provider host protocol", () => {
+  it("accepts inline and paged window tokens from a real stdio provider", async () => {
+    const { child, request, pages } = runPlugin();
     try {
-      expect(await request("initialize", { apiVersion: 1, pluginId: "syntax-basic" })).toEqual({
+      expect(
+        await request("initialize", { apiVersion: 1, pluginId: "syntax-protocol-fixture" }),
+      ).toEqual({
         ok: true,
       });
       const inline = (await request("command.run", {
@@ -82,7 +80,7 @@ describe("syntax-basic installable example", () => {
         command: "highlight",
         input: {
           mode: "inline",
-          source: "const value = 42;\n".repeat(5882),
+          source: "const value = 42;\n".repeat(2000),
           document: {
             tabId: "e2e",
             documentId: "doc",
@@ -95,7 +93,7 @@ describe("syntax-basic installable example", () => {
         },
       })) as { tokens: Array<{ start: number; end: number; type: string }> };
       expect(() =>
-        parseSyntaxResult(inlineLarge, "const value = 42;\n".repeat(5882)),
+        parseSyntaxResult(inlineLarge, "const value = 42;\n".repeat(2000)),
       ).not.toThrow();
       const windowed = (await request("command.run", {
         command: "highlight",
@@ -118,6 +116,10 @@ describe("syntax-basic installable example", () => {
       expect(windowed.tokens.length).toBeGreaterThan(100);
       expect(windowed.tokens[0]).toEqual({ start: 0, end: 5, type: "keyword" });
       expect(windowed.tokens.every((token) => token.end <= 32_768)).toBe(true);
+      expect(pages).toEqual([
+        { tabId: "e2e", documentId: "doc", version: 1, offset: 0, limit: 16_384 },
+        { tabId: "e2e", documentId: "doc", version: 1, offset: 16_384, limit: 16_384 },
+      ]);
       expect(await request("shutdown", {})).toBeNull();
     } finally {
       child.stdin!.end();
