@@ -1,10 +1,12 @@
 //! Builtin-only reviewed connections. The original interaction owns every phase;
 //! credentials are request-local, never part of a panel capsule/read model.
+mod installation;
 use super::*;
 use crate::ssh::{
     session::review::{Review, Target},
     SessionInfo, SshConnectRequest,
 };
+pub(super) use installation::install_key;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 

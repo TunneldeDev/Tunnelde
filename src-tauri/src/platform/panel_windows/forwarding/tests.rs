@@ -428,3 +428,47 @@ fn credential_commands_require_original_review_and_explicit_bounded_write_intent
         }
     }
 }
+
+#[test]
+fn key_installation_requires_original_review_and_only_bounded_request_local_inputs() {
+    let mut owner = Ownership::default();
+    let document = owner.register("main").unwrap();
+    owner.ready("main", &document).unwrap();
+    let lease = owner.add_panel("main", &document, "forwarding").unwrap();
+    let original = owner.begin_interaction("main", &document, &lease).unwrap();
+    let wire = json!({"operation":"installKey","id":"rule","revision":"one","review":{"hostId":"host","revision":"a".repeat(64)},"interaction":original,"password":"ephemeral","credentials":{}});
+    let request: Request = serde_json::from_value(wire.clone()).unwrap();
+    let action = owner
+        .begin_forwarding("main", &document, &lease, &request)
+        .unwrap();
+    owner.finish_forwarding_action("forwarding", &action);
+    for field in [
+        "keyPath",
+        "publicKey",
+        "privateKey",
+        "hostId",
+        "sessionId",
+        "origin",
+        "window",
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = json!("caller-selected");
+        assert!(serde_json::from_value::<Request>(invalid).is_err());
+    }
+    for password in ["".to_owned(), "x".repeat(128 * 1024 + 1)] {
+        let mut invalid = wire.clone();
+        invalid["password"] = json!(password);
+        assert!(serde_json::from_value::<Request>(invalid)
+            .unwrap()
+            .validate()
+            .is_err());
+    }
+    owner
+        .end_interaction("main", &document, &lease, &original)
+        .unwrap();
+    let replacement = owner.begin_interaction("main", &document, &lease).unwrap();
+    assert_ne!(replacement, original);
+    assert!(owner
+        .begin_forwarding("main", &document, &lease, &request)
+        .is_err());
+}

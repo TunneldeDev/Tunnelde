@@ -17,13 +17,18 @@ fn error(stage: &str, error: impl std::fmt::Display) -> AppError {
     key_error(format!("authorized_keys {stage}: {error}"))
 }
 
-async fn directory(sftp: &RawSftpSession, path: &str) -> AppResult<()> {
+async fn directory<F: Future<Output = AppResult<()>>>(
+    sftp: &RawSftpSession,
+    path: &str,
+    current: &impl Fn() -> F,
+) -> AppResult<()> {
     match sftp.stat(path).await {
         Ok(metadata) if metadata.attrs.is_dir() => return Ok(()),
         Ok(_) => return Err(error("directory", ".ssh is not a directory")),
         Err(failure) if status(&failure, StatusCode::NoSuchFile) => {}
         Err(failure) => return Err(error("directory inspection", failure)),
     }
+    current().await?;
     if let Err(failure) = sftp
         .mkdir(
             path,
@@ -98,7 +103,7 @@ pub(super) async fn append<F: Future<Output = AppResult<()>>>(
         .ok_or_else(|| error("home", "empty server response"))?;
     let directory_path = format!("{}/.ssh", home.filename.trim_end_matches('/'));
     current().await?;
-    directory(sftp, &directory_path).await?;
+    directory(sftp, &directory_path, &current).await?;
     let path = format!("{directory_path}/authorized_keys");
     let existing = contents(sftp, &path).await?;
     let public = public.trim();
@@ -124,10 +129,15 @@ pub(super) async fn append<F: Future<Output = AppResult<()>>>(
     // APPEND makes the server select EOF at the actual write. A leading LF
     // separates a concurrent append that did not end with one, even if our
     // earlier read observed an empty/missing file. No old contents are resent.
-    let writing = sftp
-        .write(&handle, 0, format!("\n{public}\n").into_bytes())
-        .await
-        .map_err(|failure| error("append", failure));
+    let writing = async {
+        // APPEND/CREATE admission does not authorize a later WRITE after a
+        // slow open. A rejection still closes this exact admitted handle.
+        current().await?;
+        sftp.write(&handle, 0, format!("\n{public}\n").into_bytes())
+            .await
+            .map_err(|failure| error("append", failure))
+    }
+    .await;
     let closing = sftp
         .close(handle)
         .await

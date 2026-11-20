@@ -581,3 +581,31 @@ it("captures reviewed test/cancel correlation without falling back to global SSH
   expect(native.invoke).toHaveBeenCalledTimes(3);
   client.dispose();
 });
+
+it("keeps native key installation request-local and never falls back to raw key setup", async () => {
+  const client = createPanelWindowClient(identity);
+  const lease = { panelId: "forwarding", windowId: identity.windowId, generation: 4 };
+  const request = {
+    operation: "installKey" as const,
+    id: "rule",
+    revision: "displayed",
+    interaction: "original-install-consent",
+    review: { hostId: "host", revision: "a".repeat(64) },
+    password: "ephemeral-password",
+    credentials: { jump: { passphrase: "ephemeral-jump" } },
+  };
+  const expected = structuredClone(request);
+  native.invoke.mockRejectedValueOnce(new Error("forward.changed"));
+  const pending = client.forwardingMutation(lease, request);
+  request.password = "replacement";
+  request.credentials.jump.passphrase = "replacement";
+  request.review.hostId = "foreign";
+  request.interaction = "later-dialog";
+  await expect(pending).rejects.toThrow("forward.changed");
+  expect(native.invoke).toHaveBeenCalledExactlyOnceWith("panel_window_forwarding", {
+    document: identity.document,
+    lease,
+    request: expected,
+  });
+  client.dispose();
+});

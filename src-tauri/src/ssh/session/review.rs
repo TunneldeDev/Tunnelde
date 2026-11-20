@@ -75,6 +75,10 @@ pub(crate) async fn prepare(app: AppHandle, displayed: Host) -> AppResult<Plan> 
 }
 
 impl Target {
+    pub(crate) fn observe(&self, app: &AppHandle) -> AppResult<Observed> {
+        Ok(Observed(self.0.observe(app)?))
+    }
+
     pub(crate) async fn observe_background(&self, app: &AppHandle) -> AppResult<Observed> {
         Ok(Observed(self.0.observe_background(app).await?))
     }

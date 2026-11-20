@@ -716,8 +716,7 @@ review, rule revision and the original live owning-panel interaction. It forces
 background forwarding purpose and host-owned group pooling; arbitrary SSH input,
 foreign jump credentials, caller window labels and provider authority are not
 accepted. This transport is not yet a complete connection-prompt adapter:
-key installation and actual prompt/provider/renderer
-integration remain mandatory before forwarding transfer discovery is admitted.
+actual prompt/provider/renderer integration remains mandatory before forwarding transfer discovery is admitted.
 
 The private `probe`/`trust` operations bind the same rule revision, route review
 and original interaction. Only bounded credentials for actual reviewed jump
@@ -789,3 +788,30 @@ and panel-removal/transfer fence remain until admitted workers and actual
 transport cleanup finish, including work outliving the test future. The owning
 test's IPC reply awaits that settlement. No global `ssh_cancel_test` fallback,
 provider authority serialization or forwarding discovery admission is added.
+
+### Reviewed builtin forwarding key installation (private gateway)
+
+`installKey` requires the exact original panel interaction, displayed rule
+revision/host and route review. It accepts bounded request-local password/jump
+credentials, never caller-selected key paths, keys, session IDs or provider
+origins. Descendant authentication workers also retain the original native
+origin and rule predicate; a later dialog cannot replace retired consent.
+
+Shared key setup observes OS/proxy state outside authority/DB guards, then checks
+origin, route and the additional rule CAS together at local-publication admission,
+before remote directory/create/append/write admission and in the same DB guard
+that switches the original host to key authentication. The staged local private
+key is checked again after generation and before non-overwriting publication;
+a denied publication removes its staging file. Remote WRITE is checked again
+after APPEND open and its exact handle is closed on failure. WRITE and CLOSE
+acknowledgements must arrive before local authentication settings may change.
+No ownership/DB lock spans key generation, filesystem or network IO.
+
+External effects already admitted are not rolled back: a local managed key or
+remote directory/file/key may remain after a later error/revocation. A rejected
+final CAS must not switch a replacement host/rule to key authentication. Private
+SSH setup and actual transport cleanup retain the native effect until settlement,
+not just RPC delivery. The native reply is `null`, with no key path/bytes; success
+closes the prompt and future actions prepare a fresh review because authentication
+changed. This prerequisite still does not enable forwarding native discovery or
+replace the remaining prompt/provider/renderer integration and full acceptance.

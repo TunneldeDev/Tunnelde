@@ -31,6 +31,16 @@ export type ForwardingWindowMutation =
     }
   | { operation: "cancelTest"; testId: string; interaction: string }
   | {
+      operation: "installKey";
+      id: string;
+      revision: string;
+      interaction: string;
+      review: ConnectionReview;
+      /** Ephemeral direct IPC only; the response exposes no key path. */
+      password: string | null;
+      credentials?: PromptCredentials;
+    }
+  | {
       operation: "start";
       id: string;
       revision: string;

@@ -14,6 +14,15 @@ pub(crate) enum Request {
         revision: String,
         interaction: String,
     },
+    InstallKey {
+        id: String,
+        revision: String,
+        interaction: String,
+        review: crate::ssh::session::review::Review,
+        password: Option<String>,
+        #[serde(default)]
+        credentials: super::connection::JumpCredentials,
+    },
     Test {
         id: String,
         revision: String,
@@ -127,6 +136,7 @@ impl Request {
             | Self::SaveCredential { interaction, .. }
             | Self::ForgetCredential { interaction, .. }
             | Self::PrepareStart { interaction, .. }
+            | Self::InstallKey { interaction, .. }
             | Self::Test { interaction, .. }
             | Self::CancelTest { interaction, .. } => Some(interaction),
             _ => None,
@@ -146,6 +156,20 @@ impl Request {
                 && review.identity().bytes().all(|b| b.is_ascii_hexdigit())
         };
         let valid = match self {
+            Self::InstallKey {
+                id,
+                revision,
+                interaction,
+                review,
+                password,
+                credentials,
+            } => {
+                reviewed(id, revision, interaction, review)
+                    && password
+                        .as_ref()
+                        .is_none_or(|value| !value.is_empty() && value.len() <= 128 * 1024)
+                    && credentials.valid()
+            }
             Self::Test {
                 id,
                 revision,

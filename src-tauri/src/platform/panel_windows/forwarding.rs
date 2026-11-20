@@ -177,6 +177,14 @@ pub(crate) async fn panel_window_forwarding(
             Request::PrepareStart { id, revision, .. } => {
                 connection::prepare(effect, id, revision).await
             }
+            Request::InstallKey {
+                id,
+                revision,
+                review,
+                password,
+                credentials,
+                ..
+            } => connection::install_key(effect, id, revision, review, password, credentials).await,
             Request::Test {
                 id,
                 revision,
@@ -313,6 +321,7 @@ fn prepare(app: &AppHandle, request: &Request) -> AppResult<Prepared> {
         | Request::CredentialStatus { .. }
         | Request::SaveCredential { .. }
         | Request::ForgetCredential { .. }
+        | Request::InstallKey { .. }
         | Request::Test { .. }
         | Request::CancelTest { .. }
         | Request::Trust { .. } => return Err(AppError::validation("forward.invalid")),
