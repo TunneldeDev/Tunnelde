@@ -160,6 +160,9 @@ export function NetworkConnectionTest({ settings }: { settings: NetworkSettings 
                 [t("network.qualityFastest"), ms(quality.minMs)],
                 [t("network.qualitySlowest"), ms(quality.maxMs)],
                 [t("connect.testSpread"), ms(quality.spreadMs)],
+                ...(quality.https
+                  ? [[t("network.httpsDuration"), ms(quality.https.elapsedMs)]]
+                  : []),
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt>{label}</dt>
@@ -183,7 +186,6 @@ export function NetworkConnectionTest({ settings }: { settings: NetworkSettings 
               >
                 {quality.https.success
                   ? t("network.httpsPassed", {
-                      ms: ms(quality.https.elapsedMs),
                       status: quality.https.status,
                     })
                   : quality.https.error

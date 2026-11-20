@@ -2045,21 +2045,22 @@
     "missingProxy": "Proxy no longer exists",
     "qualityLessMs": "<1 ms",
     "qualityRunning": "Measuring up to 3 connections…",
-    "qualityLatency": "Connection latency (median)",
+    "qualityLatency": "TCP/tunnel setup (median)",
     "qualityFastest": "Fastest",
     "qualitySlowest": "Slowest",
-    "qualityHint": "Measures three TCP/proxy connection setup times, not ping RTT or bandwidth. Port 443 also verifies HTTPS. Other ports send no application data; login is not tested.",
+    "qualityHint": "Measures three TCP/proxy tunnel setup times, not ping RTT or bandwidth. Local or transparent proxies may acknowledge connections before the destination is ready; sub-millisecond results do not prove low end-to-end latency. On port 443, the separate HTTPS probe includes connection setup, TLS and waiting for response headers; it is not a download speed test. Other ports send no application data; login is not tested.",
     "quality": {
-      "fast": "Connection established · low latency",
-      "normal": "Connection established · moderate latency",
-      "slow": "Connection established · high latency",
+      "fast": "TCP/tunnel established · fast setup",
+      "normal": "TCP/tunnel established · moderate setup time",
+      "slow": "TCP/tunnel established · slow setup",
       "unstable": "Some connection attempts failed",
       "unreachable": "Connection failed"
     },
     "httpsFailed": "The TCP proxy tunnel works, but HTTPS/TLS failed. Check proxy routing, the node and destination before downloading plugins.",
-    "httpsPassed": "HTTPS responded (HTTP {{status}}, {{ms}}); other download domains may differ.",
+    "httpsPassed": "HTTPS responded (HTTP {{status}}); other download domains may differ.",
     "testMarketplaceRoute": "Current marketplace route",
-    "testUpdatesRoute": "Current update route"
+    "testUpdatesRoute": "Current update route",
+    "httpsDuration": "HTTPS probe elapsed time"
   },
   "pluginErrors": {
     "packageFailure": "{{pluginId}}: {{error}}",

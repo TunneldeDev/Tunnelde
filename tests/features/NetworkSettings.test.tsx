@@ -102,11 +102,11 @@ it("saves an individual feature route and tests the explicitly selected proxy", 
   fireEvent.click(screen.getByRole("option", { name: "Office" }));
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Test connection" })));
   expect(api.testProxyQuality).toHaveBeenCalledExactlyOnceWith("office", "github.com", 443);
-  expect(screen.getByRole("status").textContent).toContain("Connection established");
+  expect(screen.getByRole("status").textContent).toContain("TCP/tunnel established");
   const result = within(screen.getByRole("region", { name: "Connection quality" }));
   for (const value of ["30 ms", "24 ms", "36 ms", "12 ms", "3 / 3"])
     expect(result.getByText(value, { selector: "dd" })).toBeTruthy();
-  expect(result.getByText("Connection latency (median)")).toBeTruthy();
+  expect(result.getByText("TCP/tunnel setup (median)")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Test again" })).toBeTruthy();
 });
 
@@ -179,7 +179,7 @@ it("validates the destination, locks the running test and clears stale results o
   fireEvent.submit(form);
   expect(api.testProxyQuality).toHaveBeenCalledOnce();
   await act(async () => finish(quality));
-  expect(test.getByRole("status").textContent).toContain("Connection established");
+  expect(test.getByRole("status").textContent).toContain("TCP/tunnel established");
   fireEvent.change(address, { target: { value: "different.example.com" } });
   expect(test.getByRole("status").textContent).toBe("");
   expect(test.queryByRole("region", { name: "Connection quality" })).toBeNull();
