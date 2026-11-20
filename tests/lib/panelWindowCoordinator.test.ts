@@ -322,3 +322,29 @@ it("drains a queued contribution-removal invalidation after an in-flight adapter
   expect(f.receive).toHaveBeenLastCalledWith(expect.objectContaining({ panels: [] }));
   c.dispose();
 });
+
+it("uses resource registration before snapshot publication instead of addPanel for dynamic pages", async () => {
+  const f = fixture();
+  const id = "terminal:existing-session";
+  const registerPanel = vi.fn(async (panelId: string) => {
+    f.setSnapshot({
+      ...f.snapshot(),
+      panels: [{ panelId, windowId: "main", generation: 9 }],
+      terminalViews: [{ panelId, allowMove: true }],
+    });
+  });
+  const coordinator = startPanelWindowCoordinator(f.client, {
+    panelIds: () => [id],
+    registerPanel,
+    receive: f.receive,
+    failure: f.failure,
+  });
+  await coordinator.ready;
+  expect(registerPanel).toHaveBeenCalledWith(id);
+  expect(f.control).not.toHaveBeenCalledWith({ action: "addPanel", panelId: id });
+  expect(f.receive).toHaveBeenCalledWith(
+    expect.objectContaining({ terminalViews: [{ panelId: id, allowMove: true }] }),
+  );
+  expect(f.failure).not.toHaveBeenCalled();
+  coordinator.dispose();
+});

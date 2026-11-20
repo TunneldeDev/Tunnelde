@@ -15,7 +15,7 @@ import { SftpPage } from "@/features/sftp/SftpPage";
 import { RestoredFilePane } from "@/features/sftp/RestoredFilePane";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { KnownHostsPage } from "@/features/settings/KnownHostsPage";
-import { TerminalPage } from "@/features/terminal/TerminalPage";
+import { MainNativeTerminalPage } from "@/features/terminal/NativeTerminalPage";
 import { useNavigation } from "@/store/navigation";
 import { WelcomePage } from "@/features/welcome/WelcomePage";
 import { useWorkspace, type WorkspaceTab } from "@/store/workspace";
@@ -49,7 +49,7 @@ function TabBody({
     case "updates":
       return <LegacyUpdates visible={visible} />;
     case "terminal":
-      return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
+      return <MainNativeTerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
       if (
         tab.filePane?.source.kind === "remote" &&

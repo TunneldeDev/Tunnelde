@@ -1,3 +1,6 @@
+import { useWorkspace } from "@/store/workspace";
+import { useSsh } from "@/store/ssh";
+import { useSettings } from "@/store/settings";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import { synchronizePluginAdapters } from "@/lib/panels/pluginAdapters";
 import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
@@ -46,16 +49,35 @@ export async function startPanelWindows(signal: AbortSignal) {
         (view) => view !== "filePreview" || useFilePreview.getState().file !== null,
       ),
       ...pluginSidebars(usePlugins.getState().items).map((item) => item.view),
+      ...useWorkspace
+        .getState()
+        .tabs.filter(
+          (tab) =>
+            tab.kind === "terminal" &&
+            (useSsh.getState().sessions.some((session) => tab.id === `terminal:${session.id}`) ||
+              usePanelWindows
+                .getState()
+                .snapshot.terminalViews?.some((view) => view.panelId === tab.id)),
+        )
+        .map((tab) => tab.id),
     ],
-    synchronize: (snapshot) =>
-      synchronizePluginAdapters(
+    registerPanel: (id) =>
+      id.startsWith("terminal:")
+        ? current.terminals.bind(id.slice("terminal:".length))
+        : current.control({ action: "addPanel", panelId: id }),
+    synchronize: async (snapshot) => {
+      const allow = !useSettings.getState().settings.uiProviders.terminal;
+      for (const view of snapshot.terminalViews ?? [])
+        if (view.allowMove !== allow) await current.terminals.configure(view.panelId, allow);
+      await synchronizePluginAdapters(
         current.pluginViews(failure),
         snapshot,
         pluginSidebars(usePlugins.getState().items).flatMap((item) => {
           const owner = frontendRuntime.factoryOwner(item.pluginId, item.id);
           return owner ? [{ panelId: item.view, viewId: item.id, owner }] : [];
         }),
-      ),
+      );
+    },
     receive: (snapshot) => {
       usePanelWindows.setState({ windowId: current.windowId, available: true, snapshot });
       void views.reconcile(snapshot).catch(failure);
@@ -73,6 +95,9 @@ export async function startPanelWindows(signal: AbortSignal) {
     usePlugins.subscribe(coordinator.refresh),
     frontendRuntime.subscribe(coordinator.refresh),
     useFilePreview.subscribe(coordinator.refresh),
+    useWorkspace.subscribe(coordinator.refresh),
+    useSsh.subscribe(coordinator.refresh),
+    useSettings.subscribe(coordinator.refresh),
   ];
   let stopModels = () => {};
   let stopActions = () => {};

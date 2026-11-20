@@ -1,3 +1,5 @@
+import { useWorkspace } from "@/store/workspace";
+import type { SourcePanelMetadata } from "./sourcePresentation";
 import { usePanelWindows } from "@/store/panelWindows";
 import { useFilePreview } from "@/store/filePreview";
 import { panelSnapshot, requirePanel } from "./snapshot";
@@ -8,6 +10,27 @@ import type { SourcePanelPresentation } from "./sourcePresentation";
 /** Main-document adapter. Never use this to read or mutate a satellite's slot;
  * the native source router must select the exact current document first. */
 export function createMainPanelPresentation(): SourcePanelPresentation {
+  const closed = new Map<string, SourcePanelMetadata>();
+  const terminal = (id: string) =>
+    useWorkspace.getState().tabs.find((tab) => tab.kind === "terminal" && tab.id === id);
+  const terminalRows = (): SourcePanelMetadata[] => {
+    const state = useWorkspace.getState();
+    return state.tabs
+      .filter((tab) => tab.kind === "terminal")
+      .map((tab) => {
+        const pane = state.panes.find((pane) => pane.tabIds.includes(tab.id));
+        return {
+          id: tab.id,
+          windowId: "main",
+          presentation: pane?.floating ? "floating" : "workspace",
+          visible: !!pane && pane.activeId === tab.id && !tab.hidden,
+          pinned: tab.pinned,
+          bounds: pane?.floating?.bounds ?? null,
+          available: true,
+          presentations: ["workspace", "floating"],
+        };
+      });
+  };
   const local = (id: string) => {
     const state = usePanelWindows.getState();
     if (
@@ -15,11 +38,11 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
       !state.snapshot.panels.some((panel) => panel.panelId === id && panel.windowId === "main")
     )
       throw new Error("panel.window.staleOwner");
-    return requirePanel(id);
+    return terminal(id) ? id : requirePanel(id);
   };
   const read = () => {
     const state = usePanelWindows.getState();
-    return panelSnapshot().filter(
+    return [...panelSnapshot(), ...terminalRows(), ...closed.values()].filter(
       (panel) =>
         !state.available ||
         state.snapshot.panels.some(
@@ -29,9 +52,19 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
   };
   return {
     read,
-    readStaged: (id) => panelSnapshot().find((panel) => panel.id === id),
+    readStaged: (id) => [...panelSnapshot(), ...terminalRows()].find((panel) => panel.id === id),
     set(id, presentation) {
-      const view = local(id);
+      local(id);
+      if (terminal(id)) {
+        if (presentation === "floating") useWorkspace.getState().floatTab(id);
+        else if (presentation === "workspace") {
+          const pane = useWorkspace.getState().panes.find((pane) => pane.tabIds.includes(id));
+          if (pane?.floating) useWorkspace.getState().dockPane(pane.id);
+          useWorkspace.getState().activate(id);
+        } else throw new Error("panel.window.unsupportedPresentation");
+        return read().find((panel) => panel.id === id)!;
+      }
+      const view = requirePanel(id);
       if (!["sidebar", "workspace", "floating"].includes(presentation))
         throw new Error("panel.window.unsupportedPresentation");
       if (view === "filePreview" && useFilePreview.getState().presentation === "quickLook")
@@ -39,14 +72,27 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
       setPanelLocation(view, presentation);
       return read().find((panel) => panel.id === id)!;
     },
-    close: (id) => closePanel(local(id)),
-    reveal: (id) => revealPanel(local(id)),
+    close: (id) => {
+      local(id);
+      if (terminal(id)) {
+        const row = terminalRows().find((row) => row.id === id)!;
+        closed.set(id, { ...row, visible: false, available: false });
+        useWorkspace.getState().close(id);
+      } else closePanel(requirePanel(id));
+    },
+    reveal: (id) => {
+      local(id);
+      if (terminal(id)) useWorkspace.getState().activate(id);
+      else revealPanel(requirePanel(id));
+    },
     subscribe: (changed) => {
       const stop = subscribePanels(changed);
       const stopWindows = usePanelWindows.subscribe(changed);
+      const stopWorkspace = useWorkspace.subscribe(changed);
       return () => {
         stop();
         stopWindows();
+        stopWorkspace();
       };
     },
   };

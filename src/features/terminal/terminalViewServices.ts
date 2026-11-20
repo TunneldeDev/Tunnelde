@@ -41,6 +41,9 @@ export interface TerminalSettingsSource {
 }
 export interface TerminalViewServices {
   native: boolean;
+  closed?: boolean;
+  staged?: boolean;
+  isolatedShortcuts?: boolean;
   session: SshSession | null;
   disconnecting: boolean;
   settings: TerminalSettingsSource;
@@ -72,5 +75,10 @@ export interface TerminalViewServices {
    * can acknowledge readiness here while attach waits for ownership commit. */
   rendered?(): void;
   failed?(error: unknown): void;
-  Surface?: ComponentType<{ bridge: TerminalBridge | null; visible: boolean; children: ReactNode }>;
+  Surface?: ComponentType<{
+    bridge: TerminalBridge | null;
+    visible: boolean;
+    children: ReactNode;
+    suspended?: boolean;
+  }>;
 }

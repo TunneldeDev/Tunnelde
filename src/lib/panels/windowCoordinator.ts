@@ -10,12 +10,14 @@ export function startPanelWindowCoordinator(
     panelIds,
     receive,
     synchronize,
+    registerPanel,
     stage,
     failure,
   }: {
     panelIds: () => readonly string[];
     receive: (snapshot: NativePanelSnapshot) => void;
     synchronize?: (snapshot: NativePanelSnapshot) => Promise<void>;
+    registerPanel?: (id: string) => Promise<unknown>;
     stage?: (offer: PanelTransferOffer, state: unknown, signal: AbortSignal) => Promise<void>;
     failure: (error: unknown) => void;
   },
@@ -37,7 +39,8 @@ export function startPanelWindowCoordinator(
     }
     for (const id of ids) {
       if (snapshot.panels.some((panel) => panel.panelId === id)) continue;
-      await client.control({ action: "addPanel", panelId: id });
+      if (registerPanel) await registerPanel(id);
+      else await client.control({ action: "addPanel", panelId: id });
       if (disposed) return;
     }
     snapshot = await client.snapshot();

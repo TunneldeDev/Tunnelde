@@ -181,3 +181,35 @@ it("retains hidden portal trees, drafts and split slots through the source prese
   expect(unmounts).toBe(2);
   expect(sourcePanelPresentation()).toBeNull();
 });
+
+it("accepts ordinary page IDs and explicit titles without treating them as sidebar views", () => {
+  const view = render(
+    <PanelWorkspace
+      entries={[
+        {
+          id: "terminal:qa-session",
+          title: "qa@localhost",
+          key: "lease:7",
+          content: <Content id="ordinary" />,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByRole("tab", { name: /qa@localhost/ })).toBeTruthy();
+  const input = screen.getByRole("textbox", { name: "ordinary" });
+  view.rerender(
+    <PanelWorkspace
+      entries={[
+        {
+          id: "terminal:qa-session",
+          title: "renamed host",
+          key: "lease:7",
+          content: <Content id="ordinary" />,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByRole("tab", { name: /renamed host/ })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "ordinary" })).toBe(input);
+  expect(mounts).toBe(1);
+});

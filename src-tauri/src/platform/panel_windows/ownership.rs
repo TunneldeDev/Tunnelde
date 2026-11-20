@@ -540,6 +540,11 @@ impl Ownership {
         }
         Ok(())
     }
+    pub(super) fn cancel_terminal_outgoing_moves(&mut self, panel_id: &str) {
+        self.transfers.retain(|_, transfer| {
+            transfer.lease.panel_id != panel_id || transfer.target_window == MAIN
+        });
+    }
     pub fn prepare(
         &mut self,
         window: &str,
@@ -558,6 +563,7 @@ impl Ownership {
         {
             return Err("panel interaction in progress");
         }
+        self.terminal_move_allowed(&lease.panel_id, target)?;
         Self::validate_state(&state)?;
         if !self.windows[window].ready || (self.windows[window].closing && target != MAIN) {
             return Err("source unavailable");

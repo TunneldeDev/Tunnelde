@@ -22,6 +22,7 @@ pub(super) struct Source {
 #[derive(Default)]
 pub(super) struct Resources {
     sources: HashMap<String, Arc<Source>>,
+    blocked_views: std::collections::HashSet<String>,
 }
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +40,7 @@ pub(crate) struct Output {
 pub(crate) enum Request {
     Bind { session_id: String },
     Unbind { panel_id: String },
+    Configure { panel_id: String, allow_move: bool },
     Detach { lease: Lease },
     Write { lease: Lease, data: String },
     Resize { lease: Lease, cols: u32, rows: u32 },
@@ -46,11 +48,23 @@ pub(crate) enum Request {
 impl Ownership {
     pub(super) fn retire_terminal(&mut self, panel: &str) {
         self.terminals.sources.remove(panel);
+        self.terminals.blocked_views.remove(panel);
     }
     pub(super) fn terminal_registered(&self, panel: &str) -> bool {
-        self.terminals.sources.get(panel).is_some_and(|source| {
-            self.document(MAIN) == Some(source.document.as_str()) && !source.endpoint.closed()
-        })
+        self.terminals
+            .sources
+            .get(panel)
+            .is_some_and(|source| self.document(MAIN) == Some(source.document.as_str()))
+    }
+    pub(super) fn terminal_descriptors(&self) -> Vec<Value> {
+        self.terminals.sources.keys().filter(|id| self.terminal_registered(id))
+            .map(|id| json!({"panelId": id, "allowMove": !self.terminals.blocked_views.contains(id)})).collect()
+    }
+    pub(super) fn terminal_move_allowed(&self, id: &str, target: &str) -> Result<(), &'static str> {
+        if target != MAIN && self.terminals.blocked_views.contains(id) {
+            return Err("plugin.frontend.viewUnavailable");
+        }
+        Ok(())
     }
     fn bind_terminal(
         &mut self,
@@ -177,6 +191,32 @@ pub(crate) async fn panel_window_terminal(
             .map_err(native::invalid)?;
         native::changed(&app);
         return Ok(json!(lease));
+    }
+    if let Request::Configure {
+        panel_id,
+        allow_move,
+    } = &request
+    {
+        let mut ownership = native::lock(&registry);
+        ownership
+            .main(&caller, &document)
+            .map_err(native::invalid)?;
+        if !ownership.terminal_registered(panel_id) {
+            return Err(native::invalid("unbound terminal panel"));
+        }
+        let was_allowed = !ownership.terminals.blocked_views.contains(panel_id);
+        if was_allowed == *allow_move {
+            return Ok(Value::Null);
+        }
+        if *allow_move {
+            ownership.terminals.blocked_views.remove(panel_id);
+        } else {
+            ownership.terminals.blocked_views.insert(panel_id.clone());
+            ownership.cancel_terminal_outgoing_moves(panel_id);
+        }
+        drop(ownership);
+        native::changed(&app);
+        return Ok(Value::Null);
     }
     if let Request::Unbind { panel_id } = &request {
         let mut ownership = native::lock(&registry);

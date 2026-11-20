@@ -1,3 +1,4 @@
+import { startTerminalWindowPublication } from "@/features/terminal/terminalWindowPublication";
 import { pluginListSource } from "@/features/plugins/panel/source";
 import type { PluginBrowserData } from "@/features/plugins/panel/model";
 import { hostPanelSource } from "@/features/hosts/panel/source";
@@ -124,6 +125,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
     };
   };
   const preview = startPreviewWindowPublication(client, appearance, failure);
+  const terminals = startTerminalWindowPublication(client, appearance, failure);
   const publish = (
     panelId: "plugins" | "hosts" | "connections" | "tasks" | "output" | "knownHosts" | "forwarding",
   ) => {
@@ -205,6 +207,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       publish("plugins");
       publish("hosts");
       preview.refresh();
+      terminals.refresh();
       connections();
       tasks();
       publish("output");
@@ -242,6 +245,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
   return () => {
     disposed = true;
     preview.dispose();
+    terminals.dispose();
     for (const cleanup of cleanups) cleanup();
     i18n.off("languageChanged", both);
     stopRemoteOutput?.();

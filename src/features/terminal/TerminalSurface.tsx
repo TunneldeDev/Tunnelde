@@ -8,10 +8,12 @@ import type { TerminalBridge } from "@/lib/extensions/terminal/bridge";
 export function TerminalSurface({
   bridge,
   visible,
+  suspended = false,
   children,
 }: {
   bridge: TerminalBridge | null;
   visible: boolean;
+  suspended?: boolean;
   children: ReactNode;
 }) {
   const [surface] = useState(createPersistentSurface);
@@ -26,7 +28,7 @@ export function TerminalSurface({
         target="terminal"
         terminal={terminal ?? undefined}
         visible={visible}
-        suspended={!bridge}
+        suspended={!bridge || suspended}
         validate={surface.hasMount}
         subscribe={surface.subscribe}
         validationError="plugin.terminal.missingScreen"

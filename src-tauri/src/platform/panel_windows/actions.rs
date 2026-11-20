@@ -17,6 +17,9 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Terminal {
+        command: TerminalCommand,
+    },
     Plugins {
         command: plugins::PluginCommand,
     },
@@ -66,6 +69,35 @@ pub(crate) enum ViewAction {
     Disconnect {
         session_id: String,
     },
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(
+    tag = "operation",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum TerminalCommand {
+    Disconnect {},
+    OpenSftp {},
+    OpenHistory {},
+    ClipboardRead {},
+    ClipboardWrite { text: String },
+    Font { font: String },
+    RecordCommand { command: String },
+}
+impl TerminalCommand {
+    fn valid(&self) -> bool {
+        match self {
+            Self::ClipboardWrite { text } => text.len() <= 2 * 1024 * 1024,
+            Self::RecordCommand { command } => !command.is_empty() && command.len() <= 8192,
+            Self::Font { font } => matches!(
+                font.as_str(),
+                "fira-code" | "jetbrains-mono" | "plex-mono" | "system"
+            ),
+            _ => true,
+        }
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(
@@ -222,6 +254,7 @@ impl TransferPrompt {
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
+            Self::Terminal { .. } => "terminal",
             Self::Plugins { .. } => "plugins",
             Self::Hosts { .. } => "hosts",
             Self::Preview { .. } => "filePreview",
@@ -239,6 +272,7 @@ impl ViewAction {
     fn validate(&self) -> Result<(), &'static str> {
         let bounded = |s: &str, max| !s.is_empty() && s.len() <= max;
         let valid = match self {
+            Self::Terminal { command } => command.valid(),
             Self::Plugins { command } => command.valid(),
             Self::Hosts { command } => command.valid(),
             Self::Preview {
@@ -369,7 +403,11 @@ impl Ownership {
             return Err("panel action limit");
         }
         self.authorize_action_interaction(window, document, lease, &request)?;
-        if request.panel() != lease.panel_id {
+        if if matches!(request, ViewAction::Terminal { .. }) {
+            !self.terminal_registered(&lease.panel_id)
+        } else {
+            request.panel() != lease.panel_id
+        } {
             return Err("wrong panel action");
         }
         if self.actions.len() + self.interrupted.len() >= 64

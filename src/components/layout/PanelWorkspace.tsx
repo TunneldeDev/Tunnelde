@@ -32,7 +32,8 @@ import "./panelWorkspace.css";
 import "./tabBar.css";
 
 export interface PanelWorkspaceEntry {
-  id: SidebarView;
+  id: string;
+  title?: string;
   key: string;
   content: ReactNode;
 }
@@ -78,10 +79,12 @@ function Group({
   id,
   workspace,
   slots,
+  titles,
 }: {
   id: string;
   workspace: LocalPanelWorkspace;
   slots: ReadonlyMap<string, Slot>;
+  titles: ReadonlyMap<string, string>;
 }) {
   const { t } = useTranslation();
   const source = useStore(workspace.store);
@@ -225,7 +228,9 @@ function Group({
                 }
               }}
             >
-              <span className="td-tab__label">{sidebarLabel(panel as SidebarView, t)}</span>
+              <span className="td-tab__label">
+                {titles.get(panel) ?? sidebarLabel(panel as SidebarView, t)}
+              </span>
               <button
                 type="button"
                 className="td-tab__close"
@@ -289,10 +294,13 @@ export function PanelWorkspace({
   const shown = visibleLocalPanelLayout(state);
   const [slots] = useState(() => new Map<string, Slot>());
   const ids = useMemo(() => entries.map((entry) => entry.id), [entries]);
+  const titles = new Map(
+    entries.filter((entry) => entry.title !== undefined).map((entry) => [entry.id, entry.title!]),
+  );
   useLayoutEffect(() => {
     for (const id of ids) if (!slots.has(id)) slots.set(id, createSlot(id));
     for (const [id, slot] of slots)
-      if (!ids.includes(id as SidebarView)) {
+      if (!ids.includes(id)) {
         slot.element.remove();
         slots.delete(id);
       }
@@ -313,7 +321,9 @@ export function PanelWorkspace({
         {shown.layout ? (
           <PanelLayout
             layout={shown.layout}
-            renderPane={(id) => <Group id={id} workspace={workspace} slots={slots} />}
+            renderPane={(id) => (
+              <Group id={id} workspace={workspace} slots={slots} titles={titles} />
+            )}
             onResize={(id, ratio) => workspace.resize({ [id]: ratio })}
             onResizeMany={workspace.resize}
             resizeLabel={t("tab.resizeGroup")}

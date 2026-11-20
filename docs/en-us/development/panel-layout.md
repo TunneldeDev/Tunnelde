@@ -1384,3 +1384,30 @@ input/resize, accepts authorized replay attachment, then performs normal session
 cleanup only after successful drain. A rejected sink retains bytes until a valid
 attach or expiry; explicit user close still tears down immediately. This is a
 bounded in-memory handoff buffer, not persistent terminal-history storage.
+
+### Production terminal native-window adapter
+
+Builtin terminal tabs now use the same production renderer in main and satellite
+windows. Main binds an existing PTY before first render, publishes explicit
+read-only session/preferences, and retains display metadata after shell exit until
+tab close. The destination restores its parser before ownership-gated attachment;
+a move holds its checkpoint reservation until native commit or rollback. Main
+owns disconnect, file/history navigation, clipboard and opted-in command recording.
+Requests cannot select another host/session or patch unrelated preferences.
+
+The ordinary tab menu exposes native window moves, and satellite tabs compose the
+same local workspace/floating frame and native return actions. A selected terminal
+interface provider currently blocks outgoing native moves; returning to main is
+always allowed. Selection changes while away show an explicit recovery banner,
+not a silently substituted provider. General public nativeWindows discovery stays
+false.
+
+Isolated macOS acceptance used the actual SatelliteApp and a local SSH server:
+one authentication and one shell across native roundtrip, partial command input
+continued in the destination, ANSI/Chinese/emoji screen retained on return, stale
+source input rejected, and test resources cleaned. Physical cross-window pointer
+dragging, mixed-DPI Windows/Linux and arbitrary remote servers are not covered by
+this acceptance.
+
+A naturally closed, still-open terminal tab retains a transferable render-only
+binding. This does not reopen the PTY or grant write/resize authority after exit.

@@ -134,6 +134,7 @@ export function TerminalPageView({
   }, [recordTerminalHistory]);
   const lastSize = useRef({ sessionId: "", cols: 0, rows: 0 });
   const checkpointing = useRef(false);
+  const resizeRevision = useRef(0);
   const focus = useCallback(() => {
     if (
       !activeRef.current ||
@@ -172,9 +173,16 @@ export function TerminalPageView({
         previous.cols !== terminal.cols ||
         previous.rows !== terminal.rows)
     ) {
-      lastSize.current = { sessionId, cols: terminal.cols, rows: terminal.rows };
+      const next = { sessionId, cols: terminal.cols, rows: terminal.rows };
+      const revision = ++resizeRevision.current;
       void serviceRef.current.io
-        .sshResize(sessionId, terminal.cols, terminal.rows)
+        .sshResize(sessionId, next.cols, next.rows)
+        .then(() => {
+          // Staged resize is intentionally rejected. Do not cache it as applied:
+          // the committed destination must send its real geometry on activation.
+          if (revision === resizeRevision.current && terminalRef.current === terminal)
+            lastSize.current = next;
+        })
         .catch(() => undefined);
     }
   }, [sessionId]);
@@ -192,9 +200,10 @@ export function TerminalPageView({
     setBridge(terminalBridge);
     let detachBridge: (() => void) | undefined;
     let disposed = false;
-    let ended = false;
+    let ended = serviceRef.current.closed ?? false;
     let registrationFailed = false;
-    setClosed(false);
+    setClosed(ended);
+    if (ended) terminalBridge.update({ status: "closed" });
     let terminal: Terminal | null = null;
     let addon: FitAddon | null = null;
     let runtime: ReturnType<typeof bindTerminalSettings> | null = null;
@@ -452,8 +461,33 @@ export function TerminalPageView({
             instance.input(sequence, true);
             return true;
           },
+          serviceRef.current.isolatedShortcuts
+            ? serviceRef.current.settings.read().keyboardShortcuts
+            : undefined,
         );
-      unregisterShortcuts = bindShortcutProvider(element, terminalCandidates);
+      const routed = new WeakMap<KeyboardEvent, ReturnType<typeof executeShortcutCandidates>>();
+      const routeScoped = (event: KeyboardEvent) => {
+        const previous = routed.get(event);
+        if (previous) return previous;
+        const result =
+          event.defaultPrevented ||
+          event.isComposing ||
+          event.keyCode === 229 ||
+          serviceRef.current.dialogOpen()
+            ? { handled: false, consumed: false }
+            : executeShortcutCandidates(
+                event,
+                terminalCandidates(event),
+                serviceRef.current.settings.read().shortcutRules,
+              );
+        routed.set(event, result);
+        return result;
+      };
+      unregisterShortcuts = bindShortcutProvider(
+        element,
+        terminalCandidates,
+        serviceRef.current.isolatedShortcuts ? routeScoped : undefined,
+      );
       const imeEnterPresses = new Set<string>();
       instance.attachCustomKeyEventHandler((event) => {
         if (disposed || ended || checkpointing.current || event.defaultPrevented) return false;
@@ -484,8 +518,9 @@ export function TerminalPageView({
           event.getModifierState("AltGraph")
         )
           return true;
-        const result =
-          event.target instanceof Element
+        const result = serviceRef.current.isolatedShortcuts
+          ? routeScoped(event)
+          : event.target instanceof Element
             ? dispatchShortcuts(event)
             : executeShortcutCandidates(
                 event,
@@ -712,7 +747,11 @@ export function TerminalPageView({
           <X size={15} />
         </IconButton>
       </header>
-      <Surface bridge={bridge?.sessionId === sessionId ? bridge : null} visible={active}>
+      <Surface
+        bridge={bridge?.sessionId === sessionId ? bridge : null}
+        visible={active}
+        suspended={services.staged}
+      >
         <div
           className="terminal-host"
           onContextMenu={(event) => {

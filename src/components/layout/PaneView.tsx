@@ -1,3 +1,5 @@
+import type { MenuAction } from "@/components/ui/overlay/Menu";
+import { nativePanelMoveActions } from "@/lib/panels/windowMoves";
 import { panelDropZone as zoneOf, type PanelDropZone as DropHint } from "@/lib/layout/dropZone";
 import {
   Activity,
@@ -364,7 +366,7 @@ function TabStrip({
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                const items = [
+                const items: MenuAction[] = [
                   {
                     label: t("tab.keepOpen"),
                     disabled: !tab.preview,
@@ -409,6 +411,7 @@ function TabStrip({
                     onSelect: closeGroup,
                   });
                 }
+                if (tab.kind === "terminal") items.push(...nativePanelMoveActions(tab.id, t));
                 openMenu(event.clientX, event.clientY, items, event.currentTarget);
               }}
               onKeyDown={(event) => {
