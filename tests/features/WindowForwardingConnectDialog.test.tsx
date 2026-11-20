@@ -392,3 +392,56 @@ it("keeps late provider connection completion out of replacement callbacks and l
   expect(screen.getByRole("button", { name: "Connect" })).toBeTruthy();
   expect(f.mutation).not.toHaveBeenCalled();
 });
+
+it("reports per-rule batch partial results while retaining the shared prompt and original revisions across refresh", async () => {
+  const f = fixture();
+  const following = [
+    { ...rule, id: "collision", revision: "collision-original" },
+    { ...rule, id: "second", revision: "second-original" },
+  ];
+  f.mutation.mockImplementation(async (_lease, r): Promise<unknown> => {
+    if (r.operation === "prepareStart") return structuredClone(plan);
+    if (r.operation === "start" && r.id === "collision")
+      throw { code: "ssh", message: "forward.bindFailed" };
+    return r.operation === "probe"
+      ? info
+      : r.operation === "credentialStatus"
+        ? true
+        : r.operation === "start"
+          ? { ...session, id: "session-" + r.id }
+          : null;
+  });
+  const completed = vi.fn();
+  const element = () => (
+    <WindowForwardingConnectDialog
+      client={f.client}
+      lease={{ ...lease }}
+      rule={{ ...rule }}
+      followingRules={following.map((r) => ({ ...r }))}
+      onBatchComplete={completed}
+      onClose={f.close}
+      onConnected={f.done}
+    />
+  );
+  const view = render(element());
+  await screen.findByText("Trusted");
+  view.rerender(element());
+  expect(f.control.mock.calls.filter(([r]) => r.action === "beginInteraction")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  await waitFor(() => expect(completed).toHaveBeenCalledOnce());
+  expect(completed.mock.calls[0]?.[0]).toMatchObject({
+    started: [{ id: "rule" }, { id: "second" }],
+    failed: [{ id: "collision", error: { message: "forward.bindFailed" } }],
+  });
+  expect(f.done).toHaveBeenCalledExactlyOnceWith({ ...session, id: "session-rule" });
+  const starts = f.mutation.mock.calls.filter(([, r]) => r.operation === "start").map(([, r]) => r);
+  expect(starts).toEqual([
+    expect.objectContaining({ id: "rule", revision: rule.revision, interaction: "origin-1" }),
+    expect.objectContaining({
+      id: "collision",
+      revision: "collision-original",
+      interaction: "origin-1",
+    }),
+    expect.objectContaining({ id: "second", revision: "second-original", interaction: "origin-1" }),
+  ]);
+});

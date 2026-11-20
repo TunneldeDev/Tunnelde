@@ -14,12 +14,15 @@ import {
   type NativeForwardingPromptClient,
   type WindowForwardingPrompt,
   type WindowForwardingPromptTarget,
+  type WindowForwardingBatchResult,
 } from "../runtime/windowPrompt";
 
 interface Props {
   client: PanelWindowClient;
   lease: PanelLease;
   rule: WindowForwardingPromptTarget;
+  followingRules?: readonly WindowForwardingPromptTarget[];
+  onBatchComplete?: (result: WindowForwardingBatchResult) => void | Promise<void>;
   onClose: () => void;
   onConnected: (session: SshSession) => void | Promise<void>;
   context?: ReactNode;
@@ -37,16 +40,28 @@ export function WindowForwardingConnectDialog(props: Props) {
     rule.id,
     rule.revision,
     rule.hostId,
+    props.followingRules?.map(({ id, revision, hostId }) => [id, revision, hostId]) ?? [],
     props.provider ? ["provider", props.provider.token] : ["builtin"],
   ]);
   return <OriginPrompt key={key} {...props} />;
 }
-function OriginPrompt({ client, lease, rule, provider, onClose, onConnected, context }: Props) {
+function OriginPrompt({
+  client,
+  lease,
+  rule,
+  followingRules = [],
+  provider,
+  onClose,
+  onConnected,
+  onBatchComplete,
+  context,
+}: Props) {
   const { t } = useTranslation();
   // Keyed primitive identity, not a refreshed model object's identity.
   const [binding] = useState(() => ({
     lease: { ...lease },
     rule: { ...rule },
+    followingRules: followingRules.map(({ id, revision, hostId }) => ({ id, revision, hostId })),
     providerToken: provider ? provider.token : null,
   }));
   const providerClient = provider?.client;
@@ -59,10 +74,10 @@ function OriginPrompt({ client, lease, rule, provider, onClose, onConnected, con
   } | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const active = useRef<ReturnType<typeof createForwardingWindowPrompt> | null>(null);
-  const callbacks = useRef({ onClose, onConnected });
+  const callbacks = useRef({ onClose, onConnected, onBatchComplete });
   useLayoutEffect(() => {
-    callbacks.current = { onClose, onConnected };
-  }, [onClose, onConnected]);
+    callbacks.current = { onClose, onConnected, onBatchComplete };
+  }, [onClose, onConnected, onBatchComplete]);
   useLayoutEffect(() => {
     let live = true;
     const scope =
@@ -73,8 +88,9 @@ function OriginPrompt({ client, lease, rule, provider, onClose, onConnected, con
             binding.lease,
             binding.rule,
             binding.providerToken,
+            binding.followingRules,
           )
-        : createForwardingWindowPrompt(client, binding.lease, binding.rule);
+        : createForwardingWindowPrompt(client, binding.lease, binding.rule, binding.followingRules);
     active.current = scope;
     void scope.ready
       .then((prompt) => {
@@ -113,9 +129,17 @@ function OriginPrompt({ client, lease, rule, provider, onClose, onConnected, con
         onClose={() => {
           if (active.current === current.scope) close();
         }}
-        onConnected={(session) => {
+        onConnected={async (session) => {
           if (active.current !== current.scope) return;
-          return callbacks.current.onConnected(session);
+          const result = current.prompt!.result();
+          if (callbacks.current.onBatchComplete) await callbacks.current.onBatchComplete(result);
+          else if (result.failed.length)
+            toast(
+              result.failed.map((item) => `${item.id}: ${translateError(item.error)}`).join("; "),
+              "error",
+            );
+          if (active.current !== current.scope) return;
+          await callbacks.current.onConnected(session);
         }}
       />
     );

@@ -953,4 +953,12 @@ mutation fallback. Equivalent read-model refreshes preserve consent; replacing t
 child, provider client, rule revision or native owner retires the old scope. Late
 preparation/completion cannot be delivered to replacement callbacks. Secrets stay
 in direct prompt requests and are not checkpointed or projected into read models.
-This still does not supply a batch rule prompt or complete satellite renderer.
+Following batch targets are captured in order with original rule revisions and
+one builtin host. Each following rule is prepared independently, and may start
+only against the route already reviewed by the prompt. Per-rule listener failures
+are reported without skipping later rules; invalid host credentials/trust stop the
+batch to avoid repeated authentication failures across independent SSH groups.
+Results contain rule/session metadata and errors, never credentials. A successful
+start cannot be replayed by retrying a failed completion callback; opening a fresh
+prompt is required. Partial failures reach the host callback or an error toast.
+This still does not supply a complete satellite renderer or forwarding adapter.

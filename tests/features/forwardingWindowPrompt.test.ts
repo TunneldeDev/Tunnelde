@@ -340,9 +340,7 @@ it("keeps every provider prompt operation on its original native child, never bu
     review: { revision: "b".repeat(64) },
   });
   revoked = true;
-  await expect(services.connect({ hostId: host.id, cols: 80, rows: 24 })).rejects.toThrow(
-    "expired",
-  );
+  await expect(services.probe({})).rejects.toThrow("expired");
   expect(builtin).not.toHaveBeenCalled();
   await scope.close();
   expect(control).toHaveBeenLastCalledWith({
@@ -401,4 +399,178 @@ it("rejects an absent native provider token without invoking any mutation route 
   expect(provider.forwardingMutation).not.toHaveBeenCalled();
   expect(builtin).not.toHaveBeenCalled();
   expect(control).toHaveBeenLastCalledWith({ action: "endInteraction", lease, id: "original" });
+});
+
+it("captures an ordered same-host batch and reviews every following original rule without adopting a new route", async () => {
+  const extra = [
+    { id: "second", revision: "second-original", hostId: "host" },
+    { id: "third", revision: "third-original", hostId: "host" },
+  ];
+  const control = vi.fn(async (r: PanelWindowCommand): Promise<unknown> =>
+    r.action === "beginInteraction" ? "batch-original" : null,
+  );
+  const requests: ForwardingWindowMutation[] = [];
+  const mutation = vi.fn(async (_lease: unknown, r: ForwardingWindowMutation): Promise<unknown> => {
+    requests.push(structuredClone(r));
+    if (r.operation === "prepareStart") return structuredClone({ host, jumpHosts: [jump], review });
+    if (r.operation === "start" && r.id === "second") throw new Error("second failed");
+    return { id: "session-" + ("id" in r ? r.id : ""), hostId: "host" };
+  });
+  const scope = createForwardingWindowPrompt(
+    { control, forwardingMutation: mutation } as unknown as PanelWindowClient,
+    lease,
+    target,
+    extra,
+  );
+  extra[0]!.id = "retargeted";
+  extra[1]!.revision = "retargeted";
+  const prompt = await scope.ready;
+  const connected = await prompt.services.connect({
+    hostId: "host",
+    cols: 999,
+    rows: 999,
+    password: "ephemeral",
+  });
+  expect(connected).toMatchObject({ id: "session-rule" });
+  expect(
+    requests
+      .filter((r) => r.operation === "start")
+      .map((r) => ({ id: r.id, revision: r.revision })),
+  ).toEqual([
+    { id: "rule", revision: "displayed" },
+    { id: "second", revision: "second-original" },
+    { id: "third", revision: "third-original" },
+  ]);
+  expect(requests.filter((r) => r.operation === "prepareStart").map((r) => r.id)).toEqual([
+    "rule",
+    "second",
+    "third",
+  ]);
+  expect(prompt.result().started.map((r) => r.id)).toEqual(["rule", "third"]);
+  expect(prompt.result().failed).toEqual([
+    { id: "second", error: expect.objectContaining({ message: "second failed" }) },
+  ]);
+  // Retrying a rejected completion handler must not duplicate acknowledged starts.
+  await expect(prompt.services.connect({ hostId: "host", cols: 80, rows: 24 })).rejects.toThrow(
+    "forward.alreadyActive",
+  );
+  expect(requests.filter((r) => r.operation === "start" && r.id === "rule")).toHaveLength(1);
+  await scope.close();
+});
+
+it("never starts following rules against a fresh unreviewed host route and reports partial failures", async () => {
+  const f = fixture();
+  await f.scope.ready;
+  await f.scope.close();
+  const mutation = vi.fn(async (_lease: unknown, r: ForwardingWindowMutation): Promise<unknown> =>
+    r.operation === "prepareStart"
+      ? {
+          host,
+          jumpHosts: [],
+          review: { ...review, revision: r.id === "rule" ? review.revision : "b".repeat(64) },
+        }
+      : { id: "first-session", hostId: "host" },
+  );
+  const scope = createForwardingWindowPrompt(
+    { control: f.control, forwardingMutation: mutation } as unknown as PanelWindowClient,
+    lease,
+    target,
+    [{ id: "later", revision: "later-revision", hostId: "host" }],
+  );
+  const prompt = await scope.ready;
+  await prompt.services.connect({ hostId: "host", cols: 80, rows: 24 });
+  expect(
+    mutation.mock.calls
+      .filter(([, r]) => r.operation === "start")
+      .map(([, r]) => ("id" in r ? r.id : "")),
+  ).toEqual(["rule"]);
+  expect(prompt.result().failed).toEqual([
+    { id: "later", error: expect.objectContaining({ message: "ssh.connectionChanged" }) },
+  ]);
+  await scope.close();
+});
+
+it("uses only the original provider child for every batch item and stops before the next item after dismissal", async () => {
+  const { createForwardingProviderWindowPrompt } =
+    await import("@/features/forwarding/runtime/windowPrompt");
+  const pending = deferred<unknown>();
+  const control = vi.fn(async (r: PanelWindowCommand): Promise<unknown> =>
+    r.action === "beginInteraction" ? "original" : null,
+  );
+  const builtin = vi.fn();
+  const provider = {
+    forwardingMutation: vi.fn(
+      async (_token: string, _lease: unknown, r: ForwardingWindowMutation): Promise<unknown> =>
+        r.operation === "prepareStart" ? { host, jumpHosts: [], review } : pending.promise,
+    ),
+  };
+  const scope = createForwardingProviderWindowPrompt(
+    { control, forwardingMutation: builtin } as unknown as PanelWindowClient,
+    provider as unknown as Parameters<typeof createForwardingProviderWindowPrompt>[1],
+    lease,
+    target,
+    "original-child",
+    [{ id: "later", revision: "later-revision", hostId: "host" }],
+  );
+  const prompt = await scope.ready;
+  const started = expect(
+    prompt.services.connect({ hostId: "host", cols: 80, rows: 24 }),
+  ).rejects.toThrow("disposed");
+  await vi.waitFor(() =>
+    expect(provider.forwardingMutation.mock.calls.some(([, , r]) => r.operation === "start")).toBe(
+      true,
+    ),
+  );
+  await scope.close();
+  pending.resolve({ id: "late-session" });
+  await started;
+  expect(
+    provider.forwardingMutation.mock.calls.some(([, , r]) => "id" in r && r.id === "later"),
+  ).toBe(false);
+  expect(builtin).not.toHaveBeenCalled();
+});
+
+it("rejects duplicate, foreign-host and revision-less batch targets before preparing a connection", async () => {
+  for (const following of [
+    [target],
+    [{ ...target, id: "other", hostId: "foreign" }],
+    [{ ...target, id: "other", revision: "" }],
+  ]) {
+    const control = vi.fn(async (r: PanelWindowCommand): Promise<unknown> =>
+        r.action === "beginInteraction" ? "original" : null,
+      ),
+      mutation = vi.fn();
+    const scope = createForwardingWindowPrompt(
+      { control, forwardingMutation: mutation } as unknown as PanelWindowClient,
+      lease,
+      target,
+      following,
+    );
+    await expect(scope.ready).rejects.toThrow("forward.changed");
+    expect(mutation).not.toHaveBeenCalled();
+    expect(control).toHaveBeenLastCalledWith({ action: "endInteraction", lease, id: "original" });
+  }
+});
+
+it("does not repeat invalid credentials across the host's independent SSH groups", async () => {
+  const control = vi.fn(async (r: PanelWindowCommand): Promise<unknown> =>
+    r.action === "beginInteraction" ? "original" : null,
+  );
+  const mutation = vi.fn(async (_lease: unknown, r: ForwardingWindowMutation): Promise<unknown> => {
+    if (r.operation === "prepareStart") return { host, jumpHosts: [], review };
+    throw { code: "ssh", message: "ssh.authFailed" };
+  });
+  const scope = createForwardingWindowPrompt(
+    { control, forwardingMutation: mutation } as unknown as PanelWindowClient,
+    lease,
+    target,
+    [{ id: "later", revision: "r2", hostId: "host" }],
+  );
+  const prompt = await scope.ready;
+  await expect(
+    prompt.services.connect({ hostId: "host", cols: 80, rows: 24, password: "invalid" }),
+  ).rejects.toMatchObject({ message: "ssh.authFailed" });
+  expect(mutation.mock.calls.filter(([, r]) => r.operation === "start")).toHaveLength(1);
+  expect(mutation.mock.calls.some(([, r]) => "id" in r && r.id === "later")).toBe(false);
+  await scope.close();
 });

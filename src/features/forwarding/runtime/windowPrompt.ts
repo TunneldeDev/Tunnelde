@@ -1,5 +1,10 @@
 import type { ConnectionReview } from "@/lib/api/connections/review";
-import type { ConnectionQuality, HostKeyInfo, SshSession } from "@/lib/api/types";
+import {
+  isIpcError,
+  type ConnectionQuality,
+  type HostKeyInfo,
+  type SshSession,
+} from "@/lib/api/types";
 import type { createNativePluginViewClient } from "@/lib/panels/windowPluginClient";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
@@ -7,9 +12,14 @@ import { createPanelWindowInteraction } from "@/lib/panels/windowInteraction";
 import type { ConnectionPromptHost, ConnectionPromptServices } from "@/features/connect/prompt";
 import type { ForwardingWindowMutation, ForwardingWindowStartPlan } from "./windowProtocol";
 
+export interface WindowForwardingBatchResult {
+  started: { id: string; session: SshSession }[];
+  failed: { id: string; error: unknown }[];
+}
 export interface WindowForwardingPrompt {
   host: ConnectionPromptHost;
   services: ConnectionPromptServices;
+  result(): WindowForwardingBatchResult;
 }
 export type NativeForwardingPromptClient = Pick<
   ReturnType<typeof createNativePluginViewClient>,
@@ -36,8 +46,9 @@ export function createForwardingWindowPrompt(
   client: PanelWindowClient,
   requestedLease: PanelLease,
   requestedTarget: WindowForwardingPromptTarget,
+  followingTargets: readonly WindowForwardingPromptTarget[] = [],
 ) {
-  return createWindowPrompt(client, client, requestedLease, requestedTarget);
+  return createWindowPrompt(client, client, requestedLease, requestedTarget, followingTargets);
 }
 
 /** The original native provider child is the only mutation route. Main window
@@ -49,6 +60,7 @@ export function createForwardingProviderWindowPrompt(
   requestedLease: PanelLease,
   requestedTarget: WindowForwardingPromptTarget,
   token: string,
+  followingTargets: readonly WindowForwardingPromptTarget[] = [],
 ) {
   const transport: Pick<PanelWindowClient, "forwardingMutation"> = {
     forwardingMutation: async (lease, request) => {
@@ -57,7 +69,7 @@ export function createForwardingProviderWindowPrompt(
       return provider.forwardingMutation(token, lease, request);
     },
   };
-  return createWindowPrompt(client, transport, requestedLease, requestedTarget);
+  return createWindowPrompt(client, transport, requestedLease, requestedTarget, followingTargets);
 }
 
 function createWindowPrompt(
@@ -65,6 +77,7 @@ function createWindowPrompt(
   transport: Pick<PanelWindowClient, "forwardingMutation">,
   requestedLease: PanelLease,
   requestedTarget: WindowForwardingPromptTarget,
+  followingTargets: readonly WindowForwardingPromptTarget[],
 ) {
   const { lease, acquired, check, close } = createPanelWindowInteraction(client, requestedLease);
   const target = {
@@ -72,6 +85,16 @@ function createWindowPrompt(
     revision: requestedTarget.revision,
     hostId: requestedTarget.hostId,
   };
+  const targets = [
+    target,
+    ...followingTargets.map(({ id, revision, hostId }) => ({ id, revision, hostId })),
+  ];
+  const started = new Map<string, SshSession>();
+  let failures: WindowForwardingBatchResult["failed"] = [];
+  const result = (): WindowForwardingBatchResult => ({
+    started: [...started].map(([id, session]) => ({ id, session: { ...session } })),
+    failed: failures.map((entry) => ({ ...entry })),
+  });
   let interaction = "";
   let review: ConnectionReview;
   let jumps: ConnectionPromptHost[] = [];
@@ -84,23 +107,29 @@ function createWindowPrompt(
     interaction,
     review: { ...review },
   });
-  const enqueue = <T>(
-    request: () => ForwardingWindowMutation,
-    accepted?: (result: T) => void,
-  ): Promise<T> => {
+  const send = async <T>(request: ForwardingWindowMutation): Promise<T> => {
+    check();
+    const value = await transport.forwardingMutation<T>(lease, request);
+    check();
+    return value;
+  };
+  const serialize = <T>(operation: () => Promise<T>): Promise<T> => {
     check();
     const work = tail.then(async () => {
       check();
-      const result = await transport.forwardingMutation<T>(lease, request());
-      check();
-      accepted?.(result);
-      return result;
+      return operation();
     });
     // Initial prompt effects run concurrently in React; native permits one
     // actual effect per panel. A rejected job must not poison the next one.
     tail = work.catch(() => {});
     return work;
   };
+  const enqueue = <T>(request: () => ForwardingWindowMutation, accepted?: (value: T) => void) =>
+    serialize(async () => {
+      const value = await send<T>(request());
+      accepted?.(value);
+      return value;
+    });
   const hostAllowed = (id: string) => {
     if (!allowedHosts.has(id)) throw new Error("ssh.connectionChanged");
   };
@@ -137,7 +166,71 @@ function createWindowPrompt(
         passphrase: input.passphrase ?? null,
         jumps: input.jumpCredentials ?? {},
       });
-      return enqueue<SshSession>(() => ({ ...base(), operation: "start", credentials }));
+      return serialize(async () => {
+        // A callback failure must not turn Connect into replay of acknowledged
+        // listeners (nor report a cached, possibly disconnected SSH session).
+        if (started.size) throw new Error("forward.alreadyActive");
+        failures = [];
+        for (const current of targets) {
+          check();
+          try {
+            // Each rule keeps its original revision, but shares ONLY the route
+            // already reviewed by this prompt. Never silently adopt a new host
+            // route or a replacement rule after a previous item yielded.
+            if (current !== target) {
+              const plan = await send<ForwardingWindowStartPlan>({
+                operation: "prepareStart",
+                id: current.id,
+                revision: current.revision,
+                interaction,
+              });
+              if (
+                plan.host.source ||
+                plan.jumpHosts.some((host) => host.source) ||
+                plan.host.id !== target.hostId ||
+                plan.review.hostId !== review.hostId ||
+                plan.review.revision !== review.revision
+              )
+                throw new Error("ssh.connectionChanged");
+            }
+            const session = await send<SshSession>({
+              operation: "start",
+              id: current.id,
+              revision: current.revision,
+              interaction,
+              review: { ...review },
+              credentials,
+            });
+            started.set(current.id, session);
+          } catch (error) {
+            check();
+            const message =
+              error instanceof Error
+                ? error.message
+                : isIpcError(error)
+                  ? error.message
+                  : String(error);
+            if (
+              /^(plugin|extension\.scope|panel|stale panel owner|invalid (?:window|document|interaction)|document )/.test(
+                message,
+              )
+            )
+              throw error;
+            // One invalid credential/trust decision applies to the whole host.
+            // Do not repeat it across groups and trigger account lockouts.
+            if (
+              /^ssh\.(passwordRequired|passphraseRequired|authFailed|authenticationFailed|hostKeyUntrusted|hostKeyChanged|keyPassphraseRequired|keyAuthFailed|keyLoad|agentUnavailable)/.test(
+                message,
+              )
+            )
+              throw error;
+            failures.push({ id: current.id, error });
+          }
+        }
+        const connected = started.values().next().value;
+        if (!connected) throw failures[0]?.error ?? new Error("forward.missing");
+        return connected;
+      });
     },
     test: async (testId, input) => {
       check();
@@ -186,6 +279,11 @@ function createWindowPrompt(
     .then(async (id): Promise<WindowForwardingPrompt> => {
       interaction = id;
       check();
+      if (
+        targets.some((item) => !item.id || !item.revision || item.hostId !== target.hostId) ||
+        new Set(targets.map((item) => item.id)).size !== targets.length
+      )
+        throw new Error("forward.changed");
       const plan = await transport.forwardingMutation<ForwardingWindowStartPlan>(lease, {
         operation: "prepareStart",
         id: target.id,
@@ -205,7 +303,7 @@ function createWindowPrompt(
       review = { ...plan.review };
       jumps = plan.jumpHosts.map(display);
       allowedHosts = new Set([target.hostId, ...jumps.map((host) => host.id)]);
-      return { host: display(plan.host), services };
+      return { host: display(plan.host), services, result };
     })
     .catch(async (error: unknown) => {
       try {
