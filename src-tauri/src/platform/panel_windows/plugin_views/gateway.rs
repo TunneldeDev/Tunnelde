@@ -19,6 +19,17 @@ use tauri::{AppHandle, Manager, WebviewWindow};
     deny_unknown_fields
 )]
 pub(crate) enum Request {
+    UnregisterAdapter {
+        panel_id: String,
+        runtime_id: String,
+        generation: u64,
+        revision: String,
+    },
+    RegisterAdapter {
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+    },
     Open {
         target: Target,
         plugin_id: String,
@@ -75,13 +86,65 @@ pub(crate) async fn panel_window_plugin_view(
     request: Request,
 ) -> AppResult<Value> {
     let app = window.app_handle();
-    prune(app);
+    if prune(app) {
+        native::changed(app);
+    }
     let registry = app.state::<native::Registry>();
     // Registered native identity still isn't authority over another view.
     native::lock(&registry)
         .authorize(window.label(), &document)
         .map_err(native::invalid)?;
     match request {
+        Request::UnregisterAdapter {
+            panel_id,
+            runtime_id,
+            generation,
+            revision,
+        } => {
+            let changed = native::lock(&registry)
+                .unregister_plugin_adapter(
+                    window.label(),
+                    &document,
+                    &panel_id,
+                    &runtime_id,
+                    generation,
+                    &revision,
+                )
+                .map_err(native::invalid)?;
+            if changed {
+                native::changed(app);
+            }
+            Ok(json!(changed))
+        }
+        Request::RegisterAdapter {
+            plugin_id,
+            runtime_id,
+            view_id,
+        } => {
+            // A satellite cannot manufacture an adapter or make other plugins
+            // transferable, even if it knows their public contribution IDs.
+            native::lock(&registry)
+                .main(window.label(), &document)
+                .map_err(native::invalid)?;
+            let source = tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                frontend::source(app, &plugin_id, &runtime_id, &view_id),
+            )
+            .await
+            .map_err(|_| AppError::validation("plugin.timeout"))??;
+            let (descriptor, changed) = {
+                let mut ownership = native::lock(&registry);
+                source.with_current(app, || {
+                    ownership
+                        .register_plugin_adapter(window.label(), &document, source.clone())
+                        .map_err(native::invalid)
+                })?
+            };
+            if changed {
+                native::changed(app);
+            }
+            Ok(json!(descriptor))
+        }
         Request::Open {
             target,
             plugin_id,
@@ -114,6 +177,9 @@ pub(crate) async fn panel_window_plugin_view(
                     &view_id,
                     Instant::now(),
                 )
+                .map_err(native::invalid)?;
+            ownership
+                .admit_plugin_adapter_open(&source)
                 .map_err(native::invalid)?;
             let owner = source.lease.clone();
             let session = frontend::open(app, source)?;
@@ -224,21 +290,34 @@ pub(crate) async fn panel_window_plugin_view(
         }
     }
 }
-pub(crate) fn prune(app: &AppHandle) {
-    let tokens = {
+pub(crate) fn prune(app: &AppHandle) -> bool {
+    let (tokens, changed) = {
         let registry = app.state::<native::Registry>();
         let mut ownership = native::lock(&registry);
+        let changed =
+            ownership.retire_plugin_adapters(|source| source.with_current(app, || Ok(())).is_err());
         let tokens = ownership.prune_native_views(Instant::now(), |token, owner| {
             frontend::with_owner(app, token, owner, || Ok(())).is_ok()
         });
         ownership.prune_view_ui(app);
-        tokens
+        (tokens, changed)
     };
     frontend::close(app, tokens);
+    changed
 }
 pub(crate) fn retire(app: &AppHandle, plugin: &str, before: u64) {
-    let tokens = native::lock(&app.state::<native::Registry>()).retire_native_views(plugin, before);
+    let (tokens, changed) = {
+        let registry = app.state::<native::Registry>();
+        let mut ownership = native::lock(&registry);
+        let changed = ownership.retire_plugin_adapters(|source| {
+            source.lease.id == plugin && source.lease.generation < before
+        });
+        (ownership.retire_native_views(plugin, before), changed)
+    };
     frontend::close(app, tokens);
+    if changed {
+        native::changed(app);
+    }
 }
 
 /// Synchronous immutable module reads share the ownership transaction with

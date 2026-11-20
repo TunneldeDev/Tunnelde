@@ -19,7 +19,22 @@ export interface PanelTransferOffer {
   lease: PanelLease;
   targetWindow: string;
 }
+/** Whitelisted module/display identity, never activation credentials or grants. */
+export interface NativePluginViewDescriptor {
+  panelId: string;
+  /** Stale-approval marker, not a bearer credential. */
+  revision: string;
+  pluginId: string;
+  generation: number;
+  runtimeId: string;
+  viewId: string;
+  entry: string;
+  sdkVersion: string;
+  title: string;
+  allowFloating: boolean;
+}
 export interface NativePanelSnapshot {
+  pluginViews?: NativePluginViewDescriptor[];
   /** Unknown effects after coordinator document loss; counts only, no requests. */
   interruptions?: ReadonlyArray<{ panelId: string; count: number }>;
   windows: NativePanelWindow[];

@@ -246,7 +246,7 @@ impl Ownership {
         if let Some(lease) = lease {
             self.action(window, document, lease)?;
             let panel = self.owned(window, document, lease)?;
-            if !transferable(&lease.panel_id)
+            if !self.transferable(&lease.panel_id)
                 || panel.blocked
                 || !panel.interactions.is_empty()
                 || !panel.native_actions.is_empty()
@@ -352,11 +352,35 @@ impl Ownership {
         self.retire_panel_actions(panel_id);
         self.retire_panel_moves(panel_id);
         self.panels.remove(panel_id).ok_or("panel not found")?;
+        self.remove_plugin_adapter(panel_id);
         self.transfers
             .retain(|_, pending| pending.lease.panel_id != panel_id);
         self.drags
             .retain(|_, grant| grant.lease.panel_id != panel_id);
         Ok(())
+    }
+    /// Retired factory state is never restored into a replacement runtime.
+    /// Retain actual-effect fences until settlement; revocation is not rollback.
+    pub(super) fn reset_plugin_panel(&mut self, panel_id: &str) {
+        self.retire_panel_moves(panel_id);
+        // Cancel unadmitted presentation reservations; preserve an accepted
+        // source UI effect until its exact document finalizes or disappears.
+        let _ = self.remove_presentation_panel(panel_id);
+        self.transfers
+            .retain(|_, offer| offer.lease.panel_id != panel_id);
+        self.drags
+            .retain(|_, grant| grant.lease.panel_id != panel_id);
+        if let Some(panel) = self.panels.get_mut(panel_id) {
+            self.generation += 1;
+            panel.lease.generation = self.generation;
+            panel.checkpoint = Value::Null;
+            panel.checkpoint_revision = 0;
+            panel.presentation = None;
+            panel.model = Value::Null;
+            panel.model_document.clear();
+            panel.model_publisher.clear();
+            panel.model_revision += 1;
+        }
     }
     pub(super) fn validate_state(state: &Value) -> Result<()> {
         if serde_json::to_vec(state)

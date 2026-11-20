@@ -652,3 +652,62 @@ it("does not re-enter a timed-out plugin capture whose real callback still runs"
     vi.useRealTimers();
   }
 });
+
+it("projects only exact activated factory sidebar owners without leaking activation sessions or starting modules", async () => {
+  const f = fixture(() => ({ component: Component }));
+  const sidebar = {
+    ...plugin,
+    views: [
+      { id: "main", title: "Factory", kind: "component", location: "sidebar" },
+      {
+        id: "private",
+        title: "No floating",
+        kind: "component",
+        location: "sidebar",
+        allowFloating: false,
+      },
+      { id: "page", title: "Page", kind: "component", location: "workspace" },
+      {
+        id: "provider",
+        title: "Provider",
+        kind: "component",
+        location: "sidebar",
+        provider: "fileBrowser",
+      },
+    ],
+  } as PluginInfo;
+  expect(f.runtime.factoryOwner(plugin.id, "main")).toBeUndefined();
+  expect(f.transport.open).not.toHaveBeenCalled();
+  await f.runtime.ensure(sidebar);
+  const owner = f.runtime.factoryOwner(plugin.id, "main", plugin.fingerprint);
+  expect(owner).toEqual({
+    pluginId: "custom",
+    runtimeId: "boot:1",
+    generation: 1,
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+  });
+  expect(owner).not.toHaveProperty("token");
+  expect(owner).not.toHaveProperty("permissions");
+  expect(owner).not.toHaveProperty("fingerprint");
+  for (const id of ["private", "page", "provider", "undeclared"])
+    expect(f.runtime.factoryOwner(plugin.id, id)).toBeUndefined();
+  expect(f.runtime.factoryOwner(plugin.id, "main", "changed")).toBeUndefined();
+  owner!.entry = "mutated-projection";
+  expect(f.runtime.factoryOwner(plugin.id, "main")!.entry).toBe("index.mjs");
+  vi.mocked(f.transport.current).mockReturnValue(false);
+  expect(f.runtime.factoryOwner(plugin.id, "main")).toBeUndefined();
+  f.runtime.stop(plugin.id);
+  expect(f.runtime.factoryOwner(plugin.id, "main")).toBeUndefined();
+});
+it("does not advertise legacy registered sidebars as native factories even when the module also exports createView", async () => {
+  const f = fixture(() => ({ component: Component }));
+  const sidebar: PluginInfo = { ...plugin, views: [{ ...plugin.views[0]!, location: "sidebar" }] };
+  f.activate.mockImplementation((ctx) => {
+    ctx.views.register("main", Component);
+  });
+  await f.runtime.ensure(sidebar);
+  expect(f.runtime.view(plugin.id, "main")).toBe(Component);
+  expect(f.runtime.factoryOwner(plugin.id, "main")).toBeUndefined();
+  f.runtime.dispose();
+});

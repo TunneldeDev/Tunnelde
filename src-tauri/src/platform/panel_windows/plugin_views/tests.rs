@@ -379,6 +379,10 @@ fn gateway_and_target_dtos_reject_rogue_fields_and_raw_application_commands() {
         json!({"action":"close","token":"x","window":"main"}),
         json!({"action":"call","token":"x","method":"api.describe","params":{},"requestId":"r","document":"forged"}),
         json!({"action":"invoke","command":"ssh_connect"}),
+        json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files","activation":"forged"}),
+        json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files","permissions":["ui.trusted"]}),
+        json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files","allowFloating":true}),
+        json!({"action":"unregisterAdapter","panelId":"plugin:sample:files","runtimeId":"r","generation":1,"revision":"approval","windowId":"main"}),
     ] {
         assert!(serde_json::from_value::<Request>(value).is_err());
     }
@@ -387,6 +391,11 @@ fn gateway_and_target_dtos_reject_rogue_fields_and_raw_application_commands() {
     );
     assert!(serde_json::from_value::<Target>(json!({"kind":"owned","lease":{"panelId":"x","windowId":"main","generation":1,"document":"forged"}})).is_err());
     assert!(serde_json::from_value::<Request>(json!({"action":"prepareCall","token":"x"})).is_ok());
+    assert!(serde_json::from_value::<Request>(
+        json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files"})
+    )
+    .is_ok());
+    assert!(serde_json::from_value::<Request>(json!({"action":"unregisterAdapter","panelId":"plugin:sample:files","runtimeId":"r","generation":1,"revision":"approval"})).is_ok());
 }
 
 #[test]

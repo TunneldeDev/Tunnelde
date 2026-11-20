@@ -105,7 +105,7 @@ impl Ownership {
         );
         Ok((id, receiver))
     }
-    fn presentation_source(
+    fn presentation_source_document(
         &self,
         window: &str,
         document: &str,
@@ -119,6 +119,15 @@ impl Ownership {
         if job.lease.window_id != window || job.document != document {
             return Err("invalid presentation source");
         }
+        Ok(job)
+    }
+    fn presentation_source(
+        &self,
+        window: &str,
+        document: &str,
+        id: &str,
+    ) -> Result<&PendingPresentation> {
+        let job = self.presentation_source_document(window, document, id)?;
         self.owned(window, document, &job.lease)?;
         Ok(job)
     }
@@ -222,7 +231,10 @@ impl Ownership {
         document: &str,
         id: &str,
     ) -> Result<()> {
-        self.presentation_source(window, document, id)?;
+        // Cleanup of this exact document's admitted effect remains possible
+        // after a retired factory advances the panel generation. It cannot
+        // publish metadata or operate on the replacement lease.
+        self.presentation_source_document(window, document, id)?;
         self.finish_presentation(id, Err("panel.window.sourceUnavailable"));
         Ok(())
     }

@@ -29,6 +29,7 @@ struct View {
 #[derive(Default)]
 pub(super) struct Views {
     bindings: HashMap<String, View>,
+    adapters: HashMap<String, adapters::Adapter>,
     ui: ui::Queue,
     // Accepted work is independent of the view's lifetime. Closing a token,
     // reloading a document or revoking a plugin cannot release a native effect.
@@ -294,6 +295,7 @@ impl Ownership {
     }
 }
 
+pub(super) mod adapters;
 pub(crate) mod gateway;
 pub(crate) mod origin;
 #[cfg(test)]

@@ -103,6 +103,9 @@ pub(crate) fn panel_window_control(
     request: Command,
 ) -> AppResult<Value> {
     let app = window.app_handle();
+    if super::plugin_views::gateway::prune(app) {
+        changed(app);
+    }
     let registry = app.state::<Registry>();
     let notify = !matches!(
         &request,
@@ -170,6 +173,9 @@ pub(crate) async fn panel_window_create(
     document: String,
     lease: Option<Lease>,
 ) -> AppResult<String> {
+    if super::plugin_views::gateway::prune(&app) {
+        changed(&app);
+    }
     let registry = app.state::<Registry>();
     lock(&registry)
         .authorize_creation(window.label(), &document, lease.as_ref())
@@ -505,9 +511,9 @@ pub(crate) fn start(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            super::plugin_views::gateway::prune(&app);
+            let adapters_retired = super::plugin_views::gateway::prune(&app);
             let expired = lock(&app.state::<Registry>()).expire(Instant::now());
-            if !expired.is_empty() {
+            if adapters_retired || !expired.is_empty() {
                 changed(&app);
             }
         }

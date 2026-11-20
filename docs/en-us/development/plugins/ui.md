@@ -423,6 +423,22 @@ tickets before dispatch, cancels outstanding calls on document disposal and clea
 up late-opened attachments. Module URLs encode each relative segment separately.
 It needs neither a fake activation token nor a second frontend runtime.
 
+The internal `registerAdapter` gateway is coordinator-only. It rechecks the live
+ordinary sidebar contribution and `allowFloating`, and publishes only a closed
+module/display descriptor in the private window snapshot; it never publishes the
+activation token, fingerprint, permissions or document identity. A `plugin:` prefix
+alone does not opt in. The frontend exposes candidates only for its exact selected
+factory renderer, not a legacy `views.register` renderer, a provider or another
+location. Registration is idempotent for the same module; replacement requires
+retirement first. Explicit withdrawal checks the exact runtime/generation and approval revision,
+so late cleanup cannot withdraw a replacement, including a reopened module in
+the same runtime. The revision is a stale-approval marker, not a bearer credential. Activation closure/replacement and plugin
+retirement invalidate approval, cancel pending handoffs and erase the old capsule
+under a fresh panel generation, without releasing unsettled effect fences. A new
+admission waits for those effects to settle. Unadmitted presentation reservations
+are cancelled; an admitted UI effect retains its fence and exact issuing-document
+cleanup even after the panel generation changes. This admission infrastructure alone does not yet enable the production renderer/menu.
+
 This is not yet the public independent-window renderer capability. The allowlist
 is explicit, never inferred from read permissions or get/list names. Full resource
 RPC, provider handles, origin-window dialogs and production panel integration

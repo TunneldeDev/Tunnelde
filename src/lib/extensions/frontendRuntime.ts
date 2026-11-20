@@ -11,6 +11,7 @@ import {
 import { uiSdk, type FrontendContext, type FrontendModule, type FrontendViewProps } from "./uiSdk";
 
 import { createFrontendFactoryComponent } from "./runtime/views/factory";
+import type { FrontendViewOwner } from "./runtime/views/frontend";
 import { openFrontendView } from "./runtime/views/frontend";
 import { createBackgroundTaskRunner } from "./backgroundTasks/execution";
 import { samePluginRuntime } from "@/lib/plugins/commands/runtime";
@@ -36,6 +37,7 @@ interface Runtime {
   session?: FrontendSession;
   viewFactory?: boolean;
   views: Map<string, ComponentType<FrontendViewProps>>;
+  factoryViews: Map<string, ComponentType<FrontendViewProps>>;
   commands: Map<
     string,
     (input: Record<string, unknown>, signal: AbortSignal) => unknown | Promise<unknown>
@@ -80,6 +82,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
     runtimes.delete(id);
     runtime.scope.dispose();
     runtime.views.clear();
+    runtime.factoryViews.clear();
     runtime.commands.clear();
     changed();
   };
@@ -103,6 +106,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         activated: false,
         retiring: false,
         views: new Map(),
+        factoryViews: new Map(),
         commands: new Map(),
       };
       runtime = current;
@@ -217,6 +221,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
                 mountView(plugin.id, view.id, session.token, state, signal),
               );
               register(current.views, view.id, View, true);
+              current.factoryViews.set(view.id, View);
             }
           }
           current.activated = true;
@@ -314,6 +319,32 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         (fingerprint === undefined || runtime.plugin.fingerprint === fingerprint)
         ? runtime.views.get(viewId)
         : undefined;
+    },
+    /** Main-host admission candidates only; this neither opens nor activates a
+     * module. Legacy registered renderers are NOT silently swapped for factories.
+     * Return a fresh, non-secret owner projection, never the activation session.
+     */
+    factoryOwner(id: string, viewId: string, fingerprint?: string): FrontendViewOwner | undefined {
+      const runtime = runtimes.get(id);
+      const contribution = runtime?.plugin.views.find((view) => view.id === viewId);
+      const component = runtime?.factoryViews.get(viewId);
+      if (
+        !runtime?.activated ||
+        runtime.retiring ||
+        runtime.scope.signal.aborted ||
+        !runtime.session ||
+        !component ||
+        runtime.views.get(viewId) !== component ||
+        !transport.current(runtime.plugin) ||
+        (fingerprint !== undefined && runtime.plugin.fingerprint !== fingerprint) ||
+        contribution?.location !== "sidebar" ||
+        contribution.kind !== "component" ||
+        contribution.provider ||
+        contribution.allowFloating === false
+      )
+        return undefined;
+      const { pluginId, runtimeId, generation, entry, sdkVersion } = runtime.session;
+      return { pluginId, runtimeId, generation, entry, sdkVersion };
     },
     token: (id: string) => runtimes.get(id)?.token,
     mountView,

@@ -181,3 +181,93 @@ it("contains cleanup reporting failures and snapshots document identity rather t
   await vi.waitFor(() => expect(report).toHaveBeenCalledOnce());
   for (const [, args] of invoke.mock.calls) expect(args.document).toBe(identity.document);
 });
+
+it("admits adapters only from the coordinator using IDs, not JS-supplied permissions or activation metadata", async () => {
+  const native = vi.fn(async () => ({ panelId: "plugin:sample:files" }));
+  const satellite = createNativePluginViewClient(identity, {
+    invoke: native as never,
+    report: vi.fn(),
+  });
+  await expect(satellite.registerAdapter("sample", "runtime:8", "files")).rejects.toThrow(
+    "coordinatorRequired",
+  );
+  expect(native).not.toHaveBeenCalled();
+  const main = createNativePluginViewClient(
+    { windowId: "main", document: "exact-main" },
+    {
+      invoke: native as never,
+      report: vi.fn(),
+    },
+  );
+  expect(await main.registerAdapter("sample", "runtime:8", "files")).toEqual({
+    panelId: "plugin:sample:files",
+  });
+  expect(native).toHaveBeenCalledExactlyOnceWith("panel_window_plugin_view", {
+    document: "exact-main",
+    request: {
+      action: "registerAdapter",
+      pluginId: "sample",
+      runtimeId: "runtime:8",
+      viewId: "files",
+    },
+  });
+  main.dispose();
+  satellite.dispose();
+});
+it("discards adapter approval replies after their initiating document client is disposed", async () => {
+  let finish!: (value: unknown) => void;
+  const native = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const main = createNativePluginViewClient(
+    { windowId: "main", document: "exact-main" },
+    {
+      invoke: native as never,
+      report: vi.fn(),
+    },
+  );
+  const pending = main.registerAdapter("sample", "runtime:8", "files");
+  main.dispose();
+  finish({ panelId: "plugin:sample:files" });
+  await expect(pending).rejects.toThrow("closed");
+});
+it("withdraws only the exact public owner tuple without spreading descriptor metadata into closed IPC", async () => {
+  const native = vi.fn(async () => true);
+  const main = createNativePluginViewClient(
+    { windowId: "main", document: "exact-main" },
+    {
+      invoke: native as never,
+      report: vi.fn(),
+    },
+  );
+  const descriptor = {
+    panelId: "plugin:sample:files",
+    runtimeId: "runtime",
+    generation: 8,
+    revision: "exact-approval",
+    title: "ignored",
+    pluginId: "ignored",
+  };
+  expect(await main.unregisterAdapter(descriptor)).toBe(true);
+  expect(native).toHaveBeenCalledExactlyOnceWith("panel_window_plugin_view", {
+    document: "exact-main",
+    request: {
+      action: "unregisterAdapter",
+      panelId: descriptor.panelId,
+      runtimeId: "runtime",
+      generation: 8,
+      revision: "exact-approval",
+    },
+  });
+  const satellite = createNativePluginViewClient(identity, {
+    invoke: native as never,
+    report: vi.fn(),
+  });
+  await expect(satellite.unregisterAdapter(descriptor)).rejects.toThrow("coordinatorRequired");
+  expect(native).toHaveBeenCalledTimes(1);
+  satellite.dispose();
+  main.dispose();
+});

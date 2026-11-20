@@ -4,11 +4,19 @@ import type { FrontendModule } from "@/lib/extensions/uiSdk";
 import type { FrontendViewTransport } from "@/lib/extensions/runtime/views/frontend";
 import { ResourceScopeClosed } from "@/lib/extensions/runtime/scopes/errors";
 import { callScopedRequest } from "@/lib/extensions/runtime/requests/frontend";
-import type { NativePanelIdentity, PanelLease } from "./windowProtocol";
+import type { NativePanelIdentity, NativePluginViewDescriptor, PanelLease } from "./windowProtocol";
 
 export type NativePluginViewTarget =
   { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
 type Request =
+  | {
+      action: "unregisterAdapter";
+      panelId: string;
+      runtimeId: string;
+      generation: number;
+      revision: string;
+    }
+  | { action: "registerAdapter"; pluginId: string; runtimeId: string; viewId: string }
   | {
       action: "open";
       target: NativePluginViewTarget;
@@ -111,6 +119,36 @@ export function createNativePluginViewClient(
   };
   return {
     transport,
+    async registerAdapter(pluginId: string, runtimeId: string, viewId: string) {
+      check();
+      if (identity.windowId !== "main") throw new Error("panel.window.coordinatorRequired");
+      const descriptor = await request<NativePluginViewDescriptor>({
+        action: "registerAdapter",
+        pluginId,
+        runtimeId,
+        viewId,
+      });
+      check();
+      return descriptor;
+    },
+    async unregisterAdapter(
+      descriptor: Pick<
+        NativePluginViewDescriptor,
+        "panelId" | "runtimeId" | "generation" | "revision"
+      >,
+    ) {
+      check();
+      if (identity.windowId !== "main") throw new Error("panel.window.coordinatorRequired");
+      const changed = await request<boolean>({
+        action: "unregisterAdapter",
+        panelId: descriptor.panelId,
+        runtimeId: descriptor.runtimeId,
+        generation: descriptor.generation,
+        revision: descriptor.revision,
+      });
+      check();
+      return changed;
+    },
     async open(
       target: NativePluginViewTarget,
       pluginId: string,

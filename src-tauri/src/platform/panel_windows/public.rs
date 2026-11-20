@@ -86,7 +86,7 @@ impl Ownership {
             json!({"id": window.id, "role": if window.id == MAIN { "coordinator" } else { "satellite" }, "ready": window.ready, "closing": window.closing, "panelIds": panels})
         }).collect();
         let panels: Vec<_> = owners.iter().map(|lease| {
-            let transferable = super::ownership::transferable(&lease.panel_id);
+            let transferable = self.transferable(&lease.panel_id);
             let can_move = transferable && self.document(&lease.window_id).is_some_and(|document| self.authorize_creation(&lease.window_id, document, Some(lease)).is_ok());
             json!({"panelId": lease.panel_id, "windowId": lease.window_id, "generation": lease.generation, "transferable": transferable, "canMove": can_move})
         }).collect();

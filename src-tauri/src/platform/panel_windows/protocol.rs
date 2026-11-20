@@ -170,7 +170,7 @@ impl Ownership {
             | Command::PreparePanelMove { .. }
             | Command::FailPanelMove { .. } => Err("native move policy required"),
             Command::Snapshot {} => Ok(
-                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions()}),
+                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters()}),
             ),
             Command::RequestAction { lease, request } => Ok(json!(
                 self.request_action(window, document, &lease, request, now)?

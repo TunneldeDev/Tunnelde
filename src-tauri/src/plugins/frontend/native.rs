@@ -8,15 +8,33 @@ use crate::{
     state::AppState,
 };
 pub(crate) use policy::{call_policy, CallPolicy};
+use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
+/// Display/module identity only. This is NOT a bearer capability. The native
+/// gateway still opens each attachment against its exact document and lease.
+#[derive(Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ViewDescriptor {
+    pub(crate) plugin_id: String,
+    pub(crate) generation: u64,
+    pub(crate) runtime_id: String,
+    pub(crate) view_id: String,
+    pub(crate) entry: String,
+    pub(crate) sdk_version: &'static str,
+    pub(crate) title: String,
+    pub(crate) allow_floating: bool,
+}
+#[derive(Clone)]
 pub(crate) struct Source {
     pub(crate) lease: Lease,
     activation: String,
     view_id: String,
     entry: String,
     runtime_id: String,
+    title: String,
+    allow_floating: bool,
 }
 pub(crate) async fn source(
     app: &AppHandle,
@@ -32,16 +50,17 @@ pub(crate) async fn source(
     }
     // Provider contracts own native handles and synchronous slot validation.
     // They must not accidentally enter the generic sidebar transport.
-    if !owner.manifest.views.iter().any(|v| {
-        v.id == view
-            && v.kind.as_deref() == Some("component")
-            && v.location.as_deref() == Some("sidebar")
-            && v.provider.is_none()
-    }) {
-        return Err(AppError::validation(
-            "plugin.frontend.undeclaredContribution",
-        ));
-    }
+    let contribution = owner
+        .manifest
+        .views
+        .iter()
+        .find(|v| {
+            v.id == view
+                && v.kind.as_deref() == Some("component")
+                && v.location.as_deref() == Some("sidebar")
+                && v.provider.is_none()
+        })
+        .ok_or_else(|| AppError::validation("plugin.frontend.undeclaredContribution"))?;
     let entry = owner
         .manifest
         .frontend
@@ -67,7 +86,73 @@ pub(crate) async fn source(
         view_id: view.into(),
         entry,
         runtime_id: runtime.into(),
+        title: contribution.title.clone(),
+        allow_floating: contribution.allow_floating != Some(false),
     })
+}
+impl Source {
+    pub(crate) fn same_module(&self, other: &Self) -> bool {
+        self.lease == other.lease
+            && self.activation == other.activation
+            && self.descriptor() == other.descriptor()
+    }
+    pub(crate) fn descriptor(&self) -> ViewDescriptor {
+        ViewDescriptor {
+            plugin_id: self.lease.id.clone(),
+            generation: self.lease.generation,
+            runtime_id: self.runtime_id.clone(),
+            view_id: self.view_id.clone(),
+            entry: self.entry.clone(),
+            sdk_version: UI_SDK_VERSION,
+            title: self.title.clone(),
+            allow_floating: self.allow_floating,
+        }
+    }
+    /// Ownership -> module -> security, the same order as opening a view. Keep
+    /// the final policy check and admission in one transaction after async review.
+    pub(crate) fn with_current<T>(
+        &self,
+        app: &AppHandle,
+        operation: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        let registry = app.state::<Registry>();
+        let modules = registry.modules.lock().unwrap_or_else(|e| e.into_inner());
+        let module = modules
+            .get(&self.activation)
+            .filter(|m| m.view.is_none() && m.lease == self.lease)
+            .ok_or_else(|| AppError::validation("plugin.frontend.expired"))?;
+        if !app
+            .state::<AppState>()
+            .plugins
+            .security
+            .is_ready(&module.lease)?
+        {
+            return Err(AppError::validation("plugin.notRunning"));
+        }
+        app.state::<AppState>().plugins.security.with_authorized(
+            &module.lease,
+            &["ui.trusted"],
+            operation,
+        )
+    }
+    #[cfg(test)]
+    pub(crate) fn test_source(
+        lease: Lease,
+        runtime: &str,
+        view: &str,
+        floating: bool,
+        activation: &str,
+    ) -> Self {
+        Self {
+            lease,
+            activation: activation.into(),
+            view_id: view.into(),
+            entry: "index.js".into(),
+            runtime_id: runtime.into(),
+            title: "Sample files".into(),
+            allow_floating: floating,
+        }
+    }
 }
 impl Registry {
     pub(super) fn is_native_view(&self, token: &str) -> bool {
