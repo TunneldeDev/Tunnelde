@@ -1,6 +1,8 @@
 import { createPanelCaptures, type AsyncPanelCapture, type PanelReady } from "./viewCapture";
+import { useViewState } from "@/lib/session/viewState";
 import {
   createContext,
+  useCallback,
   useContext,
   useLayoutEffect,
   useRef,
@@ -235,4 +237,44 @@ export function usePanelViewState<T>(
   }, [controller, value]);
   useLayoutEffect(() => controller?.register(key, () => current.current), [controller, key]);
   return [value, setValue];
+}
+
+/** Bridges the main-document suspension store with the native panel capsule.
+ * Ordinary drafts remain recoverable when the coordinator WebView is released,
+ * while a panel move still captures the exact value before unmount. */
+export function usePanelViewStateBridge<T>(
+  key: string,
+  initial: T | (() => T),
+  validate: (value: unknown) => value is T,
+): [T, Dispatch<SetStateAction<T>>] {
+  const controller = useContext(Context);
+  // Keep the main-document suspension fallback in lockstep. A native panel uses
+  // its exact controller capsule, while a main-only panel still survives the
+  // coordinator WebView being released for background suspension.
+  const [fallback, setFallback] = useViewState<T>(key, initial);
+  const [value, setPanelValue] = useState<T>(() => {
+    const restored = controller?.read(key, validate);
+    return restored !== undefined
+      ? restored
+      : typeof initial === "function"
+        ? (initial as () => T)()
+        : initial;
+  });
+  const current = useRef(value);
+  const [identity] = useState(() => ({ key, controller }));
+  if (identity.key !== key || identity.controller !== controller)
+    throw new Error("panel.viewState.identityChanged");
+  const setValue = useCallback<Dispatch<SetStateAction<T>>>(
+    (next) => {
+      setPanelValue(next);
+      setFallback(next);
+    },
+    [setFallback],
+  );
+  useLayoutEffect(() => controller?.register(key, () => current.current), [controller, key]);
+  useLayoutEffect(() => {
+    current.current = value;
+    controller?.changed();
+  }, [controller, value]);
+  return [controller ? value : fallback, setValue];
 }

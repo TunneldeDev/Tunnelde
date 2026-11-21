@@ -32,6 +32,8 @@ function fixture(windowId = "main") {
       };
     if ((_args as { request: { action: string } }).request.action === "renderDeclarative")
       return { title: "Tool", blocks: [] };
+    if ((_args as { request: { action: string } }).request.action === "readDeclarativeSecret")
+      return "private-secret";
     return null;
   });
   const client = createNativeDeclarativeClient(
@@ -87,5 +89,42 @@ it("is coordinator-only for admission and snapshots target leases before IPC", a
       locale: "en-US",
     },
   });
+  f.client.dispose();
+});
+it("keeps declarative form secrets on the exact native target and out of capsules", async () => {
+  const f = fixture();
+  expect(await f.client.readSecret(record, "tool:token")).toBe("private-secret");
+  await f.client.writeSecret(record, "tool:token", "private-draft");
+  expect(f.invoke.mock.calls.slice(-2)).toEqual([
+    [
+      "panel_window_plugin_view",
+      {
+        document: "exact-document",
+        request: {
+          action: "readDeclarativeSecret",
+          target: {
+            kind: "owned",
+            lease: { panelId: descriptor.panelId, windowId: "main", generation: 4 },
+          },
+          key: "tool:token",
+        },
+      },
+    ],
+    [
+      "panel_window_plugin_view",
+      {
+        document: "exact-document",
+        request: {
+          action: "writeDeclarativeSecret",
+          target: {
+            kind: "owned",
+            lease: { panelId: descriptor.panelId, windowId: "main", generation: 4 },
+          },
+          key: "tool:token",
+          value: "private-draft",
+        },
+      },
+    ],
+  ]);
   f.client.dispose();
 });

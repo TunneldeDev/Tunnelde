@@ -138,6 +138,15 @@ pub(crate) enum Request {
     ModelDeclarative {
         target: Target,
     },
+    ReadDeclarativeSecret {
+        target: Target,
+        key: String,
+    },
+    WriteDeclarativeSecret {
+        target: Target,
+        key: String,
+        value: String,
+    },
     Open {
         target: Target,
         plugin_id: String,
@@ -542,6 +551,15 @@ pub(crate) async fn panel_window_plugin_view(
         }
         Request::ModelDeclarative { target } => {
             super::declarative::model(app, (window.label(), &document), &target).await
+        }
+        Request::ReadDeclarativeSecret { target, key } => Ok(json!(native::lock(&registry)
+            .read_declarative_secret(window.label(), &document, &target, &key, Instant::now(),)
+            .map_err(native::invalid)?)),
+        Request::WriteDeclarativeSecret { target, key, value } => {
+            native::lock(&registry)
+                .write_declarative_secret(window.label(), &document, &target, &key, value)
+                .map_err(native::invalid)?;
+            Ok(Value::Null)
         }
         Request::Open {
             target,
