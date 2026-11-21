@@ -1561,3 +1561,10 @@ current profile reads portable preferences in the owner after confirmation.
 Naming, management and import-preview drafts accept capture-aware state hooks.
 Import/export choosers, destructive consent and canonical profile persistence
 remain owner effects. This boundary alone does not admit native settings.
+
+Storage settings use an explicit owner snapshot and narrow draft commands, merged
+against the owner's current draft so an asynchronous folder chooser cannot
+replace unrelated category edits. Selection, review and recovery expansion use
+capturable view state; an in-flight chooser/schedule blocks background release.
+The owner retains native path validation, migration scheduling/cancellation and
+restart consent. Merely reviewing or moving a view never schedules migration.
