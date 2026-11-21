@@ -1,5 +1,6 @@
 //! Native multiwindow control plane and generation-fenced view ownership.
 mod actions;
+mod editor_pages;
 pub(crate) mod file_pages;
 pub(crate) mod forwarding;
 mod geometry;

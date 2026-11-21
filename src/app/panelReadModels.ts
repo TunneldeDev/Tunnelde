@@ -1,3 +1,4 @@
+import { startEditorWindowPublication } from "@/features/editor/editorWindowPublication";
 import { startFileWindowPublication } from "@/features/sftp/fileWindowPublication";
 import { startTerminalWindowPublication } from "@/features/terminal/terminalWindowPublication";
 import { pluginListSource } from "@/features/plugins/panel/source";
@@ -128,6 +129,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
   const preview = startPreviewWindowPublication(client, appearance, failure);
   const terminals = startTerminalWindowPublication(client, appearance, failure);
   const files = startFileWindowPublication(client, appearance, failure);
+  const editors = startEditorWindowPublication(client, appearance, failure);
   const publish = (
     panelId: "plugins" | "hosts" | "connections" | "tasks" | "output" | "knownHosts" | "forwarding",
   ) => {
@@ -211,6 +213,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       preview.refresh();
       terminals.refresh();
       files.refresh();
+      editors.refresh();
       connections();
       tasks();
       publish("output");
@@ -250,6 +253,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
     preview.dispose();
     terminals.dispose();
     files.dispose();
+    editors.dispose();
     for (const cleanup of cleanups) cleanup();
     i18n.off("languageChanged", both);
     stopRemoteOutput?.();

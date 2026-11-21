@@ -1,3 +1,4 @@
+import type { EditorWindowCommand } from "@/features/editor/editorWindowModel";
 import type { FileWindowCommand } from "@/features/sftp/fileWindowModel";
 import type { TerminalWindowCommand } from "@/features/terminal/terminalWindowModel";
 import type { PluginListCommand } from "@/features/plugins/panel/model";
@@ -49,6 +50,7 @@ export interface NativePreviewProviderDescriptor extends NativeForwardingProvide
   sourceKind: "local" | "remote";
 }
 export interface NativePanelSnapshot {
+  editorPages?: Array<{ panelId: string }>;
   filePages?: Array<{ panelId: string; allowMove: boolean }>;
   terminalViews?: Array<{ panelId: string; allowMove: boolean }>;
   pluginViews?: NativePluginViewDescriptor[];
@@ -59,6 +61,7 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | { kind: "editor"; command: EditorWindowCommand }
   | { kind: "files"; command: FileWindowCommand }
   | {
       kind: "terminal";
@@ -126,6 +129,7 @@ export type PanelWindowCommand =
   | { action: "failPanelMove"; id: string }
   | { action: "completeAction"; id: string; result: PanelActionResult }
   | { action: "actionResult" | "cancelAction"; id: string }
+  | { action: "bindEditorPage"; panelId: string }
   | { action: "snapshot" | "ready" | "beginClose" | "cancelClose" }
   | { action: "addPanel" | "removePanel"; panelId: string }
   | { action: "authorize" | "view" | "readModel" | "issueDrag"; lease: PanelLease }

@@ -21,6 +21,7 @@ impl Ownership {
         super::super::ownership::transferable(panel_id)
             || self.terminal_registered(panel_id)
             || self.file_page_registered(panel_id)
+            || self.editor_page_registered(panel_id)
             || self.native_views.adapters.contains_key(panel_id)
     }
     pub(in crate::platform::panel_windows) fn plugin_adapters(&self) -> Vec<Descriptor> {

@@ -1,3 +1,8 @@
+import { closeTab } from "@/lib/session/tabActions";
+import {
+  canonicalWorkspacePanelId,
+  editorWindowTabId,
+} from "@/features/editor/editorWindowRegistration";
 import { useWorkspace } from "@/store/workspace";
 import type { SourcePanelMetadata } from "./sourcePresentation";
 import { usePanelWindows } from "@/store/panelWindows";
@@ -14,15 +19,19 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
   const workspaceTab = (id: string) =>
     useWorkspace
       .getState()
-      .tabs.find((tab) => (tab.kind === "terminal" || tab.kind === "sftp") && tab.id === id);
+      .tabs.find(
+        (tab) =>
+          (tab.kind === "terminal" || tab.kind === "sftp" || tab.kind === "editor") &&
+          tab.id === (editorWindowTabId(id) ?? id),
+      );
   const workspaceRows = (): SourcePanelMetadata[] => {
     const state = useWorkspace.getState();
     return state.tabs
-      .filter((tab) => tab.kind === "terminal" || tab.kind === "sftp")
+      .filter((tab) => tab.kind === "terminal" || tab.kind === "sftp" || tab.kind === "editor")
       .map((tab) => {
         const pane = state.panes.find((pane) => pane.tabIds.includes(tab.id));
         return {
-          id: tab.id,
+          id: canonicalWorkspacePanelId(tab.id),
           windowId: "main",
           presentation: pane?.floating ? "floating" : "workspace",
           visible: !!pane && pane.activeId === tab.id && !tab.hidden,
@@ -58,11 +67,14 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
     set(id, presentation) {
       local(id);
       if (workspaceTab(id)) {
-        if (presentation === "floating") useWorkspace.getState().floatTab(id);
+        if (presentation === "floating")
+          useWorkspace.getState().floatTab(editorWindowTabId(id) ?? id);
         else if (presentation === "workspace") {
-          const pane = useWorkspace.getState().panes.find((pane) => pane.tabIds.includes(id));
+          const pane = useWorkspace
+            .getState()
+            .panes.find((pane) => pane.tabIds.includes(editorWindowTabId(id) ?? id));
           if (pane?.floating) useWorkspace.getState().dockPane(pane.id);
-          useWorkspace.getState().activate(id);
+          useWorkspace.getState().activate(editorWindowTabId(id) ?? id);
         } else throw new Error("panel.window.unsupportedPresentation");
         return read().find((panel) => panel.id === id)!;
       }
@@ -78,13 +90,15 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
       local(id);
       if (workspaceTab(id)) {
         const row = workspaceRows().find((row) => row.id === id)!;
-        closed.set(id, { ...row, visible: false, available: false });
-        useWorkspace.getState().close(id);
+        closeTab(workspaceTab(id)!);
+        // Dirty editors keep their tab until explicit discard consent. Never
+        // publish a fictitious closed slot while that dialog is pending/cancelled.
+        if (!workspaceTab(id)) closed.set(id, { ...row, visible: false, available: false });
       } else closePanel(requirePanel(id));
     },
     reveal: (id) => {
       local(id);
-      if (workspaceTab(id)) useWorkspace.getState().activate(id);
+      if (workspaceTab(id)) useWorkspace.getState().activate(editorWindowTabId(id) ?? id);
       else revealPanel(requirePanel(id));
     },
     subscribe: (changed) => {

@@ -1,3 +1,4 @@
+import { canonicalWorkspacePanelId } from "@/features/editor/editorWindowRegistration";
 import type { PanelWindowClient } from "./windowClient";
 import { transferablePanel } from "./windowViews";
 import { movePanelToWindow } from "./windowMoves";
@@ -34,10 +35,11 @@ export function installPanelWindowDrag(
     if (!event.dataTransfer || disposed) return;
     if (gesture) cancel(gesture);
     gesture = undefined;
-    const panelId =
+    const panelId = canonicalWorkspacePanelId(
       localPanelDragId(event.dataTransfer) ||
-      event.dataTransfer.getData(SIDEBAR_MIME) ||
-      event.dataTransfer.getData(TAB_MIME);
+        event.dataTransfer.getData(SIDEBAR_MIME) ||
+        event.dataTransfer.getData(TAB_MIME),
+    );
     if (!panelId || !transferablePanel(panelId)) return;
     const lease = usePanelWindows
       .getState()

@@ -1,3 +1,4 @@
+import { executeEditorWindowAction } from "@/features/editor/editorWindowActions";
 import { executeFileWindowAction } from "@/features/sftp/fileWindowActions";
 import { executeTerminalWindowAction } from "@/features/terminal/terminalWindowActions";
 import { executePluginListCommand } from "@/features/plugins/panel/actions";
@@ -23,6 +24,8 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request, lease }) => {
       switch (request.kind) {
+        case "editor":
+          return executeEditorWindowAction(lease, request.command, () => client.show());
         case "files":
           return executeFileWindowAction(lease, request.command, () => client.show());
         case "terminal":

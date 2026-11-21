@@ -1,10 +1,10 @@
+import { MainNativeEditorPage } from "@/features/editor/NativeEditorPage";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/ui/display/Misc";
 import { AboutPage } from "@/features/about/AboutPage";
-import { EditorPage } from "@/features/editor/EditorPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
@@ -69,7 +69,7 @@ function TabBody({
         />
       );
     case "editor":
-      return <EditorPage tabId={tab.id} active={active} />;
+      return <MainNativeEditorPage tabId={tab.id} active={active} />;
     case "history":
       return <HistoryPage sessionId={tab.id.replace("history:", "")} />;
     case "monitor":
