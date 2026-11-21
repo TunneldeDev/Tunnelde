@@ -1903,7 +1903,8 @@
       "sort": "快捷键排序",
       "sortDefault": "命令顺序",
       "sortPriority": "优先级：从高到低"
-    }
+    },
+    "changed": "快捷键已发生变化，请检查当前绑定后重试。"
   },
   "profiles": {
     "operation": {

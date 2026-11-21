@@ -1568,3 +1568,28 @@ replace unrelated category edits. Selection, review and recovery expansion use
 capturable view state; an in-flight chooser/schedule blocks background release.
 The owner retains native path validation, migration scheduling/cancellation and
 restart consent. Merely reviewing or moving a view never schedules migration.
+
+The keyboard-shortcut editor receives explicit command definitions, preferences,
+query and effects. Recorded bindings, advanced-rule drafts and sort/selection
+state are capture-ready; rejected saves retain the editor. Command-scoped writes
+merge with the owner's current preferences and reject vanished/stale bindings
+instead of replacing unrelated shortcuts. Rule presentation helpers are pure,
+while routing/actions remain main-owned and retain their existing exports.
+
+Interface-provider selectors, the mount host-detail contributor selector and About
+also share owner-independent renderers. Provider views receive only eligible
+choice metadata, never the singleton runtime or permission authority. Activation,
+fingerprint checks, live workspace persistence and current-owner selection
+merges stay in main. Provider activation blocks background release; disclosure
+and local-license dialog state can be captured. About external links use named
+owner actions, not arbitrary URLs. Plugin security/runtime/configuration sections
+and the complete native Settings adapter still remain to be implemented.
+
+Plugin-security and Node-runtime settings have separate read/effect services.
+Grant displays and permission descriptions never import activation gates or the
+clipboard owner; error copying is an explicit supplied action. Restriction and
+revocation still use the main security store. Runtime detect/path/consent/install/
+cancel, download event registration and the shared activation decision stay with
+the main runtime owner; remounting the renderer displays the same installation
+rather than starting another. These boundaries do not move permission/first-use
+gates into native views or enable native Settings prematurely.

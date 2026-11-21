@@ -1,34 +1,23 @@
+import {
+  NodeRuntimeSectionView,
+  type NodeRuntimeServices,
+  type NodeRuntimeData,
+} from "./components/NodeRuntimeSectionView";
+import { useBackgroundGuard } from "@/lib/session/viewState";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { create } from "zustand";
 
-import { Button } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
-import type { NodeRuntimeInfo } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { ActivationDecision } from "@/lib/plugins/activation/decision";
 
-interface Progress {
-  taskId: string;
-  phase: string;
-  received: number;
-  total: number | null;
-}
-
-interface RuntimeState {
-  info: NodeRuntimeInfo | null;
-  busy: "checking" | "choosing" | "installing" | null;
-  error: string | null;
-  progress: Progress | null;
-  cancelling: boolean;
-}
-
 // The operation outlives settings navigation, keeping cancellation available when
 // the user returns and preventing duplicate installations across both surfaces.
-const useRuntime = create<RuntimeState>(() => ({
+const useRuntime = create<Omit<NodeRuntimeData, "nativeAvailable">>(() => ({
   info: null,
   busy: null,
   error: null,
@@ -115,140 +104,23 @@ async function cancel() {
   }
 }
 
-export function NodeRuntimeSection({
-  onReady,
-  embedded = false,
-}: {
-  onReady?: () => void;
-  embedded?: boolean;
-}) {
-  const { t } = useTranslation();
-  const { info, busy, error, progress, cancelling } = useRuntime();
-  useEffect(() => {
-    if (isTauri() && !useRuntime.getState().info) void check();
-  }, []);
-  useEffect(() => {
-    if (info?.compatible && !busy) onReady?.();
-  }, [info, busy, onReady]);
-  const percent = progress?.total
-    ? Math.min(100, Math.round((progress.received / progress.total) * 100))
-    : undefined;
-  const phases = {
-    connecting: "plugins.node.phase.connecting",
-    metadata: "plugins.node.phase.metadata",
-    checksum: "plugins.node.phase.checksum",
-    downloading: "plugins.node.phase.downloading",
-    downloaded: "plugins.node.phase.downloaded",
-    verifying: "plugins.node.phase.verifying",
-    extracting: "plugins.node.phase.extracting",
-    activating: "plugins.node.phase.activating",
-    complete: "plugins.node.phase.complete",
-  } as const;
-  const sources = {
-    explicit: "plugins.node.sources.explicit",
-    environment: "plugins.node.sources.environment",
-    path: "plugins.node.sources.path",
-    registry: "plugins.node.sources.registry",
-    shell: "plugins.node.sources.shell",
-    managed: "plugins.node.sources.managed",
-  } as const;
-  const phase = phases[progress?.phase as keyof typeof phases] ?? phases.connecting;
-  const source = sources[info?.source as keyof typeof sources];
-  const displayPath = info?.path?.replace(/^\\\\\?\\UNC\\/, "\\\\").replace(/^\\\\\?\\/, "");
-  return (
-    <section className="settings-subsection" aria-label={t("plugins.node.title")}>
-      {!embedded ? <h3 className="settings-subtitle">{t("plugins.node.title")}</h3> : null}
-      <p className="settings-hint">{t("plugins.node.description")}</p>
-      <p role="status" aria-live="polite">
-        {t(
-          busy === "checking"
-            ? "plugins.node.checking"
-            : info?.compatible
-              ? "plugins.node.ready"
-              : "plugins.node.unavailable",
-        )}
-        {info?.version ? ` · Node ${info.version}` : ""}
-        {source ? ` · ${t(source)}` : ""}
-      </p>
-      {info?.path ? (
-        <p className="plugin-install-path" title={displayPath} style={{ overflowWrap: "anywhere" }}>
-          {displayPath}
-        </p>
-      ) : null}
-      {info?.issue && !error ? (
-        <p className="settings-hint">
-          {translateError({ code: "validation", message: info.issue })}
-        </p>
-      ) : null}
-      <div className="settings-actions">
-        {info?.issue === "node.consentRequired" && info.path ? (
-          <Button
-            size="sm"
-            disabled={!!busy}
-            onClick={() =>
-              useDialogs.getState().confirm({
-                title: t("plugins.node.useDetectedTitle"),
-                body: t("plugins.node.useDetectedBody", { path: displayPath }),
-                confirmLabel: t("plugins.node.useDetected"),
-                onConfirm: () => allowSystem(true),
-              })
-            }
-          >
-            {t("plugins.node.useDetected")}
-          </Button>
-        ) : null}
-        {info?.source &&
-        ["environment", "path", "registry", "shell"].includes(info.source) &&
-        info.issue !== "node.consentRequired" ? (
-          <Button size="sm" disabled={!!busy} onClick={() => void allowSystem(false)}>
-            {t("plugins.node.revokeSystem")}
-          </Button>
-        ) : null}
-        <Button size="sm" disabled={!!busy} onClick={() => void check()}>
-          {t("plugins.node.recheck")}
-        </Button>
-        <Button size="sm" disabled={!!busy} onClick={() => void choose()}>
-          {t("plugins.node.choose")}
-        </Button>
-        <Button size="sm" disabled={!!busy} onClick={() => void choose(true)}>
-          {t("plugins.node.automatic")}
-        </Button>
-        <Button
-          size="sm"
-          disabled={!!busy || !isTauri()}
-          onClick={() =>
-            useDialogs.getState().confirm({
-              title: t("plugins.node.installTitle"),
-              body: t("plugins.node.installBody"),
-              confirmLabel: t("plugins.node.install"),
-              onConfirm: () => {
-                void install();
-              },
-            })
-          }
-        >
-          {t("plugins.node.install")}
-        </Button>
-      </div>
-      {progress ? (
-        <div aria-busy="true">
-          <p role="status">
-            {t(cancelling ? "plugins.node.cancelling" : phase)}
-            {percent === undefined ? "" : ` · ${percent}%`}
-          </p>
-          <progress aria-label={t(phase)} value={percent} max={100} style={{ width: "100%" }} />
-          <Button size="sm" disabled={cancelling} onClick={() => void cancel()}>
-            {t("plugins.node.cancel")}
-          </Button>
-        </div>
-      ) : null}
-      {error ? (
-        <p className="panel__error" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </section>
-  );
+export const mainNodeRuntimeServices: NodeRuntimeServices = {
+  useData() {
+    return { ...useRuntime(), nativeAvailable: isTauri() };
+  },
+  useBusyGuard: useBackgroundGuard,
+  load: async () => {
+    if (isTauri() && !useRuntime.getState().info) await check();
+  },
+  check,
+  choose,
+  allowSystem,
+  install,
+  cancel,
+  confirm: (options) => useDialogs.getState().confirm(options),
+};
+export function NodeRuntimeSection(props: { onReady?: () => void; embedded?: boolean }) {
+  return <NodeRuntimeSectionView {...props} services={mainNodeRuntimeServices} />;
 }
 
 const useGate = create<{ request: ActivationDecision | null }>(() => ({ request: null }));
