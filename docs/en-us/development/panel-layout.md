@@ -1525,3 +1525,11 @@ not permission to silently omit a contributor or replay singleton activation.
 Settings and factoryless plugin pages remain separate rollout work. Physical
 pointer/mixed-DPI, Windows/Linux and live SSH/FUSE continuity require separate
 acceptance; this adapter does not claim those checks or a general public API.
+
+### Settings renderer boundary
+
+`SettingsPageView`, `PreferenceFieldsView` and `PreferenceRowView` use explicit
+document-local data/effect services. Main composition retains the real profiles,
+consent, plugin providers and specialized settings sections. This extraction does
+not admit settings to native windows: every custom section and draft/effect path
+must be adapted before exposing that entry; it is not a whole-store IPC proxy.

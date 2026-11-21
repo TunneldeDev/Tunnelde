@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 提取完整设置界面的渲染器与文档内副作用服务，保留原配置方案、专用板块和确认流程；设置独立窗口入口尚未开放。Extract the full settings renderer and document-local effect services while retaining profiles, custom sections and consent; native settings windows are not enabled yet.
+
 - 内置主机详情支持独立窗口往返，保留转发规则与组草稿，主机操作及转发写入按原资源所有权执行；使用旧式主机贡献者或已选转发提供者时暂留主窗。Builtin host details support native-window roundtrips with forwarding rule/group drafts retained and owner-scoped host/forwarding actions; legacy host contributions and selected forwarding providers stay in main for now.
 
 - 本地与 SFTP 文本编辑器支持独立窗体往返，保留未保存文本、主窗撤销历史及选区；编码切换、保存和冲突恢复由原资源所有者执行，修复撤销后焦点丢失及编码菜单键盘输入穿透。Local and SFTP text editors support native-window roundtrips with dirty text, main-owned undo history and selection retained; encoding, saves and conflict recovery use the original owner. Fix undo focus loss and encoding-menu key leakage into the editor.
