@@ -14,13 +14,15 @@ import {
   type DeclarativeViewOwnerLease,
 } from "@/lib/plugins/views/ownerRegistry";
 import type { DeclarativePluginView as RenderedView } from "@/lib/plugins/views/declarative";
-import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
+import { useBackgroundGuard } from "@/lib/session/viewState";
+import { usePanelViewStateBridge } from "@/lib/panels/viewState";
 import { copyText } from "@/lib/session/clipboard";
 import { reportPluginExecutionFailure } from "@/store/pluginSecurity";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginChat } from "./PluginChat";
 import { PluginMounts } from "./PluginMounts";
 import { SharedMounts } from "./SharedMounts";
+import { useMainDeclarativeSecretDraft } from "./declarativeSecretDrafts";
 import "@/styles/pluginTools.css";
 import { usePlugins } from "@/store/plugins";
 import { PluginComponentView } from "./PluginComponentView";
@@ -166,7 +168,8 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
           if (!owner.current) return Promise.reject(new PluginInvocationCancelled());
           return owner.current.owner.run(request, signal);
         },
-        useViewState,
+        useViewState: usePanelViewStateBridge,
+        useSecretState: useMainDeclarativeSecretDraft,
         useBusyGuard: useBackgroundGuard,
       }}
       reportFailure={reportPluginExecutionFailure}
