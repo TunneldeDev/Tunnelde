@@ -13,8 +13,10 @@ import type { ResolvedTheme } from "@/lib/prefs/appearance";
 import { cn } from "@/lib/text/format";
 import type { SettingDefinition, SettingOption } from "../catalog";
 import { NumberPreference } from "../NumberPreference";
+import type { SettingsControlState } from "./controlState";
 
 export interface PreferenceRowServices {
+  useViewState?: SettingsControlState;
   update(patch: SettingsPatch): Promise<boolean>;
   updatesBusy: boolean;
   renderColors(settings: Settings): ReactNode;
@@ -110,6 +112,8 @@ export function PreferenceRowView({
         {definition.kind === "number" ? (
           <NumberPreference
             key={resetVersion}
+            stateKey={`settings:number:${definition.key}:${resetVersion}`}
+            useViewState={services.useViewState}
             label={label}
             descriptionId={descriptionId}
             value={Number(value)}

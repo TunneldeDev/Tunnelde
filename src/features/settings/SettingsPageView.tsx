@@ -1,7 +1,7 @@
 import { ChevronRight, RotateCcw, Search } from "lucide-react";
 import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, parseSearchQuery, toggleSearchFilter } from "@/lib/search/query";
-import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useId, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import type { SettingsPatch } from "@/lib/api/types";
@@ -63,7 +63,10 @@ export function SettingsPageView({
     }
   }, [shortcutRequest, setQuery, setModifiedOnly]);
   const [cssDraft, setCssDraft] = services.useViewState<string | null>("settings:css", null);
-  const [resetVersions, setResetVersions] = useState<Record<string, number>>({});
+  const [resetVersions, setResetVersions] = services.useViewState<Record<string, number>>(
+    "settings:resetVersions",
+    {},
+  );
   const body = useRef<HTMLDivElement>(null);
   const settingsId = useId();
   useLayoutEffect(() => {
