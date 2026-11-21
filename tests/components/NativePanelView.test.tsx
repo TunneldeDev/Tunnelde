@@ -14,6 +14,25 @@ afterEach(() => {
   });
   useWindowViews.setState({ entries: new Map() });
 });
+it("renders nothing in a source window after its panel has moved elsewhere", () => {
+  usePanelWindows.setState({
+    available: true,
+    snapshot: {
+      windows: [],
+      panels: [{ panelId: "tasks", windowId: "target", generation: 2 }],
+      transfers: [],
+    },
+  });
+  const view = render(
+    <NativePanelView panelId="tasks">
+      <button>stale panel body</button>
+    </NativePanelView>,
+  );
+  expect(view.container.textContent).toBe("");
+  expect(screen.queryByRole("button", { name: "stale panel body" })).toBeNull();
+  expect(screen.queryByText(/another window|另一个窗体/)).toBeNull();
+});
+
 it("shows an explicit unknown-outcome safety boundary after coordinator loss instead of an idle retryable panel", () => {
   usePanelWindows.setState({
     available: true,
