@@ -26,6 +26,7 @@ export async function runEditorRequest(
       const version = integer(params.version, "version");
       if (typeof params.text !== "string" || bytes(params.text) > EDITOR_DOCUMENT_MAX_BYTES)
         throw new Error("invalid:text");
+      await authorize();
       return pluginEditorWriteResult(
         replaceEditorDocument({ tabId, documentId, version }, params.text),
       );
@@ -38,6 +39,7 @@ export async function runEditorRequest(
     case "editor.readRange":
       return readBufferRange(params);
     case "editor.applyEdits":
+      await authorize();
       return applyBufferEdits(params);
     default:
       throw new Error("plugin.api.unknownMethod");

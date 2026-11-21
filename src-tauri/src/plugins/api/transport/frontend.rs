@@ -1,6 +1,9 @@
 //! Bounded request/reply bridge with generation reauthorization and cancellation.
 use crate::error::{AppError, AppResult};
-use crate::plugins::api::{authorize, method_info, HostContext, MAX_PAYLOAD};
+use crate::plugins::{
+    api::{authorize, method_info, HostContext, MAX_PAYLOAD},
+    frontend::native::CallPolicy,
+};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -15,6 +18,8 @@ const FRONTEND_EVENT: &str = "plugin://workspace-request";
 struct PendingFrontend {
     context: HostContext,
     permissions: &'static [&'static str],
+    origin: Option<crate::platform::panel_windows::plugin_views::origin::Origin>,
+    policy: Option<CallPolicy>,
     reply: oneshot::Sender<AppResult<Value>>,
 }
 struct FrontendRequestGuard {
@@ -65,15 +70,32 @@ pub(in crate::plugins::api) async fn frontend_request_with_permissions(
     permissions: &'static [&'static str],
 ) -> AppResult<Value> {
     authorize(context, permissions)?;
-    if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
-        return crate::platform::panel_windows::plugin_views::ui::request(
-            origin,
-            context,
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    // Consent is queued in the exact origin window. All other frontend methods
+    // use the normal coordinator bridge; native identity remains attached to
+    // the pending request and is rechecked at admission, authorization and reply.
+    if let Some(origin) = origin.clone() {
+        if matches!(
             method,
-            params,
-            permissions,
-        )
-        .await;
+            "ui.confirm" | "ui.showMessage" | "__mounts.forceUnmount"
+        ) {
+            return crate::platform::panel_windows::plugin_views::ui::request(
+                origin,
+                context,
+                method,
+                params,
+                permissions,
+            )
+            .await;
+        }
+    }
+    let policy = origin
+        .as_ref()
+        .and_then(|_| crate::plugins::frontend::native::call_policy(method));
+    if origin.is_some() && policy.is_none() {
+        return Err(AppError::validation(
+            "plugin.frontend.nativeMethodUnavailable",
+        ));
     }
     let request_id = uuid::Uuid::new_v4().to_string();
     let (sender, receiver) = oneshot::channel();
@@ -95,6 +117,8 @@ pub(in crate::plugins::api) async fn frontend_request_with_permissions(
             PendingFrontend {
                 context: context.clone(),
                 permissions,
+                origin,
+                policy,
                 reply: sender,
             },
         );
@@ -142,7 +166,11 @@ pub(in crate::plugins::api) fn authorize_request(request_id: String) -> AppResul
     let request = pending
         .get(&request_id)
         .ok_or_else(|| AppError::validation("plugin.api.requestExpired"))?;
-    authorize(&request.context, request.permissions)
+    authorize(&request.context, request.permissions)?;
+    if let (Some(origin), Some(policy)) = (&request.origin, request.policy) {
+        origin.authorize_call(policy)?;
+    }
+    Ok(())
 }
 
 pub(in crate::plugins::api) fn reply(
@@ -156,6 +184,12 @@ pub(in crate::plugins::api) fn reply(
         .remove(&request_id)
         .ok_or_else(|| AppError::validation("plugin.api.requestExpired"))?;
     let result = authorize(&request.context, request.permissions)
+        .and_then(|_| {
+            if let (Some(origin), Some(policy)) = (&request.origin, request.policy) {
+                origin.authorize_call(policy)?;
+            }
+            Ok(())
+        })
         .and_then(|_| frontend_result(result, error));
     let _ = request.reply.send(result);
     Ok(())

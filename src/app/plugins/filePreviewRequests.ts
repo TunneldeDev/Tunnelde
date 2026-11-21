@@ -14,8 +14,10 @@ export async function runFilePreviewRequest(
     case "filePreview.providers":
       return readFilePreviewProviders(params);
     case "filePreview.action":
+      await authorize();
       return runFilePreviewAction(params);
     case "filePreview.open":
+      await authorize();
       return openFilePreview(params);
     default:
       throw new Error("plugin.api.unknownMethod");

@@ -375,7 +375,7 @@ describe("plugin workspace bridge authorization and live state", () => {
     await runPluginWorkspaceRequest(request("workspace.openTerminal", { sessionId: session.id }));
     expect(useWorkspace.getState().tabs[0]?.id).toBe(`terminal:${session.id}`);
     expect(useSsh.getState().sessions).toEqual([session]);
-    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.invoke).toHaveBeenCalledTimes(3);
     await expect(
       runPluginWorkspaceRequest(request("workspace.openFiles", { sessionId: "missing" })),
     ).rejects.toThrow("ssh.sessionMissing");

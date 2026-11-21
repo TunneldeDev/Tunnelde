@@ -46,6 +46,12 @@ impl CallPolicy {
     }
 }
 pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
+    policy(method)
+}
+
+/// Exact method classes are shared by native admission and coordinator reply
+/// revalidation. Prefixes and permissions never widen this closed list.
+fn policy(method: &str) -> Option<CallPolicy> {
     match method {
         "api.describe" | "extensions.describe" => Some(CallPolicy::Metadata),
         "bus.advertise" | "bus.discover" | "bus.snapshot" | "bus.decline" | "bus.create"
@@ -85,7 +91,14 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         | "workspace.panels.observe"
         | "workspace.panels.ownership"
         | "workspace.windows.list"
-        | "workspace.windows.observe" => Some(CallPolicy::StagedData),
+        | "workspace.windows.observe"
+        | "editor.active"
+        | "editor.observe"
+        | "editor.readRange"
+        | "fileBrowser.observe"
+        | "fileBrowser.read"
+        | "filePreview.observe"
+        | "filePreview.providers" => Some(CallPolicy::StagedData),
         // Mutations await actual I/O; even keyring reads can prompt/perform OS
         // work, so they are NOT admitted during staging.
         "hosts.routes.save"
@@ -126,6 +139,9 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         | "terminal.resize"
         | "editor.applyEdits"
         | "editor.replace"
+        | "fileBrowser.action"
+        | "filePreview.action"
+        | "filePreview.open"
         | "workspace.panels.setPresentation"
         | "workspace.panels.close"
         | "workspace.panels.moveToWindow"
@@ -160,6 +176,13 @@ mod workspace_and_file_tests {
             "workspace.panels.ownership",
             "workspace.windows.list",
             "workspace.windows.observe",
+            "editor.active",
+            "editor.observe",
+            "editor.readRange",
+            "fileBrowser.observe",
+            "fileBrowser.read",
+            "filePreview.observe",
+            "filePreview.providers",
         ] {
             assert!(
                 crate::plugins::api::method_info(method).is_some(),
@@ -198,6 +221,9 @@ mod workspace_and_file_tests {
             "terminal.resize",
             "editor.applyEdits",
             "editor.replace",
+            "fileBrowser.action",
+            "filePreview.action",
+            "filePreview.open",
             "workspace.panels.setPresentation",
             "workspace.panels.close",
             "workspace.panels.moveToWindow",
