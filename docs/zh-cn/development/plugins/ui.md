@@ -312,6 +312,13 @@ Bus 副作用保留执行屏障；`bus.receive` 是可取消的被动等待，�
 再次激活单例；Bus 归属于获准运行的插件代次。每个运行时仍最多只有一个接收者，
 后台订阅通常应留在 `activate` 中，而不是由每个视图重复启动。
 
+已提交原生视图也可使用 `hosts.write` 调用 `hosts.create/update/delete/markUsed/reorder`
+与 `groups.create/update/delete`。仍复用主机服务的校验、事务、审计、SSH 名称同步与
+凭据清理；暂存阶段禁止写入。实际提交前检查原文档、运行时代次、授权与取消；等待
+数据库时不持有来源锁。`hosts.routes.save`／`hosts.setFields` 保留各自现有读写授权和
+revision／字段 schema 校验；通用 CRUD 沿用原完整替换契约，不声称增加 CAS。
+导入、凭据和创建连接不因这些方法获准而自动开放。
+
 内部网关还逐项开放了插件自有数据方法：`storage.get/set/delete/observe`、七个
 `configuration.*` 模式/CAS/备份方法，以及 `secrets.get/set/delete`。写入与所有钥匙串调用
 仍要求已取得面板所有权；`storage.get/observe`、`configuration.schema/snapshot/backups`

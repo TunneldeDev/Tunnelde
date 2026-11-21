@@ -552,3 +552,13 @@ is explicit, never inferred from read permissions or get/list names. Full resour
 RPC, provider handles, origin-window dialogs and the remaining ordinary-page
 adapters/acceptance remain required; `nativeWindows: false` remains accurate until those paths are
 integrated and verified.
+
+Committed native views may also use `hosts.write` for
+`hosts.create/update/delete/markUsed/reorder` and `groups.create/update/delete`.
+They reuse host-service validation, transactions, audit, SSH rename and credential
+cleanup; staging cannot write. Actual commit rechecks the original document,
+runtime generation, grants and cancellation without holding origin locks across
+DB waits. `hosts.routes.save` / `hosts.setFields` retain their existing read/write
+grants, revisions and field schemas; general CRUD keeps its original full-replacement
+contract, not new CAS semantics. This admits no import, credential or connection
+creation methods implicitly.

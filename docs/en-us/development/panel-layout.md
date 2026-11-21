@@ -1668,8 +1668,9 @@ Committed native plugin views may call `hosts.routes.save` and `hosts.setFields`
 with the existing `hosts.read` and `hosts.write` grants. These are explicit
 retained effects, never staging-safe calls. Public v1 request/response shapes,
 route revisions (including host incarnation), and plugin-scoped field schema/CAS
-validation are unchanged. This does not admit general host CRUD, credentials,
-imports or SSH creation, and `viewFactories.nativeWindows` remains false.
+validation are unchanged. Host CRUD admission is described separately below;
+credentials, imports and SSH creation are not implicitly admitted, and
+`viewFactories.nativeWindows` remains false.
 
 The dispatcher captures the exact process-local origin before spawning a bounded
 worker. A shared fenced admission loop acquires origin -> policy -> optional
@@ -1687,3 +1688,22 @@ Regression tests exercise real database contention, origin retirement before DB
 unlock, revocation/cancellation, exactly-once final effects, route revisions and
 field package/schema/CAS behavior. These tests do not claim physical drag,
 cross-platform GUI or real SSH/FUSE acceptance.
+
+### Native plugin host and group management
+
+Committed views may use the existing `hosts.write` grant for
+`hosts.create/update/delete/markUsed/reorder` and `groups.create/update/delete`,
+without an additional `hosts.read` requirement or changed wire shapes. They are
+not staging snapshots: restoring targets, wrong documents and retired origins
+cannot mutate. The move fence lasts until actual work settles.
+
+The transport injects write admission into the original `services::hosts` rather
+than duplicating CRUD. An independent four-slot bounded worker rechecks original
+origin, policy, runtime generation and cancellation commit immediately before the
+DB operation, releasing all preceding locks between busy-DB attempts. Original
+transactions retain rollback, route removal and credential lifecycle behavior.
+Only after commit and admission-lock release do SSH rename, audit, credential
+cleanup scheduling and one invalidation execute. Failures neither publish nor
+replay; cancellation after admission stops delivery, not accepted cleanup. This
+adds no new CAS semantics to existing full-replacement updates and admits no
+import, credential or SSH-creation APIs.
