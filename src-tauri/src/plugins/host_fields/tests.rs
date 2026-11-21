@@ -116,7 +116,15 @@ async fn host_field_wait_rechecks_package_before_db_unlock_without_late_write() 
     let writer = tokio::spawn(async move {
         worker::run(move |cancel| {
             entered.send(()).unwrap();
-            request(&plugins, &db, &lease, "hosts.setFields", params, cancel)
+            request(
+                &plugins,
+                &db,
+                &lease,
+                "hosts.setFields",
+                params,
+                cancel,
+                None,
+            )
         })
         .await
     });
@@ -165,7 +173,15 @@ async fn host_field_wait_rechecks_revocation_and_preserves_original_cas() {
     let writer = tokio::spawn(async move {
         worker::run(move |cancel| {
             entered.send(()).unwrap();
-            request(&plugins, &db, &lease, "hosts.setFields", params, cancel)
+            request(
+                &plugins,
+                &db,
+                &lease,
+                "hosts.setFields",
+                params,
+                cancel,
+                None,
+            )
         })
         .await
     });
@@ -212,7 +228,8 @@ async fn host_field_wait_rechecks_revocation_and_preserves_original_cas() {
             &lease,
             "hosts.setFields",
             fixture.params.clone(),
-            &cancel
+            &cancel,
+            None
         )
         .unwrap()
         .document
@@ -227,11 +244,203 @@ async fn host_field_wait_rechecks_revocation_and_preserves_original_cas() {
             &lease,
             "hosts.setFields",
             fixture.params.clone(),
-            &cancel
+            &cancel,
+            None
         )
         .err()
         .unwrap()
         .to_string(),
         "hostFields.conflict"
+    );
+}
+
+struct RetiredOrigin;
+impl crate::services::operations::Authority for RetiredOrigin {
+    fn with_current(&self, _: &mut dyn FnMut() -> AppResult<()>) -> AppResult<()> {
+        Err(AppError::validation("origin.expired"))
+    }
+}
+#[test]
+fn retired_native_fields_origin_cannot_commit_a_valid_original_revision() {
+    let fixture = Fixture::new();
+    let (cancel, _pending) = Cancellation::for_test("cancelled");
+    let error = request(
+        &fixture.plugins,
+        &fixture.db,
+        &fixture.lease,
+        "hosts.setFields",
+        fixture.params.clone(),
+        &cancel,
+        Some(&RetiredOrigin),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.to_string(), "origin.expired");
+    let (cancel, _pending) = Cancellation::for_test("cancelled");
+    let read = request(
+        &fixture.plugins,
+        &fixture.db,
+        &fixture.lease,
+        "hosts.getFields",
+        json!({"hostId":"target"}),
+        &cancel,
+        None,
+    )
+    .unwrap();
+    assert_eq!(read.document.revision, 0);
+}
+
+#[derive(Default)]
+struct NativeOrigin {
+    retired: std::sync::Mutex<bool>,
+    attempts: std::sync::atomic::AtomicUsize,
+}
+impl crate::services::operations::Authority for NativeOrigin {
+    fn with_current(&self, effect: &mut dyn FnMut() -> AppResult<()>) -> AppResult<()> {
+        let retired = self.retired.lock().unwrap();
+        if *retired {
+            return Err(AppError::validation("origin.expired"));
+        }
+        self.attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        effect()
+    }
+}
+#[tokio::test]
+async fn native_fields_origin_can_retire_while_database_is_occupied() {
+    let fixture = Fixture::new();
+    let held = Held::new(fixture.db.clone()).await;
+    let origin = Arc::new(NativeOrigin::default());
+    let native = origin.clone();
+    let (plugins, db, lease, params) = (
+        fixture.plugins.clone(),
+        fixture.db.clone(),
+        fixture.lease.clone(),
+        fixture.params.clone(),
+    );
+    let writer = tokio::spawn(async move {
+        worker::run(move |cancel| {
+            request(
+                &plugins,
+                &db,
+                &lease,
+                "hosts.setFields",
+                params,
+                cancel,
+                Some(native.as_ref()),
+            )
+        })
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while origin.attempts.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    *origin.retired.lock().unwrap() = true;
+    let error = tokio::time::timeout(Duration::from_secs(1), writer)
+        .await
+        .unwrap()
+        .unwrap()
+        .err()
+        .unwrap();
+    assert_eq!(error.to_string(), "origin.expired");
+    drop(held);
+    let (cancel, _pending) = Cancellation::for_test("cancelled");
+    let snapshot = request(
+        &fixture.plugins,
+        &fixture.db,
+        &fixture.lease,
+        "hosts.getFields",
+        json!({"hostId":"target"}),
+        &cancel,
+        None,
+    )
+    .unwrap();
+    assert_eq!(snapshot.document.revision, 0);
+}
+#[test]
+fn native_fields_writes_preserve_plugin_schema_and_original_cas() {
+    let fixture = Fixture::new();
+    let origin = NativeOrigin::default();
+    let (cancel, _pending) = Cancellation::for_test("cancelled");
+    let snapshot = request(
+        &fixture.plugins,
+        &fixture.db,
+        &fixture.lease,
+        "hosts.setFields",
+        fixture.params.clone(),
+        &cancel,
+        Some(&origin),
+    )
+    .unwrap();
+    assert_eq!(snapshot.document.revision, 1);
+    assert_eq!(snapshot.document.values.get("owner"), Some(&json!("Alice")));
+    let (cancel, _pending) = Cancellation::for_test("cancelled");
+    let error = request(
+        &fixture.plugins,
+        &fixture.db,
+        &fixture.lease,
+        "hosts.setFields",
+        fixture.params.clone(),
+        &cancel,
+        Some(&origin),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.to_string(), "hostFields.conflict");
+}
+
+#[test]
+fn native_origin_does_not_supply_a_missing_host_write_grant() {
+    let fixture = Fixture::new();
+    let declared = vec!["hosts.read".to_owned(), "hosts.write".to_owned()];
+    fixture
+        .plugins
+        .security
+        .set_permissions(
+            &fixture.db,
+            "fields",
+            fixture.lease.fingerprint.clone(),
+            &declared,
+            Some(vec!["hosts.read".into()]),
+        )
+        .unwrap();
+    let lease = fixture
+        .plugins
+        .security
+        .lease("fields", fixture.lease.fingerprint.clone(), declared)
+        .unwrap();
+    let origin = NativeOrigin::default();
+    let (cancel, _pending) = Cancellation::for_test("cancelled");
+    let error = request(
+        &fixture.plugins,
+        &fixture.db,
+        &lease,
+        "hosts.setFields",
+        fixture.params.clone(),
+        &cancel,
+        Some(&origin),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.to_string(), "pluginSecurity.permissionDenied");
+    let (cancel, _pending) = Cancellation::for_test("cancelled");
+    assert_eq!(
+        request(
+            &fixture.plugins,
+            &fixture.db,
+            &lease,
+            "hosts.getFields",
+            json!({"hostId":"target"}),
+            &cancel,
+            None
+        )
+        .unwrap()
+        .document
+        .revision,
+        0
     );
 }
