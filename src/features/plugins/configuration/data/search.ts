@@ -4,7 +4,7 @@ import type { ConfigurationField } from "@/lib/extensions/contracts/configuratio
 
 export const configurationFilterKeys = ["plugin", "group", "id", "section", "is"];
 export function matchingConfigurationFields(
-  plugin: PluginInfo,
+  plugin: Pick<PluginInfo, "id" | "name" | "configuration">,
   query: string,
 ): ConfigurationField[] {
   const search = parseSearchQuery(query, configurationFilterKeys);
