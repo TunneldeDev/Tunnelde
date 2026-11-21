@@ -1,4 +1,5 @@
 import { plugin as installedPlugin } from "../fixtures/plugins";
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,6 +28,7 @@ vi.mock("@/features/plugins/PluginChat", () => ({
 import "@/i18n/i18n";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { usePlugins } from "@/store/plugins";
+import { installDeclarativeViewOwnerRegistry } from "@/lib/plugins/views/ownerRegistry";
 beforeEach(() => {
   nativeMock.mockReturnValue(false);
   authorizeMock.mockReset().mockResolvedValue(true);
@@ -176,6 +178,42 @@ describe("PluginViewPage", () => {
         "boot:1",
       ),
     );
+  });
+
+  it("restores the retained display without rerendering the plugin body after remount", async () => {
+    apiMock.pluginRenderView.mockResolvedValue({
+      blocks: [{ type: "text", text: "Retained body" }],
+    });
+    const stop = installDeclarativeViewOwnerRegistry();
+    const page = render(<PluginViewPage pluginId="example" viewId="main" />);
+    expect(await screen.findByText("Retained body")).toBeTruthy();
+    page.unmount();
+    render(<PluginViewPage pluginId="example" viewId="main" />);
+    expect(screen.getByText("Retained body")).toBeTruthy();
+    expect(apiMock.pluginRenderView).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it("keeps a live owner after StrictMode effect replay without activating another plugin", async () => {
+    apiMock.pluginRenderView.mockResolvedValue({
+      blocks: [
+        {
+          type: "form",
+          id: "strict",
+          fields: [],
+          actions: [{ id: "run", label: "Run strict", command: "strict-command" }],
+        },
+      ],
+    });
+    apiMock.pluginRun.mockClear().mockResolvedValue({ text: "Strict result" });
+    render(
+      <StrictMode>
+        <PluginViewPage pluginId="example" viewId="main" />
+      </StrictMode>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Run strict" }));
+    expect(await screen.findByLabelText("Result")).toHaveProperty("value", "Strict result");
+    expect(apiMock.pluginRun).toHaveBeenCalledTimes(1);
   });
 
   it("renders heading, key/value and table blocks", async () => {

@@ -6,6 +6,27 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.3.1](https://github.com/TunneldeDev/Tunnelde/compare/v2.3.0...v2.3.1) - 2026-11-21
+
+### 更新概览 | Highlights
+
+- **plugins:** bind declarative views to their execution owner
+- **plugins:** retain declarative view owners in the coordinator
+
+<details open>
+<summary>详细变更 | Details (2)</summary>
+
+### 改进 | Improved
+
+- **plugins:** bind declarative views to their execution owner ([#501](https://github.com/TunneldeDev/Tunnelde/pull/501)) @quyansiyuanwang
+- **plugins:** retain declarative view owners in the coordinator ([#503](https://github.com/TunneldeDev/Tunnelde/pull/503)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.3.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.2.0...v2.3.0) - 2026-11-21
 
 ### 更新概览 | Highlights
