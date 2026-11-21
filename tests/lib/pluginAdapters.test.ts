@@ -64,3 +64,53 @@ it("withdraws factory approvals when selection no longer advertises a native can
   expect(client.unregisterAdapter).toHaveBeenCalledExactlyOnceWith(descriptor);
   expect(client.registerAdapter).not.toHaveBeenCalled();
 });
+it("admits factoryless JSON views through a separate exact-runtime client", async () => {
+  const native = { registerAdapter: vi.fn(), unregisterAdapter: vi.fn() };
+  const declarative = {
+    registerAdapter: vi.fn(async () => ({ panelId: "plugin:sample:blocks", renderer: "json" })),
+    unregisterAdapter: vi.fn(async () => true),
+  };
+  const json = {
+    panelId: "plugin:sample:blocks",
+    revision: "json-approval",
+    pluginId: "sample",
+    runtimeId: "r2",
+    generation: 5,
+    viewId: "blocks",
+    title: "Blocks",
+    allowFloating: true,
+    renderer: "json" as const,
+  };
+  const candidate = {
+    panelId: json.panelId,
+    pluginId: json.pluginId,
+    runtimeId: json.runtimeId,
+    viewId: json.viewId,
+  };
+  await synchronizePluginAdapters(
+    native,
+    {
+      ...snapshot([]),
+      declarativeViews: [],
+      panels: [{ panelId: json.panelId, windowId: "main", generation: 1 }],
+    },
+    [],
+    [candidate],
+    declarative,
+  );
+  expect(declarative.registerAdapter).toHaveBeenCalledExactlyOnceWith("sample", "r2", "blocks");
+  expect(native.registerAdapter).not.toHaveBeenCalled();
+  await synchronizePluginAdapters(
+    native,
+    {
+      ...snapshot([]),
+      declarativeViews: [json],
+      panels: [{ panelId: json.panelId, windowId: "main", generation: 1 }],
+    },
+    [],
+    [{ ...candidate, runtimeId: "r3" }],
+    declarative,
+  );
+  expect(declarative.unregisterAdapter).toHaveBeenCalledWith(json);
+  expect(declarative.registerAdapter).toHaveBeenLastCalledWith("sample", "r3", "blocks");
+});

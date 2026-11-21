@@ -382,6 +382,9 @@ fn gateway_and_target_dtos_reject_rogue_fields_and_raw_application_commands() {
         json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files","activation":"forged"}),
         json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files","permissions":["ui.trusted"]}),
         json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files","allowFloating":true}),
+        json!({"action":"registerDeclarativeAdapter","pluginId":"sample","runtimeId":"r","viewId":"files","allowFloating":true}),
+        json!({"action":"openDeclarative","target":{"kind":"staged","id":"offer"},"pluginId":"sample","runtimeId":"r","viewId":"files","activation":"forged"}),
+        json!({"action":"runDeclarative","target":{"kind":"staged","id":"offer"},"command":"run","input":{},"permissions":["ui.trusted"]}),
         json!({"action":"unregisterAdapter","panelId":"plugin:sample:files","runtimeId":"r","generation":1,"revision":"approval","windowId":"main"}),
     ] {
         assert!(serde_json::from_value::<Request>(value).is_err());
@@ -393,6 +396,10 @@ fn gateway_and_target_dtos_reject_rogue_fields_and_raw_application_commands() {
     assert!(serde_json::from_value::<Request>(json!({"action":"prepareCall","token":"x"})).is_ok());
     assert!(serde_json::from_value::<Request>(
         json!({"action":"registerAdapter","pluginId":"sample","runtimeId":"r","viewId":"files"})
+    )
+    .is_ok());
+    assert!(serde_json::from_value::<Request>(
+        json!({"action":"registerDeclarativeAdapter","pluginId":"sample","runtimeId":"r","viewId":"files"})
     )
     .is_ok());
     assert!(serde_json::from_value::<Request>(json!({"action":"unregisterAdapter","panelId":"plugin:sample:files","runtimeId":"r","generation":1,"revision":"approval"})).is_ok());

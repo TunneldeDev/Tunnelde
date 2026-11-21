@@ -1476,7 +1476,8 @@
       "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API.",
       "viewFactoryUnavailable": "This plugin does not provide an independent view factory. Keep this view in its original window.",
       "invalidViewFactory": "The plugin returned an invalid view instance. Check its view factory and state methods.",
-      "viewStateUnavailable": "This view cannot preserve its state. Keep it in its current window or reopen it without state."
+      "viewStateUnavailable": "This view cannot preserve its state. Keep it in its current window or reopen it without state.",
+      "adapterChanged": "This plugin view changed while it was being attached. Reopen it from the current window."
     },
     "fileBrowser": {
       "busy": "This file panel is loading or unavailable. Wait for it to finish.",

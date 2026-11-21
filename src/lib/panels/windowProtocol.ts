@@ -27,7 +27,8 @@ export interface PanelTransferOffer {
   lease: PanelLease;
   targetWindow: string;
 }
-/** Whitelisted module/display identity, never activation credentials or grants. */
+/** Whitelisted display identity, never activation credentials or grants. A
+ * factoryless declarative view has no module entry or SDK identity. */
 export interface NativePluginViewDescriptor {
   panelId: string;
   /** Stale-approval marker, not a bearer credential. */
@@ -40,6 +41,20 @@ export interface NativePluginViewDescriptor {
   sdkVersion: string;
   title: string;
   allowFloating: boolean;
+  renderer?: "frontend" | "json";
+}
+/** Host-rendered JSON view identity. This is not a frontend module and never
+ * carries activation credentials, permissions, entry points or an SDK. */
+export interface NativeDeclarativeViewDescriptor {
+  panelId: string;
+  revision: string;
+  pluginId: string;
+  runtimeId: string;
+  generation: number;
+  viewId: string;
+  title: string;
+  allowFloating: boolean;
+  renderer: "json";
 }
 /** Selected forwarding module identity; no activation token or write grant. */
 export interface NativeForwardingProviderDescriptor {
@@ -58,6 +73,7 @@ export interface NativePanelSnapshot {
   filePages?: Array<{ panelId: string; allowMove: boolean }>;
   terminalViews?: Array<{ panelId: string; allowMove: boolean }>;
   pluginViews?: NativePluginViewDescriptor[];
+  declarativeViews?: NativeDeclarativeViewDescriptor[];
   /** Unknown effects after coordinator document loss; counts only, no requests. */
   interruptions?: ReadonlyArray<{ panelId: string; count: number }>;
   windows: NativePanelWindow[];

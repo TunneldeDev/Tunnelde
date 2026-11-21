@@ -16,6 +16,7 @@ import "@/features/sftp/preview/previewPanel.css";
 import { createWindowProviderOwner } from "@/lib/panels/windowProviderOwner";
 import { useLayoutEffect } from "react";
 import { NativePluginPanel } from "@/components/layout/NativePluginPanel";
+import { DeclarativeNativeView } from "@/features/plugins/DeclarativeNativeView";
 import { WindowForwardingPanel } from "@/features/forwarding/components/WindowForwardingPanel";
 import { disconnectConnectionBatch } from "@/lib/session/connectionBatch";
 import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
@@ -73,7 +74,7 @@ import "./satellite.css";
 
 function PluginView(props: NativeViewProps) {
   const model = useNativeReadModel<WindowModelAppearance>(props);
-  if (!model || !props.record.plugin) return null;
+  if (!model || (!props.record.plugin && !props.record.declarative)) return null;
   return (
     <NativePanelView panelId={props.record.panelId}>
       <WorkbenchPanel
@@ -81,7 +82,15 @@ function PluginView(props: NativeViewProps) {
         location="workspace"
         visible={!props.record.staged}
       >
-        <NativePluginPanel panelId={props.record.panelId} visible={!props.record.staged} />
+        {props.record.declarative ? (
+          <DeclarativeNativeView
+            client={props.client}
+            record={props.record}
+            visible={!props.record.staged}
+          />
+        ) : (
+          <NativePluginPanel panelId={props.record.panelId} visible={!props.record.staged} />
+        )}
       </WorkbenchPanel>
     </NativePanelView>
   );
@@ -484,7 +493,7 @@ export function SatelliteApp() {
               <ForwardingView client={client} record={record} presented={presented} />
             ) : record.panelId === "connections" ? (
               <ConnectionView client={client} record={record} presented={presented} />
-            ) : record.plugin ? (
+            ) : record.plugin || record.declarative ? (
               <PluginView client={client} record={record} presented={presented} />
             ) : null,
           }))}

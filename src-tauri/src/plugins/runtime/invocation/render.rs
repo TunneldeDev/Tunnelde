@@ -18,11 +18,21 @@ impl PluginsManager {
         runtime_id: &str,
     ) -> AppResult<Value> {
         let lease = self.invocation_lease(id, runtime_id)?;
+        self.render_bound_view(id, view, locale, &lease).await
+    }
+
+    pub(crate) async fn render_bound_view(
+        &self,
+        id: &str,
+        view: &str,
+        locale: Option<&str>,
+        lease: &Lease,
+    ) -> AppResult<Value> {
         self.security
-            .wait_ready(&lease, tokio::time::Instant::now() + super::READY_TIMEOUT)
+            .wait_ready(lease, tokio::time::Instant::now() + super::READY_TIMEOUT)
             .await?;
         self.security
-            .guard_ready(&lease, self.render_bound(id, view, locale, &lease))
+            .guard_ready(lease, self.render_bound(id, view, locale, lease))
             .await
     }
 
