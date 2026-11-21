@@ -69,7 +69,23 @@ fn policy(method: &str) -> Option<CallPolicy> {
         // retained bounded DB workers, routes/fields use authorized retained
         // admission workers, and discovery snapshots only clone in-memory data.
         // No default writes, migrations, credentials, SSH or OS prompts.
-        "hosts.snapshot"
+        "app.info"
+        | "settings.get"
+        | "history.list"
+        | "forwards.list"
+        | "forwards.groups.list"
+        | "forwards.automation.list"
+        | "tasks.list"
+        | "tasks.status"
+        | "tasks.readOutput"
+        | "profiles.catalogue"
+        | "profiles.observe"
+        | "profiles.read"
+        | "hosts.transfer.export"
+        | "hosts.transfer.preview"
+        | "storage.locations.observe"
+        | "storage.recovery.observe"
+        | "hosts.snapshot"
         | "hosts.sourcesSnapshot"
         | "hosts.routes.get"
         | "hosts.routes.observe"
@@ -147,7 +163,38 @@ fn policy(method: &str) -> Option<CallPolicy> {
         | "workspace.panels.moveToWindow"
         | "workspace.windows.create"
         | "workspace.windows.close" => Some(CallPolicy::OwnedData),
-        "preferences.update"
+        "app.openExternal"
+        | "clipboard.readText"
+        | "clipboard.writeText"
+        | "monitor.system"
+        | "monitor.stats"
+        | "monitor.processes"
+        | "history.record"
+        | "history.delete"
+        | "history.clear"
+        | "forwards.save"
+        | "forwards.remove"
+        | "forwards.automation.save"
+        | "forwards.groups.save"
+        | "forwards.groups.remove"
+        | "forwards.move"
+        | "statusBar.set"
+        | "statusBar.remove"
+        | "tabBar.set"
+        | "tabBar.remove"
+        | "hostList.setColumn"
+        | "hostList.removeColumn"
+        | "hostList.setDecorations"
+        | "hostList.removeDecorations"
+        | "fileList.setHighlights"
+        | "fileList.removeHighlights"
+        | "hosts.setSource"
+        | "hosts.removeSource"
+        | "hosts.sshConfig.preview"
+        | "hosts.sshConfig.import"
+        | "hosts.transfer.apply"
+        | "settings.update"
+        | "preferences.update"
         | "storage.set"
         | "storage.delete"
         | "configuration.update"
@@ -183,6 +230,22 @@ mod workspace_and_file_tests {
             "fileBrowser.read",
             "filePreview.observe",
             "filePreview.providers",
+            "app.info",
+            "settings.get",
+            "history.list",
+            "forwards.list",
+            "forwards.groups.list",
+            "forwards.automation.list",
+            "tasks.list",
+            "tasks.status",
+            "tasks.readOutput",
+            "profiles.catalogue",
+            "profiles.observe",
+            "profiles.read",
+            "hosts.transfer.export",
+            "hosts.transfer.preview",
+            "storage.locations.observe",
+            "storage.recovery.observe",
         ] {
             assert!(
                 crate::plugins::api::method_info(method).is_some(),
@@ -229,6 +292,37 @@ mod workspace_and_file_tests {
             "workspace.panels.moveToWindow",
             "workspace.windows.create",
             "workspace.windows.close",
+            "app.openExternal",
+            "clipboard.readText",
+            "clipboard.writeText",
+            "monitor.system",
+            "monitor.stats",
+            "monitor.processes",
+            "history.record",
+            "history.delete",
+            "history.clear",
+            "forwards.save",
+            "forwards.remove",
+            "forwards.automation.save",
+            "forwards.groups.save",
+            "forwards.groups.remove",
+            "forwards.move",
+            "statusBar.set",
+            "statusBar.remove",
+            "tabBar.set",
+            "tabBar.remove",
+            "hostList.setColumn",
+            "hostList.removeColumn",
+            "hostList.setDecorations",
+            "hostList.removeDecorations",
+            "fileList.setHighlights",
+            "fileList.removeHighlights",
+            "hosts.setSource",
+            "hosts.removeSource",
+            "hosts.sshConfig.preview",
+            "hosts.sshConfig.import",
+            "hosts.transfer.apply",
+            "settings.update",
         ] {
             assert!(
                 crate::plugins::api::method_info(method).is_some(),
@@ -246,6 +340,7 @@ mod workspace_and_file_tests {
             "workspace.openPage",
             "workspace.windows.unknown",
             "sessions.connect.extra",
+            "monitor.kill",
         ] {
             assert!(call_policy(method).is_none(), "{method}");
         }
@@ -345,15 +440,12 @@ mod owned_data_tests {
         // no prefix, permission, or get/observe heuristic widens admission.
         for method in [
             "storage.locations.schedule",
-            "storage.locations.observe",
             "storage.recovery.request",
-            "storage.recovery.observe",
             "storage.get.extra",
             "configuration.observe",
             "configuration.update.extra",
             "secrets.getOther",
             "secrets.get\0",
-            "settings.get",
         ] {
             assert!(call_policy(method).is_none(), "{method}");
         }
@@ -386,15 +478,8 @@ mod host_metadata_tests {
         for method in [
             "hosts.snapshot.extra",
             "hosts.snapshot\0",
-            "hosts.sshConfig.preview",
-            "hosts.sshConfig.import",
-            "hosts.transfer.export",
-            "hosts.transfer.preview",
-            "hosts.transfer.apply",
-            "hosts.setSource",
-            "hosts.removeSource",
-            "hostList.setColumn",
-            "hostList.setDecorations",
+            "hosts.sshConfig.unknown",
+            "hostList.unknown",
         ] {
             assert!(call_policy(method).is_none(), "{method}");
         }
@@ -416,12 +501,7 @@ mod preferences_tests {
         }
         let write = call_policy("preferences.update").unwrap();
         assert!(!write.staged() && write.retained() && write.blocks_move());
-        for method in [
-            "settings.get",
-            "settings.update",
-            "preferences.snapshot.extra",
-            "preferences.import",
-        ] {
+        for method in ["preferences.snapshot.extra", "preferences.import"] {
             assert!(call_policy(method).is_none());
         }
     }

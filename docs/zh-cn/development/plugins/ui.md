@@ -312,6 +312,18 @@ Bus 副作用保留执行屏障；`bus.receive` 是可取消的被动等待，�
 再次激活单例；Bus 归属于获准运行的插件代次。每个运行时仍最多只有一个接收者，
 后台订阅通常应留在 `activate` 中，而不是由每个视图重复启动。
 
+原生视图白名单还包含经过审计的主机迁移与 SSH Config 导入方法：
+`hosts.transfer.export/preview` 是可在 staged 阶段使用的只读快照；
+`hosts.sshConfig.preview` 是保留生命周期的读取；`hosts.sshConfig.import`
+和 `hosts.transfer.apply` 仅限已提交视图，并把原始窗口/文档围栏保留到最终
+数据库事务和发布完成。这些调用不导出或写入凭据。
+
+命令历史、端口转发规则/组/自动启动元数据、设置、剪贴板以及显式外部链接
+属于仅限已提交视图的原生操作。每个写操作都会在真正提交前重新核对原始窗口、
+文档和租约；设置发布与剪贴板系统写入会保持该围栏直到实际结算。staged
+目标不能调用这些方法。远端进程终止仍不在本批白名单内，因为其 SSH 派发
+目前还不能在真实效果边界完成围栏。
+
 已提交原生视图也可使用 `hosts.write` 调用 `hosts.create/update/delete/markUsed/reorder`
 与 `groups.create/update/delete`。仍复用主机服务的校验、事务、审计、SSH 名称同步与
 凭据清理；暂存阶段禁止写入。实际提交前检查原文档、运行时代次、授权与取消；等待

@@ -244,13 +244,20 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
         permissions: context.permissions.clone(),
         generation: context.generation,
     };
-    let result = apply(
-        &state.plugins.host_sources,
-        lease,
-        method,
-        params,
-        |lease| authorize(&context.app, lease),
-    )?;
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let mutate = || {
+        apply(
+            &state.plugins.host_sources,
+            lease,
+            method,
+            params,
+            |lease| authorize(&context.app, lease),
+        )
+    };
+    let result = match &origin {
+        Some(origin) => origin.with_current(mutate)?,
+        None => mutate()?,
+    };
     let action = match method {
         "hosts.setSource" => "hosts.setSource",
         "hosts.removeSource" => "hosts.removeSource",

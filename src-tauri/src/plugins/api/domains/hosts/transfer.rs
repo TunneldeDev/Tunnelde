@@ -20,17 +20,27 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
     let lease = super::lease(context);
     if method == "hosts.transfer.apply" {
         let request: transfer::ImportRequest = field(&params, "request")?;
+        let origin = crate::platform::panel_windows::plugin_views::origin::current();
         // Cancellation/revocation while queued must not become a late import.
         let _commit = state
             .plugins
             .security
             .guard(&lease, async { Ok(state.settings_commit.lock().await) })
             .await?;
-        return state.plugins.security.with_authorized(&lease, WRITE, || {
-            let imported = state.db.with(|conn| transfer::apply_at(conn, request))?;
-            transfer::files::publish(&context.app, &state, &imported)?;
-            encode(imported)
-        });
+        return state.plugins.security.with_authorized_fenced_database_then(
+            &state.db,
+            &lease,
+            WRITE,
+            || Ok(()),
+            origin
+                .as_ref()
+                .map(|origin| origin as &dyn crate::services::operations::Authority),
+            |conn| transfer::apply_at(conn, request),
+            |imported| {
+                transfer::files::publish(&context.app, &state, &imported)?;
+                encode(imported)
+            },
+        );
     }
     state.plugins.security.with_authorized(&lease, READ, || {
         state.db.with(|conn| match method {

@@ -162,7 +162,7 @@ impl PluginSecurity {
     /// Short final database transaction under exact origin -> policy -> DB.
     /// Unlike fencing the older blocking database loop, this never retains a
     /// native ownership mutex while waiting for another database consumer.
-    pub(in crate::plugins) fn with_authorized_fenced_database<T>(
+    pub(crate) fn with_authorized_fenced_database<T>(
         &self,
         db: &Database,
         lease: &Lease,

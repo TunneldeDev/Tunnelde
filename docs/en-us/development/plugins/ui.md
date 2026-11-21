@@ -553,6 +553,21 @@ RPC, provider handles, origin-window dialogs and the remaining ordinary-page
 adapters/acceptance remain required; `nativeWindows: false` remains accurate until those paths are
 integrated and verified.
 
+The native-view allowlist also includes audited host transfer and SSH-config
+import methods. `hosts.transfer.export/preview` are staged-safe read-only
+snapshots. `hosts.sshConfig.preview` is a retained read; `hosts.sshConfig.import`
+and `hosts.transfer.apply` are committed-only and fence the exact source document
+through their final database transaction and publication. Credentials are never
+included or written by these calls.
+
+Command history, forwarding rule/group/automation metadata, settings, clipboard
+and explicit external-link effects are committed-only native operations. Each
+mutation rechecks the original window/document/lease immediately around its real
+commit; settings publication and clipboard OS writes retain the same fence until
+settlement. Staged destinations cannot use them. Remote process termination is
+still excluded because its SSH dispatch cannot yet be fenced at the actual
+effect boundary.
+
 Committed native views may also use `hosts.write` for
 `hosts.create/update/delete/markUsed/reorder` and `groups.create/update/delete`.
 They reuse host-service validation, transactions, audit, SSH rename and credential

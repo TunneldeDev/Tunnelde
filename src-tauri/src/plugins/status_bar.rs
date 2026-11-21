@@ -171,14 +171,21 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
         permissions: context.permissions.clone(),
         generation: context.generation,
     };
-    let result = apply(
-        &state.plugins.status_bar,
-        lease,
-        method,
-        params,
-        |command| state.plugins.status_bar_command(&context.id, command),
-        |lease| authorize(app, lease),
-    )?;
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let mutate = || {
+        apply(
+            &state.plugins.status_bar,
+            lease,
+            method,
+            params,
+            |command| state.plugins.status_bar_command(&context.id, command),
+            |lease| authorize(app, lease),
+        )
+    };
+    let result = match &origin {
+        Some(origin) => origin.with_current(mutate)?,
+        None => mutate()?,
+    };
     emit(app);
     Ok(result)
 }
