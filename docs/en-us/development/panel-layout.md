@@ -1575,3 +1575,12 @@ state are capture-ready; rejected saves retain the editor. Command-scoped writes
 merge with the owner's current preferences and reject vanished/stale bindings
 instead of replacing unrelated shortcuts. Rule presentation helpers are pure,
 while routing/actions remain main-owned and retain their existing exports.
+
+Interface-provider selectors, the mount host-detail contributor selector and About
+also share owner-independent renderers. Provider views receive only eligible
+choice metadata, never the singleton runtime or permission authority. Activation,
+fingerprint checks, live workspace persistence and current-owner selection
+merges stay in main. Provider activation blocks background release; disclosure
+and local-license dialog state can be captured. About external links use named
+owner actions, not arbitrary URLs. Plugin security/runtime/configuration sections
+and the complete native Settings adapter still remain to be implemented.
