@@ -35,6 +35,8 @@ impl Ownership {
         let limit = if self.editor_page_registered(panel_id) {
             // At most two 2MiB UTF-8 buffers with worst-case JSON escaping.
             32 * 1024 * 1024
+        } else if self.settings_page_registered(panel_id) {
+            4 * 1024 * 1024
         } else if panel_id == "filePreview" {
             16 * 1024 * 1024
         } else if panel_id == "output" {

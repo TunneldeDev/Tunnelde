@@ -420,6 +420,7 @@ it("adapts factory-only async providers without opting synchronous-slot provider
     views: [
       { ...plugin.views[0]!, provider: "forwarding" },
       { ...plugin.views[0]!, id: "hosts", provider: "hostList" },
+      { ...plugin.views[0]!, id: "preferences", provider: "preferences" },
       { ...plugin.views[0]!, id: "layout", provider: "workbench" },
       { ...plugin.views[0]!, id: "registered", provider: "forwarding" },
     ],
@@ -439,6 +440,9 @@ it("adapts factory-only async providers without opting synchronous-slot provider
   const Hosts = f.runtime.view("custom", "hosts")!;
   expect(Hosts).toBeTypeOf("function");
   expect(f.runtime.isFactoryView("custom", "hosts", Hosts)).toBe(true);
+  const Preferences = f.runtime.view("custom", "preferences")!;
+  expect(Preferences).toBeTypeOf("function");
+  expect(f.runtime.isFactoryView("custom", "preferences", Preferences)).toBe(true);
   expect(f.runtime.factoryOwner("custom", "main")).toBeUndefined();
   expect(factory).not.toHaveBeenCalled();
   expect(f.transport.openView).not.toHaveBeenCalled();

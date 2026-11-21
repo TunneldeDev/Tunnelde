@@ -1,0 +1,429 @@
+import { FolderOpen, RefreshCw, RotateCcw, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Button, IconButton } from "@/components/ui/form/Button";
+import { Switch } from "@/components/ui/form/Field";
+import { Dialog } from "@/components/ui/overlay/Dialog";
+import { translateError } from "@/lib/api/errors";
+import {
+  displayStoragePath,
+  sameStoragePath,
+  storageChild,
+  type StorageCategory,
+} from "@/lib/api/storage";
+import { formatBytes } from "@/lib/text/format";
+import "../storageSettings.css";
+import type { StorageChange, StorageStatus } from "@/lib/api/storage";
+import type { StorageDraftChange } from "../data/storageDraft";
+import type { SettingsControlState } from "./controlState";
+
+export interface StorageSettingsData {
+  status: StorageStatus | null;
+  loading: boolean;
+  busy: boolean;
+  error: string | null;
+  draft: StorageChange[];
+  nativeAvailable: boolean;
+}
+export interface StorageSettingsServices {
+  useData(): StorageSettingsData;
+  useViewState: SettingsControlState;
+  useBusyGuard(busy: boolean): void;
+  load(): Promise<void>;
+  changeDraft(change: StorageDraftChange): void;
+  schedule(changes: StorageChange[]): Promise<boolean>;
+  cancel(): Promise<boolean>;
+  pick(): Promise<string | null>;
+  open(category: StorageCategory): Promise<void>;
+  reviewRestart(): void;
+  notify(message: string, kind: "error"): void;
+}
+export function StorageSettingsView({ services }: { services: StorageSettingsServices }) {
+  const { t, i18n } = useTranslation();
+  const { status, loading, busy, error, draft, nativeAvailable } = services.useData();
+  const { load, schedule, cancel, useViewState, useBusyGuard } = services;
+  const storageError = (message: string) =>
+    i18n.exists(message) ? t(message as "storage.invalidPlan") : message;
+  const [selected, setSelected] = useViewState<StorageCategory[]>("settings:storage:selected", []);
+  const [picking, setPicking] = useState(false);
+  const [reviewing, setReviewing] = useViewState("settings:storage:reviewing", false);
+  const [recoveryOpen, setRecoveryOpen] = useViewState("settings:storage:recovery", false);
+  useBusyGuard(picking || busy || loading);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const disabled = busy || loading || picking || !nativeAvailable;
+  const locked = disabled || !!status?.pending;
+  const locations = status?.locations ?? [];
+  const cancelling = status?.pending?.action === "cancel";
+  const restartRequested = !!status?.pending?.restartRequested;
+  const selectable = locations.filter((location) => !location.overridden);
+  const canReset = (location: (typeof locations)[number]) =>
+    !location.overridden &&
+    !sameStoragePath(
+      draft.find((item) => item.category === location.category)?.target ?? location.path,
+      location.defaultPath,
+    );
+  const reset = (categories: StorageCategory[]) => {
+    if (locked) return;
+    const resetting = selectable.filter((location) => categories.includes(location.category));
+    services.changeDraft({
+      kind: "merge",
+      remove: resetting.map((location) => location.category),
+      changes: resetting
+        .filter((location) => !sameStoragePath(location.path, location.defaultPath))
+        .map((location) => ({
+          category: location.category,
+          target: location.defaultPath,
+          migrate: true,
+        })),
+    });
+  };
+  const pick = async (categories: StorageCategory[], batch: boolean) => {
+    if (locked || !categories.length) return;
+    setPicking(true);
+    try {
+      const parent = await services.pick();
+      if (parent) {
+        const changes = categories.map((category) => ({
+          category,
+          target: batch ? storageChild(parent, category) : parent,
+          migrate: true,
+        }));
+        services.changeDraft({ kind: "merge", remove: categories, changes });
+      }
+    } catch (failure) {
+      services.notify(translateError(failure), "error");
+    } finally {
+      setPicking(false);
+    }
+  };
+  return (
+    <div className="storage-settings">
+      <p className="settings-row__hint">{t("storage.description")}</p>
+      <div className="storage-settings__toolbar">
+        <label className="storage-settings__check">
+          <input
+            type="checkbox"
+            disabled={locked || !selectable.length}
+            checked={
+              !!selectable.length &&
+              selectable.every((location) => selected.includes(location.category))
+            }
+            onChange={(event) =>
+              setSelected(
+                event.target.checked ? selectable.map((location) => location.category) : [],
+              )
+            }
+          />
+          {t("storage.selectAll")}
+        </label>
+        <Button
+          size="sm"
+          disabled={locked || !selected.length}
+          leading={<FolderOpen size={14} />}
+          onClick={() => void pick(selected, true)}
+        >
+          {t("storage.batchChoose", { count: selected.length })}
+        </Button>
+        <Button
+          size="sm"
+          disabled={
+            locked ||
+            !selectable.some(
+              (location) => selected.includes(location.category) && canReset(location),
+            )
+          }
+          leading={<RotateCcw size={14} />}
+          onClick={() => reset(selected)}
+        >
+          {t("storage.batchReset", { count: selected.length })}
+        </Button>
+        <IconButton
+          label={t("common.refresh")}
+          size="sm"
+          disabled={disabled}
+          onClick={() => void load()}
+        >
+          <RefreshCw size={14} />
+        </IconButton>
+      </div>
+      {error ? (
+        <p className="settings-message is-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {status?.lastError ? (
+        <p className="settings-message is-error" role="alert">
+          {t(
+            restartRequested
+              ? "storage.recovery.previousError"
+              : cancelling
+                ? "storage.cancellationFailed"
+                : "storage.migrationFailed",
+          )}{" "}
+          {storageError(status.lastError)}
+        </p>
+      ) : null}
+      {loading && !status ? (
+        <p role="status" className="settings-row__hint">
+          {t("common.loading")}
+        </p>
+      ) : null}
+      {status?.pending ? (
+        <div className="storage-settings__pending" role="status">
+          <strong>
+            {t(
+              restartRequested
+                ? "storage.recovery.restartPending"
+                : cancelling
+                  ? "storage.cancellationPending"
+                  : "storage.pending",
+            )}
+          </strong>
+          <p>
+            {t(
+              restartRequested
+                ? cancelling
+                  ? "storage.recovery.cancelAtRestart"
+                  : "storage.recovery.retryAtRestart"
+                : cancelling
+                  ? "storage.cancellationHint"
+                  : "storage.restartHint",
+            )}
+          </p>
+          {restartRequested ? (
+            <Button size="sm" onClick={() => services.reviewRestart()}>
+              {t("storage.recovery.reviewRestart")}
+            </Button>
+          ) : null}
+          <Button size="sm" disabled={disabled} onClick={() => void cancel()}>
+            {t(cancelling ? "storage.retryCancellation" : "storage.cancelPlan")}
+          </Button>
+        </div>
+      ) : null}
+      <div className="storage-settings__locations">
+        {locations.map((location) => {
+          const next =
+            status?.pending?.changes.find((item) => item.category === location.category) ??
+            draft.find((item) => item.category === location.category);
+          return (
+            <div className="storage-settings__location" key={location.category}>
+              <label className="storage-settings__check storage-settings__name">
+                <input
+                  type="checkbox"
+                  disabled={locked || location.overridden}
+                  checked={selected.includes(location.category)}
+                  onChange={(event) =>
+                    setSelected((previous) =>
+                      event.target.checked
+                        ? [...previous, location.category]
+                        : previous.filter((item) => item !== location.category),
+                    )
+                  }
+                />
+                {t(`storage.categories.${location.category}`)}
+              </label>
+              <div className="storage-settings__detail">
+                <p className="settings-row__hint">{t(`storage.hints.${location.category}`)}</p>
+                <code className="storage-settings__path" title={location.path}>
+                  {displayStoragePath(location.path)}
+                </code>
+                <span className="storage-settings__size">
+                  {location.error
+                    ? storageError(location.error)
+                    : t("storage.size", {
+                        size: formatBytes(location.bytes),
+                        count: location.files,
+                      })}
+                </span>
+                {location.overridden ? (
+                  <p className="settings-row__hint">{t("storage.overridden")}</p>
+                ) : null}
+                {next && !cancelling ? (
+                  <div className="storage-settings__next">
+                    <span>{t("storage.nextPath")}</span>
+                    <code className="storage-settings__path" title={next.target}>
+                      {displayStoragePath(next.target)}
+                    </code>
+                    <label className="storage-settings__migrate">
+                      <Switch
+                        label={t("storage.migrateCategory", {
+                          category: t(`storage.categories.${location.category}`),
+                        })}
+                        checked={next.migrate}
+                        disabled={locked}
+                        onChange={(migrate) =>
+                          services.changeDraft({
+                            kind: "migrate",
+                            category: location.category,
+                            migrate,
+                          })
+                        }
+                      />
+                      {t(next.migrate ? "storage.migrate" : "storage.startEmpty")}
+                    </label>
+                    {!status?.pending ? (
+                      <IconButton
+                        size="sm"
+                        label={t("storage.discardCategory", {
+                          category: t(`storage.categories.${location.category}`),
+                        })}
+                        disabled={locked}
+                        onClick={() =>
+                          services.changeDraft({ kind: "remove", categories: [location.category] })
+                        }
+                      >
+                        <X size={13} />
+                      </IconButton>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="storage-settings__actions">
+                <IconButton
+                  label={t("storage.openCategory", {
+                    category: t(`storage.categories.${location.category}`),
+                  })}
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() =>
+                    void services
+                      .open(location.category)
+                      .catch((failure) => services.notify(translateError(failure), "error"))
+                  }
+                >
+                  <FolderOpen size={14} />
+                </IconButton>
+                <Button
+                  size="sm"
+                  disabled={locked || location.overridden}
+                  onClick={() => void pick([location.category], false)}
+                >
+                  {t("storage.change")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={t("storage.resetCategory", {
+                    category: t(`storage.categories.${location.category}`),
+                  })}
+                  title={t("storage.defaultPath", {
+                    path: displayStoragePath(location.defaultPath),
+                  })}
+                  disabled={locked || !canReset(location)}
+                  leading={<RotateCcw size={14} />}
+                  onClick={() => reset([location.category])}
+                >
+                  {t("storage.reset")}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {draft.length && !status?.pending ? (
+        <div className="storage-settings__toolbar">
+          <Button variant="primary" disabled={locked} onClick={() => setReviewing(true)}>
+            {t("storage.review", { count: draft.length })}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={locked}
+            onClick={() => services.changeDraft({ kind: "clear" })}
+          >
+            {t("settings.discardDraft")}
+          </Button>
+        </div>
+      ) : null}
+      {status &&
+      (Object.keys(status.previous).length || Object.keys(status.archives ?? {}).length) ? (
+        <details
+          className="storage-settings__recovery"
+          open={recoveryOpen}
+          onToggle={(event) => setRecoveryOpen(event.currentTarget.open)}
+        >
+          <summary>{t("storage.recoveryCopies")}</summary>
+          <p className="settings-row__hint">{t("storage.keptOriginals")}</p>
+          {Object.entries(status.previous).map(([category, path]) => (
+            <p key={category}>
+              <span>{t(`storage.categories.${category as StorageCategory}`)}</span>
+              <code className="storage-settings__path">{displayStoragePath(path)}</code>
+            </p>
+          ))}
+          {Object.entries(status.archives ?? {}).map(([category, path]) => (
+            <p key={`archive-${category}`}>
+              <span>
+                {t("storage.archivedDefault", {
+                  category: t(`storage.categories.${category as StorageCategory}`),
+                })}
+              </span>
+              <code className="storage-settings__path">{displayStoragePath(path)}</code>
+            </p>
+          ))}
+        </details>
+      ) : null}
+      <p className="settings-row__hint">{t("storage.boundaries")}</p>
+      <Dialog
+        open={reviewing}
+        title={t("storage.reviewTitle")}
+        closeLabel={t("common.close")}
+        width={640}
+        dismissible={!busy}
+        onClose={() => setReviewing(false)}
+        footer={
+          <>
+            <Button disabled={busy} onClick={() => setReviewing(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || !!status?.pending}
+              onClick={() =>
+                void schedule(draft).then((ok) => {
+                  if (ok) {
+                    services.changeDraft({ kind: "clear" });
+                    setReviewing(false);
+                    services.reviewRestart();
+                  }
+                })
+              }
+            >
+              {t("storage.schedule")}
+            </Button>
+          </>
+        }
+      >
+        <p className="settings-row__hint">{t("storage.confirmHint")}</p>
+        <div className="storage-settings__review">
+          {draft.map((item) => (
+            <div key={item.category}>
+              <strong>{t(`storage.categories.${item.category}`)}</strong>
+              <code className="storage-settings__path">
+                {displayStoragePath(
+                  locations.find((location) => location.category === item.category)?.path ?? "",
+                )}
+              </code>
+              <code className="storage-settings__path">→ {displayStoragePath(item.target)}</code>
+              <span className={item.migrate ? "settings-row__hint" : "settings-message is-error"}>
+                {t(item.migrate ? "storage.migrate" : "storage.emptyWarning")}
+              </span>
+              {sameStoragePath(
+                item.target,
+                locations.find((location) => location.category === item.category)?.defaultPath ??
+                  "",
+              ) ? (
+                <span className="settings-row__hint">{t("storage.resetHint")}</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        {error ? (
+          <p className="settings-message is-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </Dialog>
+    </div>
+  );
+}

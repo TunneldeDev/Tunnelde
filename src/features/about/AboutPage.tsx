@@ -1,97 +1,26 @@
-import { brandMark } from "@/lib/brand";
-import fontLicense from "../../../assets/fonts/OFL.txt?raw";
-import { Dialog } from "@/components/ui/overlay/Dialog";
-import { useState } from "react";
-import { ExternalLink } from "lucide-react";
-import { useTranslation } from "react-i18next";
-
-import { Button } from "@/components/ui/form/Button";
+import { AboutPageView, type AboutLink } from "./AboutPageView";
 import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
-
+import { useViewState } from "@/lib/session/viewState";
 const REPOSITORY = "https://github.com/TunneldeDev/Tunnelde";
-
-function openUrl(url: string): void {
-  void api.openExternal(url).catch((error) => toast(translateError(error), "error"));
+const links: Record<AboutLink, string> = {
+  source: REPOSITORY,
+  license: `${REPOSITORY}/blob/main/LICENSE`,
+  notices: `${REPOSITORY}/blob/main/THIRD_PARTY_NOTICES.md`,
+};
+function openLink(link: AboutLink) {
+  void api.openExternal(links[link]).catch((error) => toast(translateError(error), "error"));
 }
-
 export function AboutPage({ embedded = false }: { embedded?: boolean }) {
-  const { t } = useTranslation();
-  const [noticesOpen, setNoticesOpen] = useState(false);
   const info = useSettings((state) => state.info);
-  const version = info?.version ?? "0.1.0";
-
   return (
-    <div className={embedded ? "about" : "page about"}>
-      <section className="card about__head">
-        <img src={brandMark} width={64} height={64} alt="" draggable={false} />
-        <div className="about__identity">
-          <h1 className="about__name">Tunnelde</h1>
-          <p className="about__meta">
-            {t("about.version")} {version}
-            {info ? ` · Tauri ${info.tauriVersion} · ${info.os}/${info.arch}` : ""}
-          </p>
-        </div>
-      </section>
-
-      <section className="card">
-        <dl className="detail-grid">
-          <div className="detail">
-            <dt className="detail__label">{t("about.copyright")}</dt>
-            <dd className="detail__value">Copyright (C) 2026 quyansiyuanwang (TunneldeDev)</dd>
-          </div>
-          <div className="detail">
-            <dt className="detail__label">{t("about.license")}</dt>
-            <dd className="detail__value">GNU GPL v3.0 only (GPL-3.0-only)</dd>
-          </div>
-        </dl>
-        <p className="about__warranty">{t("about.warranty")}</p>
-        <div className="about__links">
-          <Button
-            variant="ghost"
-            size="sm"
-            trailing={<ExternalLink size={12} />}
-            onClick={() => openUrl(REPOSITORY)}
-          >
-            {t("about.source")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            trailing={<ExternalLink size={12} />}
-            onClick={() => openUrl(`${REPOSITORY}/blob/main/LICENSE`)}
-          >
-            {t("about.license")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            trailing={<ExternalLink size={12} />}
-            onClick={() => setNoticesOpen(true)}
-          >
-            {t("about.thirdParty")}
-          </Button>
-        </div>
-      </section>
-      <Dialog
-        open={noticesOpen}
-        title={t("about.thirdParty")}
-        closeLabel={t("common.close")}
-        onClose={() => setNoticesOpen(false)}
-        width={640}
-      >
-        <h3>Noto Sans Mono CJK SC</h3>
-        <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{fontLicense}</pre>
-        <Button
-          variant="ghost"
-          trailing={<ExternalLink size={12} />}
-          onClick={() => openUrl(`${REPOSITORY}/blob/main/THIRD_PARTY_NOTICES.md`)}
-        >
-          {t("about.thirdParty")}
-        </Button>
-      </Dialog>
-    </div>
+    <AboutPageView
+      embedded={embedded}
+      info={info}
+      useViewState={useViewState}
+      openLink={openLink}
+    />
   );
 }

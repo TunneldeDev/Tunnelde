@@ -1,4 +1,8 @@
 import { useHostDetailRegistrations, hostDetailTabId } from "@/features/hosts/detail/registration";
+import {
+  useSettingsRegistrations,
+  settingsWindowTabId,
+} from "@/features/settings/window/registration";
 import { create } from "zustand";
 import { useWorkspace } from "@/store/workspace";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
@@ -30,9 +34,12 @@ export const editorWindowPanelId = (tabId: string) =>
 export const editorWindowTabId = (panelId: string) =>
   [...useEditorWindowRegistrations.getState().entries].find(([, id]) => id === panelId)?.[0];
 export const canonicalWorkspacePanelId = (id: string) =>
-  editorWindowPanelId(id) ?? useHostDetailRegistrations.getState().entries.get(id) ?? id;
+  editorWindowPanelId(id) ??
+  useHostDetailRegistrations.getState().entries.get(id) ??
+  useSettingsRegistrations.getState().entries.get(id) ??
+  id;
 export const nativeWorkspaceTabId = (id: string) =>
-  editorWindowTabId(id) ?? hostDetailTabId(id) ?? id;
+  editorWindowTabId(id) ?? hostDetailTabId(id) ?? settingsWindowTabId(id) ?? id;
 export const bindEditorWindow = (client: PanelWindowClient, panelId: string) => {
   if (!editorWindowTabId(panelId)) throw new Error("panel.window.staleOwner");
   return client.control<PanelLease>({

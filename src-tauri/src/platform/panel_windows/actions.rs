@@ -2,6 +2,7 @@
 //! requests are queued, never callbacks or arbitrary application command names.
 mod hosts;
 mod plugins;
+mod settings;
 use super::ownership::{Lease, Ownership, MAIN};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,6 +18,9 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Settings {
+        command: settings::SettingsCommand,
+    },
     Editor {
         command: EditorCommand,
     },
@@ -331,6 +335,7 @@ impl TransferPrompt {
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
+            Self::Settings { .. } => "settings",
             Self::Editor { .. } => "editor",
             Self::Files { .. } => "files",
             Self::Terminal { .. } => "terminal",
@@ -352,6 +357,7 @@ impl ViewAction {
     fn validate(&self) -> Result<(), &'static str> {
         let bounded = |s: &str, max| !s.is_empty() && s.len() <= max;
         let valid = match self {
+            Self::Settings { command } => command.valid(),
             Self::Editor { command } => command.valid(),
             Self::Files { command } => command.valid(),
             Self::Terminal { command } => command.valid(),
@@ -500,6 +506,8 @@ impl Ownership {
         self.authorize_action_interaction(window, document, lease, &request)?;
         if if matches!(request, ViewAction::Editor { .. }) {
             !self.editor_page_registered(&lease.panel_id)
+        } else if matches!(request, ViewAction::Settings { .. }) {
+            !self.settings_page_registered(&lease.panel_id)
         } else if let ViewAction::HostDetail { ref command } = request {
             self.host_page_host(&lease.panel_id) != command.detail_host()
         } else if matches!(request, ViewAction::RefreshForwarding {})
@@ -623,10 +631,19 @@ impl Ownership {
         now: Instant,
     ) -> Result<(), &'static str> {
         self.main(window, document)?;
+        let limit = if self
+            .actions
+            .get(id)
+            .is_some_and(|job| matches!(job.request, ViewAction::Settings { .. }))
+        {
+            8 * 1024 * 1024
+        } else {
+            64 * 1024
+        };
         if serde_json::to_vec(&result)
             .map_err(|_| "invalid action result")?
             .len()
-            > 64 * 1024
+            > limit
         {
             return Err("action result limit");
         }

@@ -1,8 +1,9 @@
+import { updateHistoryKey, matchingUpdateState } from "@/lib/updates/stateIdentity";
 import { create } from "zustand";
 
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
-import type { ReleaseHistory, Settings, UpdateState } from "@/lib/api/types";
+import type { ReleaseHistory, UpdateState } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 import i18n from "@/i18n/i18n";
@@ -30,27 +31,7 @@ interface UpdatesStore {
 let refreshVersion = 0;
 let historyRequest = 0;
 
-export function updateHistoryKey(state: UpdateState): string {
-  return JSON.stringify([
-    state.currentVersion,
-    state.version,
-    state.channel,
-    state.source,
-    state.sourceUrl,
-    state.lastChecked,
-  ]);
-}
-
-export function matchingUpdateState(
-  state: UpdateState | null,
-  settings: Settings,
-): UpdateState | null {
-  return state?.channel === settings.updateChannel &&
-    state.source === settings.updateSource &&
-    state.sourceUrl === settings.updateSourceUrl
-    ? state
-    : null;
-}
+export { updateHistoryKey, matchingUpdateState } from "@/lib/updates/stateIdentity";
 
 export const useUpdates = create<UpdatesStore>((set, get) => ({
   state: null,

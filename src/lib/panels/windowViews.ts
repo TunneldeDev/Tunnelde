@@ -30,6 +30,7 @@ export const transferablePanel = (id: string, snapshot = usePanelWindows.getStat
   id === "knownHosts" ||
   id === "forwarding" ||
   id === "filePreview" ||
+  !!snapshot.settingsPages?.some((view) => view.panelId === id) ||
   !!snapshot.hostPages?.some((view) => view.panelId === id) ||
   !!snapshot.editorPages?.some((view) => view.panelId === id) ||
   !!snapshot.filePages?.some((view) => view.panelId === id) ||

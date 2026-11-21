@@ -13,7 +13,7 @@ import { PluginDetailPage } from "@/features/plugins/PluginDetailPage";
 import { MainNativeHostPage } from "@/features/hosts/detail/NativeHostPage";
 import { MainNativeFilePage } from "@/features/sftp/NativeFilePage";
 import { RestoredFilePane } from "@/features/sftp/RestoredFilePane";
-import { SettingsPage } from "@/features/settings/SettingsPage";
+import { MainNativeSettingsPage } from "@/features/settings/window/NativeSettingsPage";
 import { KnownHostsPage } from "@/features/settings/KnownHostsPage";
 import { MainNativeTerminalPage } from "@/features/terminal/NativeTerminalPage";
 import { useNavigation } from "@/store/navigation";
@@ -41,13 +41,13 @@ function TabBody({
     case "host":
       return <MainNativeHostPage tabId={tab.id} hostId={tab.hostId} />;
     case "settings":
-      return <SettingsPage visible={visible} />;
+      return <MainNativeSettingsPage tabId={tab.id} visible={visible} />;
     case "knownHosts":
       return <KnownHostsPage />;
     case "about":
       return <AboutPage />;
     case "updates":
-      return <LegacyUpdates visible={visible} />;
+      return <LegacyUpdates tabId={tab.id} visible={visible} />;
     case "terminal":
       return <MainNativeTerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
@@ -91,11 +91,11 @@ function TabBody({
   }
 }
 
-function LegacyUpdates({ visible }: { visible: boolean }) {
+function LegacyUpdates({ visible, tabId }: { visible: boolean; tabId: string }) {
   useLayoutEffect(() => {
     useNavigation.getState().selectSettings("updates");
   }, []);
-  return <SettingsPage visible={visible} />;
+  return <MainNativeSettingsPage tabId={tabId} visible={visible} />;
 }
 
 export function TabContent({ paneId }: { paneId?: string }) {

@@ -3,9 +3,10 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useSettings } from "@/store/settings";
+import type { TerminalSettingsSource } from "./terminalViewServices";
 import {
   bindTerminalSettings,
+  localTerminalSettings,
   terminalOptions,
   waitForCurrentTerminalFont,
 } from "./terminalRuntime";
@@ -22,7 +23,13 @@ const SAMPLE = [
 ].join("\r\n");
 
 /** A local, read-only terminal: no SSH session, history, or network requests. */
-export function TerminalPreview({ className = "" }: { className?: string }) {
+export function TerminalPreview({
+  className = "",
+  source = localTerminalSettings,
+}: {
+  className?: string;
+  source?: TerminalSettingsSource;
+}) {
   const { t } = useTranslation();
   const container = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -35,10 +42,10 @@ export function TerminalPreview({ className = "" }: { className?: string }) {
     const observer = new ResizeObserver(() => runtime?.requestLayout());
     observer.observe(element);
     void (async () => {
-      await waitForCurrentTerminalFont(() => disposed);
+      await waitForCurrentTerminalFont(() => disposed, source);
       if (disposed) return;
       terminal = new Terminal({
-        ...terminalOptions(useSettings.getState().settings),
+        ...terminalOptions(source.read()),
         disableStdin: true,
       });
       const fit = new FitAddon();
@@ -51,7 +58,7 @@ export function TerminalPreview({ className = "" }: { className?: string }) {
           if (element.clientWidth > 24 && element.clientHeight > 24) fit.fit();
         },
         // Retain the complete sample even when SSH scrollback is disabled.
-        { minimumScrollback: 100 },
+        { minimumScrollback: 100, source },
       );
       // Size the viewport before writing, so sample rows overflow into scrollback.
       fit.fit();
@@ -65,7 +72,7 @@ export function TerminalPreview({ className = "" }: { className?: string }) {
       terminal?.dispose();
       terminalRef.current = null;
     };
-  }, []);
+  }, [source]);
   return (
     <div
       className={`terminal-preview terminal-host ${className}`.trim()}
