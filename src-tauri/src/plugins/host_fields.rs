@@ -35,7 +35,23 @@ struct Read {
 pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
     let context = context.clone();
     let method = method.to_owned();
-    worker::run(move |cancellation| call_blocking(&context, &method, params, cancellation)).await
+    // Snapshot restoration is allowed during staging; only committed writes
+    // need the resource-origin authority (which deliberately rejects staging).
+    let origin = (method == "hosts.setFields")
+        .then(crate::platform::panel_windows::plugin_views::origin::current)
+        .flatten();
+    worker::run(move |cancellation| {
+        call_blocking(
+            &context,
+            &method,
+            params,
+            cancellation,
+            origin
+                .as_ref()
+                .map(|origin| origin as &dyn crate::services::operations::Authority),
+        )
+    })
+    .await
 }
 
 fn call_blocking(
@@ -43,6 +59,7 @@ fn call_blocking(
     method: &str,
     params: Value,
     cancellation: &crate::services::operations::Cancellation,
+    authority: Option<&dyn crate::services::operations::Authority>,
 ) -> AppResult<Value> {
     let state = context.app.state::<AppState>();
     let lease = Lease {
@@ -58,6 +75,7 @@ fn call_blocking(
         method,
         params,
         cancellation,
+        authority,
     )?;
     if method == "hosts.setFields" {
         changed(&context.app, &context.id, &result.document);
@@ -72,6 +90,7 @@ fn request(
     method: &str,
     params: Value,
     cancellation: &crate::services::operations::Cancellation,
+    authority: Option<&dyn crate::services::operations::Authority>,
 ) -> AppResult<Snapshot> {
     let permissions: &[&str] = match method {
         "hosts.getFields" => &["hosts.read"],
@@ -79,10 +98,11 @@ fn request(
         _ => return Err(AppError::validation("plugin.api.unknownMethod")),
     };
     let mut params = Some(params);
-    plugins.security.with_authorized_attempt(
+    plugins.security.with_authorized_fenced_attempt(
         lease,
         permissions,
         || cancellation.check(),
+        authority,
         || {
             plugins.with_host_fields(&lease.id, Some(&lease.fingerprint), |schema| {
                 db.try_with(|conn| {

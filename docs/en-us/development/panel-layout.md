@@ -1661,3 +1661,29 @@ was saved to the OS keychain. All categories render in the independent window.
 This does not prove actual SSH recovery authentication, Windows/Linux or physical
 pointer/mixed-DPI behavior. Factory preferences are admitted by exact renderer
 identity, not the sidebar-only `factoryOwner` contract.
+
+### Native host metadata mutations
+
+Committed native plugin views may call `hosts.routes.save` and `hosts.setFields`
+with the existing `hosts.read` and `hosts.write` grants. These are explicit
+retained effects, never staging-safe calls. Public v1 request/response shapes,
+route revisions (including host incarnation), and plugin-scoped field schema/CAS
+validation are unchanged. This does not admit general host CRUD, credentials,
+imports or SSH creation, and `viewFactories.nativeWindows` remains false.
+
+The dispatcher captures the exact process-local origin before spawning a bounded
+worker. A shared fenced admission loop acquires origin -> policy -> optional
+package/schema -> database using nonblocking DB attempts. Every unsuccessful
+attempt releases all guards before sleeping; reload, view retirement, provider
+selection change, cancellation or grant revocation can therefore reject queued
+work without waiting for the busy database. The actual durable transaction runs
+under the original authority, consumes input once and retains cancellation commit
+semantics. SQL/domain errors are final, not a reason to replay an uncertain write.
+Events and log publication happen only after a successful mutation, outside the
+ownership transaction. Snapshot-only field reads retain their staging-safe
+restoration behavior. Non-native transports keep their existing authorization.
+
+Regression tests exercise real database contention, origin retirement before DB
+unlock, revocation/cancellation, exactly-once final effects, route revisions and
+field package/schema/CAS behavior. These tests do not claim physical drag,
+cross-platform GUI or real SSH/FUSE acceptance.
