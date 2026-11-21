@@ -1,13 +1,14 @@
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { useRemoteOutputModel } from "@/lib/panels/outputModel";
 import { ArrowDownToLine, ListFilter, Trash2 } from "lucide-react";
 import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, parseSearchQuery } from "@/lib/search/query";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
-import { useTabBarContribution } from "@/store/tabBar";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader, useWorkbenchPanel } from "@/components/layout/WorkbenchPanel";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { usePlugins } from "@/store/plugins";
@@ -37,18 +38,44 @@ const OutputLine = memo(function OutputLine({ entry }: { entry: OutputEntry }) {
   );
 });
 
-export function OutputPanel({ active, docked = false }: { active: boolean; docked?: boolean }) {
+export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
   const { t } = useTranslation();
-  const output = useOutput(active);
-  const [channel, setChannel] = useState("all");
-  const [query, setQuery] = useState("");
-  const [minimum, setMinimum] = useState("TRACE");
-  const [follow, setFollow] = useState(true);
-  const [wrap, setWrap] = useState(false);
+  const scope = useWorkbenchPanel();
+  const remote = useRemoteOutputModel();
+  const local = useOutput(active && !remote);
+  const output = remote ?? local;
+  const [channel, setChannel] = usePanelViewState(
+    "output.channel",
+    "all",
+    (v): v is string => typeof v === "string",
+  );
+  const [query, setQuery] = usePanelViewState(
+    "output.query",
+    "",
+    (v): v is string => typeof v === "string",
+  );
+  const [minimum, setMinimum] = usePanelViewState(
+    "output.minimum",
+    "TRACE",
+    (v): v is string => typeof v === "string",
+  );
+  const [follow, setFollow] = usePanelViewState(
+    "output.follow",
+    true,
+    (v): v is boolean => typeof v === "boolean",
+  );
+  const [wrap, setWrap] = usePanelViewState(
+    "output.wrap",
+    false,
+    (v): v is boolean => typeof v === "boolean",
+  );
   const scroll = useRef<HTMLDivElement>(null);
-  const plugins = usePlugins((state) => state.items);
-  const info = useSettings((state) => state.info);
+  const localPlugins = usePlugins((state) => state.items);
+  const plugins = remote?.plugins ?? localPlugins;
+  const localInfo = useSettings((state) => state.info);
+  const info = remote ? remote.info : localInfo;
   const sessions = useSsh((state) => state.sessions);
+  const sessionCount = remote?.sessionCount ?? sessions.length;
   const channels = useMemo(() => {
     const domains = [...new Set(output.entries.map((entry) => entry.domain))].sort();
     const pluginIds = [
@@ -88,7 +115,7 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
     `${info?.name ?? "Tunnelde"} ${info?.version ?? ""}`.trim(),
     `${t("output.platform")}: ${info ? `${info.os} · ${info.arch} · Tauri ${info.tauriVersion}` : "—"}`,
     `${t("output.build")}: ${info ? t(info.debug ? "output.debug" : "output.release") : "—"}`,
-    `${t("output.sessions")}: ${sessions.length}`,
+    `${t("output.sessions")}: ${sessionCount}`,
     `${t("output.plugins")}: ${plugins.filter((item) => item.status === "running").length} / ${plugins.length}`,
     ...plugins.map(
       (plugin) =>
@@ -112,11 +139,12 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
     void action().catch((error) => toast(translateError(error), "error"));
 
   const menuActions: MenuAction[] = [
-    { label: t("common.refresh"), onSelect: output.refresh },
+    { label: t("common.refresh"), onSelect: () => attempt(output.refresh) },
     {
       label: t("output.copy"),
       disabled: !renderedText,
-      onSelect: () => attempt(() => api.clipboardWriteText(renderedText)),
+      onSelect: () =>
+        attempt(() => (remote ? remote.copy(renderedText) : api.clipboardWriteText(renderedText))),
     },
     {
       label: t("output.wrap"),
@@ -127,9 +155,12 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
     {
       label: t("output.openFile"),
       separatorBefore: true,
-      onSelect: () => attempt(api.openLatestLog),
+      onSelect: () => attempt(remote?.openLatest ?? api.openLatestLog),
     },
-    { label: t("logs.openFolder"), onSelect: () => attempt(api.openLogDir) },
+    {
+      label: t("logs.openFolder"),
+      onSelect: () => attempt(remote?.openDirectory ?? api.openLogDir),
+    },
   ];
   const controls = (
     <div className="output-panel__actions">
@@ -146,65 +177,17 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
         size="sm"
         label={t("output.clear")}
         disabled={channel === "runtime"}
-        onClick={output.clear}
+        onClick={() => attempt(async () => output.clear())}
       >
         <Trash2 size={14} />
       </IconButton>
       <Menu label={t("output.actions")} items={menuActions} />
     </div>
   );
-  useTabBarContribution("sidebar:output", "output.actions", docked ? controls : null, 100, {
-    group: "output.actions",
-    overflowActions: [
-      {
-        label: t("output.follow"),
-        checked: follow,
-        checkable: "checkbox",
-        onSelect: () => setFollow((value) => !value),
-      },
-      { label: t("output.clear"), disabled: channel === "runtime", onSelect: output.clear },
-      ...menuActions,
-    ],
-  });
-  const channelControl = (
-    <Select
-      className="tabbar-contribution__select"
-      label={t("output.channel")}
-      value={channel}
-      options={options}
-      onChange={setChannel}
-    />
-  );
-  useTabBarContribution("sidebar:output", "output.channel", docked ? channelControl : null, 200, {
-    group: "output.channel",
-    overflowActions: options.map((option) => ({
-      label: `${t("output.channel")}: ${option.label}`,
-      checked: channel === option.value,
-      checkable: "radio",
-      onSelect: () => setChannel(option.value),
-    })),
-  });
 
   return (
-    <section className="output-panel" aria-label={t("output.title")}>
-      {!docked ? (
-        <header className="sidebar__head output-panel__header">
-          <SidebarTitle view="output">{t("output.title")}</SidebarTitle>
-          {controls}
-          <SidebarDockControls view="output" />
-        </header>
-      ) : null}
-      {!docked ? (
-        <div className="output-panel__toolbar">
-          <Select
-            className="output-panel__channel"
-            label={t("output.channel")}
-            value={channel}
-            options={options}
-            onChange={setChannel}
-          />
-        </div>
-      ) : null}
+    <section className="output-panel" aria-label={scope ? undefined : t("output.title")}>
+      <PanelHeader view="output" />
       <SearchToolbar
         className="output-panel__filters"
         aria-label={t("output.search")}
@@ -229,16 +212,26 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
           { key: "source", value: "runtime", label: t("output.runtime") },
         ]}
         actions={
-          <Select
-            label={t("output.level")}
-            value={minimum}
-            disabled={channel === "runtime"}
-            options={[
-              { value: "TRACE", label: t("output.allLevels") },
-              ...["DEBUG", "INFO", "WARN", "ERROR"].map((value) => ({ value, label: value })),
-            ]}
-            onChange={setMinimum}
-          />
+          <>
+            <Select
+              className="output-panel__channel"
+              label={t("output.channel")}
+              value={channel}
+              options={options}
+              onChange={setChannel}
+            />
+            <Select
+              label={t("output.level")}
+              value={minimum}
+              disabled={channel === "runtime"}
+              options={[
+                { value: "TRACE", label: t("output.allLevels") },
+                ...["DEBUG", "INFO", "WARN", "ERROR"].map((value) => ({ value, label: value })),
+              ]}
+              onChange={setMinimum}
+            />
+            {controls}
+          </>
         }
       />
       {output.error ? (
@@ -249,6 +242,7 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
       <div
         className="output-panel__scroll"
         ref={scroll}
+        data-panel-scroll="output.content"
         tabIndex={0}
         role="region"
         aria-label={t("output.content")}

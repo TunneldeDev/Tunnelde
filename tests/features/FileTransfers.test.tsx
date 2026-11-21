@@ -1,7 +1,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
-import { FileTransfers } from "@/features/sftp/FileTransfers";
+import { FloatingPanelLayer, SidebarContents } from "@/components/layout/SidebarDock";
+import { useNavigation } from "@/store/navigation";
+function FileTransfers() {
+  return (
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>
+  );
+}
 import { transferApi } from "@/lib/api/transfers";
 import { useTransfers } from "@/store/transfers";
 import { useTransferPanel } from "@/store/transferPanel";
@@ -19,6 +28,8 @@ afterEach(() => {
 });
 
 beforeEach(async () => {
+  useWorkspace.setState({ tabs: [] });
+  useNavigation.setState({ sidebarVisible: false, visitedSidebars: ["tasks"] });
   stopSources = registerBackgroundTaskSources();
   await i18n.changeLanguage("en-US");
   useTransferPanel.setState({ open: true, pinned: false, bounds: null });
@@ -582,7 +593,7 @@ it("moves and resizes from the keyboard, restores on reopen and resets the saved
     key: "ArrowLeft",
   });
   expect(useTransferPanel.getState().bounds?.x).toBe(290);
-  fireEvent.keyDown(screen.getByRole("button", { name: /Resize task window/ }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: /Resize panel/ }), {
     key: "ArrowDown",
     shiftKey: true,
   });
@@ -593,7 +604,7 @@ it("moves and resizes from the keyboard, restores on reopen and resets the saved
   const panel = screen.getByRole("dialog", { name: "Background tasks" });
   expect(panel.style.left).toBe(`${saved?.x}px`);
   expect(panel.style.height).toBe("301px");
-  fireEvent.click(screen.getByRole("button", { name: "Reset task window layout" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset panel layout" }));
   expect(useTransferPanel.getState().bounds).toBeNull();
   expect(localStorage.getItem("tunnelde.transferPanel.bounds")).toBeNull();
   expect(panel.style.left).toBe("");

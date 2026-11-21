@@ -1,3 +1,4 @@
+import type { Settings } from "@/lib/api/types";
 import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";
 import { runWorkbenchCommand } from "./actions";
@@ -105,6 +106,7 @@ export function executeShortcutCandidates(
 export function bindShortcutProvider(
   element: HTMLElement,
   provide: (event: KeyboardEvent) => ShortcutCandidate[],
+  route?: (event: KeyboardEvent) => unknown,
 ): () => void {
   const collect = (event: Event) => {
     const detail = (event as CustomEvent<Collector>).detail;
@@ -112,7 +114,8 @@ export function bindShortcutProvider(
   };
   // Also works when a page is mounted outside AppShell (e.g. isolated previews).
   const fallback = (event: KeyboardEvent) => {
-    dispatchShortcuts(event, false);
+    if (route) route(event);
+    else dispatchShortcuts(event, false);
   };
   element.addEventListener(COLLECTION, collect);
   element.addEventListener("keydown", fallback, true);
@@ -126,12 +129,13 @@ export function scopedShortcutCandidates(
   event: KeyboardEvent,
   ids: readonly string[],
   run: (id: string) => boolean,
+  overrides?: Settings["keyboardShortcuts"],
 ): ShortcutCandidate[] {
-  const settings = useSettings.getState().settings;
-  return shortcutCommands(usePlugins.getState().items)
+  const shortcuts = overrides ?? useSettings.getState().settings.keyboardShortcuts;
+  return shortcutCommands(overrides ? [] : usePlugins.getState().items)
     .filter((command) => ids.includes(command.id))
     .flatMap((command) => {
-      return bindingsFor(command.id, settings.keyboardShortcuts, undefined, [command])
+      return bindingsFor(command.id, shortcuts, undefined, [command])
         .filter((key) => shortcutMatches(event, key))
         .map((binding) => ({ command, binding, run: () => run(command.id) }));
     });

@@ -2,6 +2,7 @@
 
 [Documentation](../README.md)
 
+- [Development and UX conventions](working-agreements.md)
 - [Plugin development and security](plugins/README.md)
 - [Architecture](architecture.md)
 - [Local API and CLI](local-api.md)
@@ -9,6 +10,7 @@
 - [Background tasks](background-tasks.md)
 - [Optional native helper](native-helper.md)
 - [Shared panel layouts](panel-layout.md)
+- [Shared UI controls](ui-controls.md)
 - [File read and preview lifetimes](file-resources.md)
 - [Plugin dependencies and activation](plugins/activation.md)
 - [Plugin API compatibility and security](plugins/api.md)

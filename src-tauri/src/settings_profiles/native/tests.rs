@@ -87,6 +87,7 @@ async fn cancelled_profile_database_waiters_never_read_or_mutate_and_retain_capa
         let worker_db = db.clone();
         let (started, starting) = tokio::sync::oneshot::channel();
         let (finished, done) = tokio::sync::oneshot::channel();
+        let (allow_exit, exit) = std::sync::mpsc::channel();
         let caller = tokio::spawn(async move {
             worker_budget
                 .blocking(move |cancel| {
@@ -108,6 +109,9 @@ async fn cancelled_profile_database_waiters_never_read_or_mutate_and_retain_capa
                     finished
                         .send(result.as_ref().err().map(ToString::to_string))
                         .unwrap();
+                    // Cancellation may finish the DB wait immediately. Keep the
+                    // worker alive until the test has checked its permit.
+                    exit.recv_timeout(Duration::from_secs(5)).unwrap();
                     result
                 })
                 .await
@@ -129,6 +133,7 @@ async fn cancelled_profile_database_waiters_never_read_or_mutate_and_retain_capa
             done.await.unwrap().as_deref(),
             Some("profiles.operation.cancelled")
         );
+        allow_exit.send(()).unwrap();
         drop(
             tokio::time::timeout(Duration::from_secs(3), capacity.acquire_owned())
                 .await

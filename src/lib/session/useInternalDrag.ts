@@ -1,3 +1,8 @@
+import {
+  INTERNAL_DRAG_FINISH,
+  NATIVE_PANEL_DRAG_READY,
+  type InternalDragFinish,
+} from "./internalDragEvents";
 import { useEffect } from "react";
 import { flushSync } from "react-dom";
 
@@ -10,6 +15,7 @@ interface PointerDrag {
   transfer: DataTransfer | null;
   target: Element | null;
   preview: HTMLElement | null;
+  excludedSurface: { element: HTMLElement; pointerEvents: string } | null;
   accepted: boolean;
   userSelect: string;
   cursor: string;
@@ -52,9 +58,16 @@ export function installInternalDrag(): () => void {
     return accepted;
   };
 
-  const cleanup = (event?: PointerEvent | MouseEvent) => {
+  const cleanup = (event?: PointerEvent | MouseEvent, released = false) => {
     const current = drag;
     if (!current) return;
+    if (current.transfer) {
+      document.dispatchEvent(
+        new CustomEvent<InternalDragFinish>(INTERNAL_DRAG_FINISH, {
+          detail: { transfer: current.transfer, released, accepted: current.accepted },
+        }),
+      );
+    }
     if (current.transfer && event) {
       emit(current.source, "dragend", event);
       // A successful cross-group drop may already have unmounted its source.
@@ -63,11 +76,21 @@ export function installInternalDrag(): () => void {
     if (current.draggable === null) current.source.removeAttribute("draggable");
     else current.source.setAttribute("draggable", current.draggable);
     current.preview?.remove();
+    if (current.excludedSurface)
+      current.excludedSurface.element.style.pointerEvents = current.excludedSurface.pointerEvents;
     if (current.transfer) {
       document.body.style.userSelect = current.userSelect;
       document.body.style.cursor = current.cursor;
     }
     drag = null;
+    // Mouse pointer capture keeps release events routed to the source WebView
+    // even when crossing a native window boundary. Never capture ordinary clicks.
+    try {
+      if (current.source.hasPointerCapture(current.pointerId))
+        current.source.releasePointerCapture(current.pointerId);
+    } catch {
+      /* A successful local drop may already have retired its source. */
+    }
   };
 
   const start = (event: PointerEvent) => {
@@ -79,9 +102,8 @@ export function installInternalDrag(): () => void {
     const element = event.target instanceof Element ? event.target : null;
     if (
       !element ||
-      element.closest(
-        "input, textarea, select, button, a, [contenteditable='true'], [role='separator']",
-      )
+      element.closest("input, textarea, select, a, [contenteditable='true'], [role='separator']") ||
+      (element.closest("button") && !element.closest("[data-panel-drag-handle]"))
     )
       return;
     const source = element.closest<HTMLElement>("[draggable='true']");
@@ -95,6 +117,7 @@ export function installInternalDrag(): () => void {
       transfer: null,
       target: null,
       preview: null,
+      excludedSurface: null,
       accepted: false,
       userSelect: document.body.style.userSelect,
       cursor: document.body.style.cursor,
@@ -112,6 +135,11 @@ export function installInternalDrag(): () => void {
     }
     if (!current.transfer) {
       if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 5) return;
+      try {
+        current.source.setPointerCapture(current.pointerId);
+      } catch {
+        /* Synthetic tests/retired pointers. */
+      }
       current.transfer = new DataTransfer();
       if (emit(current.source, "dragstart", event)) {
         cleanup(event);
@@ -122,6 +150,11 @@ export function installInternalDrag(): () => void {
         return;
       }
       document.body.style.userSelect = "none";
+      const surface = current.source.closest<HTMLElement>("[data-drag-hit-test='exclude']");
+      if (surface) {
+        current.excludedSurface = { element: surface, pointerEvents: surface.style.pointerEvents };
+        surface.style.pointerEvents = "none";
+      }
       const preview = current.source.cloneNode(true) as HTMLElement;
       preview.removeAttribute("id");
       preview.removeAttribute("draggable");
@@ -159,11 +192,12 @@ export function installInternalDrag(): () => void {
     }
     current.transfer!.dropEffect = "none";
     current.accepted = target ? emit(target, "dragover", event) : false;
-    document.body.style.cursor = current.accepted
-      ? String(current.transfer!.dropEffect) === "copy"
-        ? "copy"
-        : "grabbing"
-      : "not-allowed";
+    document.body.style.cursor =
+      current.accepted || current.transfer!.getData(NATIVE_PANEL_DRAG_READY) === "true"
+        ? String(current.transfer!.dropEffect) === "copy"
+          ? "copy"
+          : "grabbing"
+        : "not-allowed";
   };
 
   const finish = (event: PointerEvent) => {
@@ -172,11 +206,12 @@ export function installInternalDrag(): () => void {
     if (current.transfer) {
       event.preventDefault();
       const target = document.elementFromPoint(event.clientX, event.clientY);
-      if (target && emit(target, "dragover", event)) emit(target, "drop", event);
+      current.accepted = target ? emit(target, "dragover", event) : false;
+      if (target && current.accepted) emit(target, "drop", event);
       if (current.target) emit(current.target, "dragleave", event);
       suppressClick = { x: event.clientX, y: event.clientY, until: performance.now() + 350 };
     }
-    cleanup(event);
+    cleanup(event, true);
   };
 
   const cancel = (event: PointerEvent | KeyboardEvent) => {
@@ -209,6 +244,7 @@ export function installInternalDrag(): () => void {
   document.addEventListener("pointermove", move, { capture: true, passive: false });
   document.addEventListener("pointerup", finish, true);
   document.addEventListener("pointercancel", cancel, true);
+  document.addEventListener("lostpointercapture", cancel, true);
   document.addEventListener("keydown", cancel, true);
   document.addEventListener("click", click, true);
   window.addEventListener("blur", blur);
@@ -217,6 +253,7 @@ export function installInternalDrag(): () => void {
     document.removeEventListener("pointermove", move, true);
     document.removeEventListener("pointerup", finish, true);
     document.removeEventListener("pointercancel", cancel, true);
+    document.removeEventListener("lostpointercapture", cancel, true);
     document.removeEventListener("keydown", cancel, true);
     document.removeEventListener("click", click, true);
     window.removeEventListener("blur", blur);

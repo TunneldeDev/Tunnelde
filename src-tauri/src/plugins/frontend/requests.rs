@@ -25,5 +25,5 @@ pub fn plugin_frontend_cancel_call(
     request_id: String,
 ) -> bool {
     // An expired owner must still be able to release its own reservation.
-    registry.calls.cancel(&token, &request_id)
+    !registry.is_native_view(&token) && registry.calls.cancel(&token, &request_id)
 }

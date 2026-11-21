@@ -85,6 +85,8 @@ impl PluginsManager {
         let boundary = retirement.before_generation;
         self.profile_drafts.retire_before(id, boundary);
         self.file_content.retire_before(id, boundary);
+        self.bus.retire_before(id, boundary);
+        crate::platform::panel_windows::public::retire(app, id, boundary);
         tasks::cancel_before_generation(id, boundary);
         contributions::remove_runtime(app, id, |generation| generation < boundary);
         sessions::remove_runtime(app, id, |generation| generation < boundary);

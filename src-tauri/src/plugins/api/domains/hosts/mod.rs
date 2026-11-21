@@ -1,10 +1,17 @@
-use crate::plugins::api::{authorize, encode, field, HostContext};
+use crate::plugins::{
+    api::{authorize, encode, field, optional, HostContext},
+    security::Lease,
+};
 use crate::{
     error::{AppError, AppResult},
+    services::hosts::ssh_config,
     state::AppState,
 };
 use serde_json::Value;
 use tauri::Manager;
+
+mod routes;
+mod transfer;
 
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
@@ -14,6 +21,12 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
+        "hosts.transfer.export" | "hosts.transfer.preview" | "hosts.transfer.apply" => {
+            transfer::call(context, method, params).await
+        }
+        "hosts.routes.get" | "hosts.routes.observe" | "hosts.routes.save" => {
+            routes::call(context, method, params).await
+        }
         "hosts.snapshot" => {
             let worker = context.clone();
             encode(
@@ -22,6 +35,28 @@ pub(in crate::plugins::api) async fn dispatch(
                 })
                 .await?,
             )
+        }
+        "hosts.sshConfig.preview" => encode(
+            ssh_config::preview_page(
+                app,
+                lease(context),
+                optional(&params, "offset")?.unwrap_or_default(),
+                optional(&params, "revision")?,
+            )
+            .await?,
+        ),
+        "hosts.sshConfig.import" => {
+            let result = ssh_config::import_checked(
+                app,
+                field(&params, "aliases")?,
+                field(&params, "revision")?,
+                Some(lease(context)),
+            )
+            .await?;
+            Ok(serde_json::json!({
+                "importedIds": result.imported.into_iter().map(|host| host.id).collect::<Vec<_>>(),
+                "skipped": result.skipped,
+            }))
         }
         "hosts.setSource" | "hosts.removeSource" | "hosts.sourcesSnapshot" => {
             crate::plugins::host_sources::call(context, method, params)
@@ -70,5 +105,14 @@ pub(in crate::plugins::api) async fn dispatch(
             crate::plugins::host_list::call(context, method, params)
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
+    }
+}
+
+fn lease(context: &HostContext) -> Lease {
+    Lease {
+        id: context.id.clone(),
+        fingerprint: context.fingerprint.clone(),
+        permissions: context.permissions.clone(),
+        generation: context.generation,
     }
 }

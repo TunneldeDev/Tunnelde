@@ -36,6 +36,8 @@ pub struct EditorCommand {
     pub extensions: Vec<String>,
     #[serde(default)]
     pub format: bool,
+    #[serde(default)]
+    pub syntax: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +99,8 @@ fn valid_keybindings(bindings: &[String]) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_floating: Option<bool>,
     pub id: String,
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -151,6 +155,8 @@ pub struct PluginManifest {
     pub dependencies: Vec<super::PluginDependency>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_fields: Option<crate::services::host_fields::Schema>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_details: Vec<super::host_details::Contribution>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration:
         Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
@@ -230,6 +236,7 @@ impl PluginManifest {
             return Err(AppError::validation("plugin.activation.declarationVersion"));
         }
         super::runtime::activation::validate_dependencies(&self.id, &self.dependencies)?;
+        super::host_details::validate(self)?;
         if let Some(configuration) = &self.configuration {
             configuration.validate()?;
         }
@@ -388,7 +395,8 @@ impl PluginManifest {
                                 })
                         })
                         || !self.permissions.iter().any(|p| p == "editor.read")
-                        || !self.permissions.iter().any(|p| p == "editor.write")
+                        || (!editor.syntax || editor.format)
+                            && !self.permissions.iter().any(|p| p == "editor.write")
                 })
             {
                 return Err(AppError::validation("plugin.command.invalid"));
@@ -415,7 +423,9 @@ impl PluginManifest {
                 || view
                     .kind
                     .as_deref()
-                    .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component"))
+                    .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component" | "sharedMounts"))
+                || (view.kind.as_deref() == Some("sharedMounts")
+                    && !super::host_details::permits_native_mounts(self))
                 || (view.kind.as_deref() == Some("component") && self.frontend.is_none())
                 || view.provider.as_deref().is_some_and(|target| {
                     !matches!(
@@ -616,6 +626,23 @@ pub fn valid_command_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plugin_view_floating_defaults_to_allowed_and_preserves_explicit_opt_out() {
+        let mut value = serde_json::json!({"id":"main", "title":"Main"});
+        let view: super::PluginView = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(view.allow_floating, None);
+        assert!(serde_json::to_value(&view)
+            .unwrap()
+            .get("allowFloating")
+            .is_none());
+        value["allowFloating"] = false.into();
+        let view: super::PluginView = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(view.allow_floating, Some(false));
+        assert_eq!(serde_json::to_value(view).unwrap()["allowFloating"], false);
+        value["allowFloating"] = "false".into();
+        assert!(serde_json::from_value::<super::PluginView>(value).is_err());
+    }
+
     #[test]
     fn host_menu_requires_read_permission_and_one_bounded_context() {
         let dir = temp_dir("host-menu");
@@ -861,6 +888,31 @@ mod tests {
         let loaded = load(&dir).unwrap();
         assert!(loaded.commands[0].editor.as_ref().unwrap().format);
         assert_eq!(loaded.commands[0].keybindings, ["Mod+Alt+J"]);
+        let mut syntax = base.clone();
+        syntax["permissions"] = serde_json::json!(["editor.read"]);
+        syntax["commands"][0]["editor"] = serde_json::json!({"extensions":["js"],"syntax":true});
+        std::fs::write(
+            dir.join(MANIFEST_FILE),
+            serde_json::to_vec(&syntax).unwrap(),
+        )
+        .unwrap();
+        let loaded = load(&dir).unwrap();
+        assert!(loaded.commands[0].editor.as_ref().unwrap().syntax);
+        assert!(!loaded.commands[0].editor.as_ref().unwrap().format);
+        for editor in [
+            serde_json::json!({"extensions":["js"],"format":true}),
+            serde_json::json!({"extensions":["js"]}),
+            serde_json::json!({"extensions":["js"],"syntax":true,"format":true}),
+        ] {
+            let mut invalid = syntax.clone();
+            invalid["commands"][0]["editor"] = editor;
+            std::fs::write(
+                dir.join(MANIFEST_FILE),
+                serde_json::to_vec(&invalid).unwrap(),
+            )
+            .unwrap();
+            assert!(load(&dir).is_err(), "accepted read-only editor declaration");
+        }
         let mut cases = Vec::new();
         for permissions in [
             serde_json::json!([]),

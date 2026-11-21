@@ -49,6 +49,7 @@ export function PluginExecutionDialog({
     <Dialog
       open
       title={`${t("pluginChat.executionSettings")} · ${targetName}`}
+      help={t("pluginChat.targetHint")}
       closeLabel={t("common.close")}
       onClose={onClose}
       width={500}
@@ -75,7 +76,6 @@ export function PluginExecutionDialog({
       }
     >
       <div className="plugin-chat-config__grid">
-        <p>{t("pluginChat.targetHint")}</p>
         <Field htmlFor={`${id}-cwd`} label={t("pluginChat.cwd")} hint={t("pluginChat.cwdAutoHint")}>
           <Input
             id={`${id}-cwd`}
@@ -114,6 +114,7 @@ export function PluginExecutionDialog({
             htmlFor={`${id}-runtime`}
             label={t("pluginChat.remoteNode")}
             hint={t("pluginChat.remoteNodeConsent")}
+            hintPresentation="inline"
           >
             <Input
               id={`${id}-runtime`}

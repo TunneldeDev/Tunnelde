@@ -1,15 +1,21 @@
 import { ArrowRight, Laptop, Server } from "lucide-react";
-import { useId, useState } from "react";
+import { useId } from "react";
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { editorDraft, type ForwardEditorDraft } from "../model/viewState";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
-import type { ForwardRule } from "../model/contract";
+import type { ForwardRule, ForwardGroup } from "../model/contract";
+
+import { SwitchRow } from "@/components/ui/form/Switch";
+import { Select } from "@/components/ui/form/Select";
 
 import { endpointAddress, localConnectionAddress } from "../model/endpoint";
 
 export function ForwardRuleEditor({
   rule,
   hostName,
+  groups = [],
   busy,
   error,
   onSave,
@@ -17,6 +23,7 @@ export function ForwardRuleEditor({
 }: {
   rule: ForwardRule;
   hostName: string;
+  groups?: ForwardGroup[];
   busy: boolean;
   error?: string;
   onSave: (rule: ForwardRule, start: boolean) => void;
@@ -24,11 +31,15 @@ export function ForwardRuleEditor({
 }) {
   const { t } = useTranslation();
   const id = useId();
-  const [form, setForm] = useState({
-    ...rule,
-    bindPort: String(rule.bindPort),
-    targetPort: String(rule.targetPort),
-  });
+  const [form, setForm] = usePanelViewState<ForwardEditorDraft>(
+    "rule-fields",
+    () => ({
+      ...rule,
+      bindPort: String(rule.bindPort),
+      targetPort: String(rule.targetPort),
+    }),
+    (value): value is ForwardEditorDraft => editorDraft(value, rule),
+  );
   const local = form.mode === "local";
   const prefix = `forward.${form.mode}` as const;
   return (
@@ -148,6 +159,39 @@ export function ForwardRuleEditor({
             onChange={(event) => setForm({ ...form, name: event.target.value })}
           />
         </Field>
+        <Field label={t("forward.groupLabel")} hint={t("forward.groupHint")}>
+          <Select
+            label={t("forward.groupLabel")}
+            value={form.groupId ?? ""}
+            options={[
+              { value: "", label: t("forward.ungrouped") },
+              ...groups.map((group) => ({ value: group.id, label: group.name })),
+            ]}
+            onChange={(value) => setForm({ ...form, groupId: value || null })}
+          />
+        </Field>
+        <div className="forward-automation">
+          {(["autoStart", "autoRetry"] as const).map((option) => (
+            <SwitchRow
+              key={option}
+              label={t(`forward.${option}`)}
+              hint={t(`forward.${option}Hint`)}
+              checked={form.automation?.[option] ?? false}
+              disabled={busy}
+              onChange={(checked) =>
+                setForm({
+                  ...form,
+                  automation: {
+                    autoStart: false,
+                    autoRetry: false,
+                    ...form.automation,
+                    [option]: checked,
+                  },
+                })
+              }
+            />
+          ))}
+        </div>
         {local ? (
           <p className="forward-connect-hint">
             {t("forward.connectTo", {

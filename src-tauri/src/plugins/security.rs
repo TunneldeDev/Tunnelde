@@ -25,6 +25,7 @@ pub(super) use package::{frontend_snapshot, FrontendSnapshot};
 pub const EVENT: &str = "plugin:security-changed";
 pub const PERMISSIONS: &[&str] = &[
     "ui.trusted",
+    "bus.communicate",
     "backgroundTasks.read",
     "backgroundTasks.write",
     "log",
@@ -38,6 +39,7 @@ pub const PERMISSIONS: &[&str] = &[
     "settings.write",
     "hosts.read",
     "hosts.write",
+    "hosts.sshConfig.read",
     "sessions.read",
     "ssh.exec",
     "fs.read",
@@ -64,6 +66,7 @@ pub const PERMISSIONS: &[&str] = &[
     "secrets",
     "mounts.read",
     "mounts.write",
+    "mounts.hostDetails",
     "forwards.read",
     "forwards.write",
 ];
@@ -318,7 +321,7 @@ impl PluginSecurity {
     /// policy -> metadata -> database, matching permission persistence. The
     /// callback must not reenter security or await. Only bounded local metadata
     /// persistence is permitted; no resource traversal, network or process I/O.
-    pub(super) fn with_authorized<T>(
+    pub(crate) fn with_authorized<T>(
         &self,
         lease: &Lease,
         permissions: &[&str],

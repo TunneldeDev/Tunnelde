@@ -1,5 +1,6 @@
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { AboutPage } from "@/features/about/AboutPage";
+import { MountHostDetailsSettings } from "@/features/plugins/MountHostDetailsSettings";
 import { ChevronRight, RotateCcw, Search } from "lucide-react";
 import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, parseSearchQuery, toggleSearchFilter } from "@/lib/search/query";
@@ -328,7 +329,9 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
                   )
                   .map((definition) =>
                     definition.kind === "uiProviders" ? (
-                      <UiProviderSettings key={definition.key} />
+                      <UiProviderSettings key={definition.key} expanded={filtering} />
+                    ) : definition.kind === "mountHostDetails" ? (
+                      <MountHostDetailsSettings key={definition.key} />
                     ) : definition.key === "editorDraftRecovery" ? (
                       <PreferenceRow
                         key={definition.key}

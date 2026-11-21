@@ -19,6 +19,49 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
+    fn shared_mount_discovery_links_to_authorized_lifecycle_methods() {
+        let catalogue = describe();
+        let mounts = &catalogue["mounts"];
+        let lifecycle = &mounts["groupLifecycle"];
+        assert_eq!(mounts["configuration"], "persistent-shared");
+        assert_eq!(mounts["connection"], "dedicated-per-group");
+        assert_eq!(lifecycle["autoReconnectField"], "autoReconnect");
+        for (reference, name, permission) in [
+            (&mounts["rules"], "mounts.rules.snapshot", "mounts.read"),
+            (&lifecycle["save"], "mounts.groups.save", "mounts.write"),
+            (
+                &lifecycle["connect"],
+                "mounts.groups.connect",
+                "mounts.write",
+            ),
+            (
+                &lifecycle["disconnect"],
+                "mounts.groups.disconnect",
+                "mounts.write",
+            ),
+            (
+                &lifecycle["reconnect"],
+                "mounts.groups.reconnect",
+                "mounts.write",
+            ),
+            (
+                &lifecycle["connectAndStartAuto"],
+                "mounts.runtime.connectAndStartAuto",
+                "mounts.write",
+            ),
+            (
+                &mounts["observation"]["groups"],
+                "mounts.groups.observe",
+                "mounts.read",
+            ),
+        ] {
+            assert_eq!(reference, name);
+            let method = METHODS.iter().find(|method| method.name == name).unwrap();
+            assert_eq!(method.permissions, [permission]);
+        }
+    }
+
+    #[test]
     fn every_method_has_one_domain_and_every_point_uses_real_authorized_methods() {
         let catalogue = describe();
         assert_eq!(catalogue["version"], 1);
@@ -28,6 +71,13 @@ mod tests {
             super::super::frontend::UI_SDK_VERSION
         );
         assert_eq!(catalogue["frontend"]["permission"], "ui.trusted");
+        assert_eq!(catalogue["hostDetails"]["manifest"], "hostDetails");
+        assert_eq!(catalogue["hostDetails"]["context"], "view.hostDetails");
+        assert!(PERMISSIONS.contains(
+            &catalogue["hostDetails"]["mounts"]["permission"]
+                .as_str()
+                .unwrap()
+        ));
         assert!(PERMISSIONS.contains(&"ui.trusted"));
         let providers = &catalogue["frontend"]["providers"];
         assert_eq!(providers["manifest"], "views[].provider");

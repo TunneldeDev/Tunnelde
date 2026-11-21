@@ -2,19 +2,27 @@
 //! Callers authorize; SSH transport remains internal to the runtime adapter.
 use crate::{db::Database, error::AppResult, ssh::forward::ForwardRegistry, state::AppState};
 use tauri::{AppHandle, Emitter, Manager};
+pub(crate) mod automation;
+pub(crate) mod connections;
 pub mod contract;
+pub(crate) mod disconnect;
+pub(crate) mod groups;
 pub(crate) mod interaction;
 pub(crate) mod query;
-mod repository;
+pub(crate) mod repository;
 mod runtime;
 pub(crate) mod start;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
-pub(crate) use runtime::{prepare_checked, take_checked};
+pub(crate) use runtime::{
+    prepare_checked, prepare_managed, start_managed, stop_checked, take_checked,
+    take_manual_remove, take_manual_stop,
+};
 pub use runtime::{start_checked, stop};
 
 pub(crate) fn registry(app: &AppHandle) -> ForwardRegistry {
     let app = app.clone();
     ForwardRegistry::with_notifier(move || {
+        automation::wake(&app);
         let _ = app.emit(
             "plugin://domain-changed",
             serde_json::json!({"domain":"forwards"}),
@@ -53,6 +61,9 @@ impl Forwarding<'_> {
     fn rules(&self) -> AppResult<Vec<RevisionedRule>> {
         repository::list(self.db)
     }
+    fn rule(&self, id: &str) -> AppResult<Option<RevisionedRule>> {
+        self.db.with(|conn| repository::find(conn, id))
+    }
     fn list(&self) -> AppResult<Vec<ForwardInfo>> {
         Ok(self
             .list_revisioned()?
@@ -75,10 +86,14 @@ impl Forwarding<'_> {
     fn save(&self, rule: ForwardRule) -> AppResult<ForwardRule> {
         Ok(self.save_checked(rule, None)?.rule)
     }
-    fn save_checked(
+    fn save_checked(&self, rule: ForwardRule, expected: Option<&str>) -> AppResult<RevisionedRule> {
+        self.save_configured(rule, expected, automation::Options::default())
+    }
+    fn save_configured(
         &self,
         mut rule: ForwardRule,
         expected: Option<&str>,
+        options: automation::Options,
     ) -> AppResult<RevisionedRule> {
         if rule.id.is_empty() {
             if expected.is_some() {
@@ -87,8 +102,9 @@ impl Forwarding<'_> {
             rule.id = uuid::Uuid::new_v4().to_string();
         }
         validate(&rule)?;
-        self.registry
-            .edit(&rule.id, || repository::save(self.db, &rule, expected))
+        self.registry.edit(&rule.id, || {
+            repository::save_configured(self.db, &rule, expected, options)
+        })
     }
     fn remove(&self, id: &str) -> AppResult<()> {
         self.remove_checked(id, None)
@@ -130,6 +146,14 @@ pub fn save_checked(
 ) -> AppResult<RevisionedRule> {
     service(&app.state::<AppState>()).save_checked(rule, expected)
 }
+pub(crate) fn save_configured(
+    app: &AppHandle,
+    rule: ForwardRule,
+    expected: Option<&str>,
+    options: automation::Options,
+) -> AppResult<RevisionedRule> {
+    service(&app.state::<AppState>()).save_configured(rule, expected, options)
+}
 pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
     service(&app.state::<AppState>()).remove(id)
 }
@@ -138,3 +162,23 @@ pub fn remove_checked(app: &AppHandle, id: &str, expected: Option<&str>) -> AppR
 }
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn save_grouped(
+    app: &AppHandle,
+    mut rule: ForwardRule,
+    expected: Option<&str>,
+    options: automation::Options,
+    group: Option<&str>,
+) -> AppResult<RevisionedRule> {
+    if rule.id.is_empty() {
+        if expected.is_some() {
+            return Err(crate::error::AppError::validation("forward.changed"));
+        }
+        rule.id = uuid::Uuid::new_v4().to_string();
+    }
+    validate(&rule)?;
+    let state = app.state::<AppState>();
+    state.forwards.edit(&rule.id, || {
+        repository::save_grouped(&state.db, &rule, expected, options, group)
+    })
+}

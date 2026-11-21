@@ -1,9 +1,11 @@
+import { panelPresentation } from "@/store/panelPresentation";
+import { SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
 import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import { ActivityBar } from "@/components/layout/ActivityBar";
 import { PaneLayout } from "@/components/layout/PaneLayout";
 import { WorkspaceContents } from "@/components/layout/TabContent";
@@ -42,15 +44,15 @@ function List({ view }: { view: SidebarView }) {
   }, [view]);
   return (
     <section className="sidebar">
-      <header>
-        <SidebarTitle view={view}>{view}</SidebarTitle>
-        <SidebarDockControls view={view} />
-      </header>
+      <PanelHeader view={view} />
       <input
         aria-label={`${view} search`}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
+      <details>
+        <summary>{view} details</summary>Retained disclosure
+      </details>
     </section>
   );
 }
@@ -88,6 +90,8 @@ function drop(target: Element, x: number, y: number, id = "sidebar:hosts") {
 }
 beforeEach(async () => {
   vi.clearAllMocks();
+  for (const view of SIDEBAR_VIEWS)
+    panelPresentation(view).setState({ open: false, preferred: null });
   await i18n.changeLanguage("en-US");
   usePlugins.setState({ items: [] });
   useBackgroundTaskPanel.setState({ open: false, pinned: false, bounds: null });
@@ -175,6 +179,7 @@ describe("sidebar panel docking", () => {
     );
     const dialog = screen.getByRole("dialog", { name: "Background tasks" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Move into workspace" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move into workspace" }));
     expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
     const id = "sidebar:tasks";
     expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(true);
@@ -193,7 +198,8 @@ describe("sidebar panel docking", () => {
     expect(
       screen.getByRole("region", { name: "Background tasks" }).closest(".sidebar-view"),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Open as a floating window" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move into workspace" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open as a floating window" }));
     expect(screen.queryByRole("region", { name: "Background tasks" })).toBeNull();
     expect(screen.getByRole("dialog", { name: "Background tasks" })).toBeTruthy();
     expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(false);
@@ -437,9 +443,7 @@ describe("sidebar panel docking", () => {
       const { layout, activePaneId: owner } = useWorkspace.getState();
       const panel = document.querySelector(`[data-sidebar-panel="${view}"]`)!;
       const group = rendered.container.querySelector(`[data-pane-id="${owner}"]`)!;
-      fireEvent.click(
-        within(group as HTMLElement).getByRole("button", { name: "More" }),
-      );
+      fireEvent.click(within(group as HTMLElement).getByRole("button", { name: "More" }));
       fireEvent.click(screen.getByRole("menuitem", { name: "Close pane" }));
       expect(panel.hasAttribute("hidden")).toBe(true);
       expect(screen.queryByRole("region", { name: title })).toBeNull();
@@ -508,4 +512,66 @@ describe("sidebar panel docking", () => {
     expect(mounted.mock.calls.filter(([name]) => name === "plugins")).toHaveLength(1);
     expect(unmounted).not.toHaveBeenCalled();
   });
+});
+
+it("retains input, disclosure, focus and scroll when moving the same panel among three presentations", async () => {
+  const { setPanelLocation } = await import("@/lib/panels/controller");
+  const { FloatingPanelLayer } = await import("@/components/layout/SidebarDock");
+  render(
+    <>
+      <Shell />
+      <FloatingPanelLayer />
+    </>,
+  );
+  const input = screen.getByRole("textbox", { name: "hosts search" });
+  fireEvent.change(input, { target: { value: "retained draft" } });
+  const owner = input.closest("[data-sidebar-panel]")!;
+  owner.scrollTop = 123;
+  const disclosure = owner.querySelector("details")!;
+  disclosure.open = true;
+  input.focus();
+  const starts = mounted.mock.calls.filter(([id]) => id === "hosts").length;
+  for (const location of ["floating", "workspace", "sidebar", "floating", "sidebar"] as const) {
+    await act(async () => {
+      setPanelLocation("hosts", location);
+    });
+    expect(screen.getByRole("textbox", { name: "hosts search" })).toBe(input);
+    expect(input).toHaveProperty("value", "retained draft");
+    expect(owner.scrollTop).toBe(123);
+    expect(disclosure.open).toBe(true);
+    expect(document.activeElement, location).toBe(input);
+  }
+  expect(mounted.mock.calls.filter(([id]) => id === "hosts")).toHaveLength(starts);
+  expect(unmounted).not.toHaveBeenCalledWith("hosts");
+});
+
+it("removes an uninstalled contribution without resurrecting a ghost slot or closing other panels", async () => {
+  const view = "plugin:formatter:chat" as const;
+  usePlugins.setState({
+    items: [
+      {
+        ...plugin,
+        status: "running",
+        views: [{ id: "chat", title: "AI assistant", location: "sidebar", kind: "chat" }],
+      },
+    ],
+  });
+  const { setPanelLocation } = await import("@/lib/panels/controller");
+  const { FloatingPanelLayer } = await import("@/components/layout/SidebarDock");
+  render(
+    <>
+      <Shell />
+      <FloatingPanelLayer />
+    </>,
+  );
+  act(() => {
+    setPanelLocation(view, "floating");
+    setPanelLocation("tasks", "workspace");
+  });
+  expect(screen.getByRole("textbox", { name: `${view} search` })).toBeTruthy();
+  act(() => usePlugins.setState({ items: [] }));
+  expect(panelPresentation(view).getState().open).toBe(false);
+  expect(useNavigation.getState().visitedSidebars).not.toContain(view);
+  expect(screen.queryByRole("textbox", { name: `${view} search` })).toBeNull();
+  expect(useWorkspace.getState().tabs.some((tab) => tab.id === "sidebar:tasks")).toBe(true);
 });

@@ -1,68 +1,159 @@
-import { Save, ShieldCheck, WandSparkles } from "lucide-react";
-import { shortcutCommands } from "@/lib/keyboard/registry";
-import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
-import { useEffect, useRef, useState } from "react";
+import { RefreshCw, Save, ShieldCheck, WandSparkles } from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "@/components/ui/form/Select";
+import { Dialog } from "@/components/ui/overlay/Dialog";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
-import { useEditors, undoEditorEdit, editorDocument } from "@/store/editors";
-import { usePlugins } from "@/store/plugins";
-import {
-  documentFormatters,
-  editorCommandMatches,
-  formatEditorDocument,
-  useFormatting,
-} from "@/lib/plugins/formatting";
-import { openPluginAction } from "@/lib/plugins/actions";
-import { useDialogs } from "@/store/dialogs";
-import { useSsh } from "@/store/ssh";
-import { useSettings } from "@/store/settings";
-import { useWorkspace } from "@/store/workspace";
-import { useEditorLocation } from "@/store/editorLocation";
-import { useViewElementState, useBackgroundGuard } from "@/lib/session/viewState";
-import { EditorConflictDialog } from "./EditorConflictDialog";
-import { api } from "@/lib/api/ipc";
+import { editorHasPendingChanges, type EditorSelectionSnapshot } from "@/store/editors";
+import type { EditorPageServices } from "./editorPageServices";
+import { mainEditorPageServices } from "./mainEditorPageServices";
+import { useBackgroundGuard } from "@/lib/session/viewState";
 import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
+import type { TextEncoding } from "@/lib/api/types";
+import type { EditorView } from "@codemirror/view";
+import { editorTextMap, editorToSource, sourceToEditor } from "./editorText";
+import { locationOffset } from "./largeEditorState";
+
+const LargeEditor = lazy(() =>
+  import("./LargeEditor").then((module) => ({ default: module.LargeEditor })),
+);
 
 interface EditorPageProps {
   tabId: string;
   active: boolean;
 }
 
-export function EditorPage({ tabId, active }: EditorPageProps) {
-  const { t } = useTranslation();
-  const entry = useEditors((state) => state.entries[tabId]);
-  const change = useEditors((state) => state.change);
-  const save = useEditors((state) => state.save);
-  const reconnect = useEditors((state) => state.reconnect);
-  const wordWrap = useSettings((state) => state.settings.editorWordWrap);
-  const tabSize = useSettings((state) => state.settings.editorTabSize);
-  const spellCheck = useSettings((state) => state.settings.editorSpellCheck);
-  const tabHostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
-  const hostId = tabHostId ?? entry?.recoveryTarget?.hostId;
-  const candidate = useSsh((state) =>
-    state.sessions.find(
-      (session) =>
-        session.hostId === hostId &&
-        session.purpose !== "forwarding" &&
-        (!entry?.recoveryTarget || session.address === entry.recoveryTarget.address),
-    ),
+function EncodingPickerDialog({
+  open,
+  title,
+  description,
+  closeLabel,
+  options,
+  current,
+  onClose,
+  onChoose,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  closeLabel: string;
+  options: Array<{ value: TextEncoding; label: string }>;
+  current: TextEncoding;
+  onClose: () => void;
+  onChoose: (encoding: TextEncoding) => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      title={title}
+      closeLabel={closeLabel}
+      onClose={onClose}
+      width={420}
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          {closeLabel}
+        </Button>
+      }
+    >
+      <p className="td-field__hint">{description}</p>
+      <div className="encoding-picker" role="list">
+        {options.map((option) => (
+          <Button
+            key={option.value}
+            variant={option.value === current ? "secondary" : "ghost"}
+            aria-pressed={option.value === current}
+            onClick={() => onChoose(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </Dialog>
   );
+}
+
+export function EditorPage(props: EditorPageProps) {
+  return <EditorPageView {...props} services={mainEditorPageServices} />;
+}
+export function EditorPageView({
+  tabId,
+  active,
+  services,
+}: EditorPageProps & { services: EditorPageServices }) {
+  const { t } = useTranslation();
+  const model = services.useModel(tabId);
+  const { entry, candidate, formatting, hasFormatter, location } = model;
+  const { wordWrap, tabSize, spellCheck } = model.preferences;
+  const { change, changeSaveEncoding, save, reconnect, reopen } = services;
+  const ConflictDialog = services.ConflictDialog;
   const [reconnecting, setReconnecting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
   const [setupFailure, setSetupFailure] = useState<{ scope: string; message: string } | null>(null);
+  const [reopening, setReopening] = useState(false);
+  const [reopenPicker, setReopenPicker] = useState(false);
+  const dirty = !!entry && !entry.loading && editorHasPendingChanges(entry);
+  const encodingOptions: Array<{ value: TextEncoding; label: string }> = [
+    { value: "utf-8", label: "UTF-8" },
+    { value: "utf-16le", label: "UTF-16 LE" },
+    { value: "utf-16be", label: "UTF-16 BE" },
+    { value: "gb18030", label: "GB18030" },
+    { value: "gbk", label: "GBK" },
+    { value: "big5", label: "Big5" },
+    { value: "shift-jis", label: "Shift-JIS" },
+    { value: "euc-jp", label: "EUC-JP" },
+    { value: "euc-kr", label: "EUC-KR" },
+    { value: "windows-1252", label: "Windows-1252" },
+  ];
   const [enabledScope, setEnabledScope] = useState<string | null>(null);
-  const formatting = useFormatting((state) => state.busy.includes(tabId));
-  const hasFormatter = usePlugins(
-    (state) => !!entry && documentFormatters(entry.path, state.items).length > 0,
+  const largeView = useRef<EditorView | null>(null);
+  const page = useRef<HTMLDivElement>(null);
+  const [fallbackDocumentId] = useState(() => entry?.documentId ?? crypto.randomUUID());
+  const documentId = entry?.documentId ?? fallbackDocumentId;
+  const documentVersion = entry?.version ?? 0;
+  const syntaxDocument =
+    entry && !entry.loading && !entry.error && !entry.disconnected
+      ? {
+          tabId,
+          documentId,
+          version: documentVersion,
+          path: entry.path,
+          name: entry.name,
+          content: entry.content,
+          dirty: editorHasPendingChanges(entry),
+        }
+      : null;
+  const composing = useRef(false);
+  const [syntaxComposing, setSyntaxComposing] = useState(false);
+  const syntax = services.useSyntax(
+    syntaxDocument,
+    active && !!syntaxDocument && !model.frozen,
+    syntaxComposing,
   );
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
-  useBackgroundGuard(reconnecting || formatting || reviewing || settingUp);
+  const lastEditorContent = useRef(entry?.content ?? "");
+  const [selectionRevision, setSelectionRevision] = useState(0);
+  const [largeRestore, setLargeRestore] = useState<{
+    token: number;
+    selection: EditorSelectionSnapshot;
+  } | null>(null);
+  useEffect(() => {
+    if (entry && !entry.loading && !entry.error && entry.documentId === undefined)
+      services.document(tabId);
+    // The upgrade runs once per stable document state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.documentId, entry?.error, entry?.loading, tabId]);
+  useBackgroundGuard(
+    reconnecting || formatting || reviewing || settingUp || reopening || reopenPicker,
+  );
+  useLayoutEffect(() => {
+    services.interaction?.(
+      reconnecting || formatting || reviewing || settingUp || reopening || reopenPicker,
+    );
+  }, [services, reconnecting, formatting, reviewing, settingUp, reopening, reopenPicker]);
   const setup = async () => {
     if (!entry?.sessionId || settingUp) return;
     const session = entry.sessionId;
@@ -70,7 +161,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     setSetupFailure(null);
     setSettingUp(true);
     try {
-      if (await api.sftpSetupNativeSave(session, path)) {
+      if (await services.setup(session, path)) {
         setEnabledScope(`${session}:${path}`);
         toast(t("editor.nativeSetupComplete"), "success");
       }
@@ -82,31 +173,88 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       setSettingUp(false);
     }
   };
-  const location = useEditorLocation((state) => state.target);
   useEffect(() => {
-    if (
-      !active ||
-      location?.tabId !== tabId ||
-      !entry ||
-      entry.loading ||
-      entry.error ||
-      !textarea.current
-    )
-      return;
-    const lines = entry.content.split("\n");
-    const line = Math.max(0, Math.min(lines.length - 1, location.line - 1));
-    const offset =
-      lines.slice(0, line).reduce((total, item) => total + item.length + 1, 0) +
-      Array.from(lines[line] ?? "")
-        .slice(0, Math.max(0, location.column - 1))
-        .join("").length;
-    const element = textarea.current;
-    element.focus();
-    element.setSelectionRange(offset, offset);
-    const lineHeight = parseFloat(getComputedStyle(element).lineHeight) || 20;
-    element.scrollTop = Math.max(0, line * lineHeight - element.clientHeight / 3);
-    useEditorLocation.getState().clear();
-  }, [active, location, tabId, entry]);
+    const instance = largeView.current;
+    if (!instance || composing.current || !entry?.documentId || entry.version === undefined) return;
+    const restored = services.consumeSelection(
+      tabId,
+      entry.documentId,
+      entry.version,
+      entry.content,
+    );
+    if (restored)
+      queueMicrotask(() =>
+        setLargeRestore((current) => ({ token: (current?.token ?? 0) + 1, selection: restored })),
+      );
+  }, [entry, selectionRevision, tabId, services]);
+
+  useEffect(() => {
+    if (entry?.content !== undefined) lastEditorContent.current = entry.content;
+  }, [entry?.content, entry?.documentId, entry?.version]);
+
+  useEffect(() => {
+    if (!largeRestore) return;
+    const timer = setTimeout(() => setLargeRestore(null), 0);
+    return () => clearTimeout(timer);
+  }, [largeRestore]);
+
+  const currentSourceSelection = (): EditorSelectionSnapshot | null => {
+    const view = largeView.current;
+    if (!view) return null;
+    const range = view.state.selection.main;
+    const map = editorTextMap(lastEditorContent.current);
+    return {
+      start: editorToSource(map, range.from),
+      end: editorToSource(map, range.to),
+      direction: range.anchor <= range.head ? "forward" : "backward",
+      scrollTop: view.scrollDOM.scrollTop,
+      scrollLeft: view.scrollDOM.scrollLeft,
+    };
+  };
+  useEffect(() => {
+    void (async () => {
+      const instance = largeView.current;
+      if (
+        !active ||
+        location?.tabId !== tabId ||
+        !entry ||
+        entry.loading ||
+        entry.error ||
+        !instance
+      )
+        return;
+      const line = Math.max(1, Math.min(instance.state.doc.lines, location.line));
+      const target = instance.state.doc.line(line);
+      const offset = sourceToEditor(
+        editorTextMap(entry.content),
+        locationOffset(entry.content, location.line, location.column),
+      );
+      const clamped = Math.max(target.from, Math.min(target.to, offset));
+      instance.dispatch({
+        selection: { anchor: clamped },
+        effects: [
+          (await import("@codemirror/view")).EditorView.scrollIntoView(clamped, { y: "center" }),
+        ],
+      });
+      instance.focus();
+      services.clearLocation();
+    })();
+  }, [active, location, tabId, entry, services]);
+
+  const reopenWithEncoding = async (encoding: TextEncoding) => {
+    if (!entry || reopening || dirty || entry.loading || entry.saving || entry.disconnected) return;
+    setReopening(true);
+    try {
+      await reopen(tabId, encoding);
+    } finally {
+      setReopening(false);
+    }
+  };
+  const changeEncoding = (encoding: TextEncoding) => {
+    if (!entry || reopening || entry.saving) return;
+    if (entry.decodeError) void reopenWithEncoding(encoding);
+    else changeSaveEncoding(tabId, encoding);
+  };
 
   const recover = async () => {
     if (!candidate || reconnecting) return;
@@ -115,11 +263,10 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       const target = { hostId: candidate.hostId, address: candidate.address };
       const result = await reconnect(tabId, candidate.id, false, target);
       if (result === "conflict")
-        useDialogs.getState().confirm({
+        services.confirm({
           title: t("editor.conflictTitle"),
           body: t("editor.conflictBody"),
-          confirmLabel: t("common.apply"),
-          danger: true,
+          confirmLabel: t("editor.reconnect"),
           onConfirm: async () => {
             await reconnect(tabId, candidate.id, true, target);
           },
@@ -130,27 +277,15 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   };
 
   useEffect(() => {
-    if (!active) {
-      return;
-    }
-    const element = textarea.current?.closest<HTMLElement>(".editor-page");
+    if (!active) return;
+    const element = page.current;
     if (!element) return;
-    return bindShortcutProvider(element, (event) => {
-      const plugins = usePlugins.getState().items;
-      const commands = shortcutCommands(plugins).filter((item) => {
-        if (item.scope !== "editor" || !entry || entry.loading || entry.error || entry.disconnected)
-          return false;
-        if (!item.plugin?.command) return true;
-        const contributed = plugins
-          .find((plugin) => plugin.id === item.plugin?.id)
-          ?.commands.find((command) => command.id === item.plugin?.command);
-        return (
-          !!contributed?.editor && editorCommandMatches(entry.path, contributed.editor.extensions)
-        );
-      });
-      const document = editorDocument(tabId);
+    return services.bindShortcuts(element, (event) => {
+      const commands =
+        !entry || entry.loading || entry.error || entry.disconnected ? [] : model.commands;
+      const document = services.document(tabId);
       let queue = Promise.resolve();
-      return scopedShortcutCandidates(
+      return services.shortcutCandidates(
         event,
         commands.map((command) => command.id),
         (id) => {
@@ -159,34 +294,37 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             queue = queue.then(async () => {
               await save(tabId);
             });
-          else if (id === "editor.undo" || id === "editor.redo")
-            return undoEditorEdit(tabId, id === "editor.redo");
-          else {
+          else if (id === "editor.undo" || id === "editor.redo") {
+            const selection = currentSourceSelection();
+            if (selection) services.rememberSelection(tabId, selection);
+            return services.undo(tabId, id === "editor.redo");
+          } else {
             const action = commands.find((command) => command.id === id)?.plugin;
             if (!action) return false;
             queue = queue.then(async () => {
-              await openPluginAction(action, document);
+              await services.openPluginAction(action, document);
             });
           }
           return true;
         },
       );
     });
-  }, [active, save, tabId, entry, settingUp]);
+  }, [active, save, tabId, entry, settingUp, services, model.commands]);
 
-  useEffect(() => {
-    const element = textarea.current;
-    if (!element) return;
-    const beforeInput = (event: InputEvent) => {
-      if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
-        event.preventDefault();
-        undoEditorEdit(tabId, event.inputType === "historyRedo");
-      }
-    };
-    element.addEventListener("beforeinput", beforeInput);
-    return () => element.removeEventListener("beforeinput", beforeInput);
-  }, [tabId, entry?.loading, entry?.error]);
-
+  const [viewReady, setViewReady] = useState(false);
+  useLayoutEffect(() => {
+    services.rendered?.(!!entry && !entry.loading && (viewReady || !!entry.error));
+  }, [entry, services, viewReady]);
+  useLayoutEffect(
+    () => services.attachView?.(currentSourceSelection, () => largeView.current?.hasFocus ?? false),
+    [services],
+  );
+  useLayoutEffect(() => {
+    if (!model.frozen)
+      services.resumeFocus?.(() => {
+        if (document.hasFocus()) largeView.current?.focus();
+      });
+  }, [model.frozen, services]);
   if (!entry) {
     return (
       <div className="page">
@@ -195,16 +333,36 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     );
   }
 
-  const dirty = !entry.loading && entry.content !== entry.baseline;
-
   return (
-    <div className="editor-page">
+    <div className="editor-page" ref={page}>
       <header className="editor-head">
         <span className={cn("editor-dot", dirty && "is-dirty")} aria-hidden="true" />
         <span className="editor-head__name">{entry.name}</span>
         <span className="editor-head__path" title={entry.path}>
           {entry.path}
         </span>
+        <Select
+          className="editor-head__encoding"
+          value={entry.encoding ?? "utf-8"}
+          label={t(entry.decodeError ? "editor.reopenEncodingTitle" : "editor.saveEncoding")}
+          disabled={
+            reopening ||
+            entry.loading ||
+            (!!entry.error && !entry.decodeError) ||
+            entry.disconnected ||
+            entry.saving
+          }
+          options={encodingOptions}
+          onChange={(value) => changeEncoding(value as TextEncoding)}
+          footerAction={
+            !dirty
+              ? {
+                  label: t("editor.reopenEncoding"),
+                  onSelect: () => setReopenPicker(true),
+                }
+              : undefined
+          }
+        />
         {entry.sessionId ? (
           <Button
             variant="ghost"
@@ -238,7 +396,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             aria-label={t(formatting ? "editor.formatting" : "editor.format")}
             title={t(formatting ? "editor.formatting" : "editor.format")}
             disabled={formatting || entry.loading || !!entry.error || entry.disconnected}
-            onClick={() => formatEditorDocument(tabId)}
+            onClick={() => services.format(tabId)}
           >
             {t(formatting ? "editor.formatting" : "editor.format")}
           </Button>
@@ -256,6 +414,25 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         </Button>
       </header>
 
+      <EncodingPickerDialog
+        open={reopenPicker}
+        title={t("editor.reopenEncodingTitle")}
+        description={t("editor.reopenEncodingDescription")}
+        closeLabel={t("common.close")}
+        options={encodingOptions}
+        current={entry.encoding ?? "utf-8"}
+        onClose={() => setReopenPicker(false)}
+        onChoose={(encoding) => {
+          setReopenPicker(false);
+          void reopenWithEncoding(encoding);
+        }}
+      />
+
+      {model.syncFailure ? (
+        <div className="editor-offline" role="alert">
+          {model.syncFailure}
+        </div>
+      ) : null}
       {setupFailure?.scope === `${entry.sessionId}:${entry.path}` ? (
         <div className="editor-offline" role="alert">
           <span>{setupFailure.message}</span>
@@ -276,9 +453,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           ) : null}
         </div>
       ) : null}
-      {reviewing ? (
-        <EditorConflictDialog tabId={tabId} onClose={() => setReviewing(false)} />
-      ) : null}
+      {reviewing ? <ConflictDialog tabId={tabId} onClose={() => setReviewing(false)} /> : null}
 
       {entry.disconnected ? (
         <div className="editor-offline" role="status">
@@ -293,27 +468,108 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
 
       {entry.error ? (
         <div className="page">
-          <EmptyState title={entry.error} />
+          <EmptyState
+            title={entry.error}
+            action={
+              entry.baselineLoaded === false &&
+              !entry.disconnected &&
+              !dirty &&
+              !entry.loading &&
+              !entry.saving ? (
+                <Button
+                  size="sm"
+                  leading={<RefreshCw size={13} />}
+                  onClick={() => void services.retryOpen(tabId)}
+                >
+                  {t("common.retry")}
+                </Button>
+              ) : undefined
+            }
+          />
         </div>
       ) : entry.loading ? (
         <div className="page">
           <EmptyState title={t("editor.loading")} />
         </div>
       ) : (
-        <textarea
-          ref={textarea}
-          className="editor-body td-code-editor"
-          aria-label={entry.name}
-          spellCheck={spellCheck}
-          wrap={wordWrap ? "soft" : "off"}
-          style={{
-            whiteSpace: wordWrap ? "pre-wrap" : "pre",
-            overflowWrap: wordWrap ? "anywhere" : "normal",
-            tabSize,
-          }}
-          value={entry.content}
-          onChange={(event) => change(tabId, event.target.value)}
-        />
+        <Suspense
+          fallback={
+            <div className="page">
+              <EmptyState title={t("editor.loading")} />
+            </div>
+          }
+        >
+          <LargeEditor
+            content={entry.content}
+            documentId={documentId}
+            version={documentVersion}
+            label={entry.name}
+            readOnly={entry.disconnected || model.frozen}
+            wordWrap={wordWrap}
+            tabSize={tabSize}
+            spellCheck={spellCheck}
+            tokens={syntax.tokens}
+            tokensDocumentId={syntax.tokensDocumentId ?? undefined}
+            tokensVersion={syntax.tokensVersion ?? undefined}
+            onVisibleRangeSettled={syntax.onVisibleRangeSettled}
+            viewRef={largeView}
+            onViewReady={() => {
+              setViewReady(true);
+              const pending = services.peekSelection(
+                tabId,
+                documentId,
+                documentVersion,
+                entry.content,
+              );
+              const restored = pending ?? services.restoreSelection(tabId);
+              if (restored)
+                setLargeRestore((current) => ({
+                  token: (current?.token ?? 0) + 1,
+                  selection: restored,
+                }));
+            }}
+            restoreSelection={largeRestore?.selection}
+            restoreToken={largeRestore?.token}
+            onBeforeInput={(inputType, selection) =>
+              services.beforeInput(tabId, inputType, selection)
+            }
+            onChange={(content, selection) => {
+              lastEditorContent.current = content;
+              change(tabId, content, selection);
+              services.rememberSelection(tabId, selection);
+            }}
+            onSelection={(selection) => {
+              services.rememberSelection(tabId, selection);
+              services.suspendSelection(tabId, selection);
+            }}
+            onSelectionSnapshot={(selection) => {
+              services.rememberSelection(tabId, selection);
+              services.suspendSelection(tabId, selection);
+            }}
+            onSelectionChanged={(selection) => services.suspendSelection(tabId, selection)}
+            onCompositionStart={(selection) => {
+              composing.current = true;
+              setSyntaxComposing(true);
+              services.beginComposition(tabId, selection);
+            }}
+            onCompositionEnd={(selection) => {
+              composing.current = false;
+              setSyntaxComposing(false);
+              services.endComposition(tabId, selection);
+              setSelectionRevision((revision) => revision + 1);
+            }}
+            onUndo={() => {
+              const selection = currentSourceSelection();
+              if (selection) services.rememberSelection(tabId, selection);
+              return services.undo(tabId);
+            }}
+            onRedo={() => {
+              const selection = currentSourceSelection();
+              if (selection) services.rememberSelection(tabId, selection);
+              return services.undo(tabId, true);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

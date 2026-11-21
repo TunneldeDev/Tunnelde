@@ -205,3 +205,47 @@ async fn oversized_authorized_file_fails_before_opening_a_writer() {
         .iter()
         .all(|flags| flags.bits() == OpenFlags::READ.bits()));
 }
+
+#[tokio::test]
+async fn revocation_during_directory_inspection_prevents_mkdir() {
+    let (sftp, tree) = client(Tree::default()).await;
+    let calls = AtomicUsize::new(0);
+    let error = append(&sftp, LINE, || async {
+        if calls.fetch_add(1, Ordering::SeqCst) == 1 {
+            Err(AppError::validation("expired before mkdir"))
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(error.to_string(), "expired before mkdir");
+    let tree = tree.lock().unwrap();
+    assert!(!tree.directory);
+    assert!(tree.bytes.is_none());
+    assert!(tree.opens.is_empty());
+}
+#[tokio::test]
+async fn revocation_after_append_open_closes_handle_without_writing() {
+    let (sftp, tree) = client(Tree {
+        directory: true,
+        bytes: Some(b"original".to_vec()),
+        ..Default::default()
+    })
+    .await;
+    let calls = AtomicUsize::new(0);
+    let error = append(&sftp, LINE, || async {
+        if calls.fetch_add(1, Ordering::SeqCst) == 2 {
+            Err(AppError::validation("expired after open"))
+        } else {
+            Ok(())
+        }
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(error.to_string(), "expired after open");
+    let tree = tree.lock().unwrap();
+    assert_eq!(tree.bytes.as_deref(), Some(b"original".as_slice()));
+    assert!(tree.opens.last().unwrap().contains(OpenFlags::APPEND));
+    assert_eq!(tree.closes, 2);
+}

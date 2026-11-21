@@ -169,3 +169,21 @@ describe("Dialog keyboard and focus", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 });
+
+it("includes disclosure summaries in the focus trap, excluding collapsed details contents", async () => {
+  render(
+    <Dialog open title="Sessions" closeLabel="Close" onClose={vi.fn()}>
+      <details>
+        <summary>Details</summary>
+        <button>Hidden action</button>
+      </details>
+    </Dialog>,
+  );
+  const summary = screen.getByText("Details");
+  await waitFor(() => expect(document.activeElement).toBe(summary));
+  fireEvent.keyDown(summary, { key: "Tab" });
+  const close = screen.getByRole("button", { name: "Close" });
+  expect(document.activeElement).toBe(close);
+  fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(summary);
+});

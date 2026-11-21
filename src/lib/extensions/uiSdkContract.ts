@@ -16,7 +16,10 @@ export type * from "./contracts/workbench/slots.js";
 export type * from "./contracts/frontend/providers.js";
 export type * from "./contracts/frontend/lifecycle.js";
 export type * from "./contracts/forwarding/entry.js";
+export type * from "./contracts/forwarding/batch.js";
 export type * from "./contracts/forwarding/provider.js";
+export type * from "./contracts/hosts/routes.js";
+export type * from "./contracts/hosts/sshConfig.js";
 export type { FrontendMonitorSample } from "./contracts/monitor/sample.js";
 export type { FrontendMonitorReading } from "./contracts/monitor/reading.js";
 export type { FrontendMonitor, FrontendMonitorSnapshot } from "./contracts/monitor/provider.js";
@@ -61,3 +64,8 @@ export type * from "./contracts/storage/recovery/request.js";
 export type * from "./contracts/logging/entry.js";
 export type * from "./contracts/logging/query.js";
 export type * from "./contracts/logging/page.js";
+
+export type * from "./contracts/mounts/configuration.js";
+export type * from "./contracts/mounts/runtime.js";
+
+export type * from "./contracts/workbench/windows.js";

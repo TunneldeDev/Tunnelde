@@ -33,6 +33,7 @@ beforeEach(() => {
   apiMock.markHostUsed.mockResolvedValue(undefined);
   useSsh.setState({
     sessions: [session],
+    history: [],
     connectingHostId: null,
     connectingHostIds: [],
     disconnectingSessionIds: [],
@@ -190,4 +191,111 @@ describe("SSH session lifecycle", () => {
     await refresh;
     expect(useSsh.getState().sessions.some((item) => item.id === "new-session")).toBe(true);
   });
+});
+
+it("records native closure once even when disconnect reply and close notification race", async () => {
+  let complete!: () => void;
+  apiMock.sshDisconnect.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  const first = useSsh.getState().disconnect(session.id);
+  expect(useSsh.getState().disconnect(session.id)).toBe(first);
+  useSsh.getState().forget(session.id, "closed");
+  complete();
+  await first;
+  expect(useSsh.getState().history[0]!.events.map((e) => e.kind)).toEqual([
+    "connected",
+    "disconnecting",
+    "ended",
+  ]);
+  await useSsh.getState().disconnect(session.id);
+  expect(apiMock.sshDisconnect).toHaveBeenCalledTimes(1);
+});
+
+it("records sessions removed by a snapshot without making up a disconnect cause", async () => {
+  apiMock.sshSessions.mockResolvedValue([]);
+  await useSsh.getState().refresh();
+  expect(useSsh.getState().history[0]).toMatchObject({
+    session,
+    events: [{ kind: "connected", at: 0 }, { kind: "ended" }],
+  });
+  expect(useSsh.getState().history[0]!.events[1]!.detail).toBeUndefined();
+});
+
+it("reports a coalesced disconnect failure to every initiating window without duplicate effects", async () => {
+  let fail!: (reason: unknown) => void;
+  const error = new Error("disconnect failed");
+  apiMock.sshDisconnect.mockImplementationOnce(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  const local = vi.fn(),
+    remote = vi.fn();
+  const first = useSsh.getState().disconnect(session.id, local);
+  const joined = useSsh.getState().disconnect(session.id, remote);
+  fail(error);
+  await Promise.all([first, joined]);
+  expect(apiMock.sshDisconnect).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(local).toHaveBeenCalledExactlyOnceWith(error);
+  expect(remote).toHaveBeenCalledExactlyOnceWith(error);
+  expect(
+    useSsh.getState().history[0]!.events.filter((event) => event.kind === "disconnectFailed"),
+  ).toHaveLength(1);
+  expect(useSsh.getState().sessions).toEqual([session]);
+});
+
+it("does not lose other disconnect observers when one caller's notification throws", async () => {
+  apiMock.sshDisconnect.mockRejectedValueOnce(new Error("offline"));
+  const notified = vi.fn();
+  const first = useSsh.getState().disconnect(session.id, () => {
+    throw new Error("broken observer");
+  });
+  const joined = useSsh.getState().disconnect(session.id, notified);
+  await expect(first).rejects.toThrow("broken observer");
+  await joined;
+  expect(notified).toHaveBeenCalledOnce();
+  expect(useSsh.getState().disconnectingSessionIds).toEqual([]);
+});
+
+it("batch disconnect deduplicates IDs, skips absent sessions and keeps failures retryable", async () => {
+  useSsh.setState({
+    sessions: [session, { ...session, id: "failed" }, { ...session, id: "kept" }],
+  });
+  apiMock.sshDisconnect.mockImplementation(async (id: string) => {
+    if (id === "failed") throw new Error("busy");
+  });
+  const result = await useSsh
+    .getState()
+    .disconnectMany([session.id, "failed", session.id, "absent"]);
+  expect(apiMock.sshDisconnect.mock.calls.map(([id]) => id).sort()).toEqual(
+    ["failed", session.id].sort(),
+  );
+  expect(result).toEqual({ closed: [session.id], failed: ["failed"] });
+  expect(useSsh.getState().sessions.map((s) => s.id)).toEqual(["failed", "kept"]);
+  expect(useSsh.getState().disconnectingSessionIds).toEqual([]);
+});
+
+it("bounds simultaneous cleanup to four sessions and does not stop after a failure", async () => {
+  useSsh.setState({
+    sessions: Array.from({ length: 9 }, (_, i) => ({ ...session, id: String(i) })),
+  });
+  let active = 0,
+    peak = 0;
+  apiMock.sshDisconnect.mockImplementation(async (id: string) => {
+    peak = Math.max(peak, ++active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active--;
+    if (id === "0") throw new Error("busy");
+  });
+  const result = await useSsh
+    .getState()
+    .disconnectMany(Array.from({ length: 9 }, (_, i) => String(i)));
+  expect(peak).toBe(4);
+  expect(result.failed).toEqual(["0"]);
+  expect(result.closed).toHaveLength(8);
 });

@@ -51,6 +51,8 @@ pub struct UiProviderSelection {
 pub struct Settings {
     pub host_list: host_list::HostListPreferences,
     pub ui_providers: BTreeMap<String, UiProviderSelection>,
+    pub mount_host_details_selection:
+        Option<crate::plugins::host_details::MountHostDetailsSelection>,
     pub network: crate::network::NetworkSettings,
     pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
     pub shortcut_rules: BTreeMap<String, BTreeMap<String, ShortcutRule>>,
@@ -96,6 +98,8 @@ pub struct Settings {
     pub motion: String,
     pub show_status_bar: bool,
     pub restore_workspace: bool,
+    /// Release a connection after its last live session panel is explicitly closed.
+    pub disconnect_on_panel_close: bool,
     pub host_activation: String,
     pub host_direct_connect: bool,
     pub terminal_scrollback: u32,
@@ -137,6 +141,7 @@ impl Default for Settings {
         Self {
             host_list: host_list::HostListPreferences::default(),
             ui_providers: BTreeMap::new(),
+            mount_host_details_selection: None,
             network: crate::network::NetworkSettings::default(),
             keyboard_shortcuts: BTreeMap::new(),
             shortcut_rules: BTreeMap::new(),
@@ -176,6 +181,7 @@ impl Default for Settings {
             motion: "system".into(),
             show_status_bar: true,
             restore_workspace: true,
+            disconnect_on_panel_close: true,
             host_activation: "details".into(),
             host_direct_connect: true,
             terminal_scrollback: 10_000,
@@ -269,6 +275,16 @@ impl Settings {
     /// values that break the layout or the update state machine.
     pub fn sanitize(&mut self) {
         self.host_list.sanitize();
+        if self
+            .mount_host_details_selection
+            .as_ref()
+            .is_some_and(|selection| {
+                !crate::plugins::manifest::valid_id(&selection.plugin_id)
+                    || !crate::plugins::manifest::valid_id(&selection.contribution_id)
+            })
+        {
+            self.mount_host_details_selection = None;
+        }
         self.ui_providers.retain(|target, selection| {
             matches!(
                 target.as_str(),
@@ -471,6 +487,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn closing_session_panels_disconnects_by_default_and_preserves_opt_out() {
+        let legacy: Settings = serde_json::from_str("{}").unwrap();
+        assert!(legacy.disconnect_on_panel_close);
+        let explicit: Settings = serde_json::from_value(serde_json::json!({
+            "disconnectOnPanelClose": false
+        }))
+        .unwrap();
+        assert!(!explicit.disconnect_on_panel_close);
+        assert_eq!(
+            serde_json::to_value(explicit).unwrap()["disconnectOnPanelClose"],
+            false
+        );
+    }
+
+    #[test]
     fn regional_colors_validate_and_survive_theme_switches_and_round_trip() {
         let mut settings: Settings = serde_json::from_value(serde_json::json!({ "colors": {
             "background": "#AABBCC", "terminalCursor": "#123456", "sidebar": "red", "panel": "#fff", "unknownRegion": "#123456"
@@ -615,6 +646,23 @@ mod tests {
             "uiProviders":{"workbench":{"pluginId":"custom-ui","viewId":"desktop","extra":true}}
         }))
         .is_err());
+    }
+
+    #[test]
+    fn mount_contributor_selection_is_validated_and_can_be_disabled() {
+        let mut settings: Settings = serde_json::from_value(serde_json::json!({
+            "mountHostDetailsSelection":{"pluginId":"sshfs","contributionId":"mounts"}
+        }))
+        .unwrap();
+        settings.sanitize();
+        assert!(settings.mount_host_details_selection.is_some());
+        settings
+            .mount_host_details_selection
+            .as_mut()
+            .unwrap()
+            .plugin_id = "../invalid".into();
+        settings.sanitize();
+        assert!(settings.mount_host_details_selection.is_none());
     }
 
     #[test]

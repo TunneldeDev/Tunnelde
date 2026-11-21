@@ -6,6 +6,134 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.4...v2.0.0) - 2026-11-21
+
+### 更新概览 | Highlights
+
+- 内置主机详情支持独立窗口往返，保留转发规则与组草稿，主机操作及转发写入按原资源所有权执行；使用旧式主机贡献者或已选转发提供者时暂留主窗。Builtin host details support native-window roundtrips with forwarding rule/group drafts retained and owner-scoped host/forwarding actions; legacy host contributions and selected forwarding providers stay in main for now.
+
+- 本地与 SFTP 文本编辑器支持独立窗体往返，保留未保存文本、主窗撤销历史及选区；编码切换、保存和冲突恢复由原资源所有者执行，修复撤销后焦点丢失及编码菜单键盘输入穿透。Local and SFTP text editors support native-window roundtrips with dirty text, main-owned undo history and selection retained; encoding, saves and conflict recovery use the original owner. Fix undo focus loss and encoding-menu key leakage into the editor.
+
+- 内置在线文件面板支持移入独立窗体并返回，保留目录、筛选和选择；创建、重命名、复制、删除及双向传输使用原 SSH 与受限资源代理，远端选择器、编辑器和插件动作由主窗执行。选中文件浏览界面提供者时暂留主窗。Live builtin file pages support native-window roundtrips with directory/filter/selection retained; creation, rename, copy, deletion and bidirectional transfer reuse SSH through scoped resources, while source selection, editors and plugin actions remain main-owned. Selected file-browser interface providers stay in main for now.
+
+- 内置终端标签支持移入独立窗体和返回，保留原 SSH、屏幕及未完成输入；断开和文件导航由主窗执行。当前选中终端界面插件时保留在主窗，其他页面适配仍在继续。Builtin terminal tabs support native-window roundtrips with the original SSH, screen and partial input retained; disconnect/navigation remain main-owned. Selected terminal interface providers stay in main for now; other page adapters remain in progress.
+
+- 终端渲染器支持只读设置与限定作用域的连接服务，普通检查点不会被误当成迁移交接；远程 shell 在暂离期间退出时，为交接保留最后输出。Terminal rendering supports read-only preferences and scoped I/O; periodic checkpoints are distinct from move barriers, and detached shell exit retains final output for handoff. The native terminal page entry remains pending.
+
+- 原生终端流具备按窗口/文档/面板代次校验的私有端点，交接保留原 SSH 与序列回放；为后续终端页面跨窗接入提供基础，暂未开放该页面入口。Private native terminal endpoints enforce window/document/panel generations and retain the original SSH stream with sequence replay; terminal page window integration remains pending.
+
+- 终端交接按会话隔离并支持失败恢复，后台恢复不会抢占正在迁移的终端；保留字符集、键盘协议和分包状态的 JSON 快照为终端跨窗接入提供基础。Terminal handoff reserves individual sessions with rollback/retry; background resume cannot steal a pending handoff, and lossless JSON checkpoints prepare the terminal window adapter.
+
+- 原生插件视图可读取已保存主机、发现来源、路由及自身扩展字段的元数据快照；暂存期间仍禁止导入、修改、凭据访问和建立连接。Native plugin views can read saved-host, discovery-source, route and own-field metadata snapshots; staging still forbids host mutations, imports, credentials and connection creation.
+
+- 插件列表支持独立窗体与返回，保留搜索、筛选及分页；详情、安装确认和本地安装草稿由主窗持有，安装操作重新校验目录条目而不接收独立窗提交的下载地址。Plugin lists support native-window roundtrips with search/filter/page state; details, installation confirmation and local-install drafts remain main-owned, with catalogue targets revalidated instead of accepting satellite-supplied download URLs.
+
+- 主机列表可移入独立窗体并返回，保留搜索、折叠与兼容插件草稿；收藏、视图设置等操作回到主协调器执行，凭据及导入导出对话框仍由主窗持有。Host lists support native-window roundtrips with search, collapsed groups and compatible provider drafts preserved; actions execute through the main coordinator, while credential/import/export dialogs remain main-owned.
+
+- 停靠的文件预览支持移入独立窗体并返回，保留受支持的插件草稿、PDF 页码/缩放和媒体位置，复用原文件资源；修复元数据更新抢夺文本焦点及异步正文就绪被错误取消。Docked file previews support explicit native-window roundtrips with supported provider drafts, PDF page/zoom and media position preserved on the original resource; fix metadata-driven text focus resets and retired async readiness cancelling replacement renderers.
+
+- 预览元数据与读取状态由宿主独立持有，正文暂时移除不会使插件观察丢失；补齐文本、PDF 和媒体的视图状态捕获，为完整跨窗口预览继续铺设基础。Preview metadata/read state survives an absent renderer; text, PDF and media state capture prepares the remaining native preview adapter.
+
+- 文件预览资源由独立宿主持有，移除正文不会重新读取远程文件或关闭媒体票据；增加绑定文档与面板实例的只读窗口句柄，为后续预览跨窗适配提供基础。Preview reads outlive renderer bodies; private document/panel-scoped read handles prepare native preview handoff without reopening remote files or exposing the underlying ticket.
+
+- 独立窗口中的插件支持创建一次性 SSHFS 挂载；启动失败或结果丢失会清理自身进程和通道，不断开借用的 SSH 会话。Plugins in native panel windows can create one-off SSHFS mounts, with owned startup cleanup that preserves the borrowed SSH session.
+- 后台任务插件界面支持独立窗口迁移，保留草稿和任务状态，操作受权限保护且不会重复启动插件。Background-task interface providers support native window handoff with preserved drafts/task state and permission-checked actions, without replaying plugin activation.
+
+- 面板独立窗口预览：连接、后台任务、输出、已知主机和端口转发面板，以及兼容的侧栏插件视图可在窗口间移动；迁移保留受支持的视图状态。其他页面及无工厂旧插件视图的跨窗口适配仍在进行。Native panel-window preview supports connections, background tasks, output, known hosts, forwarding and compatible sidebar plugin views with supported view-state transfer; other pages and legacy factoryless views remain in progress.
+- 改进挂载目录浏览、状态读取、打开和卸载，复用原 SSH 连接并在取消操作后完成资源清理。Improve mount browsing, snapshots, opening and teardown while reusing the original SSH connection and completing resource cleanup after cancellation.
+
+- 存储位置支持逐项或批量恢复默认，并在迁移前展示计划、保护已有数据。Storage locations can reset individually or in batches with a reviewed migration plan and existing-data protection.
+- 插件可直接格式化当前编辑器文件，支持可配置快捷键、撤销重做和异步修改冲突保护。Plugins can format the active editor with configurable shortcuts, undo/redo and protection against stale asynchronous edits.
+- 更新说明可展开查看当前版本至目标版本的累计变更；历史不完整或加载失败时会明确提示并允许重试。Update notes include changes from the installed version through the selected target, with clear incomplete-history notices and retry.
+- 测试连接显示沿实际代理与跳板路径的三次 SSH 建立耗时、波动和成功次数，支持取消与重测。Connection tests show three SSH establishment measurements through the configured route, their spread and success count, with cancel and retry.
+
+<details open>
+<summary>详细变更 | Details (60)</summary>
+
+### 不兼容变更 | Breaking changes
+
+- **hosts:** add host migration and isolated forwarding groups ([#452](https://github.com/TunneldeDev/Tunnelde/pull/452)) @quyansiyuanwang
+
+### 新增 | New
+
+- **files:** add plugin file-list highlights ([#425](https://github.com/TunneldeDev/Tunnelde/pull/425)) @quyansiyuanwang
+- **editor:** support common text encodings ([#426](https://github.com/TunneldeDev/Tunnelde/pull/426)) @quyansiyuanwang
+- **editor:** add plugin syntax highlighting ([#432](https://github.com/TunneldeDev/Tunnelde/pull/432)) @quyansiyuanwang
+- **editor:** add unified virtualized code editor ([#435](https://github.com/TunneldeDev/Tunnelde/pull/435)) @quyansiyuanwang
+- **ssh:** import local SSH config from the welcome page ([#439](https://github.com/TunneldeDev/Tunnelde/pull/439)) @quyansiyuanwang
+- **forwarding:** automate saved rules and show connection sessions ([#443](https://github.com/TunneldeDev/Tunnelde/pull/443)) @quyansiyuanwang
+- **plugins:** expose interactive host details and forwarding automation ([#444](https://github.com/TunneldeDev/Tunnelde/pull/444)) @quyansiyuanwang
+- **mounts:** expose shared persistent mount rules and group runtime ([#445](https://github.com/TunneldeDev/Tunnelde/pull/445)) @quyansiyuanwang
+- **plugins:** expose native OpenSSH config import ([#446](https://github.com/TunneldeDev/Tunnelde/pull/446)) @quyansiyuanwang
+- **plugins:** expose revisioned saved host routes ([#447](https://github.com/TunneldeDev/Tunnelde/pull/447)) @quyansiyuanwang
+- **plugins:** start forwarding rules in bounded batches ([#448](https://github.com/TunneldeDev/Tunnelde/pull/448)) @quyansiyuanwang
+- **mounts:** render shared mount management for plugins ([#451](https://github.com/TunneldeDev/Tunnelde/pull/451)) @quyansiyuanwang
+- **plugins:** add scoped plugin message buses ([#450](https://github.com/TunneldeDev/Tunnelde/pull/450)) @quyansiyuanwang
+- **plugins:** reconcile private bus membership and invitations ([#454](https://github.com/TunneldeDev/Tunnelde/pull/454)) @quyansiyuanwang
+- **hosts:** add encrypted credential and private-key migration ([#459](https://github.com/TunneldeDev/Tunnelde/pull/459)) @quyansiyuanwang
+- **ui:** unify compact dialog help and password actions ([#461](https://github.com/TunneldeDev/Tunnelde/pull/461)) @quyansiyuanwang
+- **workbench:** unify panel and floating presentations ([#462](https://github.com/TunneldeDev/Tunnelde/pull/462)) @quyansiyuanwang
+- **layout:** resize split intersections atomically ([#463](https://github.com/TunneldeDev/Tunnelde/pull/463)) @quyansiyuanwang
+- **workbench:** float built-in pages and manage session lifetimes ([#465](https://github.com/TunneldeDev/Tunnelde/pull/465)) @quyansiyuanwang
+- **window:** add transactional native panel workspaces ([#464](https://github.com/TunneldeDev/Tunnelde/pull/464)) @quyansiyuanwang
+- **forwarding:** enable native panel window movement ([#469](https://github.com/TunneldeDev/Tunnelde/pull/469)) @quyansiyuanwang
+- **mounts:** support owned mount startup from native plugin views ([#470](https://github.com/TunneldeDev/Tunnelde/pull/470)) @quyansiyuanwang
+- **tasks:** preserve plugin providers across native windows ([#471](https://github.com/TunneldeDev/Tunnelde/pull/471)) @quyansiyuanwang
+- **preview:** retain host-owned reads and scoped window handles ([#472](https://github.com/TunneldeDev/Tunnelde/pull/472)) @quyansiyuanwang
+- **preview:** coordinate retained reads and renderer state ([#473](https://github.com/TunneldeDev/Tunnelde/pull/473)) @quyansiyuanwang
+- **preview:** support retained native window rendering ([#474](https://github.com/TunneldeDev/Tunnelde/pull/474)) @quyansiyuanwang
+- support native host-list window roundtrips ([#475](https://github.com/TunneldeDev/Tunnelde/pull/475)) @quyansiyuanwang
+- support native plugin-list window roundtrips ([#476](https://github.com/TunneldeDev/Tunnelde/pull/476)) @quyansiyuanwang
+- admit native host metadata reads ([#477](https://github.com/TunneldeDev/Tunnelde/pull/477)) @quyansiyuanwang
+- prepare isolated terminal session handoff ([#478](https://github.com/TunneldeDev/Tunnelde/pull/478)) @quyansiyuanwang
+- add leased native terminal stream endpoints ([#479](https://github.com/TunneldeDev/Tunnelde/pull/479)) @quyansiyuanwang
+- retain live terminal sessions across native windows ([#481](https://github.com/TunneldeDev/Tunnelde/pull/481)) @quyansiyuanwang
+- scope native file page directory operations ([#483](https://github.com/TunneldeDev/Tunnelde/pull/483)) @quyansiyuanwang
+- retain native file page copy and transfer workers ([#484](https://github.com/TunneldeDev/Tunnelde/pull/484)) @quyansiyuanwang
+- enable native SFTP workspace window roundtrips ([#485](https://github.com/TunneldeDev/Tunnelde/pull/485)) @quyansiyuanwang
+- retain writable editors across native windows ([#486](https://github.com/TunneldeDev/Tunnelde/pull/486)) @quyansiyuanwang
+- enable native host detail workspace windows ([#487](https://github.com/TunneldeDev/Tunnelde/pull/487)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **plugins:** move installable examples to the hub ([#467](https://github.com/TunneldeDev/Tunnelde/pull/467)) @quyansiyuanwang
+- scope terminal rendering and retain closed handoff output ([#480](https://github.com/TunneldeDev/Tunnelde/pull/480)) @quyansiyuanwang
+- isolate file page rendering from resource ownership ([#482](https://github.com/TunneldeDev/Tunnelde/pull/482)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **files:** align view menu checkmarks ([#427](https://github.com/TunneldeDev/Tunnelde/pull/427)) @quyansiyuanwang
+- **editor:** accelerate scrollbar track scrolling ([#423](https://github.com/TunneldeDev/Tunnelde/pull/423)) @quyansiyuanwang
+- **editor:** preserve selection across undo and redo ([#430](https://github.com/TunneldeDev/Tunnelde/pull/430)) @quyansiyuanwang
+- **editor:** restore native scrolling ([#431](https://github.com/TunneldeDev/Tunnelde/pull/431)) @quyansiyuanwang
+- **files:** repair SFTP path editing ([#436](https://github.com/TunneldeDev/Tunnelde/pull/436)) @quyansiyuanwang
+- **editor:** align Chinese text to the monospace grid ([#437](https://github.com/TunneldeDev/Tunnelde/pull/437)) @quyansiyuanwang
+- **editor:** allow save encoding changes after editing ([#438](https://github.com/TunneldeDev/Tunnelde/pull/438)) @quyansiyuanwang
+- **editor:** support older WebKit CJK scaling and ship font license ([#440](https://github.com/TunneldeDev/Tunnelde/pull/440)) @quyansiyuanwang
+- **ui:** polish continuous corners and preserve focus shapes ([#441](https://github.com/TunneldeDev/Tunnelde/pull/441)) @quyansiyuanwang
+- **editor:** keep text cursor visible beside line numbers ([#442](https://github.com/TunneldeDev/Tunnelde/pull/442)) @quyansiyuanwang
+- **hosts:** clarify transfer selection and index jump dependencies ([#453](https://github.com/TunneldeDev/Tunnelde/pull/453)) @quyansiyuanwang
+- **plugins:** reconcile tool forms and native mount providers ([#455](https://github.com/TunneldeDev/Tunnelde/pull/455)) @quyansiyuanwang
+- **ui:** recover failed imports and show accurate forwarding progress ([#456](https://github.com/TunneldeDev/Tunnelde/pull/456)) @quyansiyuanwang
+- **editor:** recover failed reads and keep clean reconnects in sync ([#457](https://github.com/TunneldeDev/Tunnelde/pull/457)) @quyansiyuanwang
+- **ui:** stabilize shared switches and compact provider settings ([#458](https://github.com/TunneldeDev/Tunnelde/pull/458)) @quyansiyuanwang
+- **ui:** clarify forwarding hierarchy and add session controls ([#460](https://github.com/TunneldeDev/Tunnelde/pull/460)) @quyansiyuanwang
+- **network:** distinguish tunnel setup from HTTPS response time ([#466](https://github.com/TunneldeDev/Tunnelde/pull/466)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **plugins:** clarify shared mount discovery and migration ([#449](https://github.com/TunneldeDev/Tunnelde/pull/449)) @quyansiyuanwang
+
+### 其他 | Other
+
+- unify brand assets and remove obsolete marketplace ([#433](https://github.com/TunneldeDev/Tunnelde/pull/433)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.4.4](https://github.com/TunneldeDev/Tunnelde/compare/v1.4.3...v1.4.4) - 2026-11-16
 
 ### 更新概览 | Highlights

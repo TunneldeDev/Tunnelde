@@ -284,3 +284,271 @@ adopt native handles, cancel RPC transport or stop durable/background tasks.
 Wrap asynchronous view work with `run` or `acquire` to reject late delivery and
 clean late results; underlying uncooperative work remains charged until settlement.
 Use the explicit native ownership/recovery APIs when retiring those resources.
+
+## Independent view factories (experimental)
+
+Check `extensions.describe().frontend.viewFactories`. A module can optionally
+export `createView(context)` as well as its singleton `activate(context)`. The
+factory receives `sdk`, `pluginId`, `viewId`, `signal`, `resources` and `api.call`.
+It has no command/view registries or background-task runner. Put singleton work
+in `activate`; creating or closing a view must not start or stop that work.
+
+```js
+export function activate(context) {
+  // Register singleton commands or background work here, not in createView.
+}
+export function createView(context) {
+  const React = context.sdk.react;
+  let query = "";
+  return {
+    component: function View() {
+      return React.createElement("div", null, context.viewId);
+    },
+    captureState() {
+      return { query };
+    },
+    restoreState(state) {
+      query = state.query;
+    },
+    dispose() {
+      /* release view-local registrations */
+    },
+  };
+}
+```
+
+For ordinary declared component views (not `provider` views) unregistered by
+`activate`, the host supplies a
+stable factory-backed renderer. Existing `views.register` renderers keep their
+compatibility path. Hiding a retained factory view does not recreate it; closing
+it aborts its scope and calls its cleanup. Reopening creates a new instance. Each
+instance imports approved immutable assets with a separate revocable transport,
+sharing the singleton module's scope budget. There are at most 16 live native
+view transports per activation and 64 overall; bytes are shared, not recopied.
+A view's token cannot acknowledge activation, report its failure, or create child
+view transports. Closing/replacing activation retires all its view transports;
+closing one view does not invalidate sibling tokens or dependency readiness.
+
+`captureState`/`restoreState` are an optional **pair**. Restore precedes first
+render; keep restorable state outside the component or in a view-local store.
+Snapshots are copied strict JSON, bounded to 1 MiB / 10,000 nodes / depth 64.
+Cycles, functions, getters, class instances, sparse arrays and nonfinite numbers
+are rejected rather than silently truncated. Never include credentials, native
+handles or background work in UI state. They are not durable storage. Async
+setup/capture/restore is deadline-bound; late acquired instances are cleaned.
+A view admits only one actual capture callback at a time. A timed-out callback
+that ignores cancellation remains charged until it settles; retries cannot start
+another callback in parallel. Panel-scoped factories share asynchronous ephemeral
+capture and wait for real committed rendering, not their loading shell. This does
+not by itself enable the independent-window renderer described below.
+
+Currently discovery lists only `contexts: ["coordinator"]` and
+`nativeWindows: false`: this factory/transport capability alone does **not**
+authorize a satellite, transfer a provider's native resources, or promise that a
+legacy renderer's DOM can move across WebViews. Independent-window support must
+finish the private panel/document transport and provider-specific gateways below.
+
+View module top-level code may be evaluated for each imported instance. Keep it
+free of singleton side effects; only `activate` owns singleton work. These are
+trusted in-process modules, not a JavaScript sandbox.
+
+### Native document binding (host-internal)
+
+The private `panel_window_plugin_view` transport binds a child module to the
+native caller's registered window, current document and exact panel generation,
+or to one incoming handoff offer. It never returns the activation token. A staged
+binding is promoted only inside the successful ownership commit; cancelling an
+offer and later moving the same panel to the same window cannot revive it.
+Reload, removal, failed/expired handoff and plugin retirement invalidate the exact
+binding. Immutable asset requests also use Tauri’s native WebView label and
+current document authority; satellites cannot import activation/coordinator
+module URLs. A token cannot be used by another window/document or through the raw
+frontend/provider commands, and cannot acknowledge activation or create children.
+
+Accepted effect calls have an independent native fence. Closing the view,
+cancelling its request, retiring its plugin or reloading its document does not
+release that fence before the actual worker settles. Panel removal cannot bypass
+it by removing and reusing a panel ID. Request admission occurs while ownership
+is still locked; locks are released before asynchronous work. Cancellation
+suppresses late delivery rather than claiming to undo accepted effects.
+
+The reviewed allowlist includes `api.describe`, `extensions.describe` and the
+existing Bus methods. Metadata and the audited snapshots below may run in staged views;
+Bus snapshot/discovery and queue consumption are deliberately committed-only.
+Bus effects retain their settlement fence. `bus.receive` is a cancellable passive
+wait: it still consumes the bounded call quota, but does not block panel movement.
+Every actual Bus transaction, including a queue drain after waiting, rechecks exact
+native origin under ownership -> plugin policy -> Bus registry locks. A frozen or
+retired source cannot consume messages for the destination. View closure never
+implicitly leaves a channel, removes subscriptions or reactivates the singleton;
+Bus ownership stays with the approved plugin runtime. There is still only one
+outstanding receiver per runtime, so background subscriptions should normally stay
+in `activate`, not be duplicated by each view.
+
+The internal gateway also admits explicitly reviewed owned-data methods:
+`storage.get/set/delete/observe`, all seven `configuration.*` schema/CAS/backup
+methods, and `secrets.get/set/delete`. Mutations and all keyring calls remain
+committed-only. `storage.get/observe` and `configuration.schema/snapshot/backups`
+are explicitly audited staged reads: they never create directories/files, migrate
+configuration, write defaults or consume queues. This lets a destination factory
+restore before render acknowledgement without gaining mutation authority. All retain their
+panel effect fence until actual I/O settlement, and use the same plugin identity,
+permissions, generation and configuration revisions as the coordinator. A native
+view does not gain access to another plugin's data or SSH credentials. Configuration
+awaits its blocking worker; keyring access awaits the bounded credential worker;
+KV reads/writes await filesystem operations under their existing serialization
+lock. No nested timeout releases the outer fence while these workers still run.
+Cancellation suppresses delivery, not already accepted disk/keyring effects.
+Storage-location/recovery consent APIs are **not** implicitly admitted by this
+allowlist and still require separate origin/lifetime integration.
+
+Mount configuration/status and managed operation APIs are also explicitly
+admitted: the 14 shared `rules`/`groups` configuration methods, connection and
+operation status/observe/cancel, plus the 15 managed connect/start/stop/remove
+submission methods. Only snapshot/validation queries (rules snapshot/list/get/validate/export/
+importPreview, groups list/get/validate, connections list/get and operations list/get)
+may run while staged; writes, observations and submissions remain committed-only.
+Configuration awaits its
+bounded worker and preserves revision checks; observations retain the fence
+through their at-most-five-second wait. Submission retains it through plan
+preparation and receipt publication, **not** the lifetime of the host-managed
+operation. Subsequent steps belong to the approved plugin generation, check
+its authority, and report progress through the shared operation registry; moving
+or closing a view does not disconnect the group's dedicated transport. This is
+also explicit admission of committed-only `mounts.paths.local.validate` and
+`mounts.paths.conflicts`. An accepted call's private effect guard propagates
+through nested Budget workers and unreceived result cleanup: a timed-out FUSE
+filesystem query cannot release the panel's move fence before the actual worker
+settles. Caller cancellation still prevents response delivery. This is not
+implicit admission of other resource calls: each needs its own lifetime integration.
+The remote-path and force-consent admissions below are separately audited.
+
+`mounts.paths.local.pick` is also committed-only. On macOS/Linux the OS folder
+picker is parented to the exact originating native window, with permission,
+invocation and document checks before scheduling, at UI admission and before
+delivering its result. There is no hidden-main fallback; invalid parent handles
+fail. One outstanding OS picker per window (16 globally) shares the modal lane
+with plugin confirmations. The callback retains its reservation and effect guard
+even after caller timeout/cancellation or plugin retirement, and prevents empty
+satellite destruction until the OS dialog actually returns. Cancellation does
+not programmatically dismiss an already accepted system picker; stale results
+are discarded and the user may cancel the dialog normally. On Windows the
+existing drive-letter confirmation uses the originating document's UI queue.
+
+`mounts.dependencies.get` and `mounts.dependencies.refresh` are committed-only
+probes, not staged snapshots: they inspect local paths and may execute SSHFS's
+help command. Bounded asynchronous and blocking workers retain the actual
+native effect through filesystem discovery and process cleanup. A timed-out or
+malformed help probe kills and waits for its child before releasing that work;
+cancelling response delivery does not prematurely free its capacity or move
+fence. The existing result shape is unchanged; busy/failure errors are explicit.
+No driver installation or automatic permission approval is performed.
+
+`mounts.paths.remote.browse` and `mounts.paths.remote.resolve` are committed-only,
+retained read operations, never staged snapshots. Each query binds the original
+mount group, host, connection identity and authenticated SSH handle. It does not
+follow a reconnection onto another transport. Canonical Windows drive aliases
+are normalized to the mount namespace (`C:/...` → `/C:/...`); drive-relative
+paths are never guessed. The original document, plugin
+permissions and invocation are rechecked between SFTP requests and after cleanup,
+including the resolve-only path. Windows drive selection also retains
+`mounts.write` through confirmation and final filesystem validation.
+
+Remote queries use independent SFTP channels, at most four active workers and
+eight pending/retiring channels. A 15-second delivery timeout or cancelled caller
+does not release a late OPEN or a channel awaiting CLOSE. The SFTP library's
+hidden stream halves and the bridge retain the native effect through actual
+teardown. Retirement drains incoming channel messages concurrently with enqueueing
+CLOSE, so full read/write queues cannot deadlock each other. No terminal, user
+SFTP session or mount-group transport is disconnected.
+Listings allow at most 65,536 decoded entries and 8 MiB of retained string data
+(including repeated canonical parent paths); each response is at most 512 KiB and
+128 entries. `nextOffset` reflects the entries actually returned. Oversized
+listings fail explicitly instead of silently omitting entries. A server which
+never acknowledges closure retains its bounded slot until the parent session
+ends. The temporary, narrowly patched SSH dependency and its acknowledgment
+regressions are documented in `src-tauri/vendor/russh/TUNNELDE-PATCH.md`.
+
+The host's scoped view client uses only this closed gateway, reserves cancellation
+tickets before dispatch, cancels outstanding calls on document disposal and cleans
+up late-opened attachments. Module URLs encode each relative segment separately.
+It needs neither a fake activation token nor a second frontend runtime.
+
+The internal `registerAdapter` gateway is coordinator-only. It rechecks the live
+ordinary sidebar contribution and `allowFloating`, and publishes only a closed
+module/display descriptor in the private window snapshot; it never publishes the
+activation token, fingerprint, permissions or document identity. A `plugin:` prefix
+alone does not opt in. The frontend exposes candidates only for its exact selected
+factory renderer, not a legacy `views.register` renderer, a provider or another
+location. Registration is idempotent for the same module; replacement requires
+retirement first. Explicit withdrawal checks the exact runtime/generation and approval revision,
+so late cleanup cannot withdraw a replacement, including a reopened module in
+the same runtime. The revision is a stale-approval marker, not a bearer credential. Activation closure/replacement and plugin
+retirement invalidate approval, cancel pending handoffs and erase the old capsule
+under a fresh panel generation, without releasing unsettled effect fences. A new
+admission waits for those effects to settle. Unadmitted presentation reservations
+are cancelled; an admitted UI effect retains its fence and exact issuing-document
+cleanup even after the panel generation changes.
+
+The production coordinator now synchronizes those explicit factory approvals
+before publishing its window snapshot. Both the main ordinary-sidebar renderer
+and the satellite render through the same `NativePluginPanel`, scoped native
+client and `createView` loader from the initial mount, not a renderer swap after
+movement. A staged destination restores its real factory capsule before ACK;
+commit retains that same tree, controller and attachment. A retired approval
+rejects readiness and removes the old tree. If its panel was in a satellite,
+native reclaims the now-unrenderable lease to the main window, so it cannot
+strand an empty, uncloseable satellite. Only appearance/language/platform is
+projected for these panels, under an approval-revision-bound model producer;
+plugin data still goes through its own authorized APIs. Satellite titles use
+the approved display descriptor without hydrating a plugin store.
+
+Unmounting now transfers an owned registry guard into a bounded transaction
+worker, not just a detached OS helper. The exact mount UUID, owner and generation
+stay locked through actual dismount, helper kill/reap and owned SSHFS/bridge
+settlement. Before effect admission, the worker rechecks the original native
+view/document, request invocation and runtime policy after awaited presence and
+mount-identity probes. Cancellation or revocation before that boundary leaves
+the original mount untouched; cancellation after admission stops delivery but
+cannot let another unmount, adoption or replacement overtake cleanup. Windows
+volume locks remain held through settlement, with synchronous volume controls
+on a bounded blocking worker. Unix dismount helpers are awaited inline in that
+transaction, bound both output streams, explicitly kill and reap on failure or
+timeout, and use the Linux fallback only when the preferred executable is absent.
+A failed helper still requires a successful fresh absence probe before it can be
+reconciled as already unmounted. No permission/invocation/ownership locks surround
+filesystem or process I/O; only the mount registry's owned transaction guard does.
+
+On macOS, mount-table presence probes also use a bounded OS-helper worker.
+Both output streams have a hard limit; a timeout, malformed pipe or excessive
+output kills and reaps the child before its inherited effect fence retires.
+Cancelling result delivery does not release actual worker capacity. Probe errors
+never establish that a mount is absent. The separately audited
+`mounts.runtime.requestForceUnmount` is committed-only: its danger confirmation
+retains `mounts.write` and the exact originating document/invocation. It defaults
+to Cancel and binds rule, group, revision, runtime and session identity. The owned
+transaction atomically commits stop intent with effect admission and retains its
+group/registry guards through helper, child and bridge cleanup. Cancellation after
+admission cannot trigger an automatic remount or release those guards early.
+This does not implicitly open another native-view API.
+
+Factories without capture/restore now require an explicit state-loss confirmation
+in their source document on each move and satellite close/return. Cancel is the
+default focus; dismissal, replacement, cancellation or renderer retirement deny
+the reset. The host retains an exact native interaction while asking; accepting
+only retries that exact factory instance and emits an explicit `reset: true`
+marker, never an empty capsule claiming preserved drafts. New factories reopen
+without restoration, and obsolete DOM/caret offsets are discarded. Cancel keeps
+the existing tree and drafts, and no empty destination is created before consent.
+Ordinary checkpoints never prompt or silently reset, and actual capture errors,
+timeouts or oversized state are never downgraded to reset offers. Multiple
+captureless children are collected; any genuine capture failure takes priority.
+Legacy registered renderers without `createView` still require their separate
+native adapter/lifecycle integration; they remain unsupported for cross-window
+moves rather than being falsely advertised as lossless.
+
+This is not yet the public independent-window renderer capability. The allowlist
+is explicit, never inferred from read permissions or get/list names. Full resource
+RPC, provider handles, origin-window dialogs and the remaining ordinary-page
+adapters/acceptance remain required; `nativeWindows: false` remains accurate until those paths are
+integrated and verified.

@@ -14,6 +14,7 @@ pub(crate) mod policy;
 mod recovery;
 mod retained;
 mod saving;
+pub(crate) use saving::Request as SaveRequest;
 mod staging;
 mod storage;
 use journal::Journal;
@@ -200,12 +201,10 @@ fn lock_for(key: String) -> Arc<tokio::sync::Mutex<()>> {
 
 pub(super) async fn save(
     app: AppHandle,
-    session_id: String,
-    path: String,
-    content: String,
-    baseline: Option<String>,
+    request: saving::Request,
     policy: impl policy::Policy,
 ) -> AppResult<()> {
+    let session_id = request.session_id.clone();
     let host = app
         .state::<AppState>()
         .ssh
@@ -213,14 +212,11 @@ pub(super) async fn save(
         .into_iter()
         .find(|s| s.id == session_id)
         .ok_or_else(|| AppError::validation("sftp.reconnectRequired"))?;
-    let request_path = path.clone();
+    let request_path = request.path.clone();
     let request = saving::Request {
-        session_id: session_id.clone(),
         host_id: host.host_id,
         address: host.address,
-        path,
-        content,
-        baseline,
+        ..request
     };
     let connection = app.clone();
     saving::save_with(
@@ -284,7 +280,11 @@ async fn cleanup(
             return Err(unrecognized());
         }
         let marker = format!("{}/owner", record.directory);
-        if read_remote_text(sftp, &marker).await?.content != record.token {
+        if read_remote_text(sftp, &marker, TextSaveMode::editor_read(None))
+            .await?
+            .content
+            != record.token
+        {
             return Err(unrecognized());
         }
         if entries.iter().any(|entry| entry.file_name() == "content") {
@@ -299,7 +299,10 @@ async fn cleanup(
     match sftp.symlink_metadata(&marker).await {
         Ok(metadata) => {
             if !metadata.is_regular()
-                || read_remote_text(sftp, &marker).await?.content != record.token
+                || read_remote_text(sftp, &marker, TextSaveMode::editor_read(None))
+                    .await?
+                    .content
+                    != record.token
             {
                 return Err(unrecognized());
             }

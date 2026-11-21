@@ -2,14 +2,16 @@ import { RefreshCw, Trash2 } from "lucide-react";
 import { SearchField } from "@/components/ui/form/SearchField";
 import { matchesSearch, matchesSearchNumber, parseSearchQuery } from "@/lib/search/query";
 import { useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "@/components/ui/overlay/ConfirmDialog";
+import { usePanelInteraction } from "@/lib/panels/interaction";
+import { useKnownHostsModel } from "@/lib/panels/knownHostsModel";
+import { usePanelViewState } from "@/lib/panels/viewState";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import { translateError } from "@/lib/api/errors";
-import { api } from "@/lib/api/ipc";
 import type { KnownHostEntry } from "@/lib/api/types";
-import { useDialogs } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
 
 export function KnownHostsList({
@@ -20,65 +22,45 @@ export function KnownHostsList({
   variant?: "page" | "sidebar";
 } = {}) {
   const { t } = useTranslation();
-  const confirm = useDialogs((state) => state.confirm);
-  const [entries, setEntries] = useState<KnownHostEntry[] | null>(null);
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const request = useRef(0);
-
-  const load = async () => {
-    const version = ++request.current;
+  const { entries, loading, error, refresh, forget } = useKnownHostsModel(active);
+  const [query, setQuery] = usePanelViewState(
+    "known-hosts-query",
+    "",
+    (value): value is string => typeof value === "string",
+  );
+  const acquire = usePanelInteraction();
+  const [confirmation, setConfirmation] = useState<{
+    entry: KnownHostEntry;
+    release: () => Promise<void>;
+  } | null>(null);
+  const opening = useRef(false);
+  const alive = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const openForget = async (entry: KnownHostEntry) => {
+    if (opening.current || confirmation) return;
+    opening.current = true;
     try {
-      const list = await api.knownHostsList();
-      if (version === request.current) setEntries(list);
+      const release = await acquire();
+      if (!alive.current) {
+        await release();
+        return;
+      }
+      setConfirmation({ entry: { ...entry }, release });
     } catch (cause) {
-      if (version === request.current) setError(translateError(cause));
+      if (alive.current) toast(translateError(cause), "error");
     } finally {
-      if (version === request.current) setLoading(false);
+      opening.current = false;
     }
   };
-  useEffect(() => {
-    if (!active) return;
-    let alive = true;
-    queueMicrotask(() => {
-      if (alive) {
-        setLoading(true);
-        setError(null);
-        void load();
-      }
-    });
-    const invalidate = () => {
-      request.current++;
-    };
-    return () => {
-      alive = false;
-      invalidate();
-    };
-  }, [active]);
-
-  const forget = (entry: KnownHostEntry) => {
-    confirm({
-      title: t("settings.knownHostsForgetTitle"),
-      body: t("settings.knownHostsForgetBody", { host: entry.host, port: entry.port }),
-      confirmLabel: t("settings.knownHostsForget"),
-      danger: true,
-      onConfirm: async () => {
-        try {
-          await api.knownHostsForget(entry.host, entry.port);
-          request.current++;
-          setLoading(false);
-          setEntries(
-            (current) =>
-              current?.filter((item) => !(item.host === entry.host && item.port === entry.port)) ??
-              null,
-          );
-        } catch (error) {
-          toast(translateError(error), "error");
-          throw error;
-        }
-      },
-    });
+  const closeConfirmation = () => {
+    if (!confirmation) return;
+    setConfirmation(null);
+    void confirmation.release().catch((cause: unknown) => toast(translateError(cause), "error"));
   };
 
   const search = query.trim().toLocaleLowerCase();
@@ -94,6 +76,7 @@ export function KnownHostsList({
   const searchInput = (
     <SearchField
       type="search"
+      data-panel-focus="known-hosts.query"
       aria-label={t("settings.knownHostsSearch")}
       filterKeys={["host", "port", "algorithm"]}
       placeholder={t("settings.knownHostsSearch")}
@@ -110,14 +93,12 @@ export function KnownHostsList({
       ]}
     />
   );
-  const refresh = (
+  const refreshButton = (
     <IconButton
       label={t("common.refresh")}
       disabled={loading}
       onClick={() => {
-        setLoading(true);
-        setError(null);
-        void load();
+        void refresh().catch((cause: unknown) => toast(translateError(cause), "error"));
       }}
     >
       <RefreshCw size={14} />
@@ -153,7 +134,7 @@ export function KnownHostsList({
             label={t("settings.knownHostsForget")}
             size="sm"
             danger
-            onClick={() => forget(entry)}
+            onClick={() => void openForget(entry)}
           >
             <Trash2 size={12} />
           </IconButton>
@@ -163,18 +144,30 @@ export function KnownHostsList({
   );
   return (
     <div className={sidebar ? "trusted-hosts-sidebar" : "known-hosts"} aria-busy={loading}>
-      {sidebar ? (
-        <div className="sidebar__head">
-          <SidebarTitle view="knownHosts">{t("settings.knownHosts")}</SidebarTitle>
-          {refresh}
-          <SidebarDockControls view="knownHosts" />
-        </div>
-      ) : null}
+      {sidebar ? <PanelHeader view="knownHosts">{refreshButton}</PanelHeader> : null}
       <div className={sidebar ? "sidebar__search" : "known-hosts-toolbar"}>
         {searchInput}
-        {!sidebar ? refresh : null}
+        {!sidebar ? refreshButton : null}
       </div>
-      {sidebar ? <div className="sidebar__body">{content}</div> : content}
+      {sidebar ? (
+        <div className="sidebar__body" data-panel-scroll="known-hosts.content">
+          {content}
+        </div>
+      ) : (
+        content
+      )}
+      {confirmation ? (
+        <ConfirmDialog
+          title={t("settings.knownHostsForgetTitle")}
+          body={`${t("settings.knownHostsForgetBody", { host: confirmation.entry.host, port: confirmation.entry.port })}\n${confirmation.entry.algorithm} · ${confirmation.entry.fingerprint}`}
+          confirmLabel={t("settings.knownHostsForget")}
+          danger
+          onConfirm={async () => {
+            await forget(confirmation.entry);
+          }}
+          onClose={closeConfirmation}
+        />
+      ) : null}
     </div>
   );
 }

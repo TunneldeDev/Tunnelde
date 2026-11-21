@@ -1,8 +1,22 @@
 //! SSHFS transports reuse an authenticated SSH channel. No credentials or
 //! unauthenticated local listening sockets are exposed to the mount program.
+#[cfg(all(test, unix))]
+mod dependency_tests;
+pub(crate) mod documentation;
+mod filesystem;
+#[cfg(not(windows))]
+mod helper;
 mod lifecycle;
+#[cfg(target_os = "macos")]
+use filesystem::mac_mount_device;
+use filesystem::{cancellable_open, resolve_mounted_target};
+pub(crate) mod managed;
+pub(crate) use managed::{open_managed, open_plugin};
+pub(crate) mod adoption;
 mod negotiation;
+pub(crate) mod startup;
 mod transport;
+pub(crate) mod unmount;
 use crate::{
     error::{AppError, AppResult},
     ssh::SshManager,
@@ -32,7 +46,7 @@ pub struct MountInfo {
     pub read_only: bool,
     pub cleanup_error: Option<String>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MountRequest {
     pub session_id: String,
@@ -83,100 +97,43 @@ fn mounted_relative_path(root: &str, target: &str) -> AppResult<PathBuf> {
     Ok(path[base.len()..].iter().collect())
 }
 
-/// Resolve both paths on a blocking worker: a stalled FUSE filesystem must not
-/// freeze the async runtime, and a symlink must never escape the mounted root.
-async fn resolve_mounted_target(root: PathBuf, relative: PathBuf) -> AppResult<PathBuf> {
-    // Timed-out OS filesystem calls cannot be forcibly interrupted. Keep their
-    // permits until they actually return so repeated clicks cannot spawn an
-    // unbounded number of blocked threads.
-    static RESOLVERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
-        std::sync::OnceLock::new();
-    let permit = RESOLVERS
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
-    let job = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        let canonical_root = root.canonicalize()?;
-        let target = root.join(relative).canonicalize()?;
-        if !target.starts_with(&canonical_root) {
-            return Err(AppError::validation("mounts.remotePath.outsideMount"));
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use std::os::unix::fs::MetadataExt;
-            if canonical_root.metadata()?.dev() != target.metadata()?.dev() {
-                return Err(AppError::validation("mounts.remotePath.outsideMount"));
-            }
-        }
-        Ok(target)
-    });
-    tokio::time::timeout(std::time::Duration::from_secs(5), job)
-        .await
-        .map_err(|_| AppError::validation("mounts.pathTimeout"))?
-        .map_err(|error| AppError::Internal(error.to_string()))?
-}
-
-/// A blocking filesystem call cannot be cancelled. Tell its worker when the
-/// awaiting operation is dropped so it can avoid launching a late window.
-async fn cancellable_open(
-    action: impl FnOnce(std::sync::Arc<std::sync::atomic::AtomicBool>) -> AppResult<()> + Send + 'static,
-) -> AppResult<()> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    struct CancelOnDrop(std::sync::Arc<AtomicBool>);
-    impl Drop for CancelOnDrop {
-        fn drop(&mut self) {
-            self.0.store(false, Ordering::Release);
-        }
-    }
-    static OPENERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
-        std::sync::OnceLock::new();
-    let permit = OPENERS
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
-    let allowed = std::sync::Arc::new(AtomicBool::new(true));
-    let _cancel = CancelOnDrop(allowed.clone());
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        action(allowed)
-    })
-    .await
-    .map_err(|error| AppError::Internal(error.to_string()))?
-}
-
-#[cfg(target_os = "macos")]
-async fn mac_mount_device(path: PathBuf) -> AppResult<u64> {
-    use std::os::unix::fs::MetadataExt;
-    static PROBES: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
-        std::sync::OnceLock::new();
-    let permit = PROBES
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
-    let job = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        Ok::<_, std::io::Error>(path.metadata()?.dev())
-    });
-    Ok(tokio::time::timeout(std::time::Duration::from_secs(5), job)
-        .await
-        .map_err(|_| AppError::validation("mounts.pathTimeout"))?
-        .map_err(|error| AppError::Internal(error.to_string()))??)
-}
 struct ActiveMount {
     info: MountInfo,
     generation: u64,
     child: Child,
     bridge: JoinHandle<()>,
+    bridge_joined: bool,
     #[cfg(windows)]
     device_mapping: Option<Vec<u16>>,
     #[cfg(target_os = "linux")]
     mount_id: Option<String>,
     #[cfg(target_os = "macos")]
     mount_device: Option<u64>,
+}
+impl ActiveMount {
+    async fn matches_mount_identity(&self) -> AppResult<bool> {
+        #[cfg(windows)]
+        {
+            Ok(self.device_mapping.is_some()
+                && windows_device_mapping(&self.info.mount_point) == self.device_mapping)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let table = filesystem::mount_table().await?;
+            Ok(self.mount_id.is_some()
+                && mount_id_in_table(&table, &self.info.mount_point) == self.mount_id)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Ok(self.mount_device.is_some()
+                && mac_mount_device(PathBuf::from(&self.info.mount_point))
+                    .await
+                    .ok()
+                    == self.mount_device)
+        }
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        Ok(false)
+    }
 }
 impl Drop for ActiveMount {
     fn drop(&mut self) {
@@ -185,7 +142,8 @@ impl Drop for ActiveMount {
 }
 #[derive(Default)]
 pub struct MountRegistry {
-    mounts: Mutex<HashMap<String, ActiveMount>>,
+    closed: std::sync::atomic::AtomicBool,
+    mounts: unmount::Mounts,
 }
 
 #[derive(Serialize)]
@@ -222,7 +180,7 @@ fn executable() -> Option<PathBuf> {
         .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
         .find(|path| path.is_file())
 }
-pub async fn dependencies() -> MountDependencies {
+fn dependency_paths() -> (Option<PathBuf>, bool) {
     let path = executable();
     let driver = if cfg!(windows) {
         std::env::var_os("ProgramFiles(x86)")
@@ -237,6 +195,32 @@ pub async fn dependencies() -> MountDependencies {
     } else {
         Path::new("/dev/fuse").exists()
     };
+    (path, driver)
+}
+pub async fn dependencies() -> AppResult<MountDependencies> {
+    use crate::services::operations::{Budget, Errors};
+    use std::sync::LazyLock;
+    const ERRORS: Errors = Errors {
+        domain: "mounts.dependencies",
+        busy: "mounts.dependencyBusy",
+        cancelled: "plugin.api.cancelled",
+        failed: "mounts.dependencyFailed",
+    };
+    // Both filesystem discovery and the process probe retain actual work
+    // capacity and any originating view's effect guard after delivery stops.
+    static PROBES: LazyLock<Budget> = LazyLock::new(|| Budget::new(4, ERRORS));
+    static PATHS: LazyLock<Budget> = LazyLock::new(|| Budget::new(4, ERRORS));
+    PROBES
+        .asynchronous(|cancel| async move {
+            let (path, driver) = PATHS.blocking(|_| Ok(dependency_paths())).await?;
+            cancel.check()?;
+            let result = dependency_report(path, driver).await;
+            cancel.check()?;
+            Ok(result)
+        })
+        .await
+}
+async fn dependency_report(path: Option<PathBuf>, driver: bool) -> MountDependencies {
     // Different SSHFS distributions support different transports. In
     // particular, never fall back to spawning ssh.exe with saved credentials.
     let transport = if let Some(path) = path.as_ref() {
@@ -244,12 +228,12 @@ pub async fn dependencies() -> MountDependencies {
     } else {
         None
     };
-    let (instructions, documentation) = if cfg!(windows) {
-        ("Install WinFsp and SSHFS-Win, then restart Tunnelde. Installation is managed by you; Tunnelde does not install drivers.", "https://github.com/winfsp/sshfs-win")
+    let instructions = if cfg!(windows) {
+        "Install WinFsp and SSHFS-Win, then restart Tunnelde. Installation is managed by you; Tunnelde does not install drivers."
     } else if cfg!(target_os = "macos") {
-        ("Install a compatible macFUSE and SSHFS distribution, approve its system extension if requested, then restart Tunnelde.", "https://github.com/libfuse/sshfs")
+        "Install a compatible macFUSE and SSHFS distribution, approve its system extension if requested, then restart Tunnelde."
     } else {
-        ("Install your distribution's sshfs and FUSE packages. Ensure your user can access /dev/fuse.", "https://github.com/libfuse/sshfs")
+        "Install your distribution's sshfs and FUSE packages. Ensure your user can access /dev/fuse."
     };
     let instructions = if path.is_some() && transport.is_none() {
         format!("{instructions} This SSHFS build does not advertise the required passive/stdin transport; choose a compatible build.")
@@ -261,7 +245,7 @@ pub async fn dependencies() -> MountDependencies {
         executable: path.map(|p| p.to_string_lossy().into()),
         platform: std::env::consts::OS.into(),
         instructions,
-        documentation: documentation.into(),
+        documentation: documentation::url().into(),
         transport,
     }
 }
@@ -279,15 +263,23 @@ fn advertised_transport(help: &str) -> Option<String> {
         .map(str::to_owned)
 }
 async fn detect_transport(program: &Path) -> Option<String> {
+    let mut child = command(program)
+        .arg("-h")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .ok()?;
+    probe_transport(&mut child, std::time::Duration::from_secs(3)).await
+}
+
+// An outer caller timeout must not confuse sending a kill with completion.
+// Native dependency workers retain their effect guard until this child has
+// actually been waited on, including output errors and the probe deadline.
+async fn probe_transport(child: &mut Child, timeout: std::time::Duration) -> Option<String> {
     use tokio::io::AsyncReadExt;
     let probe = async {
-        let mut child = command(program)
-            .arg("-h")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
         let stdout = child
             .stdout
             .take()
@@ -314,11 +306,16 @@ async fn detect_transport(program: &Path) -> Option<String> {
             String::from_utf8_lossy(&err)
         )))
     };
-    tokio::time::timeout(std::time::Duration::from_secs(3), probe)
-        .await
-        .ok()?
-        .ok()?
+    let result = tokio::time::timeout(timeout, probe).await;
+    if child.id().is_some() {
+        // Tokio's kill awaits exit; wait also reaps an already-exited child.
+        // Keep both cleanup operations inside the admitted worker lifetime.
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+    result.ok()?.ok()?
 }
+
 fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let cmd = Command::new(program);
     #[cfg(windows)]
@@ -406,17 +403,18 @@ async fn mount_visible(mount_point: &str) -> AppResult<bool> {
     }
     #[cfg(target_os = "linux")]
     {
-        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+        let table = filesystem::mount_table().await?;
         return Ok(mounted_in_table(&table, mount_point));
     }
     #[cfg(target_os = "macos")]
     {
-        let output = tokio::time::timeout(
+        let output = helper::output(
+            command("/sbin/mount"),
             std::time::Duration::from_secs(2),
-            command("/sbin/mount").kill_on_drop(true).output(),
+            4 * 1024 * 1024,
+            "mounts.startTimeout",
         )
-        .await
-        .map_err(|_| AppError::validation("mounts.startTimeout"))??;
+        .await?;
         let marker = format!(" on {mount_point} (");
         return Ok(output.status.success()
             && String::from_utf8_lossy(&output.stdout)
@@ -533,7 +531,7 @@ fn validate(request: &MountRequest) -> AppResult<()> {
     Ok(())
 }
 impl MountRegistry {
-    async fn live_owned_mount(
+    pub(crate) async fn live_owned_mount(
         &self,
         owner: &str,
         generation: u64,
@@ -555,28 +553,7 @@ impl MountRegistry {
         {
             return Err(AppError::validation("mounts.transportClosed"));
         }
-        #[cfg(windows)]
-        if active.device_mapping.is_none()
-            || windows_device_mapping(&active.info.mount_point) != active.device_mapping
-        {
-            return Err(AppError::validation("mounts.transportClosed"));
-        }
-        #[cfg(target_os = "linux")]
-        {
-            let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
-            if active.mount_id.is_none()
-                || mount_id_in_table(&table, &active.info.mount_point) != active.mount_id
-            {
-                return Err(AppError::validation("mounts.transportClosed"));
-            }
-        }
-        #[cfg(target_os = "macos")]
-        if active.mount_device.is_none()
-            || mac_mount_device(PathBuf::from(&active.info.mount_point))
-                .await
-                .ok()
-                != active.mount_device
-        {
+        if !active.matches_mount_identity().await? {
             return Err(AppError::validation("mounts.transportClosed"));
         }
         Ok(active.info.clone())
@@ -595,18 +572,31 @@ impl MountRegistry {
         ssh: &SshManager,
         owner: &str,
         generation: u64,
-        mut request: MountRequest,
+        request: MountRequest,
     ) -> AppResult<MountInfo> {
-        validate(&request)?;
-        let dependencies = dependencies().await;
+        self.mount_gated(ssh, owner, generation, request, &startup::Host)
+            .await
+    }
+    async fn mount_gated(
+        &self,
+        ssh: &SshManager,
+        owner: &str,
+        generation: u64,
+        request: MountRequest,
+        gate: &impl startup::Gate,
+    ) -> AppResult<MountInfo> {
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(AppError::validation("mounts.operations.cancelled"));
+        }
+        gate.check()?;
+        // Bind the original authenticated connection before any slow work.
+        // A reconnect under the same ID must not redirect this acquisition.
+        let handle = gate.handle(ssh, &request.session_id)?;
+        let request = startup::prepare_path(request).await?;
+        gate.check()?;
+        let dependencies = dependencies().await?;
         if !dependencies.available {
             return Err(AppError::validation("mounts.dependencies.required"));
-        }
-        if !cfg!(windows) {
-            request.mount_point = Path::new(&request.mount_point)
-                .canonicalize()?
-                .to_string_lossy()
-                .into();
         }
         let program = dependencies
             .executable
@@ -616,11 +606,14 @@ impl MountRegistry {
             .ok_or_else(|| AppError::validation("mounts.dependencies.required"))?;
         // Network negotiation must not hold the registry lock: a stalled server
         // must not block unrelated mounts, listings, or revocation cleanup.
-        let handle = ssh.handle(&request.session_id)?;
-        let channel = negotiation::prepare(handle.clone()).await?;
+        gate.check()?;
+        let channel = negotiation::prepare_owned(handle.clone()).await?;
         // Serialize only publication so concurrent negotiations cannot spawn
         // two processes targeting the same drive or directory.
         let mut mounts = self.mounts.lock().await;
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(AppError::validation("mounts.operations.cancelled"));
+        }
         if handle.is_closed() || !std::sync::Arc::ptr_eq(&handle, &ssh.handle(&request.session_id)?)
         {
             return Err(AppError::validation("mounts.transportClosed"));
@@ -636,6 +629,10 @@ impl MountRegistry {
         }) {
             return Err(AppError::validation("mounts.mountPoint.inUse"));
         }
+        // Admit the effect while holding only short metadata gates; the OS
+        // launch itself occurs outside those locks. Until final delivery wins,
+        // cancellation still requires the owned startup worker to clean up.
+        gate.check()?;
         let mut cmd = command(program);
         cmd.arg(format!("tunnelde:{}", request.remote_path))
             .arg(&request.mount_point)
@@ -651,22 +648,21 @@ impl MountRegistry {
             .stderr(Stdio::null())
             .kill_on_drop(true)
             .spawn()?;
-        let input = child
-            .stdin
-            .take()
-            .ok_or_else(|| AppError::internal("mounts.stdin"))?;
-        let output = child
-            .stdout
-            .take()
-            .ok_or_else(|| AppError::internal("mounts.stdout"))?;
+        let pipes = child.stdin.take().zip(child.stdout.take());
+        let Some((input, output)) = pipes else {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(AppError::internal("mounts.pipes"));
+        };
+        let (channel, release_work) = channel.split().release_work_on_commit();
         let bridge = tokio::spawn(async move {
-            let _ = transport::bridge(channel, input, output).await;
+            let _ = transport::bridge_owned(channel, input, output).await;
         });
         let pending = lifecycle::PendingMount::new(&bridge);
         let info = MountInfo {
             id: uuid::Uuid::new_v4().to_string(),
             owner: owner.into(),
-            session_id: request.session_id,
+            session_id: request.session_id.clone(),
             remote_path: request.remote_path,
             mount_point: request.mount_point,
             read_only: request.read_only,
@@ -679,6 +675,7 @@ impl MountRegistry {
                 generation,
                 child,
                 bridge,
+                bridge_joined: false,
                 #[cfg(windows)]
                 device_mapping: None,
                 #[cfg(target_os = "linux")]
@@ -692,6 +689,7 @@ impl MountRegistry {
         // the process and bridge. A live process alone is not a mounted filesystem.
         let ready = tokio::time::timeout(std::time::Duration::from_secs(15), async {
             loop {
+                gate.check()?;
                 {
                     let mut mounts = self.mounts.lock().await;
                     let active = mounts
@@ -706,7 +704,7 @@ impl MountRegistry {
                     let mapping = windows_device_mapping(&info.mount_point);
                     #[cfg(target_os = "linux")]
                     let mapping = {
-                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+                        let table = filesystem::mount_table().await?;
                         mount_id_in_table(&table, &info.mount_point)
                     };
                     #[cfg(target_os = "macos")]
@@ -739,90 +737,31 @@ impl MountRegistry {
         })
         .await
         .unwrap_or_else(|_| Err(AppError::validation("mounts.startTimeout")));
-        if let Err(error) = ready {
-            self.stop_resource(&info).await;
-            return Err(error);
-        }
+        startup::finish(
+            ready,
+            || {
+                if handle.is_closed()
+                    || !std::sync::Arc::ptr_eq(&handle, &ssh.handle(&request.session_id)?)
+                    || self.closed.load(std::sync::atomic::Ordering::Acquire)
+                {
+                    return Err(AppError::validation("mounts.transportClosed"));
+                }
+                Ok(())
+            },
+            gate,
+            self.retire_startup(info.clone()),
+        )
+        .await?;
+        // The registry now owns a long-lived mount. Only pending acquisition
+        // and failed-channel retirement, not its whole mounted lifetime, fence
+        // native panel movement.
+        release_work();
         pending.complete();
         Ok(info)
     }
     pub async fn unmount(&self, owner: &str, id: &str, force: bool) -> AppResult<()> {
         self.unmount_checked(owner, id, force, None, || Ok(()))
             .await
-    }
-    async fn unmount_checked(
-        &self,
-        owner: &str,
-        id: &str,
-        force: bool,
-        generation: Option<u64>,
-        check: impl FnOnce() -> AppResult<()>,
-    ) -> AppResult<()> {
-        let mut mounts = self.mounts.lock().await;
-        let active = mounts
-            .get_mut(id)
-            .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
-        if active.info.owner != owner {
-            return Err(AppError::validation("mounts.notOwned"));
-        }
-        if generation.is_some_and(|generation| active.generation != generation) {
-            return Err(AppError::validation("plugin.resources.unavailable"));
-        }
-        check()?;
-        if !mount_visible(&active.info.mount_point).await? {
-            lifecycle::settle_process(active).await?;
-            mounts.remove(id);
-            return Ok(());
-        }
-        #[cfg(windows)]
-        let _volume_lock = if force {
-            None
-        } else {
-            Some(dismount_windows(&active.info.mount_point)?)
-        };
-        if !cfg!(windows) {
-            let mut cmd = if cfg!(target_os = "macos") {
-                let mut cmd = command("diskutil");
-                cmd.arg("unmount");
-                if force {
-                    cmd.arg("force");
-                }
-                cmd
-            } else {
-                let mut cmd = command("fusermount3");
-                cmd.arg(if force { "-uz" } else { "-u" });
-                cmd
-            };
-            cmd.arg(&active.info.mount_point).kill_on_drop(true);
-            let mut output = tokio::time::timeout(std::time::Duration::from_secs(5), cmd.output())
-                .await
-                .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
-            if cfg!(target_os = "linux")
-                && output
-                    .as_ref()
-                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-            {
-                output = tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    command("fusermount")
-                        .arg(if force { "-uz" } else { "-u" })
-                        .arg(&active.info.mount_point)
-                        .kill_on_drop(true)
-                        .output(),
-                )
-                .await
-                .map_err(|_| AppError::validation("mounts.unmountTimeout"))?;
-            }
-            let output = output?;
-            if !output.status.success() {
-                tracing::warn!(stderr = %String::from_utf8_lossy(&output.stderr).chars().take(2048).collect::<String>(), "SSHFS unmount failed");
-                return Err(AppError::validation("mounts.busy"));
-            }
-        }
-        // Only the owned SSHFS process is stopped; other applications are never killed.
-        lifecycle::settle_process(active).await?;
-        mounts.remove(id);
-        Ok(())
     }
     pub async fn stop_generation(&self, owner: &str, generation: u64) {
         let selected: Vec<_> = self
@@ -857,20 +796,29 @@ impl MountRegistry {
         }
     }
     async fn stop_resource(&self, mount: &MountInfo) {
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            self.unmount(&mount.owner, &mount.id, false),
-        )
-        .await
-        .unwrap_or_else(|_| Err(AppError::internal("mounts.unmountTimeout")));
-        if let Err(error) = result {
-            tracing::warn!(%error, mount_id = mount.id, "SSHFS unmount failed; revoking transport");
-            // Busy mounts must not keep authenticated access after revocation.
-            // Retain a cleanup record so the user can explicitly retry unmount.
-            if let Some(active) = self.mounts.lock().await.get_mut(&mount.id) {
-                active.bridge.abort();
-                let _ = active.child.kill().await;
-                active.info.cleanup_error = Some(error.to_string());
+        let attempt = || async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                self.unmount(&mount.owner, &mount.id, false),
+            )
+            .await
+            .unwrap_or_else(|_| Err(AppError::internal("mounts.unmountTimeout")))
+        };
+        if let Err(error) = attempt().await {
+            // Revocation and SSHFS's EOF/exit cleanup race the normal unmount.
+            // Settle only our workers, then retry normal (never force/lazy)
+            // cleanup. A genuinely busy or replaced mount stays recorded.
+            if lifecycle::revoke_failed_unmount(self, mount, &error).await {
+                if let Err(error) = attempt().await {
+                    let mut mounts = self.mounts.lock().await;
+                    if let Some(active) = mounts
+                        .get_mut(&mount.id)
+                        .filter(|active| active.info.owner == mount.owner)
+                    {
+                        active.info.cleanup_error = Some(error.to_string());
+                        tracing::warn!(%error, mount_id = mount.id, "SSHFS cleanup still requires explicit unmount");
+                    }
+                }
             }
         }
     }
@@ -893,22 +841,32 @@ impl MountRegistry {
             self.stop_resource(&mount).await;
         }
     }
-    pub async fn reap(&self) {
-        let mut mounts = self.mounts.lock().await;
+    /// Host maintenance, never a side effect of plugin reads. Skip an exact
+    /// registry reservation rather than delaying unrelated group recovery.
+    pub(crate) fn reap_if_idle(&self) -> bool {
+        let Ok(mut mounts) = self.mounts.try_lock() else {
+            return false;
+        };
+        let mut changed = false;
         for mount in mounts.values_mut() {
             if let Ok(Some(status)) = mount.child.try_wait() {
                 mount.bridge.abort();
-                mount.info.cleanup_error.get_or_insert_with(|| {
+                if mount.info.cleanup_error.is_none() {
                     tracing::debug!(%status, "SSHFS process exited");
-                    "mounts.processExited".into()
-                });
+                    mount.info.cleanup_error = Some("mounts.processExited".into());
+                    changed = true;
+                }
             } else if mount.bridge.is_finished() && mount.info.cleanup_error.is_none() {
                 let _ = mount.child.start_kill();
                 mount.info.cleanup_error = Some("mounts.transportClosed".into());
+                changed = true;
             }
         }
+        changed
     }
     pub async fn shutdown(&self) {
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Release);
         for mount in self.list(None).await {
             self.stop_resource(&mount).await;
         }
@@ -965,39 +923,36 @@ pub async fn action(
     )?;
     let result = policy
         .guard(&lease, async {
-            state.mounts.reap().await;
             match method.as_str() {
-                "dependencies" => Ok(serde_json::to_value(dependencies().await)?),
+                "dependencies" => Ok(serde_json::to_value(dependencies().await?)?),
                 "list" => Ok(serde_json::to_value(
                     state.mounts.list(Some(&plugin_id)).await,
                 )?),
                 "browse" => {
-                    let session_id = params
-                        .get("sessionId")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| AppError::validation("mounts.session.required"))?;
-                    let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
-                    if !path.starts_with('/') || path.contains('\0') {
-                        return Err(AppError::validation("mounts.remotePath.absoluteRequired"));
-                    }
-                    let listing =
-                        crate::ssh::files::remote_list(&app, session_id, Some(path.into())).await?;
-                    Ok(serde_json::to_value(crate::ssh::files::Listing {
-                        path: listing.path,
-                        entries: listing.entries.into_iter().filter(|e| e.is_dir).collect(),
-                    })?)
+                    // Keep the native-command compatibility entry point on the
+                    // same owned read path without recursing through dispatch.
+                    crate::plugins::api::browse_mount(
+                        &crate::plugins::api::HostContext {
+                            app: app.clone(),
+                            id: lease.id.clone(),
+                            fingerprint: lease.fingerprint.clone(),
+                            permissions: lease.permissions.clone(),
+                            generation: lease.generation,
+                            tool_client: None,
+                            tool_request: None,
+                        },
+                        params.clone(),
+                    )
+                    .await
                 }
                 "mount" => Ok(serde_json::to_value(
-                    state
-                        .mounts
-                        .mount(
-                            &state.ssh,
-                            &plugin_id,
-                            lease.generation,
-                            serde_json::from_value(params.clone())
-                                .map_err(|_| AppError::validation("mounts.request.invalid"))?,
-                        )
-                        .await?,
+                    startup::mount_plugin(
+                        app.clone(),
+                        lease.clone(),
+                        serde_json::from_value(params.clone())
+                            .map_err(|_| AppError::validation("mounts.request.invalid"))?,
+                    )
+                    .await?,
                 )?),
                 "unmount" => {
                     let id = params
@@ -1006,22 +961,24 @@ pub async fn action(
                         .ok_or_else(|| AppError::validation("mounts.id.required"))?;
                     state
                         .mounts
-                        .unmount(
+                        .unmount_checked(
                             &plugin_id,
                             id,
                             params
                                 .get("force")
                                 .and_then(|v| v.as_bool())
                                 .unwrap_or(false),
+                            Some(lease.generation),
+                            unmount::PluginPolicy {
+                                app: app.clone(),
+                                lease: lease.clone(),
+                            },
                         )
                         .await?;
                     Ok(serde_json::Value::Null)
                 }
                 "documentation" => {
-                    crate::commands::open_external(
-                        app.clone(),
-                        dependencies().await.documentation,
-                    )?;
+                    documentation::open(app.clone(), lease.clone()).await?;
                     Ok(serde_json::Value::Null)
                 }
                 "open" => {
@@ -1029,14 +986,17 @@ pub async fn action(
                         .get("id")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| AppError::validation("mounts.id.required"))?;
-                    let record = state
-                        .mounts
-                        .list(Some(&plugin_id))
-                        .await
-                        .into_iter()
-                        .find(|m| m.id == id)
-                        .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
-                    crate::commands::open_local_path(app.clone(), record.mount_point)?;
+                    open_plugin(
+                        app.clone(),
+                        plugin_id.clone(),
+                        lease.generation,
+                        id.to_owned(),
+                        unmount::PluginPolicy {
+                            app: app.clone(),
+                            lease: lease.clone(),
+                        },
+                    )
+                    .await?;
                     Ok(serde_json::Value::Null)
                 }
                 "reveal" => {
@@ -1072,7 +1032,7 @@ pub async fn action(
                             .await?;
                     #[cfg(target_os = "linux")]
                     {
-                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+                        let table = filesystem::mount_table().await?;
                         if nested_mount_on_path(&table, Path::new(&record.mount_point), &target) {
                             return Err(AppError::validation("mounts.remotePath.outsideMount"));
                         }
@@ -1497,6 +1457,41 @@ mod tests {
         assert_eq!(
             advertised_transport("supports slave devices\n-o slave_other"),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    #[tokio::test]
+    async fn shutdown_fences_new_mounts_before_dependency_or_transport_work() {
+        let registry = MountRegistry::default();
+        registry.shutdown().await;
+        let ssh = SshManager::default();
+        let result = registry
+            .mount(
+                &ssh,
+                "test",
+                0,
+                MountRequest {
+                    session_id: "missing".into(),
+                    remote_path: "/source".into(),
+                    mount_point: "/tmp/test".into(),
+                    read_only: true,
+                },
+            )
+            .await;
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "mounts.operations.cancelled"
+        );
+        let result = registry
+            .adopt_managed("missing".into(), (), |_, _| Ok(()), |_, _| {})
+            .await;
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "mounts.operations.cancelled"
         );
     }
 }

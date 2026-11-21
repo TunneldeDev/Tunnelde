@@ -1,3 +1,7 @@
+import { brandMark } from "@/lib/brand";
+import fontLicense from "../../../assets/fonts/OFL.txt?raw";
+import { Dialog } from "@/components/ui/overlay/Dialog";
+import { useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -15,13 +19,14 @@ function openUrl(url: string): void {
 
 export function AboutPage({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
+  const [noticesOpen, setNoticesOpen] = useState(false);
   const info = useSettings((state) => state.info);
   const version = info?.version ?? "0.1.0";
 
   return (
     <div className={embedded ? "about" : "page about"}>
       <section className="card about__head">
-        <img src="/brand/mark-256.png" width={64} height={64} alt="" draggable={false} />
+        <img src={brandMark} width={64} height={64} alt="" draggable={false} />
         <div className="about__identity">
           <h1 className="about__name">Tunnelde</h1>
           <p className="about__meta">
@@ -64,12 +69,29 @@ export function AboutPage({ embedded = false }: { embedded?: boolean }) {
             variant="ghost"
             size="sm"
             trailing={<ExternalLink size={12} />}
-            onClick={() => openUrl(`${REPOSITORY}/blob/main/THIRD_PARTY_NOTICES.md`)}
+            onClick={() => setNoticesOpen(true)}
           >
             {t("about.thirdParty")}
           </Button>
         </div>
       </section>
+      <Dialog
+        open={noticesOpen}
+        title={t("about.thirdParty")}
+        closeLabel={t("common.close")}
+        onClose={() => setNoticesOpen(false)}
+        width={640}
+      >
+        <h3>Noto Sans Mono CJK SC</h3>
+        <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{fontLicense}</pre>
+        <Button
+          variant="ghost"
+          trailing={<ExternalLink size={12} />}
+          onClick={() => openUrl(`${REPOSITORY}/blob/main/THIRD_PARTY_NOTICES.md`)}
+        >
+          {t("about.thirdParty")}
+        </Button>
+      </Dialog>
     </div>
   );
 }

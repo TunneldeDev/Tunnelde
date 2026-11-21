@@ -95,4 +95,5 @@ CREATE TABLE host_plugin_fields (
 );
 "#,
     include_str!("../services/credentials/bindings/schema.sql"),
+    include_str!("../services/mounts/schema.sql"),
 ];

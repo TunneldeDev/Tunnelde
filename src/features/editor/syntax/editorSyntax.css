@@ -1,0 +1,41 @@
+.cm-editor-token-keyword {
+  color: var(--td-cyan);
+}
+
+.cm-editor-token-string {
+  color: var(--td-green);
+}
+
+.cm-editor-token-number,
+.cm-editor-token-constant {
+  color: var(--td-orange);
+}
+
+.cm-editor-token-comment {
+  color: var(--td-faint);
+}
+
+.cm-editor-token-type {
+  color: var(--td-accent-strong);
+}
+
+.cm-editor-token-function,
+.cm-editor-token-property,
+.cm-editor-token-variable {
+  color: var(--td-text);
+}
+
+.cm-editor-token-operator,
+.cm-editor-token-punctuation {
+  color: var(--td-muted);
+}
+
+.cm-editor-token-invalid {
+  color: var(--td-red);
+}
+
+@media (forced-colors: active) {
+  [class^="cm-editor-token-"] {
+    color: CanvasText;
+  }
+}

@@ -19,7 +19,7 @@ export interface TerminalParticipant {
 }
 
 const terminals = new Map<string, TerminalParticipant>();
-let restored: Record<string, TerminalCheckpoint> = {};
+let restored = new Map<string, TerminalCheckpoint>();
 
 export function registerTerminalCheckpoint(sessionId: string, participant: TerminalParticipant) {
   terminals.set(sessionId, participant);
@@ -29,32 +29,126 @@ export function registerTerminalCheckpoint(sessionId: string, participant: Termi
 }
 
 export function restoreTerminalCheckpoints(checkpoints: Record<string, TerminalCheckpoint>) {
-  restored = checkpoints;
+  restored = new Map(Object.entries(checkpoints));
 }
 
 export function takeTerminalCheckpoint(sessionId: string) {
-  const checkpoint = restored[sessionId];
-  delete restored[sessionId];
+  const checkpoint = restored.get(sessionId);
+  restored.delete(sessionId);
   return checkpoint;
 }
 
-/** A failed/abandoned checkpoint must reattach every terminal it detached. */
-export async function prepareTerminalCheckpoints(sessionIds: string[]) {
-  const expected = [...terminals.entries()];
-  if (sessionIds.some((id) => !terminals.has(id))) throw new Error("terminal.checkpointBusy");
+export interface TerminalHandoff {
+  readonly checkpoints: Readonly<Record<string, TerminalCheckpoint>>;
+  /** Recheck before requesting native ownership transfer, not after commit. */
+  isCurrent: () => boolean;
+  /** Only after the destination owns the stream. Never reattaches the source. */
+  commit: () => Promise<void>;
+  /** Idempotent; failed reattachments stay reserved and can be retried. */
+  rollback: () => Promise<void>;
+}
+
+const reservations = new Map<string, object>();
+const recovering = new Set<TerminalHandoff>();
+let background: TerminalHandoff | undefined;
+let backgroundPreparing = false;
+
+/** Reserve exactly the requested PTYs, not every mounted terminal. This is the
+ * document-local half of handoff; it does not grant native stream ownership.
+ * Hold the reservation through commit/rollback, including an ignored abort. */
+export async function beginTerminalHandoff(
+  sessionIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<TerminalHandoff> {
+  const ids = [...new Set(sessionIds)];
+  if (signal?.aborted || ids.some((id) => !terminals.has(id) || reservations.has(id)))
+    throw new Error("terminal.checkpointBusy");
+  const selected = ids.map((id) => [id, terminals.get(id)!] as const);
+  const token = {};
+  for (const id of ids) reservations.set(id, token);
+  const release = () => {
+    for (const id of ids) if (reservations.get(id) === token) reservations.delete(id);
+  };
+  const current = () => selected.every(([id, participant]) => terminals.get(id) === participant);
+  let state: "prepared" | "committed" | "rolledBack" = "prepared";
+  let rollingBack: Promise<void> | undefined;
+  const remaining = new Set(selected.map(([, participant]) => participant));
+  let checkpoints: Readonly<Record<string, TerminalCheckpoint>> = {};
+  const handoff: TerminalHandoff = {
+    get checkpoints() {
+      return checkpoints;
+    },
+    isCurrent: () =>
+      state === "prepared" &&
+      !rollingBack &&
+      !recovering.has(handoff) &&
+      !signal?.aborted &&
+      current(),
+    async commit() {
+      if (state === "committed") return;
+      if (state !== "prepared" || rollingBack || recovering.has(handoff))
+        throw new Error("terminal.checkpointBusy");
+      // Native commit is irreversible. The source may already have unmounted
+      // or its caller aborted; neither can authorize reattaching the old PTY.
+      state = "committed";
+      release();
+    },
+    rollback() {
+      if (state !== "prepared") return Promise.resolve();
+      if (rollingBack) return rollingBack;
+      recovering.add(handoff);
+      rollingBack = (async () => {
+        const results = await Promise.allSettled(
+          [...remaining].map(async (participant) => {
+            await participant.resume();
+            remaining.delete(participant);
+          }),
+        );
+        if (results.some((result) => result.status === "rejected"))
+          throw new Error("terminal.checkpointBusy");
+        state = "rolledBack";
+        recovering.delete(handoff);
+        release();
+      })().finally(() => {
+        rollingBack = undefined;
+      });
+      return rollingBack;
+    },
+  };
   const prepared = await Promise.allSettled(
-    expected.map(async ([id, terminal]) => [id, await terminal.prepare()] as const),
+    selected.map(async ([id, terminal]) => [id, await terminal.prepare()] as const),
   );
   const failed = prepared.find((result) => result.status === "rejected");
-  if (failed || expected.some(([id, participant]) => terminals.get(id) !== participant)) {
-    await Promise.allSettled(expected.map(([, terminal]) => terminal.resume()));
+  if (failed || signal?.aborted || !current()) {
+    // Wait for *all* preparations before rollback: a late detach must never
+    // occur after we resumed/released its session. Retain failed rollback work.
+    await handoff.rollback().catch(() => {});
     throw failed?.status === "rejected" ? failed.reason : new Error("terminal.checkpointBusy");
   }
-  return Object.fromEntries(
-    prepared.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])),
+  checkpoints = Object.freeze(
+    Object.fromEntries(
+      prepared.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])),
+    ),
   );
+  return handoff;
+}
+
+/** Background suspension owns its own batch; a resume notification must not
+ * reattach a different terminal currently being moved to another window. */
+export async function prepareTerminalCheckpoints(sessionIds: string[]) {
+  if (backgroundPreparing || background) throw new Error("terminal.checkpointBusy");
+  backgroundPreparing = true;
+  try {
+    background = await beginTerminalHandoff(sessionIds);
+    return background.checkpoints;
+  } finally {
+    backgroundPreparing = false;
+  }
 }
 
 export async function resumeTerminalCheckpoints() {
-  await Promise.allSettled([...terminals.values()].map((terminal) => terminal.resume()));
+  const pending = new Set(recovering);
+  if (background) pending.add(background);
+  await Promise.allSettled([...pending].map((handoff) => handoff.rollback()));
+  if (background && !recovering.has(background)) background = undefined;
 }

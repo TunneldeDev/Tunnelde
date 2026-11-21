@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { panelPresentation } from "./panelPresentation";
 import { useWorkspace } from "@/store/workspace";
 import { sidebarTabId, SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
 import type { PluginSidebarView } from "@/lib/plugins/sidebars";
@@ -18,7 +19,14 @@ export type SettingsSection =
   | "about"
   | "advanced";
 export type BuiltinSidebarView =
-  "hosts" | "knownHosts" | "plugins" | "forwarding" | "tasks" | "output" | "filePreview";
+  | "hosts"
+  | "knownHosts"
+  | "plugins"
+  | "forwarding"
+  | "tasks"
+  | "output"
+  | "filePreview"
+  | "connections";
 export type SidebarView = BuiltinSidebarView | PluginSidebarView;
 
 export const useNavigation = create<{
@@ -69,9 +77,26 @@ export const useNavigation = create<{
         : { visitedSidebars: [...state.visitedSidebars, view] },
     ),
   selectSidebar: (activeSidebar) => {
+    if (panelPresentation(activeSidebar).getState().open) {
+      panelPresentation(activeSidebar).getState().raise();
+      return;
+    }
     const workspace = useWorkspace.getState();
     if (workspace.tabs.some((tab) => tab.id === sidebarTabId(activeSidebar))) {
       workspace.activate(sidebarTabId(activeSidebar));
+      return;
+    }
+    const preferred = panelPresentation(activeSidebar).getState().preferred;
+    if (preferred === "floating") {
+      set((state) => ({
+        sidebarVisible: state.activeSidebar === activeSidebar ? false : state.sidebarVisible,
+      }));
+      useNavigation.getState().rememberSidebar(activeSidebar);
+      panelPresentation(activeSidebar).getState().show();
+      return;
+    }
+    if (preferred === "workspace") {
+      workspace.openSidebar(activeSidebar);
       return;
     }
     set((state) => ({
@@ -83,9 +108,26 @@ export const useNavigation = create<{
     }));
   },
   showSidebar: (activeSidebar) => {
+    if (panelPresentation(activeSidebar).getState().open) {
+      panelPresentation(activeSidebar).getState().raise();
+      return;
+    }
     const workspace = useWorkspace.getState();
     if (workspace.tabs.some((tab) => tab.id === sidebarTabId(activeSidebar))) {
       workspace.activate(sidebarTabId(activeSidebar));
+      return;
+    }
+    const preferred = panelPresentation(activeSidebar).getState().preferred;
+    if (preferred === "floating") {
+      set((state) => ({
+        sidebarVisible: state.activeSidebar === activeSidebar ? false : state.sidebarVisible,
+      }));
+      useNavigation.getState().rememberSidebar(activeSidebar);
+      panelPresentation(activeSidebar).getState().show();
+      return;
+    }
+    if (preferred === "workspace") {
+      workspace.openSidebar(activeSidebar);
       return;
     }
     set((state) => ({
@@ -111,6 +153,15 @@ export const useNavigation = create<{
     const workspace = useWorkspace.getState();
     const id = sidebarTabId("output");
     if (workspace.tabs.some((tab) => tab.id === id)) {
+      navigation.showSidebar("output");
+      return;
+    }
+    const presentation = panelPresentation("output").getState();
+    if (
+      presentation.open ||
+      presentation.preferred === "floating" ||
+      presentation.preferred === "sidebar"
+    ) {
       navigation.showSidebar("output");
       return;
     }

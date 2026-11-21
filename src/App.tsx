@@ -1,3 +1,4 @@
+import { brandMark } from "@/lib/brand";
 import { useEffect, useLayoutEffect, useState } from "react";
 
 import { bootstrap } from "@/app/bootstrap";
@@ -60,7 +61,7 @@ export function App() {
   if (!started) {
     return (
       <div className="splash">
-        <img src="/brand/mark-256.png" width={56} height={56} alt="" />
+        <img src={brandMark} width={56} height={56} alt="" />
       </div>
     );
   }

@@ -1,3 +1,4 @@
+import { usePanelViewState } from "@/lib/panels/viewState";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
@@ -61,8 +62,18 @@ export default function PdfPreview({
 }) {
   const { t } = useTranslation();
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [zoom, setZoom] = useState(1);
+  const [pageNumber, setPageNumber] = usePanelViewState(
+    "pdf.page",
+    1,
+    (value): value is number =>
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 1_000_000,
+  );
+  const [zoom, setZoom] = usePanelViewState(
+    "pdf.zoom",
+    1,
+    (value): value is number =>
+      typeof value === "number" && Number.isFinite(value) && value >= 0.5 && value <= 3,
+  );
   const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
   useEffect(() => {
     if (failure) onError?.(failure.cause);
@@ -121,7 +132,10 @@ export default function PdfPreview({
     };
     void loading.promise
       .then((result) => {
-        if (!disposed) setDocument(result);
+        if (!disposed) {
+          setPageNumber((value) => Math.min(value, result.numPages));
+          setDocument(result);
+        }
       })
       .catch((cause: unknown) => {
         // Destroying a rejected/password-protected document also rejects its
@@ -133,7 +147,7 @@ export default function PdfPreview({
       controller.abort();
       void loading.destroy();
     };
-  }, [url, size]);
+  }, [url, size, setPageNumber]);
   useEffect(() => {
     const target = container.current;
     if (!target || typeof ResizeObserver === "undefined") return;
@@ -232,7 +246,12 @@ export default function PdfPreview({
         </Button>
       </div>
       {failure ? <p role="alert">{translateError(failure.cause)}</p> : null}
-      <div className="file-preview__pdf-pages" ref={container} aria-busy={rendering && !failure}>
+      <div
+        className="file-preview__pdf-pages"
+        ref={container}
+        data-panel-scroll="preview.pdf"
+        aria-busy={rendering && !failure}
+      >
         {!failure ? (
           <canvas ref={canvas} aria-label={t("preview.pdfPage", { page: pageNumber })} role="img" />
         ) : null}

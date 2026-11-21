@@ -1,3 +1,6 @@
+import { terminalCheckpointFixture } from "../fixtures/terminalCheckpoint";
+import { panelPresentation } from "@/store/panelPresentation";
+import { SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { useWorkspace } from "@/store/workspace";
@@ -70,10 +73,12 @@ it("defers WebView teardown for hidden JavaScript work and suspends once it sett
 
 beforeEach(() => {
   vi.clearAllMocks();
+  for (const view of SIDEBAR_VIEWS)
+    panelPresentation(view).setState({ open: false, preferred: null, pinned: false, bounds: null });
   useRestartPrompt.setState({ open: false, observed: null });
   useTransferPanel.setState({ open: false, pinned: false, bounds: null });
   mocks.snapshot.mockResolvedValue(null);
-  mocks.prepare.mockResolvedValue({ one: { sequence: 7, data: "screen" } });
+  mocks.prepare.mockResolvedValue({ one: terminalCheckpointFixture() });
   mocks.resume.mockResolvedValue(undefined);
   mocks.suspend.mockResolvedValue(true);
   useWorkspace.setState({
@@ -85,6 +90,7 @@ beforeEach(() => {
     split: null,
   });
   useSsh.setState({
+    history: [],
     sessions: [
       {
         id: "one",
@@ -207,7 +213,7 @@ describe("background window checkpoint", () => {
     expect(usePlugins.getState().outputs.uuid?.text).toBe("uuid result");
     expect(useNavigation.getState().settingsSection).toBe("terminal");
     expect(viewStateSnapshot().collapsed).toEqual(new Set(["hosts"]));
-    expect(mocks.restore).toHaveBeenCalledWith({ one: { sequence: 7, data: "screen" } });
+    expect(mocks.restore).toHaveBeenCalledWith({ one: terminalCheckpointFixture() });
     expect(mocks.resume).not.toHaveBeenCalled();
   });
 
@@ -265,4 +271,67 @@ describe("background window checkpoint", () => {
       decodeViewSnapshot(encodeViewSnapshot({ set: new Set(["a"]), map: new Map([["x", 3]]) })),
     ).toEqual({ set: new Set(["a"]), map: new Map([["x", 3]]) });
   });
+});
+
+it("retains session lifecycle history across in-memory WebView suspension", async () => {
+  const session = useSsh.getState().sessions[0]!;
+  useSsh.getState().acceptSession(session);
+  useSsh.getState().forget(session.id, "closed");
+  const history = useSsh.getState().history;
+  await suspendBackgroundWindow(99);
+  const snapshot = mocks.suspend.mock.calls[0]![1] as string;
+  expect(decodeViewSnapshot<{ sessionHistory: unknown }>(snapshot).sessionHistory).toEqual(history);
+  useSsh.setState({ sessions: [], history: [] });
+  mocks.snapshot.mockResolvedValue(snapshot);
+  await restoreBackgroundSnapshot();
+  expect(useSsh.getState().history).toEqual(history);
+  expect(useSsh.getState().sessions).toEqual([]);
+});
+
+it("restores generic panel geometry and presentation only from the live-process checkpoint", async () => {
+  const state = { open: true, pinned: true, bounds: { x: 42, y: 50, width: 500, height: 420 } };
+  panelPresentation("connections").setState(state);
+  await suspendBackgroundWindow(81);
+  const snapshot = mocks.suspend.mock.calls[0]![1] as string;
+  const decoded = decodeViewSnapshot<{ panelPresentations: Record<string, unknown> }>(snapshot);
+  expect(decoded.panelPresentations.connections).toEqual(state);
+  panelPresentation("connections").setState({ open: false, pinned: false, bounds: null });
+  mocks.snapshot.mockResolvedValue(snapshot);
+  await restoreBackgroundSnapshot();
+  expect(panelPresentation("connections").getState()).toMatchObject(state);
+  decoded.panelPresentations.connections = { open: "yes", pinned: true, bounds: { x: 0 } };
+  panelPresentation("connections").setState({ open: false });
+  mocks.snapshot.mockResolvedValue(encodeViewSnapshot(decoded));
+  await restoreBackgroundSnapshot();
+  expect(panelPresentation("connections").getState().open).toBe(false);
+});
+
+it("restores nullable terminal internals before touching writable stores and rejects a malformed terminal batch", async () => {
+  await suspendBackgroundWindow(82);
+  const saved = mocks.suspend.mock.calls.at(-1)![1] as string;
+  const snapshot = decodeViewSnapshot<{
+    version: number;
+    terminals: { one: { state: { charset: { charset: null } } } };
+  }>(saved);
+  expect(snapshot.version).toBe(2);
+  expect(snapshot.terminals.one.state.charset.charset).toBeNull();
+  Reflect.deleteProperty(snapshot.terminals.one.state, "buffers");
+  mocks.snapshot.mockResolvedValue(encodeViewSnapshot(snapshot));
+  mocks.restore.mockClear();
+  useNavigation.setState({ settingsSection: "terminal" });
+  await expect(restoreBackgroundSnapshot()).rejects.toThrow("terminal.checkpointBusy");
+  expect(mocks.restore).not.toHaveBeenCalled();
+  expect(useNavigation.getState().settingsSection).toBe("terminal");
+});
+
+it("still accepts in-memory v1 checkpoints from an older live document", async () => {
+  await suspendBackgroundWindow(83);
+  const saved = mocks.suspend.mock.calls.at(-1)![1] as string;
+  const snapshot = decodeViewSnapshot<{ version: number; terminals: unknown }>(saved);
+  snapshot.version = 1;
+  snapshot.terminals = { one: { sequence: 7, data: "legacy screen" } };
+  mocks.snapshot.mockResolvedValue(encodeViewSnapshot(snapshot));
+  mocks.restore.mockClear();
+  expect(await restoreBackgroundSnapshot()).toBe(true);
+  expect(mocks.restore).toHaveBeenCalledWith({ one: { sequence: 7, data: "legacy screen" } });
 });

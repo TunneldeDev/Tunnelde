@@ -10,12 +10,16 @@ export function createFileReadResource(path: string, source: FsSource) {
 
 export type FileReadResource = ReturnType<typeof createFileReadResource>;
 
-export function readFileText(resource: FileReadResource, purpose: "editor" | "preview") {
+export function readFileText(
+  resource: FileReadResource,
+  purpose: "editor" | "preview",
+  encoding?: string,
+) {
   const { path, source } = resource.target;
   return resource.scope.run(async () => {
-    if (source.kind === "remote") return (await api.sftpReadText(source.sessionId, path)).content;
+    if (source.kind === "remote") return await api.sftpReadText(source.sessionId, path, encoding);
     return purpose === "preview"
-      ? api.searchPreviewLocal(path)
-      : (await api.localReadText(path)).content;
+      ? await api.searchPreviewLocal(path)
+      : await api.localReadText(path, encoding);
   });
 }

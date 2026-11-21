@@ -127,9 +127,12 @@ export function boundOutput(entries: OutputEntry[]): { entries: OutputEntry[]; o
     const entry = entries[i]!;
     const message =
       entry.message.length > 16384 ? `${entry.message.slice(0, 16384)}…` : entry.message;
-    size += message.length + entry.domain.length + (entry.plugin?.length ?? 0) + 128;
+    const row = message === entry.message ? entry : { ...entry, message };
+    // IPC transports UTF-8 JSON, not UTF-16 code units. Include every field so
+    // non-ASCII/escaped output and long domains cannot exceed the native bound.
+    size += new TextEncoder().encode(JSON.stringify(row)).length + 1;
     if (size > 1024 * 1024) break;
-    recent.push(message === entry.message ? entry : { ...entry, message });
+    recent.push(row);
     omitted ||= message !== entry.message;
   }
   return { entries: recent.reverse(), omitted: omitted || recent.length < entries.length };

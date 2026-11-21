@@ -35,6 +35,14 @@ impl PluginsManager {
     ) -> AppResult<Value> {
         let instance = self.admit_invocation(id, lease).await?;
         instance.require_runtime()?;
+        if let Some(view) = instance
+            .manifest
+            .views
+            .iter()
+            .find(|item| item.id == view && item.kind.as_deref() == Some("sharedMounts"))
+        {
+            return Ok(json!({"title": view.title, "blocks": [{"type": "sharedMounts"}]}));
+        }
         if instance.manifest.runtime.as_deref() == Some("declarative") {
             if !instance.manifest.views.iter().any(|item| item.id == view) {
                 return Err(AppError::NotFound("plugin.view.notFound".into()));

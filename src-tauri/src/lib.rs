@@ -25,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(automation::transport::Lifecycle::default())
         .manage(window::StartupWindow::default())
+        .manage(platform::panel_windows::native::Registry::default())
         .manage(window::close::Registry::default())
         .manage(platform::application_actions::Registry::default())
         .manage(platform::background::BackgroundWindow::default())
@@ -44,38 +45,25 @@ pub fn run() {
                 );
                 return;
             };
-            let origin = if cfg!(dev) {
-                "http://localhost:1420"
-            } else if cfg!(target_os = "windows") {
-                "http://tauri.localhost"
-            } else {
-                "tauri://localhost"
-            };
+            let origin = platform::protocol_origin::for_app(&app);
+            let caller = context.webview_label().to_owned();
             tauri::async_runtime::spawn(async move {
                 let _capacity = capacity;
-                let state = app.state::<state::AppState>();
-                responder.respond(plugins::frontend::serve(
-                    &app.state::<plugins::frontend::Registry>(),
-                    &state.plugins.security,
-                    request,
-                    origin,
+                responder.respond(plugins::frontend::serve_in_window(
+                    &app, &caller, request, &origin,
                 ));
             });
         })
         .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
             let app = context.app_handle().clone();
-            let origin = if cfg!(dev) {
-                "http://localhost:1420"
-            } else if cfg!(target_os = "windows") {
-                "http://tauri.localhost"
-            } else {
-                "tauri://localhost"
-            }
-            .to_string();
+            let origin = platform::protocol_origin::for_app(&app);
+            let caller = context.webview_label().to_owned();
             tauri::async_runtime::spawn(async move {
-                use tauri::Manager;
                 responder.respond(
-                    preview::serve(&app.state::<preview::Registry>(), request, origin).await,
+                    platform::panel_windows::preview::serve_in_window(
+                        &app, &caller, request, origin,
+                    )
+                    .await,
                 );
             });
         })
@@ -90,6 +78,12 @@ pub fn run() {
         }))
         .on_page_load(|webview, payload| {
             use tauri::Manager;
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                platform::panel_windows::native::navigation_started(
+                    webview.app_handle(),
+                    webview.label(),
+                );
+            }
             if webview.label() == "main"
                 && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
             {
@@ -98,8 +92,15 @@ pub fn run() {
             }
         })
         .on_window_event(|window, event| {
+            use tauri::Manager;
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Focused(_)) {
+                platform::panel_windows::native::native_event(
+                    window.app_handle(),
+                    window.label(),
+                    event,
+                );
+            }
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
-                use tauri::Manager;
                 platform::application_actions::reset(window.app_handle());
                 window.state::<preview::Registry>().clear();
                 window
@@ -117,12 +118,16 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(window::SAVED_STATE_FLAGS)
                 .skip_initial_state("main")
+                .with_filter(|label| label == "main")
                 .build(),
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
+            platform::panel_windows::native::start(&handle);
+            services::forwarding::automation::start(&handle);
+            services::mounts::runtime::launch(&handle);
             automation::transport::start(&handle);
             window::restore_main_geometry(&handle);
             let (theme, title_bar_style, locale) = {
@@ -150,7 +155,7 @@ pub fn run() {
             );
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(platform::ipc_authority::guard(tauri::generate_handler![
             services::editor::recovery::commands::editor_drafts_read,
             services::editor::recovery::commands::editor_drafts_save,
             window::close::main_window_close_guard_claim,
@@ -163,6 +168,20 @@ pub fn run() {
             services::forwarding::start::commands::forwarding_start_cancel,
             services::forwarding::start::commands::forwarding_start_release_ui,
             window::main_window_ready,
+            platform::panel_windows::plugin_views::gateway::panel_window_plugin_view,
+            platform::panel_windows::native::panel_window_initialize,
+            platform::panel_windows::native::panel_window_control,
+            platform::panel_windows::native::panel_window_create,
+            platform::panel_windows::native::panel_window_show,
+            platform::panel_windows::native::panel_window_destroy,
+            platform::panel_windows::native::panel_window_drop_target,
+            platform::panel_windows::native::panel_window_release_drag,
+            platform::panel_windows::native::panel_window_disconnect,
+            platform::panel_windows::forwarding::panel_window_forwarding,
+            platform::panel_windows::terminal::panel_window_terminal,
+            platform::panel_windows::file_pages::panel_window_files,
+            platform::panel_windows::terminal::panel_window_terminal_attach,
+            platform::panel_windows::native::panel_window_focus,
             platform::restart::app_restart,
             platform::application_actions::application_action_claim,
             platform::application_actions::application_action_release,
@@ -170,6 +189,7 @@ pub fn run() {
             platform::background::main_window_snapshot,
             platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
+            plugins::shared_mounts::plugin_shared_mounts_action,
             ssh::files::durable::durable_transfer_list,
             ssh::files::remote_editor::editor_cleanup_list,
             ssh::files::remote_editor::editor_cleanup_retry,
@@ -184,6 +204,11 @@ pub fn run() {
             plugins::forwarding::connection::forwarding_provider_accept_connection,
             plugins::forwarding::connection::forwarding_provider_disconnect,
             commands::forwarding::forwarding_list,
+            commands::forwarding::forwarding_groups_list,
+            commands::forwarding::forwarding_group_save,
+            commands::forwarding::forwarding_group_remove,
+            commands::forwarding::forwarding_move,
+            commands::forwarding::forwarding_start_managed,
             commands::forwarding::forwarding_save,
             commands::forwarding::forwarding_remove,
             commands::forwarding::forwarding_start,
@@ -210,6 +235,7 @@ pub fn run() {
             plugins::tab_bar::plugin_tab_bar_snapshot,
             plugins::tab_bar::plugin_tab_bar_execute,
             plugins::host_list::plugin_host_list_snapshot,
+            plugins::file_highlights::plugin_file_highlights_snapshot,
             plugins::host_columns::plugin_host_columns_snapshot,
             plugins::host_sources::plugin_host_sources_snapshot,
             plugins::host_fields::host_fields_get,
@@ -223,6 +249,7 @@ pub fn run() {
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
             plugins::frontend::plugin_frontend_open,
+            plugins::frontend::views::plugin_frontend_view_open,
             plugins::frontend::plugin_frontend_ready,
             plugins::frontend::plugin_frontend_close,
             plugins::frontend::plugin_frontend_failed,
@@ -251,6 +278,18 @@ pub fn run() {
             settings_profiles::settings_file_export,
             commands::set_locale,
             commands::hosts_snapshot,
+            commands::ssh_config_preview,
+            services::hosts::transfer::files::hosts_file_import,
+            services::hosts::transfer::files::hosts_file_export,
+            services::hosts::transfer::files::hosts_export_password,
+            services::hosts::transfer::files::hosts_file_unlock,
+            services::hosts::transfer::files::hosts_file_preview,
+            services::hosts::transfer::files::hosts_file_apply,
+            services::hosts::transfer::files::hosts_file_release,
+            services::hosts::transfer::files::hosts_file_retry_credentials,
+            services::hosts::transfer::files::hosts_import_preview,
+            services::hosts::transfer::files::hosts_import_apply,
+            commands::ssh_config_import,
             commands::host_create,
             commands::host_update,
             commands::host_delete,
@@ -362,7 +401,7 @@ pub fn run() {
             commands::history_clear,
             commands::known_hosts_list,
             commands::known_hosts_forget,
-        ])
+        ]))
         .build(tauri::generate_context!())
         .expect("error while building Tunnelde")
         .run(|app, event| {
@@ -384,6 +423,7 @@ pub fn run() {
                 automation::transport::stop(app);
                 use tauri::Manager;
                 if let Some(state) = app.try_state::<state::AppState>() {
+                    services::mounts::runtime::shutdown(&state);
                     state.forwards.stop_all();
                     tauri::async_runtime::block_on(async {
                         let _ = tokio::time::timeout(
@@ -392,6 +432,7 @@ pub fn run() {
                         )
                         .await;
                     });
+                    state.mount_runtime.release_connections();
                     if let Err(error) = state.plugins.mark_clean(&state.db) {
                         tracing::warn!(%error, "could not clear extension recovery marker");
                     }

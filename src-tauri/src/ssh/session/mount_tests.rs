@@ -179,10 +179,40 @@ async fn exercise(
             .to_string(),
         "mounts.notOwned"
     );
+    // An open descriptor must make normal unmount fail without detaching the
+    // filesystem or killing its live transport. Revocation below has no such
+    // descriptor, so it must reconcile the separate EOF/unmount race instead.
+    // This fixture uses a current-thread runtime: a synchronous File::open
+    // here would block the same executor needed by its own SSH/SFTP bridge.
+    let held = tokio::fs::File::open(root.join("mount-a/file.txt"))
+        .await
+        .unwrap();
+    assert_eq!(
+        mounts
+            .unmount("owner-a", &first.id, false)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "mounts.busy"
+    );
+    assert!(mounts.list(Some("owner-a")).await[0]
+        .cleanup_error
+        .is_none());
+    assert_eq!(
+        tokio::fs::read(root.join("mount-a/file.txt"))
+            .await
+            .unwrap(),
+        b"SSH session mount"
+    );
+    drop(held);
     mounts.stop_generation("owner-a", 6).await;
     assert_eq!(mounts.list(Some("owner-a")).await.len(), 1);
     mounts.stop_generation("owner-a", 7).await;
-    assert!(mounts.list(Some("owner-a")).await.is_empty());
+    let remaining = mounts.list(Some("owner-a")).await;
+    assert!(
+        remaining.is_empty(),
+        "revocation cleanup incomplete: {remaining:?}"
+    );
     assert_eq!(
         tokio::fs::read(root.join("mount-b/file.txt"))
             .await
@@ -198,7 +228,7 @@ async fn exercise(
     // EOF must reach sshfs itself, without stop_session aborting the bridge first.
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            mounts.reap().await;
+            mounts.reap_if_idle();
             if mounts
                 .list(Some("owner-b"))
                 .await
@@ -244,6 +274,20 @@ async fn exercise(
 #[tokio::test]
 #[ignore = "requires Linux, sshfs, OpenSSH sftp-server and a usable FUSE device"]
 async fn real_sshfs_session_bridge_is_owned_readonly_and_disconnects() {
+    // Keep real helper diagnostics available when an intermittent OS cleanup
+    // failure occurs; the registry must not silently turn it into success.
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_test_writer()
+        .try_init();
+    // Revocation races the SSHFS worker's EOF/exit path. Exercise fresh mounts
+    // repeatedly: a single successful scheduling must not hide a leaked record.
+    for _ in 0..5 {
+        exercise_owned_session_fixture().await;
+    }
+}
+
+async fn exercise_owned_session_fixture() {
     assert_eq!(
         std::env::consts::OS,
         "linux",

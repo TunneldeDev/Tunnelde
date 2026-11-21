@@ -89,18 +89,18 @@
 .forward-rule {
   display: grid;
   gap: 7px;
-  padding: 10px 0;
+  padding: 14px 0;
   min-width: 0;
   border-bottom: 1px solid var(--td-border);
 }
 
 .forward-rule:first-child {
-  padding-top: 0;
+  padding-top: 10px;
 }
 
 .forward-rule:last-child {
   border-bottom: 0;
-  padding-bottom: 0;
+  padding-bottom: 10px;
 }
 
 .forward-rule__identity {
@@ -111,7 +111,8 @@
 }
 
 .forward-rule__identity strong {
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -300,5 +301,61 @@
   .forward-endpoints__arrow {
     justify-self: center;
     transform: rotate(90deg);
+  }
+}
+
+.forward-automation {
+  display: grid;
+  gap: 12px;
+}
+.forward-groups {
+  display: grid;
+  gap: 24px;
+}
+
+.forward-groups > .forwarding__group-actions {
+  flex-wrap: wrap;
+}
+
+.forward-group {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.forward-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+}
+.forward-group__title {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.forward-group > .forward-rules {
+  margin-inline-start: 3px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--td-border);
+}
+@container (max-width: 320px) {
+  .forward-rule__head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .forward-rule__identity {
+    flex-basis: calc(100% - 100px);
+  }
+  .forward-rule__route {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .forward-rule__route > svg {
+    transform: rotate(90deg);
+    justify-self: center;
   }
 }

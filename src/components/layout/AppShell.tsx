@@ -1,10 +1,15 @@
+import { PluginPanelDialogs } from "@/features/plugins/panel/PluginPanelDialogs";
+import { HostPanelDialogs } from "@/features/hosts/panel/HostPanelDialogs";
+import { SplitGeometryScope } from "@/components/ui/layout/SplitGeometry";
+import { subscribePanels } from "@/lib/panels/observation";
 import { ShortcutConflictDialog } from "@/features/settings/ShortcutConflictDialog";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { createWorkbenchSurfaces } from "./WorkbenchSurfaces";
 import { ProviderSurface } from "./ProviderSurface";
 
-import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
+import { FloatingWorkspaceLayer } from "@/components/layout/PaneLayout";
+import { SidebarArea, SidebarContents, FloatingPanelLayer } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { FormatterPicker } from "@/features/editor/FormatterPicker";
 import { isWorkspaceDrag, readWorkspaceDrop } from "@/lib/session/workspaceDrag";
@@ -35,10 +40,11 @@ import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { useQuickAccess } from "@/store/quickAccess";
 import { RestartPrompt } from "@/components/layout/RestartPrompt";
 import { FilePreview } from "@/features/sftp/FilePreview";
-import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
+import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundWindow } from "@/app/backgroundWindow";
 import { wireTabBarContributions } from "@/store/tabBar";
 import { wireHostDecorations } from "@/store/hostDecorations";
+import { wireFileHighlights } from "@/store/fileHighlights";
 import { wireHostColumns } from "@/store/hostColumns";
 import { wireHostSources } from "@/store/hostSources";
 
@@ -54,6 +60,11 @@ export function AppShell() {
   useEffect(() => {
     if (!isTauri()) return;
     const controller = new AbortController();
+    const stopPanels = subscribePanels(() => {
+      void import("@tauri-apps/api/event")
+        .then(({ emit }) => emit("workspace://panels-changed", { windowId: "main" }))
+        .catch(() => {});
+    });
     void wireHostSources(controller.signal).catch((error: unknown) =>
       console.error("Host sources subscription failed", error),
     );
@@ -66,7 +77,13 @@ export function AppShell() {
     void wireHostDecorations(controller.signal).catch((error: unknown) =>
       console.error("Host decorations subscription failed", error),
     );
-    return () => controller.abort();
+    void wireFileHighlights(controller.signal).catch((error: unknown) =>
+      console.error("File highlights subscription failed", error),
+    );
+    return () => {
+      stopPanels();
+      controller.abort();
+    };
   }, []);
   useInternalDrag();
   useWindowCloseGuard();
@@ -207,121 +224,131 @@ export function AppShell() {
   } as CSSProperties;
 
   return (
-    <div
-      ref={app}
-      className={cn(
-        "app",
-        isTauri() && settings.titleBarStyle === "compact" && "is-compact-chrome",
-        os === "macos" && "is-macos",
-        sidebarVisible && "has-sidebar",
-        settings.rightPanel && "has-panel",
-        !settings.showStatusBar && "is-statusbar-hidden",
-      )}
-      style={style}
-    >
-      <WindowTitleBar />
-      <ProviderSurface
-        target="workbench"
-        slots={surfaces.slots}
-        validate={surfaces.hasWorkspace}
-        subscribe={surfaces.subscribe}
+    <SplitGeometryScope>
+      <div
+        ref={app}
+        className={cn(
+          "app",
+          isTauri() && settings.titleBarStyle === "compact" && "is-compact-chrome",
+          os === "macos" && "is-macos",
+          sidebarVisible && "has-sidebar",
+          settings.rightPanel && "has-panel",
+          !settings.showStatusBar && "is-statusbar-hidden",
+        )}
+        style={style}
       >
-        <div className="app__body">
-          <surfaces.slots.Navigation />
-          <surfaces.slots.Workspace />
-          <surfaces.slots.Inspector />
-        </div>
-        <surfaces.slots.StatusBar />
-      </ProviderSurface>
-      <SidebarContents />
-      <WorkspaceContents />
-      {createPortal(
-        <>
-          <ActivityBar />
-          <SidebarArea />
-          {sidebarVisible ? (
-            <Resizer
-              value={sidebarWidth}
-              min={220}
-              max={420}
-              edge="right"
-              label="Sidebar width"
-              onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
-              onCommit={(value) => {
-                void updateSettings({ sidebarWidth: Math.round(value) });
-              }}
+        <WindowTitleBar />
+        <ProviderSurface
+          target="workbench"
+          slots={surfaces.slots}
+          validate={surfaces.hasWorkspace}
+          subscribe={surfaces.subscribe}
+        >
+          <div className="app__body">
+            <surfaces.slots.Navigation />
+            <surfaces.slots.Workspace />
+            <surfaces.slots.Inspector />
+          </div>
+          <surfaces.slots.StatusBar />
+        </ProviderSurface>
+        <SidebarContents />
+        <WorkspaceContents />
+        {createPortal(
+          <>
+            <ActivityBar />
+            <SidebarArea />
+            {sidebarVisible ? (
+              <Resizer
+                value={sidebarWidth}
+                min={220}
+                max={420}
+                edge="right"
+                label="Sidebar width"
+                onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
+                onCommit={(value) => {
+                  void updateSettings({ sidebarWidth: Math.round(value) });
+                }}
+              />
+            ) : null}
+          </>,
+          surfaces.container("navigation"),
+        )}
+        {createPortal(
+          <main className="workspace" ref={workspace}>
+            <PaneLayout />
+            {tabDrag ? (
+              <div className="pane-edges">
+                {EDGES.map((item) => (
+                  <div
+                    key={item.edge}
+                    className={cn(
+                      "pane-edge",
+                      `is-${item.edge}`,
+                      edge === item.edge && "is-active",
+                    )}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </main>,
+          surfaces.container("workspace"),
+        )}
+        {createPortal(
+          <>
+            {settings.rightPanel ? (
+              <Resizer
+                value={panelWidth}
+                min={240}
+                max={460}
+                edge="left"
+                label="Panel width"
+                onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
+                onCommit={(value) => {
+                  void updateSettings({ rightPanelWidth: Math.round(value) });
+                }}
+              />
+            ) : null}
+            {activeSession ? (
+              <RemotePanel
+                sessionId={activeSession.id}
+                width={panelWidth}
+                hidden={!settings.rightPanel}
+                onHide={() => void updateSettings({ rightPanel: false })}
+              />
+            ) : (
+              <SystemPanel
+                width={panelWidth}
+                hidden={!settings.rightPanel}
+                onHide={() => void updateSettings({ rightPanel: false })}
+              />
+            )}
+          </>,
+          surfaces.container("inspector"),
+        )}
+        {createPortal(
+          settings.showStatusBar ? (
+            <StatusBar
+              panelOpen={settings.rightPanel}
+              onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
             />
-          ) : null}
-        </>,
-        surfaces.container("navigation"),
-      )}
-      {createPortal(
-        <main className="workspace" ref={workspace}>
-          <PaneLayout />
-          {tabDrag ? (
-            <div className="pane-edges">
-              {EDGES.map((item) => (
-                <div
-                  key={item.edge}
-                  className={cn("pane-edge", `is-${item.edge}`, edge === item.edge && "is-active")}
-                />
-              ))}
-            </div>
-          ) : null}
-        </main>,
-        surfaces.container("workspace"),
-      )}
-      {createPortal(
-        <>
-          {settings.rightPanel ? (
-            <Resizer
-              value={panelWidth}
-              min={240}
-              max={460}
-              edge="left"
-              label="Panel width"
-              onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
-              onCommit={(value) => {
-                void updateSettings({ rightPanelWidth: Math.round(value) });
-              }}
-            />
-          ) : null}
-          {activeSession ? (
-            <RemotePanel
-              sessionId={activeSession.id}
-              width={panelWidth}
-              hidden={!settings.rightPanel}
-              onHide={() => void updateSettings({ rightPanel: false })}
-            />
-          ) : (
-            <SystemPanel
-              width={panelWidth}
-              hidden={!settings.rightPanel}
-              onHide={() => void updateSettings({ rightPanel: false })}
-            />
-          )}
-        </>,
-        surfaces.container("inspector"),
-      )}
-      {createPortal(
-        settings.showStatusBar ? (
-          <StatusBar
-            panelOpen={settings.rightPanel}
-            onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
-          />
-        ) : null,
-        surfaces.container("statusbar"),
-      )}
-      <ToastHost />
-      <DialogHost />
-      <ShortcutConflictDialog />
-      <ContextMenuHost />
-      <CommandPalette />
-      <RestartPrompt />
-      <FormatterPicker />
-      <FilePreview />
-      <BackgroundTasks />
-      {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
-    </div>
+          ) : null,
+          surfaces.container("statusbar"),
+        )}
+        <ToastHost />
+        <HostPanelDialogs />
+        <PluginPanelDialogs />
+        <DialogHost />
+        <ShortcutConflictDialog />
+        <ContextMenuHost />
+        <CommandPalette />
+        <RestartPrompt />
+        <FormatterPicker />
+        <FilePreview />
+        <FloatingPanelLayer>
+          <FloatingWorkspaceLayer />
+        </FloatingPanelLayer>
+        {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
+      </div>
+    </SplitGeometryScope>
   );
 }

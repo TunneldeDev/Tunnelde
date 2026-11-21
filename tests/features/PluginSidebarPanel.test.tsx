@@ -11,6 +11,7 @@ import "@/i18n/i18n";
 import { PluginSidebarPanel } from "@/features/plugins/PluginSidebarPanel";
 import { usePlugins } from "@/store/plugins";
 import { useWorkspace } from "@/store/workspace";
+import { WorkbenchPanel } from "@/components/layout/WorkbenchPanel";
 import { plugin } from "../fixtures/plugins";
 
 describe("plugin sidebar title ownership", () => {
@@ -34,16 +35,28 @@ describe("plugin sidebar title ownership", () => {
       pinned: false,
     };
     useWorkspace.setState({ tabs: [tab] });
-    const { container, rerender } = render(<PluginSidebarPanel view="plugin:formatter:chat" />);
+    const { container, rerender } = render(
+      <WorkbenchPanel view="plugin:formatter:chat" location="workspace" visible>
+        <PluginSidebarPanel view="plugin:formatter:chat" />
+      </WorkbenchPanel>,
+    );
     expect(container.querySelector(".sidebar__head")).toBeNull();
     const content = screen.getByText("Live plugin content");
     expect(content.dataset.visible).toBe("true");
-    rerender(<PluginSidebarPanel view="plugin:formatter:chat" visible={false} />);
+    rerender(
+      <WorkbenchPanel view="plugin:formatter:chat" location="workspace" visible={false}>
+        <PluginSidebarPanel view="plugin:formatter:chat" visible={false} />
+      </WorkbenchPanel>,
+    );
     expect(content.dataset.visible).toBe("false");
-    rerender(<PluginSidebarPanel view="plugin:formatter:chat" visible />);
+    rerender(
+      <WorkbenchPanel view="plugin:formatter:chat" location="sidebar" visible>
+        <PluginSidebarPanel view="plugin:formatter:chat" visible />
+      </WorkbenchPanel>,
+    );
     expect(content.dataset.visible).toBe("true");
     act(() => useWorkspace.setState({ tabs: [] }));
-    expect(container.querySelector(".sidebar__head")).toBeTruthy();
+    expect(container.querySelector(".workbench-panel__head")).toBeTruthy();
     expect(screen.getByText("AI assistant")).toBeTruthy();
     expect(screen.getByText("Live plugin content")).toBe(content);
   });

@@ -10,9 +10,6 @@ export default tseslint.config(
       "src-tauri",
       ".tmp",
       "coverage",
-      "public",
-      "build",
-      "resources",
       "assets",
       // Immutable SDK snapshot; SHA-256 is checked by the Rust compatibility test.
       "tests/fixtures/plugin-compat/core-sdk-v1/sdk.mjs",
@@ -39,7 +36,7 @@ export default tseslint.config(
     rules: { "no-console": "off" },
   },
   {
-    files: ["examples/**/*.js", "tests/fixtures/plugin-compat/**/*.js"],
+    files: ["tests/fixtures/plugin-compat/**/*.js"],
     languageOptions: {
       sourceType: "module",
       globals: {

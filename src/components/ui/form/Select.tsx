@@ -127,6 +127,9 @@ export function Select({
 
   const show = () => {
     if (disabled) return;
+    // WebKit doesn't focus pointer-clicked buttons by default. Keep listbox
+    // keys on its trigger instead of sending them into the underlying editor.
+    buttonRef.current?.focus();
     search.current = { text: "", at: 0 };
     setHighlight(selectedIndex);
     setOpen(true);

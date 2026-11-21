@@ -37,7 +37,19 @@ fn domain_catalogue_preserves_existing_method_contracts() {
     let actual = keyed(&current);
     let historical = keyed(&previous);
     for (name, contract) in &historical {
-        assert_eq!(actual.get(name), Some(contract), "changed contract: {name}");
+        if name == "forwards.start" {
+            // Isolation is an intentional product change: parameter and grant
+            // contracts stay fixed, while discovery explains the tighter scope.
+            let mut expected = contract.clone();
+            expected["description"] = actual[name]["description"].clone();
+            assert_eq!(
+                actual.get(name),
+                Some(&expected),
+                "changed contract: {name}"
+            );
+        } else {
+            assert_eq!(actual.get(name), Some(contract), "changed contract: {name}");
+        }
     }
     // New methods are explicit additions; keep every historical contract frozen.
     let added: Vec<_> = actual
@@ -48,6 +60,20 @@ fn domain_catalogue_preserves_existing_method_contracts() {
     assert_eq!(
         added,
         [
+            "bus.advertise",
+            "bus.close",
+            "bus.create",
+            "bus.decline",
+            "bus.discover",
+            "bus.invitations",
+            "bus.invite",
+            "bus.join",
+            "bus.leave",
+            "bus.publish",
+            "bus.receive",
+            "bus.snapshot",
+            "bus.subscribe",
+            "bus.unsubscribe",
             "configuration.backups",
             "configuration.deleteBackup",
             "configuration.migrate",
@@ -61,6 +87,8 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "fileBrowser.action",
             "fileBrowser.observe",
             "fileBrowser.read",
+            "fileList.removeHighlights",
+            "fileList.setHighlights",
             "filePreview.action",
             "filePreview.observe",
             "filePreview.open",
@@ -70,7 +98,75 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "files.content.open",
             "files.content.prepare",
             "files.content.read",
+            "forwards.automation.list",
+            "forwards.automation.save",
+            "forwards.groups.list",
+            "forwards.groups.remove",
+            "forwards.groups.save",
+            "forwards.move",
+            "forwards.startManaged",
+            "forwards.startMany",
+            "forwards.startManyManaged",
+            "hosts.routes.get",
+            "hosts.routes.observe",
+            "hosts.routes.save",
+            "hosts.sshConfig.import",
+            "hosts.sshConfig.preview",
+            "hosts.transfer.apply",
+            "hosts.transfer.export",
+            "hosts.transfer.preview",
             "logs.read",
+            "mounts.connections.get",
+            "mounts.connections.list",
+            "mounts.connections.observe",
+            "mounts.dependencies.documentation",
+            "mounts.dependencies.get",
+            "mounts.dependencies.refresh",
+            "mounts.groups.connect",
+            "mounts.groups.disconnect",
+            "mounts.groups.get",
+            "mounts.groups.list",
+            "mounts.groups.observe",
+            "mounts.groups.reconnect",
+            "mounts.groups.remove",
+            "mounts.groups.save",
+            "mounts.groups.validate",
+            "mounts.legacy.convert",
+            "mounts.legacy.dismiss",
+            "mounts.legacy.list",
+            "mounts.operations.cancel",
+            "mounts.operations.get",
+            "mounts.operations.list",
+            "mounts.operations.observe",
+            "mounts.paths.conflicts",
+            "mounts.paths.local.pick",
+            "mounts.paths.local.validate",
+            "mounts.paths.remote.browse",
+            "mounts.paths.remote.resolve",
+            "mounts.rules.copyHost",
+            "mounts.rules.export",
+            "mounts.rules.get",
+            "mounts.rules.importApply",
+            "mounts.rules.importPreview",
+            "mounts.rules.list",
+            "mounts.rules.move",
+            "mounts.rules.remove",
+            "mounts.rules.save",
+            "mounts.rules.snapshot",
+            "mounts.rules.validate",
+            "mounts.runtime.connectAndStartAuto",
+            "mounts.runtime.open",
+            "mounts.runtime.requestForceUnmount",
+            "mounts.runtime.restart",
+            "mounts.runtime.retry",
+            "mounts.runtime.reveal",
+            "mounts.runtime.start",
+            "mounts.runtime.startAll",
+            "mounts.runtime.startAuto",
+            "mounts.runtime.startMany",
+            "mounts.runtime.stop",
+            "mounts.runtime.stopAll",
+            "mounts.runtime.stopMany",
             "preferences.observe",
             "preferences.schema",
             "preferences.snapshot",
@@ -95,7 +191,18 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "storage.locations.schedule",
             "storage.observe",
             "storage.recovery.observe",
-            "storage.recovery.request"
+            "storage.recovery.request",
+            "workspace.panels.close",
+            "workspace.panels.list",
+            "workspace.panels.moveToWindow",
+            "workspace.panels.observe",
+            "workspace.panels.ownership",
+            "workspace.panels.setPresentation",
+            "workspace.resizeSplits",
+            "workspace.windows.close",
+            "workspace.windows.create",
+            "workspace.windows.list",
+            "workspace.windows.observe",
         ]
     );
 }
@@ -173,4 +280,25 @@ fn exposes_only_unique_documented_methods_with_declared_permissions() {
     let describe = method_info("api.describe").unwrap();
     assert_eq!(describe.stability, "stable");
     assert_eq!(describe.since, Some("0.21.0"));
+}
+
+#[test]
+fn panel_methods_are_explicit_experimental_permission_checked_additions() {
+    for (name, permission) in [
+        ("workspace.panels.list", "workspace.read"),
+        ("workspace.panels.observe", "workspace.read"),
+        ("workspace.panels.ownership", "workspace.read"),
+        ("workspace.panels.moveToWindow", "workspace.write"),
+        ("workspace.windows.list", "workspace.read"),
+        ("workspace.windows.observe", "workspace.read"),
+        ("workspace.windows.create", "workspace.write"),
+        ("workspace.windows.close", "workspace.write"),
+        ("workspace.panels.setPresentation", "workspace.write"),
+        ("workspace.panels.close", "workspace.write"),
+        ("workspace.resizeSplits", "workspace.write"),
+    ] {
+        let entry = method_info(name).unwrap();
+        assert_eq!(entry.permissions, [permission]);
+        assert_eq!(entry.stability, "experimental");
+    }
 }

@@ -5,6 +5,7 @@ export interface MenuAction {
   icon?: ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  keepOpen?: boolean;
   separatorBefore?: boolean;
   description?: string;
   checked?: boolean;

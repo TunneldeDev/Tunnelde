@@ -4,10 +4,12 @@ import { createPortal } from "react-dom";
 
 import { IconButton } from "@/components/ui/form/Button";
 import { cn } from "@/lib/text/format";
+import { HelpHint, HelpPresentationProvider } from "../form/HelpHint";
 
 interface DialogProps {
   open: boolean;
   title: string;
+  help?: ReactNode;
   closeLabel: string;
   onClose: () => void;
   children: ReactNode;
@@ -19,6 +21,7 @@ interface DialogProps {
 
 const FOCUSABLE = [
   "a[href]",
+  "summary",
   "button:not([disabled])",
   "input:not([disabled])",
   "select:not([disabled])",
@@ -34,6 +37,13 @@ function focusableElements(panel: HTMLElement): HTMLElement[] {
       node.closest("[hidden], [aria-hidden='true'], [inert]")
     )
       return false;
+    for (
+      let details = node.parentElement?.closest("details");
+      details;
+      details = details.parentElement?.closest("details") ?? null
+    ) {
+      if (!details.open && !details.querySelector(":scope > summary")?.contains(node)) return false;
+    }
     for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
       const style = window.getComputedStyle(ancestor);
       if (style.display === "none" || style.visibility === "hidden") return false;
@@ -50,6 +60,7 @@ export function Dialog(props: DialogProps) {
 function DialogContent({
   open,
   title,
+  help,
   closeLabel,
   onClose,
   children,
@@ -171,12 +182,17 @@ function DialogContent({
         style={{ width }}
       >
         <header className="td-dialog__head">
-          <h2 className="td-dialog__title">{title}</h2>
+          <div className="td-help-label">
+            <h2 className="td-dialog__title">{title}</h2>
+            {help ? <HelpHint label={title}>{help}</HelpHint> : null}
+          </div>
           <IconButton label={closeLabel} size="sm" disabled={!dismissible} onClick={onClose}>
             <X size={14} />
           </IconButton>
         </header>
-        <div className="td-dialog__body">{children}</div>
+        <HelpPresentationProvider value="tooltip">
+          <div className="td-dialog__body">{children}</div>
+        </HelpPresentationProvider>
         {footer ? <footer className="td-dialog__foot">{footer}</footer> : null}
       </section>
     </div>,

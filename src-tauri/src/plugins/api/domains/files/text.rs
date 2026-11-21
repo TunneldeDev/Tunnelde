@@ -1,5 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::plugins::api::{authorize, field, optional, HostContext};
+use crate::services::files::text_encoding::TextSaveMode;
 use serde_json::{json, Value};
 use std::path::Path;
 use tauri::Emitter;
@@ -41,9 +42,12 @@ pub(in crate::plugins) async fn write_local(
     let app = context.app.clone();
     crate::ssh::files::local_editor::save_checked(
         context.app.clone(),
-        path,
-        content,
-        baseline,
+        crate::ssh::files::local_editor::SaveRequest::new(
+            path,
+            content,
+            baseline,
+            TextSaveMode::utf8(),
+        ),
         super::local_write::LocalPolicy::new(context, check_scope),
         move || {
             // Direct calls and scoped AI/MCP tools share this publication event.

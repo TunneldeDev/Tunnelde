@@ -7,6 +7,8 @@ use crate::models::{Group, GroupInput, Host, HostInput};
 use crate::state::AppState;
 
 pub(crate) mod read;
+pub(crate) mod ssh_config;
+pub(crate) mod transfer;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +103,16 @@ fn snapshot_connection(
 }
 
 impl<E: Effects> Hosts<'_, E> {
+    pub(crate) fn published_import(&self, hosts: &[Host]) {
+        if hosts.is_empty() {
+            return;
+        }
+        for host in hosts {
+            crate::logs::record(self.db, "host.create", Some(&host.id));
+        }
+        self.effects.changed();
+    }
+
     pub(crate) fn published_save(&self, host: &Host, created: bool) {
         self.effects.renamed(&host.id, &host.name);
         crate::logs::record(

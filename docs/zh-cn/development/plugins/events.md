@@ -49,3 +49,25 @@ await host.call("events.publish", {
 `api.describe` 提供 `inputSchema`、`resultSchema`、`errorSchema` 和 `eventSchema`。
 CI 校验实际宿主生成的事件和返回值，并使用冻结的旧 SDK 回放请求／响应。API 协议版本
 仍为 1；此契约不改变其他实验接口的稳定性。
+
+## 插件间 Bus
+
+`extensions.describe().bus` 表示宿主支持实验性的 `bus.*`。授予 `bus.communicate`
+后，插件可注册带版本的能力 (`bus.advertise`)，查询已在线的提供者 (`bus.discover`)，
+并订阅公开主题 `bus.discovery` 接收变更。先订阅再读取快照；版本为 `null` 是下线提示。
+
+通过 `bus.create` 建立私有 Bus，使用 `bus.invite({busId,pluginId})` 邀请已登记
+Bus 的运行实例。受邀者会收到 `bus.invitation` 控制通知，也可读 `bus.invitations`；
+只有它能在 60 秒内用该 ID 调用 `bus.join`。加入后以 `busId` 和 `topic` 订阅、发布。
+退出、撤权和重启清理成员资格，所有者退出会关闭 Bus 并通知成员。
+
+`bus.receive` 每个实例只允许一个可取消的等待请求，一批最多 32 条。收到 `lost > 0`
+时重新读取领域快照。队列最多 128 条，单条负载最多 16 KiB，不做持久化、重放或确认。
+`bus.invitation` 和 `bus.closed` 直接投递给相关实例，不向公共订阅者广播。不要在名称或
+消息里放凭据；私有权限不是对成员隐藏内容，也不会扩大成员的其他权限。
+
+`bus.snapshot({})` 返回 `{publicTopics,channels:[{busId,ownerPluginId,members,topics}]}`。
+仅可见自己已加入的私有 Bus；`members` 是成员插件 ID，`topics` 是**调用方自己**的订阅。
+先在**私有 Bus 上**订阅 `bus.membersChanged`，再读快照。成员加入、离开或停止时重读快照，无需轮询公共 Bus；频道关闭时，成员直接收到 `bus.closed`。
+
+受邀实例也可用 `bus.decline({invitationId})` 拒绝尚未到期的邀请。队列里的邀请通知不代表邀请仍然有效；以 `bus.invitations` 为准。若 `lost > 0`，重读成员快照、邀请列表及相关领域状态，快照不会补发业务消息。兼容旧宿主时，先从 `api.describe().methods` 确认新方法存在。

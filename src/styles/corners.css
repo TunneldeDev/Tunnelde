@@ -1,0 +1,154 @@
+/* Prefer the platform implementation as WebViews gain continuous corners. */
+:where(
+  .card,
+  .td-btn,
+  .td-icon-btn,
+  .td-input,
+  .td-tags,
+  .td-tag,
+  .td-search,
+  .td-dialog,
+  .workbench-panel--floating,
+  .td-palette,
+  .td-palette__input,
+  .td-palette__item,
+  .td-menu,
+  .td-menu__item,
+  .td-select__popup,
+  .td-select__option,
+  .td-toast,
+  .td-segmented,
+  .td-segmented__item,
+  .td-stepper,
+  .settings__nav-item
+) {
+  corner-shape: superellipse(1.5);
+}
+
+/* WKWebView does not yet support corner-shape. Only the decoration is masked:
+   content, focus rings, shadows and pointer targets keep their existing bounds.
+   Nine-slice masks keep the curvature constant on long and narrow surfaces.
+   Scroll containers and native text controls retain their platform fallback.
+   Corner extents are 1.5 times the radius tokens; matching border masks keep
+   the stroke one CSS pixel wide. SVG intrinsic dimensions must stay 64×64. */
+@supports (-webkit-mask-box-image-source: none) and (not (corner-shape: superellipse(1.5))) {
+  :is(
+    .card,
+    .td-btn,
+    .td-icon-btn,
+    .td-dialog,
+    .workbench-panel--floating,
+    .td-palette,
+    .td-toast,
+    .td-segmented,
+    .td-segmented__item,
+    .td-stepper,
+    .settings__nav-item
+  ) {
+    position: relative;
+    isolation: isolate;
+    --td-surface-background: transparent;
+    --td-surface-border: transparent;
+    --td-corner-size: 9;
+    --td-corner-inset: -1px;
+    --td-corner-border: url("./corners/border-sm.svg");
+  }
+
+  :is(.card, .td-toast, .td-segmented, .td-stepper) {
+    --td-corner-size: 12;
+    --td-corner-border: url("./corners/border-md.svg");
+  }
+
+  :is(.td-dialog, .workbench-panel--floating, .td-palette) {
+    --td-corner-size: 18;
+    --td-corner-border: url("./corners/border-lg.svg");
+  }
+
+  .td-palette {
+    overflow: visible;
+  }
+
+  :is(.settings__nav-item, .td-segmented__item) {
+    --td-corner-inset: 0px;
+  }
+
+  .td-segmented__item {
+    --td-corner-size: 6;
+  }
+
+  :is(
+    .card,
+    .td-btn,
+    .td-icon-btn,
+    .td-dialog,
+    .workbench-panel--floating,
+    .td-palette,
+    .td-toast,
+    .td-segmented,
+    .td-segmented__item,
+    .td-stepper,
+    .settings__nav-item
+  )::before,
+  :is(
+    .card,
+    .td-btn,
+    .td-icon-btn,
+    .td-dialog,
+    .workbench-panel--floating,
+    .td-palette,
+    .td-toast,
+    .td-segmented,
+    .td-segmented__item,
+    .td-stepper,
+    .settings__nav-item
+  )::after {
+    content: "";
+    position: absolute;
+    inset: var(--td-corner-inset);
+    z-index: -1;
+    pointer-events: none;
+    transition: background-color var(--td-ease);
+    -webkit-mask-box-image-slice: 24 fill;
+    -webkit-mask-box-image-width: calc(var(--td-corner-size) * 1px);
+    -webkit-mask-box-image-repeat: stretch;
+  }
+
+  :is(
+    .card,
+    .td-btn,
+    .td-icon-btn,
+    .td-dialog,
+    .workbench-panel--floating,
+    .td-palette,
+    .td-toast,
+    .td-segmented,
+    .td-segmented__item,
+    .td-stepper,
+    .settings__nav-item
+  )::before {
+    background: var(--td-surface-fill);
+    -webkit-mask-box-image-source: url("./corners/continuous.svg");
+  }
+
+  :is(
+    .card,
+    .td-btn,
+    .td-icon-btn,
+    .td-dialog,
+    .workbench-panel--floating,
+    .td-palette,
+    .td-toast,
+    .td-segmented,
+    .td-segmented__item,
+    .td-stepper,
+    .settings__nav-item
+  )::after {
+    background: var(--td-surface-stroke, transparent);
+    -webkit-mask-box-image-source: var(--td-corner-border);
+    -webkit-mask-box-image-slice: var(--td-corner-size) fill;
+  }
+
+  :is(.settings__nav-item, .td-segmented__item)::after {
+    content: none;
+  }
+}

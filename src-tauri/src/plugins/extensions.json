@@ -1,6 +1,22 @@
 {
   "version": 1,
   "stability": "experimental",
+  "hostDetails": {
+    "manifest": "hostDetails",
+    "viewKind": "component",
+    "permissions": ["ui.trusted", "hosts.read"],
+    "context": "view.hostDetails",
+    "composition": "append",
+    "limitPerPlugin": 8,
+    "mounts": {
+      "permission": "mounts.hostDetails",
+      "readPermission": "mounts.read",
+      "nativeViewKind": "sharedMounts",
+      "nativeViewPermissions": ["hosts.read", "mounts.read", "mounts.hostDetails"],
+      "selection": "mountHostDetailsSelection",
+      "composition": "single-selected-contributor"
+    }
+  },
   "frontend": {
     "sdkVersion": "0.1.0",
     "stability": "experimental",
@@ -207,6 +223,23 @@
       "pendingLimit": 8,
       "cancellation": "cooperative-settlement",
       "hidden": "blocks-webview-suspension"
+    },
+    "viewFactories": {
+      "moduleExport": "createView",
+      "activation": "single-coordinator",
+      "transport": "per-instance",
+      "contexts": ["coordinator"],
+      "nativeWindows": false,
+      "state": {
+        "members": ["captureState", "restoreState"],
+        "optional": true,
+        "serialization": "strict-json",
+        "maximumBytes": 1048576,
+        "maximumNodes": 10000,
+        "maximumDepth": 64
+      },
+      "maximumPerActivation": 16,
+      "maximumTotal": 64
     }
   },
   "runtime": {
@@ -274,7 +307,7 @@
     },
     {
       "id": "files",
-      "namespaces": ["files", "fileBrowser", "filePreview", "editor", "clipboard"]
+      "namespaces": ["files", "fileBrowser", "fileList", "filePreview", "editor", "clipboard"]
     },
     {
       "id": "terminal",
@@ -302,7 +335,7 @@
     },
     {
       "id": "governance",
-      "namespaces": ["events", "log", "logs", "secrets"]
+      "namespaces": ["bus", "events", "log", "logs", "secrets"]
     }
   ],
   "points": [
@@ -439,6 +472,24 @@
       }
     },
     {
+      "id": "fileList.highlights",
+      "domain": "files",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "set": "fileList.setHighlights",
+        "remove": "fileList.removeHighlights"
+      },
+      "ownership": "runtime",
+      "permissions": ["fileBrowser.read", "workspace.write"],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "rulesPerCollection": 256
+      }
+    },
+    {
       "id": "statusBar.items",
       "domain": "workbench",
       "layer": "presentation",
@@ -472,5 +523,114 @@
         "total": 128
       }
     }
-  ]
+  ],
+  "bus": {
+    "stability": "experimental",
+    "permission": "bus.communicate",
+    "publicBus": "public",
+    "privateAdmission": "invitation-and-runtime-generation",
+    "events": ["bus.discovery", "bus.invitation", "bus.closed", "bus.membersChanged"],
+    "payloadBytes": 16384,
+    "queueSize": 128
+  },
+  "mounts": {
+    "ownership": "host",
+    "configuration": "persistent-shared",
+    "nativeView": {
+      "kind": "sharedMounts",
+      "block": "sharedMounts",
+      "runtimes": ["node", "declarative"],
+      "permissions": ["hosts.read", "mounts.read"]
+    },
+    "connection": "dedicated-per-group",
+    "groupLifecycle": {
+      "save": "mounts.groups.save",
+      "connect": "mounts.groups.connect",
+      "disconnect": "mounts.groups.disconnect",
+      "reconnect": "mounts.groups.reconnect",
+      "connectAndStartAuto": "mounts.runtime.connectAndStartAuto",
+      "autoReconnectField": "autoReconnect"
+    },
+    "rules": "mounts.rules.snapshot",
+    "runtime": "mounts.runtime.start",
+    "operations": "mounts.operations.observe",
+    "events": ["mounts://changed", "mounts://operation-changed"],
+    "observation": {
+      "groups": "mounts.groups.observe",
+      "connections": "mounts.connections.observe"
+    },
+    "permissions": {
+      "read": "mounts.read",
+      "write": "mounts.write",
+      "hostDetails": "mounts.hostDetails"
+    },
+    "limits": {
+      "groupsPerHost": 32,
+      "rulesPerHost": 128,
+      "groupsTotal": 512,
+      "rulesTotal": 2048,
+      "pageSize": 32,
+      "activeOperations": 8,
+      "retainedOperations": 128
+    }
+  },
+  "panelPresentations": {
+    "version": 1,
+    "experimental": true,
+    "presentations": ["sidebar", "workspace", "floating"],
+    "methods": [
+      "workspace.panels.list",
+      "workspace.panels.observe",
+      "workspace.panels.setPresentation",
+      "workspace.panels.close"
+    ],
+    "readPermission": "workspace.read",
+    "writePermission": "workspace.write",
+    "events": ["workspace://panels-changed"],
+    "ownership": "One retained renderer per native-owned panel. Presentation operations execute in the current source document; no resources are disconnected and no drafts or feature contents are exposed.",
+    "routing": "current-source-document",
+    "completion": "source-effect-completion",
+    "cancellation": "before-admission-only; accepted synchronous UI effects are not rolled back",
+    "eventPayload": "revision-only-invalidation",
+    "satellitePresentations": ["workspace", "floating"],
+    "limits": {
+      "maximumPending": 32,
+      "maximumPerPlugin": 8,
+      "queuedLifetimeSeconds": 15
+    }
+  },
+  "nativeWindows": {
+    "version": 1,
+    "experimental": true,
+    "methods": [
+      "workspace.windows.list",
+      "workspace.windows.observe",
+      "workspace.windows.create",
+      "workspace.windows.close",
+      "workspace.panels.ownership",
+      "workspace.panels.moveToWindow"
+    ],
+    "readPermission": "workspace.read",
+    "writePermission": "workspace.write",
+    "events": ["workspace://windows-changed"],
+    "eventPayload": "revision-only-invalidation",
+    "ownership": "host-native; singleton coordinator retained",
+    "maximumWindows": 16,
+    "panelMoves": {
+      "routing": "current-source-document",
+      "completion": "native-ownership-commit",
+      "destination": "existing-ready-window",
+      "cancellation": "rollback-before-commit",
+      "expectedOwner": "optional-window-and-generation",
+      "maximumPending": 32,
+      "maximumPerPlugin": 8
+    },
+    "placeholder": {
+      "visible": false,
+      "emptyTimeoutSeconds": 20,
+      "retirement": "creator-cancel-or-revocation-empty-only"
+    },
+    "close": "normal-capture-return; coordinator-close-forbidden",
+    "state": "metadata-only; no document tokens, drafts, resources or feature contents"
+  }
 }

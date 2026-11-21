@@ -23,12 +23,16 @@ enum Reply {
     EarlyData,
     DiagnosticFlood,
     DelayedOpen,
+    HoldFirstData,
 }
 
 #[derive(Default)]
 struct Observation {
     requested: Notify,
     opened: Notify,
+    data_waiting: Notify,
+    release_data: Notify,
+    data_calls: AtomicUsize,
     closed: AtomicUsize,
     pending: Mutex<Vec<server::ChannelOpenHandle>>,
 }
@@ -78,7 +82,7 @@ impl server::Handler for Server {
     ) -> Result<(), Self::Error> {
         assert_eq!(name, "sftp");
         match self.reply {
-            Reply::Success => {
+            Reply::Success | Reply::HoldFirstData => {
                 session.channel_success(id)?;
             }
             Reply::Reject => {
@@ -104,6 +108,12 @@ impl server::Handler for Server {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if matches!(self.reply, Reply::HoldFirstData)
+            && self.observation.data_calls.fetch_add(1, Ordering::SeqCst) == 0
+        {
+            self.observation.data_waiting.notify_one();
+            self.observation.release_data.notified().await;
+        }
         session.data(id, data.to_vec())?;
         Ok(())
     }
@@ -356,4 +366,101 @@ async fn session_disposal_settles_unconfirmed_open() {
     })
     .await
     .expect("open waiter survived session disposal");
+}
+
+struct WorkFence(Option<tokio::sync::oneshot::Sender<()>>);
+impl Drop for WorkFence {
+    fn drop(&mut self) {
+        let _ = self.0.take().unwrap().send(());
+    }
+}
+#[tokio::test]
+async fn accepted_mount_transport_releases_only_creating_work_and_keeps_real_ssh_usable() {
+    use crate::services::operations::WorkLifetime;
+    let fixture = Fixture::start(Reply::Success).await;
+    let permits = Arc::new(Semaphore::new(1));
+    let (send, mut done) = tokio::sync::oneshot::channel();
+    let owned = WorkLifetime::new(WorkFence(Some(send)))
+        .scope(prepare_owned_with_budget(
+            fixture.handle.clone(),
+            permits.clone(),
+            Duration::from_secs(3),
+        ))
+        .await
+        .unwrap();
+    let (channel, release_work) = owned.split().release_work_on_commit();
+    let (input, mut mount_input) = tokio::io::duplex(1024);
+    let (mut mount_output, output) = tokio::io::duplex(1024);
+    let bridge = tokio::spawn(crate::mounts::transport::bridge_owned(
+        channel, input, output,
+    ));
+    mount_output
+        .write_all(b"authenticated mount traffic")
+        .await
+        .unwrap();
+    let mut bytes = [0; 27];
+    tokio::time::timeout(Duration::from_secs(3), mount_input.read_exact(&mut bytes))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&bytes, b"authenticated mount traffic");
+    assert!(done.try_recv().is_err());
+    assert_eq!(permits.available_permits(), 0);
+    release_work(); // Same callback as successful registry startup publication.
+    tokio::time::timeout(Duration::from_secs(3), done)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        !bridge.is_finished(),
+        "accepted mounted transport must remain live"
+    );
+    fixture.sibling_roundtrip().await;
+    bridge.abort();
+    let _ = bridge.await;
+    fixture.closed(1).await;
+    fixture.sibling_roundtrip().await;
+}
+#[tokio::test]
+async fn failed_startup_transport_holds_original_work_until_real_peer_close() {
+    use crate::services::operations::WorkLifetime;
+    let fixture = Fixture::start(Reply::HoldFirstData).await;
+    let permits = Arc::new(Semaphore::new(1));
+    let (send, mut done) = tokio::sync::oneshot::channel();
+    let owned = WorkLifetime::new(WorkFence(Some(send)))
+        .scope(prepare_owned_with_budget(
+            fixture.handle.clone(),
+            permits.clone(),
+            Duration::from_secs(3),
+        ))
+        .await
+        .unwrap();
+    let (channel, release_work) = owned.split().release_work_on_commit();
+    let (input, _mount_input) = tokio::io::duplex(1024);
+    let (mut mount_output, output) = tokio::io::duplex(1024);
+    let bridge = tokio::spawn(crate::mounts::transport::bridge_owned(
+        channel, input, output,
+    ));
+    mount_output.write_all(b"hold").await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        fixture.observation.data_waiting.notified(),
+    )
+    .await
+    .unwrap();
+    bridge.abort();
+    let _ = bridge.await;
+    // The server cannot ACK CLOSE until its current request is released. No
+    // kill-on-drop, submitted CLOSE or fixed sleep is counted as settlement.
+    drop(release_work); // Failure never commits the long-lived host resource.
+    assert!(done.try_recv().is_err());
+    assert_eq!(permits.available_permits(), 0);
+    fixture.observation.release_data.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), done)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(permits.available_permits(), 1);
+    fixture.closed(1).await;
+    fixture.sibling_roundtrip().await;
 }

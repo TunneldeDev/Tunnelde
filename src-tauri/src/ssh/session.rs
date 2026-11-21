@@ -28,7 +28,7 @@ mod mount_tests;
 mod probe;
 pub(crate) mod review;
 mod route;
-pub(crate) use cleanup::SessionDisposal;
+pub(crate) use cleanup::{DetachedSession, SessionDisposal};
 pub(crate) use identity::SessionIdentity;
 pub(super) use probe::ProbeTarget;
 
@@ -38,12 +38,21 @@ const MAX_EARLY_OUTPUT: usize = 1024 * 1024;
 
 /// Setup can be cancelled during authentication, PTY setup or a later jump.
 /// Dropping a russh handle alone does not close channels retaining senders.
-#[derive(Default)]
 struct PendingRoute {
+    work: crate::services::operations::WorkLifetime,
     target: Option<Handle<ClientHandler>>,
     jumps: Vec<Arc<Handle<ClientHandler>>>,
 }
 
+impl Default for PendingRoute {
+    fn default() -> Self {
+        Self {
+            work: crate::services::operations::WorkLifetime::current(),
+            target: None,
+            jumps: Vec::new(),
+        }
+    }
+}
 impl PendingRoute {
     fn release(mut self) -> (Handle<ClientHandler>, Vec<Arc<Handle<ClientHandler>>>) {
         (
@@ -58,13 +67,21 @@ impl Drop for PendingRoute {
         let target = self.target.take().map(Arc::new);
         let jumps = std::mem::take(&mut self.jumps);
         if target.is_some() || !jumps.is_empty() {
-            tauri::async_runtime::spawn(async move {
+            let work = self.work.clone();
+            tauri::async_runtime::spawn(work.retirement().scope(async move {
                 close_transports(
                     target.iter().chain(jumps.iter().rev()).map(Arc::as_ref),
                     None,
                 )
                 .await;
-            });
+                // Enqueued DISCONNECT is not transport retirement. Keep the
+                // inherited effect until every original handle is closed.
+                while target.as_ref().is_some_and(|handle| !handle.is_closed())
+                    || jumps.iter().any(|handle| !handle.is_closed())
+                {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }));
         }
     }
 }
@@ -228,7 +245,8 @@ impl client::Handler for ClientHandler {
     }
 }
 
-enum WriterMsg {
+pub(super) enum WriterMsg {
+    Presentation(super::terminal_presentation::Request),
     Attach,
     Detach(oneshot::Sender<u64>),
     Data(Vec<u8>),
@@ -408,6 +426,30 @@ impl SshManager {
             .map_err(|_| AppError::Ssh("ssh.sessionBusy".into()))
     }
 
+    pub(crate) fn terminal_endpoint(
+        &self,
+        session_id: &str,
+    ) -> AppResult<super::terminal_presentation::Endpoint> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        let session = sessions
+            .get(session_id)
+            .filter(|session| {
+                session.published
+                    && session.user_managed
+                    && session.info.terminal
+                    && !session.handle.is_closed()
+                    && !session.task.is_finished()
+            })
+            .ok_or_else(|| AppError::validation("ssh.terminalUnavailable"))?;
+        Ok(super::terminal_presentation::Endpoint {
+            session_id: session_id.into(),
+            writer: session.writer.clone(),
+        })
+    }
+
     pub fn attach(&self, session_id: &str) -> AppResult<()> {
         let sessions = self
             .sessions
@@ -457,6 +499,31 @@ impl SshManager {
             .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))?;
         let _ = handle.writer.try_send(WriterMsg::Resize { cols, rows });
         Ok(())
+    }
+
+    /// Exact published builtin forwarding session only. Validation and removal
+    /// share the same manager guard; failed selection has no disposal effects.
+    pub(crate) fn take_forwarding(
+        &self,
+        host: &str,
+        session_id: &str,
+    ) -> AppResult<DetachedSession> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
+        if !session.published
+            || session.info.host_id != host
+            || session.info.terminal
+            || session.info.purpose.as_deref() != Some("forwarding")
+        {
+            return Err(AppError::validation("ssh.sessionMissing"));
+        }
+        let handle = sessions.remove(session_id).expect("checked exact session");
+        Ok(DetachedSession::new(handle, session_id.into()))
     }
 
     pub(crate) fn begin_disconnect(&self, session_id: &str) -> Option<SessionDisposal> {
@@ -637,30 +704,78 @@ async fn pump_terminal(
 ) {
     let (mut reader, writer) = channel.split();
     let mut output = TerminalOutput::new(startup);
+    let mut presentation: Option<super::terminal_presentation::Output> = None;
+    // A remote shell may exit between source detach and destination attach.
+    // Retain its final bytes across the bounded handoff instead of dropping the
+    // actor immediately. No further SSH reads/writes occur after remote close.
+    let mut closed_deadline = None;
+    let mut deliver = |sequence, bytes: &[u8]| {
+        emit(sequence, bytes);
+        true
+    };
     loop {
         tokio::select! {
             // Until both frontend listeners exist, SSH's channel queue/window
             // buffers output without losing a prompt's first ANSI bytes.
-            incoming = reader.wait(), if output.can_read() => {
+            incoming = reader.wait(), if closed_deadline.is_none() && output.can_read() => {
                 match incoming {
-                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => output.receive(&data, &mut emit),
-                    Some(ChannelMsg::Close) | None => break,
+                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => output.try_receive(&data, &mut |sequence, bytes| {
+                        if let Some(sink) = &presentation { sink(sequence, bytes) } else { deliver(sequence, bytes) }
+                    }),
+                    Some(ChannelMsg::Close) | None => {
+                        if output.attached() { break; }
+                        closed_deadline = Some(tokio::time::Instant::now() + Duration::from_secs(60));
+                    }
                     _ => {}
                 }
             }
+            _ = async {
+                if let Some(deadline) = closed_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => break,
             message = outgoing.recv() => {
                 match message {
                     Some(WriterMsg::Attach) => {
-                        output.attach(&mut emit);
+                        // Legacy/main attach cannot steal a window-scoped stream.
+                        if presentation.is_none() { output.attach(&mut |sequence, bytes| { deliver(sequence, bytes); }); }
+                    }
+                    Some(WriterMsg::Presentation(request)) => {
+                        let super::terminal_presentation::Request { authorization, operation, reply } = request;
+                        // Recheck when dequeued, not only before queue admission.
+                        let result = if !(authorization.current)() {
+                            Err(AppError::validation("stale panel owner"))
+                        } else {
+                            use super::terminal_presentation::Operation;
+                            match operation {
+                                Operation::Attach(sink) => {
+                                    if output.attached() {
+                                        Err(AppError::validation("ssh.sessionBusy"))
+                                    } else {
+                                        presentation = Some(sink);
+                                        output.try_attach(&mut |sequence, bytes| presentation.as_ref().unwrap()(sequence, bytes));
+                                        Ok(None)
+                                    }
+                                }
+                                Operation::Detach => Ok(Some(output.detach())),
+                                Operation::Write(_) | Operation::Resize { .. } if closed_deadline.is_some() => Err(AppError::validation("ssh.sessionMissing")),
+                                Operation::Write(bytes) => writer.data_bytes(bytes).await.map(|_| None).map_err(map_ssh_error),
+                                Operation::Resize { cols, rows } => writer.window_change(cols, rows, 0, 0).await.map(|_| None).map_err(map_ssh_error),
+                            }
+                        };
+                        drop(authorization.retention);
+                        let _ = reply.send(result);
                     }
                     Some(WriterMsg::Detach(reply)) => {
                         let _ = reply.send(output.detach());
                     }
                     Some(WriterMsg::Data(bytes)) => {
-                        if writer.data_bytes(bytes).await.is_err() { break; }
+                        if closed_deadline.is_none() && writer.data_bytes(bytes).await.is_err() { break; }
                     }
                     Some(WriterMsg::Resize { cols, rows }) => {
-                        let _ = writer.window_change(cols, rows, 0, 0).await;
+                        if closed_deadline.is_none() { let _ = writer.window_change(cols, rows, 0, 0).await; }
                     }
                     Some(WriterMsg::Close) | None => {
                         let _ = writer.eof().await;
@@ -669,6 +784,12 @@ async fn pump_terminal(
                     }
                 }
             }
+        }
+        // Attach replays the FIFO before marking it attached. Once the final
+        // bytes have reached the current owner, normal session cleanup can
+        // publish closed and release the SSH transport exactly as before.
+        if closed_deadline.is_some() && output.attached() {
+            break;
         }
     }
 }
@@ -746,6 +867,7 @@ async fn connect_captured(
     destination: Option<&SessionIdentity>,
     snapshot: &route::Snapshot,
 ) -> AppResult<SessionInfo> {
+    crate::services::operations::WorkLifetime::check()?;
     snapshot.verify_background(&app).await?;
     let mut host = snapshot.target().clone();
     if password_auth {
@@ -761,6 +883,7 @@ async fn connect_captured(
     .await?;
 
     let authentication = snapshot.authentication(&app, &host, &request).await?;
+    crate::services::operations::WorkLifetime::check()?;
     tokio::time::timeout(
         CONNECT_TIMEOUT,
         authenticate(
@@ -773,6 +896,7 @@ async fn connect_captured(
     .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
 
     snapshot.verify_background(&app).await?;
+    crate::services::operations::WorkLifetime::check()?;
     let terminal = prepare_terminal(
         pending.target.as_ref().expect("route target"),
         request.cols,
@@ -791,7 +915,9 @@ async fn connect_captured(
         rows: request.rows,
         connected_at: now_ms(),
         terminal: !request.background,
-        purpose: if request.background && request.purpose.as_deref() == Some("forwarding") {
+        purpose: if request.background
+            && matches!(request.purpose.as_deref(), Some("forwarding" | "mounts"))
+        {
             request.purpose.clone()
         } else {
             None
@@ -800,77 +926,80 @@ async fn connect_captured(
 
     let snapshot = snapshot.clone();
     let delivery = crate::services::credentials::checked(move |job| {
-        let info = snapshot.with_current(&app, |conn| {
-            job.commit()?;
-            let state = app.state::<AppState>();
-            let mut info = info;
-            if !host.id.starts_with(crate::plugins::host_sources::PREFIX) {
-                info.title = db::hosts::find_host(conn, &host.id)?.name;
-            }
-            let (handle, jumps) = pending.release();
-            let shared_handle = Arc::new(handle);
-            let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
-            let task_app = app.clone();
-            let task_session = session_id.clone();
+        let authority = snapshot.observe(&app)?;
+        let info = crate::services::operations::WorkLifetime::with_current(|| {
+            authority.with_current(&app, |conn| {
+                job.commit()?;
+                let state = app.state::<AppState>();
+                let mut info = info;
+                if !host.id.starts_with(crate::plugins::host_sources::PREFIX) {
+                    info.title = db::hosts::find_host(conn, &host.id)?.name;
+                }
+                let (handle, jumps) = pending.release();
+                let shared_handle = Arc::new(handle);
+                let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
+                let task_app = app.clone();
+                let task_session = session_id.clone();
 
-            let task_handle = Arc::clone(&shared_handle);
-            let task = tokio::spawn(async move {
-                if let Some((channel, startup)) = terminal {
-                    pump_terminal(channel, rx, startup, |sequence, data| {
-                        emit_data(&task_app, &task_session, sequence, data)
-                    })
-                    .await;
-                } else {
-                    loop {
-                        tokio::select! {
-                            _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                                if task_handle.is_closed() { break; }
-                            }
-                            message = rx.recv() => match message {
-                                Some(WriterMsg::Detach(reply)) => { let _ = reply.send(0); }
-                                Some(WriterMsg::Close) | None => break,
-                                _ => {}
+                let task_handle = Arc::clone(&shared_handle);
+                let task = tokio::spawn(async move {
+                    if let Some((channel, startup)) = terminal {
+                        pump_terminal(channel, rx, startup, |sequence, data| {
+                            emit_data(&task_app, &task_session, sequence, data)
+                        })
+                        .await;
+                    } else {
+                        loop {
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                                    if task_handle.is_closed() { break; }
+                                }
+                                message = rx.recv() => match message {
+                                    Some(WriterMsg::Detach(reply)) => { let _ = reply.send(0); }
+                                    Some(WriterMsg::Close) | None => break,
+                                    _ => {}
+                                }
                             }
                         }
                     }
-                }
 
-                let removed = if let Some(state) = task_app.try_state::<AppState>() {
-                    state.forwards.stop_session(&task_session);
-                    state.monitor.forget(&task_session);
-                    let removed = state.ssh.remove(&task_session);
-                    state.plugins.forget_connection(&task_session);
-                    removed
-                } else {
-                    false
-                };
-                if removed {
-                    let _ = task_app.emit(
-                        CLOSED_EVENT,
-                        ClosedPayload {
-                            session_id: task_session.clone(),
-                            reason: "closed".into(),
-                        },
-                    );
-                }
-                if let Some(state) = task_app.try_state::<AppState>() {
-                    state.mounts.stop_session(&task_session).await;
-                }
-            });
+                    let removed = if let Some(state) = task_app.try_state::<AppState>() {
+                        state.forwards.stop_session(&task_session);
+                        state.monitor.forget(&task_session);
+                        let removed = state.ssh.remove(&task_session);
+                        state.plugins.forget_connection(&task_session);
+                        removed
+                    } else {
+                        false
+                    };
+                    if removed {
+                        let _ = task_app.emit(
+                            CLOSED_EVENT,
+                            ClosedPayload {
+                                session_id: task_session.clone(),
+                                reason: "closed".into(),
+                            },
+                        );
+                    }
+                    if let Some(state) = task_app.try_state::<AppState>() {
+                        state.mounts.stop_session(&task_session).await;
+                    }
+                });
 
-            state.ssh.insert(SessionHandle {
-                published,
-                user_managed: published,
-                server_key: observed.fingerprint,
-                _jumps: jumps,
-                remote_forwards,
-                info: info.clone(),
-                writer: tx,
-                task,
-                handle: shared_handle,
-            });
+                state.ssh.insert(SessionHandle {
+                    published,
+                    user_managed: published,
+                    server_key: observed.fingerprint,
+                    _jumps: jumps,
+                    remote_forwards,
+                    info: info.clone(),
+                    writer: tx,
+                    task,
+                    handle: shared_handle,
+                });
 
-            Ok(info)
+                Ok(info)
+            })
         })?;
 
         // Publication owns its notifications even if reply delivery is lost.
@@ -912,13 +1041,14 @@ pub(crate) fn begin_disconnect(app: &AppHandle, session_id: &str) -> Option<Sess
     state.forwards.stop_session(session_id);
     let cleanup_app = app.clone();
     let cleanup_session = session_id.to_owned();
-    tauri::async_runtime::spawn(async move {
+    let work = crate::services::operations::WorkLifetime::current();
+    tauri::async_runtime::spawn(work.retirement().scope(async move {
         cleanup_app
             .state::<AppState>()
             .mounts
             .stop_session(&cleanup_session)
             .await;
-    });
+    }));
     let disposal = state.ssh.begin_disconnect(session_id);
     if disposal.is_some() {
         state.monitor.forget(session_id);
@@ -1038,6 +1168,10 @@ mod tests {
             session: &mut Session,
         ) -> Result<(), Self::Error> {
             session.data(channel, data.to_vec())?;
+            if data == b"qa:exit-after-output" {
+                session.eof(channel)?;
+                session.close(channel)?;
+            }
             Ok(())
         }
     }
@@ -1103,6 +1237,7 @@ mod tests {
             Some(ChannelMsg::Data { .. })
         ));
         let pending = PendingRoute {
+            work: crate::services::operations::WorkLifetime::current(),
             target: Some(client),
             jumps: vec![jump.clone()],
         };
@@ -1138,6 +1273,7 @@ mod tests {
         let mut observer = client.channel_open_session().await.unwrap();
         let result: AppResult<()> = async move {
             let route = PendingRoute {
+                work: crate::services::operations::WorkLifetime::current(),
                 target: Some(client),
                 jumps: vec![],
             };
@@ -1252,6 +1388,87 @@ mod tests {
         assert!(tokio::time::timeout(Duration::from_secs(1), channel.wait())
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn forwarding_detachment_is_exact_and_cleanup_survives_lost_delivery() {
+        for deliver in [true, false] {
+            let (client, _, server) = server(false, false).await;
+            let client = Arc::new(client);
+            let (writer, _receiver) = mpsc::channel(1);
+            let task = tokio::spawn(std::future::pending());
+            let aborted = task.abort_handle();
+            let manager = SshManager::default();
+            manager.insert(SessionHandle {
+                published: false,
+                user_managed: false,
+                server_key: "key".into(),
+                info: SessionInfo {
+                    id: "exact".into(),
+                    host_id: "host".into(),
+                    title: "Forward".into(),
+                    address: "qa@host:22".into(),
+                    cols: 80,
+                    rows: 24,
+                    connected_at: 1,
+                    terminal: false,
+                    purpose: Some("forwarding".into()),
+                },
+                writer,
+                task,
+                handle: client.clone(),
+                _jumps: vec![],
+                remote_forwards: Arc::default(),
+            });
+            assert!(manager.take_forwarding("host", "exact").is_err());
+            manager.publish("exact").unwrap();
+            assert!(manager.take_forwarding("foreign", "exact").is_err());
+            for (purpose, terminal) in [
+                (Some("mount"), false),
+                (None, true),
+                (Some("forwarding"), true),
+            ] {
+                {
+                    let mut sessions = manager.sessions.lock().unwrap();
+                    let handle = sessions.get_mut("exact").unwrap();
+                    handle.info.purpose = purpose.map(str::to_owned);
+                    handle.info.terminal = terminal;
+                }
+                assert!(manager.take_forwarding("host", "exact").is_err());
+                assert!(!client.is_closed());
+                assert!(!aborted.is_finished());
+            }
+            {
+                let mut sessions = manager.sessions.lock().unwrap();
+                let handle = sessions.get_mut("exact").unwrap();
+                handle.info.purpose = Some("forwarding".into());
+                handle.info.terminal = false;
+            }
+            let guard = Arc::new(());
+            let weak = Arc::downgrade(&guard);
+            let detached = crate::services::operations::WorkLifetime::new(guard)
+                .scope(async { manager.take_forwarding("host", "exact").unwrap() })
+                .await;
+            assert!(manager.list().is_empty());
+            assert!(manager.handle("exact").is_err());
+            assert!(!client.is_closed());
+            assert!(!aborted.is_finished());
+            assert!(weak.upgrade().is_some());
+            if deliver {
+                detached.finish().await.unwrap();
+            } else {
+                drop(detached);
+            }
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while !client.is_closed() || !aborted.is_finished() || weak.upgrade().is_some() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("detached cleanup lost exact handle/fence");
+            assert!(manager.take_forwarding("host", "exact").is_err());
+            server.abort();
+        }
     }
 
     #[tokio::test]
@@ -1394,6 +1611,192 @@ mod tests {
                 .unwrap(),
             (3, b"still alive".to_vec())
         );
+        tx.send(WriterMsg::Close).await.unwrap();
+        task.await.unwrap();
+        server.abort();
+    }
+    #[tokio::test]
+    async fn remote_shell_exit_during_detach_retains_final_bytes_until_scoped_attach() {
+        use super::super::terminal_presentation::{Authorization, Endpoint, Operation};
+        let (client, _, server) = server(false, false).await;
+        let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
+        let (tx, rx) = mpsc::channel(16);
+        let endpoint = Endpoint {
+            session_id: "closed-handoff".into(),
+            writer: tx.clone(),
+        };
+        let (legacy, mut legacy_rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(async move {
+            pump_terminal(channel, rx, startup, |sequence, bytes| {
+                legacy.send((sequence, bytes.to_vec())).unwrap();
+            })
+            .await;
+        });
+        tx.send(WriterMsg::Attach).await.unwrap();
+        assert_eq!(legacy_rx.recv().await.unwrap(), (1, PROMPT.to_vec()));
+        let (reply, detached) = oneshot::channel();
+        tx.send(WriterMsg::Detach(reply)).await.unwrap();
+        assert_eq!(detached.await.unwrap(), 1);
+        tx.send(WriterMsg::Data(b"qa:exit-after-output".to_vec()))
+            .await
+            .unwrap();
+        // Synchronize via native actor requests, rather than assuming one sleep
+        // is enough for SSH data/close processing on every CI platform.
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let result = endpoint
+                    .request(
+                        Authorization {
+                            current: Arc::new(|| true),
+                            retention: Box::new(()),
+                        },
+                        Operation::Resize { cols: 80, rows: 24 },
+                    )
+                    .await;
+                if result.is_err() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("remote close was never observed");
+        assert!(!task.is_finished(), "detached close dropped its output");
+        assert!(
+            !client.is_closed(),
+            "handoff reconnected or destroyed transport"
+        );
+        assert!(legacy_rx.try_recv().is_err());
+        let (scoped, mut scoped_rx) = mpsc::unbounded_channel();
+        endpoint
+            .request(
+                Authorization {
+                    current: Arc::new(|| true),
+                    retention: Box::new(()),
+                },
+                Operation::Attach(Arc::new(move |sequence, bytes| {
+                    scoped.send((sequence, bytes.to_vec())).is_ok()
+                })),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            scoped_rx.recv().await.unwrap(),
+            (2, b"qa:exit-after-output".to_vec())
+        );
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(scoped_rx.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn native_terminal_handoff_retains_original_ssh_and_replays_only_to_the_current_sink() {
+        use super::super::terminal_presentation::{Authorization, Endpoint, Operation};
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        fn authorization(current: Arc<AtomicBool>) -> Authorization {
+            Authorization {
+                current: Arc::new(move || current.load(Ordering::SeqCst)),
+                retention: Box::new(()),
+            }
+        }
+        let (client, _, server) = server(false, false).await;
+        let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
+        let (tx, rx) = mpsc::channel(16);
+        let endpoint = Endpoint {
+            session_id: "exact".into(),
+            writer: tx.clone(),
+        };
+        let main_packets = Arc::new(AtomicUsize::new(0));
+        let observed_main = main_packets.clone();
+        let task = tokio::spawn(async move {
+            pump_terminal(channel, rx, startup, |_, _| {
+                observed_main.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
+        });
+        let first_current = Arc::new(AtomicBool::new(true));
+        let (first, mut first_rx) = mpsc::unbounded_channel();
+        let current = first_current.clone();
+        let rejected_output = Arc::new(AtomicUsize::new(0));
+        let rejected = rejected_output.clone();
+        let first_sink = Arc::new(move |sequence, bytes: &[u8]| {
+            if !current.load(Ordering::SeqCst) {
+                rejected.fetch_add(1, Ordering::SeqCst);
+                return false;
+            }
+            first.send((sequence, bytes.to_vec())).is_ok()
+        });
+        endpoint
+            .request(
+                authorization(first_current.clone()),
+                Operation::Attach(first_sink),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first_rx.recv().await.unwrap(), (1, PROMPT.to_vec()));
+        tx.send(WriterMsg::Attach).await.unwrap(); // legacy attach must not steal the scoped route
+        endpoint
+            .request(
+                authorization(first_current.clone()),
+                Operation::Write(b"first owner".to_vec()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first_rx.recv().await.unwrap(), (2, b"first owner".to_vec()));
+        first_current.store(false, Ordering::SeqCst);
+        assert!(endpoint
+            .request(
+                authorization(first_current.clone()),
+                Operation::Write(b"stale input".to_vec())
+            )
+            .await
+            .is_err());
+        // Main-owned backend input is independent of a view's presentation lease.
+        tx.send(WriterMsg::Data("\x1b[33m后台\x1b[0m".as_bytes().to_vec()))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while rejected_output.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(first_rx.try_recv().is_err());
+        let second_current = Arc::new(AtomicBool::new(true));
+        let (second, mut second_rx) = mpsc::unbounded_channel();
+        let second_sink =
+            Arc::new(move |sequence, bytes: &[u8]| second.send((sequence, bytes.to_vec())).is_ok());
+        endpoint
+            .request(
+                authorization(second_current.clone()),
+                Operation::Attach(second_sink),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            second_rx.recv().await.unwrap(),
+            (3, "\x1b[33m后台\x1b[0m".as_bytes().to_vec())
+        );
+        assert_eq!(main_packets.load(Ordering::SeqCst), 0);
+        assert!(!client.is_closed());
+        assert_eq!(
+            endpoint
+                .request(authorization(second_current.clone()), Operation::Detach)
+                .await
+                .unwrap(),
+            Some(3)
+        );
+        endpoint
+            .request(
+                authorization(second_current),
+                Operation::Write(b"still same SSH".to_vec()),
+            )
+            .await
+            .unwrap();
         tx.send(WriterMsg::Close).await.unwrap();
         task.await.unwrap();
         server.abort();

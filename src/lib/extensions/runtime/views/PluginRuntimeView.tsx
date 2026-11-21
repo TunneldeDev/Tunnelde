@@ -9,6 +9,7 @@ import { frontendRuntime } from "../../frontendRuntime";
 import type { FrontendViewProps } from "../../contracts/frontend/views";
 import type { ResourceScope } from "../scopes/contracts";
 import { createViewMount } from "./mount";
+import { LegacyPanelView } from "./LegacyPanelView";
 
 export interface ViewValidation {
   check(): boolean;
@@ -22,19 +23,23 @@ function MountedView({
   viewProps,
   validation,
   onFailure,
+  onMounted,
+  captureLegacyState,
 }: {
   View: ComponentType<FrontendViewProps>;
   resources: ResourceScope;
   viewProps: FrontendViewProps;
   validation?: ViewValidation;
   onFailure: (error: unknown) => void;
+  onMounted?: () => void;
+  captureLegacyState?: boolean;
 }) {
   useEffect(() => {
-    if (!validation) return;
     const check = () => {
       if (resources.signal.aborted) return;
       try {
-        if (!validation.check()) throw new Error(validation.error);
+        if (validation && !validation.check()) throw new Error(validation.error);
+        onMounted?.();
       } catch (error) {
         resources.dispose();
         onFailure(error);
@@ -42,9 +47,13 @@ function MountedView({
     };
     // The registered component and its native slots have actually committed now.
     check();
-    return validation.subscribe?.(check);
-  }, [resources, validation, onFailure]);
-  return <View {...viewProps} resources={resources} />;
+    return validation?.subscribe?.(check);
+  }, [resources, validation, onFailure, onMounted]);
+  return captureLegacyState ? (
+    <LegacyPanelView View={View} viewProps={viewProps} resources={resources} />
+  ) : (
+    <View {...viewProps} resources={resources} />
+  );
 }
 
 /** Shared ordinary/provider mount lifecycle. Never changes native resource ownership. */
@@ -59,6 +68,8 @@ export function PluginRuntimeView({
   validation,
   onFailure,
   fallback,
+  onMounted,
+  captureLegacyState,
 }: {
   View: ComponentType<FrontendViewProps>;
   viewProps: FrontendViewProps;
@@ -70,6 +81,8 @@ export function PluginRuntimeView({
   validation?: ViewValidation;
   onFailure: (error: unknown) => void;
   fallback?: ReactNode;
+  onMounted?: () => void;
+  captureLegacyState?: boolean;
 }) {
   const { pluginId, viewId } = viewProps;
   const mount = useMemo(
@@ -109,6 +122,8 @@ export function PluginRuntimeView({
       viewProps={viewProps}
       validation={validation}
       onFailure={onFailure}
+      onMounted={onMounted}
+      captureLegacyState={captureLegacyState}
     />
   ) : (
     fallback

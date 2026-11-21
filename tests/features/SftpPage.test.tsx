@@ -37,6 +37,7 @@ import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
 import { useFilePreview } from "@/store/filePreview";
+import { useFileHighlights } from "@/store/fileHighlights";
 import { DRAG_MIME } from "@/lib/files/dnd";
 import { api } from "@/lib/api/ipc";
 import { useContextMenu } from "@/store/contextMenu";
@@ -121,6 +122,7 @@ beforeEach(() => {
   useTransfers.setState({ items: [] });
   useFileClipboard.setState({ clip: null });
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: false } });
+  useFileHighlights.setState({ revision: -1, bySource: new Map() });
 });
 
 function openPath(index = 0): HTMLInputElement {
@@ -133,6 +135,12 @@ function openPath(index = 0): HTMLInputElement {
 function currentPath(index = 0): string | null {
   const pane = document.querySelectorAll(".sftp-pane")[index]!;
   return pane.querySelector('[aria-current="location"]')?.getAttribute("title") ?? null;
+}
+
+function editPath(index: number, value: string): HTMLInputElement {
+  const input = openPath(index);
+  fireEvent.change(input, { target: { value } });
+  return input;
 }
 
 function resizePointer(type: string, clientX: number, pointerId = 1, button = 0) {
@@ -176,6 +184,192 @@ function dragColumn(pane: HTMLElement, from: string, to: string, after = false) 
 }
 
 describe("SftpPage", () => {
+  it("shows Explorer-friendly remote Windows drives only while editing", async () => {
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
+      if (source.kind === "remote") return { ...remoteListing, path: path ?? "/C:/qq-bridge/src" };
+      return localListing;
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const remote = document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!;
+    expect(remote.querySelector('[aria-current="location"]')?.getAttribute("title")).toBe(
+      "/C:/qq-bridge/src",
+    );
+    const input = openPath(1);
+    expect(input.value).toBe("C:/qq-bridge/src");
+    fireEvent.change(input, { target: { value: "C:/draft" } });
+    expect(input.value).toBe("C:/draft");
+    fireEvent.change(input, { target: { value: "/C:/kept" } });
+    expect(input.value).toBe("/C:/kept");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(currentPath(1)).toBe("/C:/qq-bridge/src");
+    expect(openPath(1).value).toBe("C:/qq-bridge/src");
+  });
+
+  it("normalizes typed remote drive paths before submitting navigation", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = editPath(1, "D:\\next\\deep");
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith(
+        { kind: "remote", sessionId: "session-1" },
+        "/D:/next/deep",
+      ),
+    );
+    const canonical = editPath(1, "C:/qq-bridge/src");
+    fireEvent.keyDown(canonical, { key: "Enter" });
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith(
+        { kind: "remote", sessionId: "session-1" },
+        "/C:/qq-bridge/src",
+      ),
+    );
+  });
+
+  it("keeps editing and history open through Safari's pointer, blur, and click order", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const trigger = within(document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!).getByRole(
+      "button",
+      { name: "Recent folders" },
+    );
+    fireEvent.pointerDown(trigger);
+    fireEvent.mouseDown(trigger);
+    fireEvent.blur(input, { relatedTarget: null });
+    fireEvent.mouseUp(trigger);
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu", { name: "Recent folders" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "/srv/app" }));
+    await waitFor(() => expect(currentPath(1)).toBe("/srv/app"));
+    expect(screen.queryByRole("textbox", { name: "Path" })).toBeNull();
+  });
+
+  it("cancels a stuck edit after an aborted history click", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const trigger = within(document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!).getByRole(
+      "button",
+      { name: "Recent folders" },
+    );
+    fireEvent.pointerDown(trigger);
+    fireEvent.mouseDown(trigger);
+    fireEvent.blur(input, { relatedTarget: null });
+    fireEvent.mouseUp(document.body);
+    await act(async () => undefined);
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Path" })).toBeNull());
+    expect(currentPath(1)).toBe("/srv/app");
+
+    const next = openPath(1);
+    fireEvent.pointerDown(document.body);
+    expect(next.isConnected).toBe(false);
+    expect(screen.queryByRole("textbox", { name: "Path" })).toBeNull();
+    expect(currentPath(1)).toBe("/srv/app");
+  });
+
+  it("keeps the history menu inside only its own pane's edit boundary", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const remote = document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!;
+    const trigger = within(remote).getByRole("button", { name: "Recent folders" });
+    fireEvent.click(trigger);
+    const menu = document.getElementById(trigger.getAttribute("aria-controls")!)!;
+    fireEvent.blur(input, { relatedTarget: menu });
+    expect(within(remote).getByRole("textbox", { name: "Path" })).toBeTruthy();
+    const unrelated = document.createElement("div");
+    unrelated.id = "unrelated-menu";
+    unrelated.className = "sftp-path__history-menu";
+    unrelated.setAttribute("role", "menu");
+    document.body.append(unrelated);
+    fireEvent.blur(input, { relatedTarget: unrelated });
+    expect(within(remote).queryByRole("textbox", { name: "Path" })).toBeNull();
+    unrelated.remove();
+
+    openPath(1);
+    const unrelatedTrigger = document.createElement("button");
+    unrelatedTrigger.className = "td-menu__trigger";
+    document.body.append(unrelatedTrigger);
+    fireEvent.pointerDown(unrelatedTrigger);
+    expect(within(remote).queryByRole("textbox", { name: "Path" })).toBeNull();
+    unrelatedTrigger.remove();
+  });
+
+  it("keeps each pane's history menu independent when both are editing", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const remote = openPath(1);
+    const panes = document.querySelectorAll<HTMLElement>(".sftp-pane");
+    const remoteTrigger = within(panes[1]!).getByRole("button", { name: "Recent folders" });
+    fireEvent.click(remoteTrigger);
+    const remoteMenu = document.getElementById(remoteTrigger.getAttribute("aria-controls")!)!;
+    const unrelated = document.createElement("div");
+    unrelated.className = "sftp-path__history-menu";
+    unrelated.setAttribute("role", "menu");
+    document.body.append(unrelated);
+    fireEvent.blur(remote, { relatedTarget: unrelated });
+    expect(within(panes[1]!).queryByRole("textbox", { name: "Path" })).toBeNull();
+    unrelated.remove();
+    expect(remoteMenu.isConnected).toBe(false);
+  });
+
+  it("supports keyboard navigation, selection and escape in the history menu", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    const trigger = within(document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!).getByRole(
+      "button",
+      { name: "Recent folders" },
+    );
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "/srv/app" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "/srv/app" }));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByRole("menu", { name: "Recent folders" })).toBeNull();
+    expect(input.isConnected).toBe(true);
+    fireEvent.keyDown(input, { key: "Escape", isComposing: true, keyCode: 229 });
+    expect(input.isConnected).toBe(true);
+  });
+
+  it("renders plugin highlights by source and keeps them separate from selection", async () => {
+    useFileHighlights.setState({
+      revision: 1,
+      bySource: new Map([
+        [
+          "local",
+          [
+            {
+              match: { extension: "txt" },
+              tooltip: "Generated notes",
+              tone: "warning",
+              key: "plugin:generated",
+              pluginId: "plugin",
+              pluginName: "Generator",
+              source: "local",
+              directory: null,
+            },
+          ],
+        ],
+      ]),
+    });
+    render(<SftpPage sessionId="session-1" />);
+    const notes = (await screen.findByText("notes.txt")).closest(".sftp-row") as HTMLElement;
+    const readme = (await screen.findByText("readme.md")).closest(".sftp-row") as HTMLElement;
+    expect(notes.classList).toContain("is-highlighted");
+    expect(notes.classList).toContain("is-highlight-warning");
+    expect(notes.dataset.highlightTone).toBe("warning");
+    expect(notes.querySelector(".sftp-row__name")?.getAttribute("title")).toContain(
+      "Generator · Generated notes",
+    );
+    expect(notes.getAttribute("aria-selected")).toBe("false");
+    expect(readme.classList).not.toContain("is-highlighted");
+  });
+
   it("records the current local path of a standalone panel for workspace restoration", async () => {
     const filePane = {
       source: { kind: "local" as const },
@@ -863,6 +1057,33 @@ describe("SftpPage", () => {
       expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\src"),
     );
     expect(fsMock.list.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it("retries a failed subfolder listing without closing and reopening the menu", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fsMock.list.mockRejectedValueOnce(new Error("Unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Subfolders of C:\\work" }));
+    const refresh = await screen.findByRole("menuitem", { name: "Refresh" });
+    fireEvent.keyDown(refresh, { key: "Enter" });
+    const folder = await screen.findByRole("menuitem", { name: "src" });
+    expect(document.activeElement).toBe(folder);
+    fireEvent.click(folder);
+    expect(screen.queryByRole("menuitem", { name: "src" })).toBeNull();
+    await waitFor(() => expect(currentPath(0)).toBe("C:\\work\\src"));
+  });
+
+  it("does not navigate on WebKit's IME confirmation Enter", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    const input = openPath(1);
+    fireEvent.change(input, { target: { value: "/srv/项目" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false, keyCode: 229 });
+    expect(input.isConnected).toBe(true);
+    expect(input.value).toBe("/srv/项目");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.isConnected).toBe(false);
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith(expect.anything(), "/srv/项目"));
   });
 
   it("uses customized file bindings and consumes them before global workbench commands", async () => {
@@ -1967,7 +2188,7 @@ describe("SftpPage preloading", () => {
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret");
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10");
       fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Descending" }));
+      fireEvent.click(await screen.findByRole("menuitemradio", { name: "Descending" }));
       await waitFor(() =>
         expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10"),
       );
@@ -2120,11 +2341,11 @@ describe("SftpPage visible file interactions", () => {
     await screen.findByText("notes.txt");
     const reads = fsMock.list.mock.calls.length;
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Show hidden files" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Show hidden files" }));
     const body = screen.getAllByRole("listbox")[0]!;
     expect(await within(body).findByText(".env")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Folders first" }));
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Folders first" }));
     await waitFor(() =>
       expect(within(body).getAllByRole("option")[0]!.dataset.path).toBe(hidden.path),
     );
@@ -2253,7 +2474,7 @@ describe("SftpPage visible file interactions", () => {
     await screen.findByText("notes.txt");
     const local = screen.getAllByRole("listbox")[0]!;
     fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Group by type" }));
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "Group by type" }));
     fireEvent.click(within(local).getByText("src"));
     const group = within(local).getByRole("button", { name: /Folders 1/ });
     const before = fsMock.list.mock.calls.length;

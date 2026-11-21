@@ -9,6 +9,10 @@ use tokio::sync::Semaphore;
 
 mod delivery;
 pub(crate) use delivery::Delivery;
+mod authority;
+pub(crate) use authority::Authority;
+mod lifetime;
+pub(crate) use lifetime::WorkLifetime;
 
 #[cfg(test)]
 mod tests;
@@ -97,16 +101,22 @@ impl Budget {
             .try_acquire_owned()
             .map_err(|_| AppError::validation(self.errors.busy))?;
         let (cancellation, pending) = Cancellation::new(self.errors.cancelled);
+        let lifetime = WorkLifetime::current();
         let result = tokio::task::spawn_blocking(move || {
-            // The worker owns the slot even while queued in the blocking pool.
-            let _permit = permit;
-            cancellation.check()?;
-            operation(&cancellation)
+            let result = lifetime.clone().sync(|| {
+                // The worker owns capacity and the effect fence even while
+                // queued, after an outer timeout, and through nested workers.
+                let _permit = permit;
+                cancellation.check()?;
+                WorkLifetime::check()?;
+                operation(&cancellation)
+            });
+            lifetime.finish(result)
         })
         .await
         .map_err(|error| self.worker_error(error, "blocking-worker"))?;
         drop(pending);
-        result
+        result.result
     }
 
     pub async fn asynchronous<T, F, W>(&self, operation: F) -> AppResult<T>
@@ -121,15 +131,23 @@ impl Budget {
             .try_acquire_owned()
             .map_err(|_| AppError::validation(self.errors.busy))?;
         let (cancellation, pending) = Cancellation::new(self.errors.cancelled);
+        let lifetime = WorkLifetime::current();
         let result = tokio::spawn(async move {
-            let _permit = permit;
-            cancellation.check()?;
-            operation(cancellation).await
+            let result = lifetime
+                .clone()
+                .scope(async move {
+                    let _permit = permit;
+                    cancellation.check()?;
+                    WorkLifetime::check()?;
+                    operation(cancellation).await
+                })
+                .await;
+            lifetime.finish(result)
         })
         .await
         .map_err(|error| self.worker_error(error, "async-worker"))?;
         drop(pending);
-        result
+        result.result
     }
 
     fn worker_error(&self, error: tokio::task::JoinError, stage: &'static str) -> AppError {

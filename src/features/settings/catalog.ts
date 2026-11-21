@@ -30,6 +30,7 @@ export interface SettingDefinition {
     | "shortcutRules"
     | "network"
     | "uiProviders"
+    | "mountHostDetails"
     | "hostList"
     | "updateUrl";
   hint?: MessageKey;
@@ -111,7 +112,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "startup",
       label: "settings.groups.startup",
-      keys: ["restoreWorkspace", "hostActivation", "hostDirectConnect"],
+      keys: ["restoreWorkspace", "hostActivation", "hostDirectConnect", "disconnectOnPanelClose"],
     },
   ],
   terminal: [
@@ -254,6 +255,12 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     kind: "uiProviders",
   },
   {
+    key: "mountHostDetailsSelection",
+    section: "plugins",
+    label: "providers.hostMounts",
+    kind: "mountHostDetails",
+  },
+  {
     key: "network",
     section: "network",
     label: "network.title",
@@ -338,6 +345,7 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   toggle("showStatusBar", "workspace"),
   toggle("rightPanel", "workspace", "settings.rightPanelHint"),
   toggle("restoreWorkspace", "workspace", "settings.restoreWorkspaceHint"),
+  toggle("disconnectOnPanelClose", "workspace", "settings.disconnectOnPanelCloseHint"),
   numeric("sidebarWidth", "workspace", 220, 420, 1, "px"),
   numeric("rightPanelWidth", "workspace", 240, 460, 1, "px"),
   select(

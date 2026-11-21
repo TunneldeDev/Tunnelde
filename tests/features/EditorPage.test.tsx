@@ -1,18 +1,36 @@
 import * as keyboardActions from "@/lib/keyboard/actions";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n/i18n";
 import { EditorPage } from "@/features/editor/EditorPage";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
-import { useEditors, type EditorEntry } from "@/store/editors";
+import {
+  beginEditorInput,
+  editorDocument,
+  replaceEditorDocument,
+  useEditors,
+  type EditorEntry,
+} from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 import { api } from "@/lib/api/ipc";
 import { usePlugins } from "@/store/plugins";
+import { usePluginSecurity } from "@/store/pluginSecurity";
 import type { PluginInfo } from "@/lib/api/types";
 import { useFormatting } from "@/lib/plugins/formatting";
+import { EditorView } from "@codemirror/view";
+
+function editorView(element: HTMLElement): EditorView {
+  const view = EditorView.findFromDOM(element);
+  if (!view) throw new Error("CM view not mounted");
+  return view;
+}
+function editorText(element: HTMLElement): string {
+  return editorView(element).state.doc.toString();
+}
+const editorBox = async (name = "draft.txt") => screen.findByRole("textbox", { name });
 
 const entry: EditorEntry = {
   tabId: "editor",
@@ -21,12 +39,20 @@ const entry: EditorEntry = {
   name: "draft.txt",
   content: "\tunsaved draft\r\n\tsecond line\r\n",
   baseline: "original\r\n",
+  encoding: "utf-8",
+  bom: false,
   loading: false,
   saving: false,
   error: null,
 };
 
+afterEach(() => {
+  cleanup();
+  useEditors.getState().discard("editor");
+});
+
 beforeEach(() => {
+  useEditors.getState().discard("editor");
   useEditors.setState({ entries: { editor: { ...entry } } });
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS } });
   useWorkspace.setState({ tabs: [] });
@@ -34,6 +60,122 @@ beforeEach(() => {
   usePlugins.setState({ items: [] });
   useFormatting.setState({ busy: [], picker: null });
 });
+
+describe("text encoding controls", () => {
+  const choose = async (label: string, option: string) => {
+    const control = screen.getByRole("button", { name: label });
+    await act(async () => {
+      fireEvent.click(control);
+    });
+    const item = await screen.findByRole("option", { name: option });
+    await act(async () => {
+      fireEvent.pointerDown(item);
+      fireEvent.mouseDown(item);
+      fireEvent.click(item);
+    });
+  };
+
+  it("changes the save encoding for a dirty draft without replacing its buffer", async () => {
+    vi.spyOn(api, "sftpReadText");
+    render(<EditorPage tabId="editor" active />);
+    const encoding = screen.getByRole("button", { name: "Save encoding" });
+    expect(encoding.textContent).toContain("UTF-8");
+    await choose("Save encoding", "UTF-16 LE");
+    expect(api.sftpReadText).not.toHaveBeenCalled();
+    expect(useEditors.getState().entries.editor).toMatchObject({
+      content: entry.content,
+      baseline: entry.baseline,
+      encoding: "utf-16le",
+      bom: true,
+    });
+    expect(editorText(await editorBox())).toBe(entry.content.replaceAll("\r\n", "\n"));
+  });
+
+  it("reopens clean bytes through the separate encoding action", async () => {
+    useEditors.setState({
+      entries: {
+        editor: { ...entry, content: "clean", baseline: "clean" },
+      },
+    });
+    vi.spyOn(api, "sftpReadText").mockResolvedValue({
+      content: "旧版中文",
+      size: 8,
+      encoding: "gb18030",
+      bom: false,
+    });
+    render(<EditorPage tabId="editor" active />);
+    const encoding = screen.getByRole("button", { name: "Save encoding" });
+    fireEvent.click(encoding);
+    fireEvent.click(await screen.findByRole("button", { name: "Reopen with encoding…" }));
+    await screen.findByRole("dialog", { name: "Reopen with encoding" });
+    fireEvent.click(await screen.findByRole("button", { name: "GB18030" }));
+    await waitFor(() =>
+      expect(api.sftpReadText).toHaveBeenCalledWith("s1", "/draft.txt", "gb18030"),
+    );
+    expect(editorText(await editorBox())).toBe("旧版中文");
+    expect(useEditors.getState().entries.editor).toMatchObject({
+      content: "旧版中文",
+      baseline: "旧版中文",
+      encoding: "gb18030",
+      bom: false,
+    });
+  });
+
+  it("keeps byte reinterpretation unavailable while a draft is dirty", async () => {
+    vi.spyOn(api, "sftpReadText");
+    render(<EditorPage tabId="editor" active />);
+    fireEvent.click(screen.getByRole("button", { name: "Save encoding" }));
+    expect(screen.queryByRole("button", { name: "Reopen with encoding…" })).toBeNull();
+    expect(api.sftpReadText).not.toHaveBeenCalled();
+    expect(useEditors.getState().entries.editor?.content).toBe(entry.content);
+  });
+
+  it("retries a failed initial decode with the selected save encoding", async () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          content: "",
+          baseline: "",
+          error: "The file could not be decoded with the selected text encoding",
+          decodeError: true,
+          baselineLoaded: false,
+        },
+      },
+    });
+    vi.spyOn(api, "sftpReadText").mockResolvedValue({
+      content: "decoded",
+      size: 7,
+      encoding: "utf-16le",
+      bom: true,
+    });
+    render(<EditorPage tabId="editor" active />);
+    await choose("Reopen with encoding", "UTF-16 LE");
+    await waitFor(() =>
+      expect(api.sftpReadText).toHaveBeenCalledWith("s1", "/draft.txt", "utf-16le"),
+    );
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("decoded"));
+  });
+});
+
+it.each([null, "s1"])(
+  "retries a failed open in the same tab with automatic encoding detection: %s",
+  async (sessionId) => {
+    const read = vi
+      .spyOn(api, sessionId === null ? "localReadText" : "sftpReadText")
+      .mockRejectedValueOnce(new Error("Unavailable"))
+      .mockResolvedValue({ content: "loaded", size: 6, encoding: "gb18030", bom: false });
+    await useEditors.getState().open("editor", sessionId, "/draft.txt");
+    render(<EditorPage tabId="editor" active />);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(editorText(await editorBox())).toBe("loaded");
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenLastCalledWith(
+      ...(sessionId === null ? ["/draft.txt", undefined] : [sessionId, "/draft.txt", undefined]),
+    );
+    expect(useEditors.getState().isDirty("editor")).toBe(false);
+  },
+);
 
 describe("native file-save setup", () => {
   it("derives installation from the open remote document, keeps content intact and permits cancelling", async () => {
@@ -53,7 +195,7 @@ describe("native file-save setup", () => {
       "disabled",
       true,
     );
-    const textarea = screen.getByRole("textbox", { name: "draft.txt" });
+    const textarea = await editorBox();
     textarea.focus();
     fireEvent.keyDown(textarea, { key: "s", ctrlKey: true });
     expect(save).not.toHaveBeenCalled();
@@ -93,8 +235,72 @@ describe("native file-save setup", () => {
   });
 });
 
+describe("EditorPage syntax integration", () => {
+  const syntaxPlugin = {
+    id: "syntax-page",
+    runtimeId: "boot:1",
+    name: "Syntax",
+    runtime: "node",
+    status: "running",
+    permissions: ["editor.read"],
+    fingerprint: "first",
+    views: [],
+    commands: [
+      { id: "highlight", title: "Highlight", editor: { extensions: ["txt"], syntax: true } },
+    ],
+  } as unknown as PluginInfo;
+
+  const prepareSyntax = () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          name: "bridge.txt",
+          path: "/bridge.txt",
+          content: "const value = 42;",
+          baseline: "const value = 42;",
+          documentId: "syntax-document",
+          version: 0,
+        },
+      },
+    });
+    usePlugins.setState({ items: [{ ...syntaxPlugin }], stoppingIds: [] });
+    usePluginSecurity.setState({
+      state: {
+        restricted: false,
+        cliLocked: false,
+        recoverySuggested: false,
+        reason: null,
+        grants: { "syntax-page": ["editor.read"] },
+      },
+    });
+    vi.spyOn(api, "pluginRun").mockResolvedValue({
+      tokens: [{ start: 0, end: 5, type: "keyword" }],
+    });
+  };
+
+  it("renders provider tokens in the actual CM surface and skips inactive editors", async () => {
+    prepareSyntax();
+    const { rerender } = render(<EditorPage tabId="editor" active={false} />);
+    const textarea = await editorBox("bridge.txt");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(api.pluginRun).not.toHaveBeenCalled();
+    rerender(<EditorPage tabId="editor" active />);
+    await waitFor(() => expect(api.pluginRun).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(textarea.querySelector(".cm-editor-token-keyword")?.textContent).toBe("const"),
+    );
+    fireEvent.compositionStart(textarea);
+    await waitFor(() => expect(textarea.querySelector(".cm-editor-token-keyword")).toBeNull());
+    fireEvent.compositionEnd(textarea);
+    await waitFor(() =>
+      expect(textarea.querySelector(".cm-editor-token-keyword")?.textContent).toBe("const"),
+    );
+  });
+});
+
 describe("editor formatting shortcuts", () => {
-  const prepare = () => {
+  const prepare = async () => {
     const json = {
       ...entry,
       name: "test.json",
@@ -127,21 +333,21 @@ describe("editor formatting shortcuts", () => {
     vi.spyOn(api, "pluginRun").mockResolvedValue({ text: '{\n    "a": 1\n}' });
     vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
     render(<EditorPage tabId="editor" active />);
-    return screen.getByRole("textbox", { name: "test.json" });
+    return await editorBox("test.json");
   };
 
   it.each(["ctrlKey", "metaKey"] as const)(
     "formats with %s and supports one-step undo and redo",
     async (modifier) => {
-      const textarea = prepare();
+      const textarea = await prepare();
       textarea.focus();
       fireEvent.keyDown(textarea, { key: "F", shiftKey: true, [modifier]: true });
-      await waitFor(() => expect(textarea).toHaveProperty("value", '{\n    "a": 1\n}'));
+      await waitFor(() => expect(editorText(textarea)).toBe('{\n    "a": 1\n}'));
       expect(api.sftpWriteText).not.toHaveBeenCalled();
       fireEvent.keyDown(textarea, { key: "z", [modifier]: true });
-      expect(textarea).toHaveProperty("value", '{"a":1}');
+      await waitFor(() => expect(editorText(textarea)).toBe('{"a":1}'));
       fireEvent.keyDown(textarea, { key: "Z", shiftKey: true, [modifier]: true });
-      expect(textarea).toHaveProperty("value", '{\n    "a": 1\n}');
+      await waitFor(() => expect(editorText(textarea)).toBe('{\n    "a": 1\n}'));
       fireEvent(
         textarea,
         new InputEvent("beforeinput", {
@@ -150,12 +356,12 @@ describe("editor formatting shortcuts", () => {
           cancelable: true,
         }),
       );
-      expect(textarea).toHaveProperty("value", '{"a":1}');
+      await waitFor(() => expect(editorText(textarea)).toBe('{"a":1}'));
     },
   );
 
   it("honors a customized binding without stealing the original content-search chord", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() =>
       useSettings.setState({
         settings: {
@@ -179,7 +385,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("runs both applicable plugin commands when their shortcuts conflict", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() =>
       usePlugins.setState((state) => ({
         items: [...state.items, { ...state.items[0]!, id: "second", name: "Second" }],
@@ -194,7 +400,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("blocks lower-priority editor plugins after accepting the preferred formatter", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() => {
       usePlugins.setState((state) => ({
         items: [...state.items, { ...state.items[0]!, id: "second", name: "Second" }],
@@ -214,7 +420,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("keeps a queued formatter bound to the editor when a shared workbench command changes tabs", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockImplementation(() => {
       useWorkspace.setState({ activeId: "other" });
       return true;
@@ -229,7 +435,7 @@ describe("editor formatting shortcuts", () => {
   });
 
   it("runs both matching editor commands contributed by one plugin in sequence", async () => {
-    const textarea = prepare();
+    const textarea = await prepare();
     act(() =>
       usePlugins.setState((state) => ({
         items: state.items.map((item) => ({
@@ -246,8 +452,8 @@ describe("editor formatting shortcuts", () => {
     ]);
   });
 
-  it("does not capture an editor plugin shortcut for an unsupported extension", () => {
-    const textarea = prepare();
+  it("does not capture an editor plugin shortcut for an unsupported extension", async () => {
+    const textarea = await prepare();
     act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
     const event = new KeyboardEvent("keydown", {
       key: "F",
@@ -261,8 +467,8 @@ describe("editor formatting shortcuts", () => {
     expect(api.pluginRun).not.toHaveBeenCalled();
   });
 
-  it("updates the format action as matching providers are installed, removed, or the file changes", () => {
-    prepare();
+  it("updates the format action as matching providers are installed, removed, or the file changes", async () => {
+    await prepare();
     const label = /格式化文档|Format document/i;
     expect(screen.getByRole("button", { name: label })).toHaveProperty("disabled", false);
     act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
@@ -324,13 +530,159 @@ describe("editor formatting shortcuts", () => {
   });
 });
 
-describe("EditorPage preferences", () => {
-  it("updates wrapping, tab width, and spellcheck without changing the draft or dirty state", () => {
+describe("EditorPage undo selection", () => {
+  const selection = (
+    start: number,
+    end = start,
+    direction: "forward" | "backward" | "none" = "none",
+  ) => ({ start, end, direction });
+
+  const prepareHistory = async () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          content: "abcdef",
+          baseline: "abcdef",
+          documentId: "document",
+          version: 1,
+        },
+      },
+    });
     render(<EditorPage tabId="editor" active />);
-    const textarea = screen.getByRole("textbox", { name: "draft.txt" }) as HTMLTextAreaElement;
-    expect(textarea.classList.contains("td-code-editor")).toBe(true);
-    expect(textarea.wrap).toBe("off");
-    expect(textarea.style.tabSize).toBe("4");
+    return (await editorBox()) as HTMLTextAreaElement;
+  };
+
+  it("captures the pre-edit caret and restores it through shortcut undo and redo", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 3 } });
+    fireEvent(
+      textarea,
+      new InputEvent("beforeinput", { inputType: "insertText", bubbles: true, cancelable: true }),
+    );
+    view.dispatch({ changes: { from: 3, to: 3, insert: "X" }, selection: { anchor: 4 } });
+    await waitFor(() => expect(editorText(textarea)).toBe("abcXdef"));
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
+    expect(editorView(textarea).state.selection.main.from).toBe(3);
+    expect(editorView(textarea).state.selection.main.to).toBe(3);
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcXdef"));
+  });
+
+  it("restores selection through the native beforeinput history path", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 3 } });
+    beginEditorInput("editor", "insertText", selection(3));
+    view.dispatch({ changes: { from: 3, to: 3, insert: "X" }, selection: { anchor: 4 } });
+    await waitFor(() => expect(editorText(textarea)).toBe("abcXdef"));
+
+    const nativeUndo = new InputEvent("beforeinput", {
+      inputType: "historyUndo",
+      bubbles: true,
+      cancelable: true,
+    });
+    textarea.dispatchEvent(nativeUndo);
+    expect(nativeUndo.defaultPrevented).toBe(true);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
+    expect(editorView(textarea).state.selection.main.from).toBe(3);
+  });
+
+  it("restores a ranged selection direction after replacement undo", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 4, head: 1 } });
+    fireEvent(
+      textarea,
+      new InputEvent("beforeinput", {
+        inputType: "insertReplacementText",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    view.dispatch({ changes: { from: 1, to: 4, insert: "Q" }, selection: { anchor: 2 } });
+    await waitFor(() => expect(editorText(textarea)).toBe("aQef"));
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
+    expect(editorView(textarea).state.selection.main.from).toBe(1);
+    expect(editorView(textarea).state.selection.main.to).toBe(4);
+    expect(editorView(textarea).state.selection.main.anchor).toBe(4);
+  });
+
+  it("keeps raw caret mapping across external replacement and host undo/redo", async () => {
+    useEditors.setState({
+      entries: {
+        editor: {
+          ...entry,
+          content: "a\r\nb\r\nc\r\ndefgh",
+          baseline: "a\r\nb\r\nc\r\ndefgh",
+          documentId: "document",
+          version: 0,
+        },
+      },
+    });
+    render(<EditorPage tabId="editor" active />);
+    const textarea = await editorBox();
+    replaceEditorDocument(editorDocument("editor")!, "xx\r\nyy\r\nzz\r\nnew\r\nabcdef");
+    await waitFor(() =>
+      expect(useEditors.getState().entries.editor?.content).toBe("xx\r\nyy\r\nzz\r\nnew\r\nabcdef"),
+    );
+    const view = editorView(textarea);
+    await waitFor(() => expect(view.state.doc.length).toBe(19));
+    view.dispatch({ selection: { anchor: 19 } });
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    await waitFor(() =>
+      expect(useEditors.getState().entries.editor?.content).toBe("a\r\nb\r\nc\r\ndefgh"),
+    );
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true, shiftKey: true });
+    await waitFor(() =>
+      expect(useEditors.getState().entries.editor?.content).toBe("xx\r\nyy\r\nzz\r\nnew\r\nabcdef"),
+    );
+    expect(editorView(textarea).state.selection.main.from).toBe(19);
+  });
+
+  it("treats a long IME composition as one host undo transaction", async () => {
+    const textarea = await prepareHistory();
+    const view = editorView(textarea);
+    view.focus();
+    view.dispatch({ selection: { anchor: 3 } });
+    fireEvent.compositionStart(textarea);
+    view.dispatch({ changes: { from: 3, to: 3, insert: "拼" }, selection: { anchor: 4 } });
+    view.dispatch({ changes: { from: 4, to: 4, insert: "音" }, selection: { anchor: 5 } });
+    fireEvent.compositionEnd(textarea);
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abc拼音def"));
+
+    fireEvent.keyDown(textarea, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(useEditors.getState().entries.editor?.content).toBe("abcdef"));
+  });
+});
+
+describe("EditorPage native scrolling and preferences", () => {
+  it("uses a native CM scroller and preserves selection/viewport", async () => {
+    const { container } = render(<EditorPage tabId="editor" active />);
+    const textarea = await editorBox();
+    expect(container.querySelector(".td-text-scrollbar")).toBeNull();
+    expect(textarea.closest(".cm-scroller")).not.toBeNull();
+    const view = editorView(textarea);
+    view.dispatch({ selection: { anchor: 5, head: 2 } });
+    expect(view.state.selection.main.from).toBe(2);
+    expect(view.state.selection.main.to).toBe(5);
+  });
+
+  it("updates CM tab width, wrapping and spellcheck without changing the draft", async () => {
+    render(<EditorPage tabId="editor" active />);
+    const textarea = await editorBox();
+    const view = editorView(textarea);
+    expect(view.dom.querySelector(".cm-lineNumbers")).not.toBeNull();
+    expect(view.state.tabSize).toBe(4);
     expect(textarea.getAttribute("spellcheck")).toBe("false");
     act(() =>
       useSettings.setState({
@@ -342,14 +694,8 @@ describe("EditorPage preferences", () => {
         },
       }),
     );
-    expect(textarea.wrap).toBe("soft");
-    expect(textarea.style.whiteSpace).toBe("pre-wrap");
-    expect(textarea.style.tabSize).toBe("8");
+    expect(view.state.tabSize).toBe(8);
     expect(textarea.getAttribute("spellcheck")).toBe("true");
-    expect(useEditors.getState().entries.editor).toEqual(entry);
-    expect(useEditors.getState().isDirty("editor")).toBe(true);
-    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS } }));
-    expect(textarea.wrap).toBe("off");
     expect(useEditors.getState().entries.editor?.content).toBe(entry.content);
   });
 });

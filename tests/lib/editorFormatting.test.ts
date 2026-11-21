@@ -49,6 +49,8 @@ beforeEach(async () => {
   vi.spyOn(api, "sftpReadText").mockResolvedValue({
     content: '{"value":9007199254740993}',
     size: 26,
+    encoding: "utf-8",
+    bom: false,
   });
   vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
   vi.spyOn(api, "pluginRun").mockResolvedValue({ text: '{\n  "value": 9007199254740993\n}' });
