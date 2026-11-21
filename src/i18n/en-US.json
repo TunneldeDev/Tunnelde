@@ -1337,6 +1337,8 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "notRunning": "This plugin is not running. Start it before opening its view.",
+    "busy": "This plugin operation is already running. Wait for it to finish.",
     "bus": {
       "invalid": "The plugin sent an invalid bus request. Check the topic, capability name and protocol version.",
       "unavailable": "This channel or invitation is unavailable to the plugin. Refresh its bus state before retrying.",

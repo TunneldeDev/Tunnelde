@@ -55,6 +55,12 @@ export function createDeclarativeViewOwner(pluginId: string, viewId: string) {
     };
   };
   return {
+    /** Current displayed incarnation only. It is cloned before crossing into
+     * React so a renderer cannot mutate the owner's command lookup snapshot. */
+    snapshot(): DeclarativePluginView | null {
+      check();
+      return current ? structuredClone(current) : null;
+    },
     async load(
       locale: string | undefined,
       options: { interactive?: boolean; signal?: AbortSignal } = {},
