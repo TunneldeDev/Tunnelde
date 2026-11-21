@@ -102,6 +102,7 @@ mod tests {
     fn host_actions_cannot_escape_the_bound_host_or_command_grammar() {
         let mut owner = Ownership::default();
         let main = owner.register(MAIN).unwrap();
+        owner.ready(MAIN, &main).unwrap();
         let id = format!("host-view:{}", uuid::Uuid::new_v4());
         let lease = owner
             .bind_host_page(MAIN, &main, &id, "host", true)
