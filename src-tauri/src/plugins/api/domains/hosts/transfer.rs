@@ -1,6 +1,7 @@
 //! Headless equivalents of native host migration; no file picker or connection.
 use super::*;
-use crate::services::hosts::transfer;
+use crate::{services::hosts::transfer, state::AppState};
+use tauri::Manager;
 const READ: &[&str] = &[
     "hosts.read",
     "forwards.read",

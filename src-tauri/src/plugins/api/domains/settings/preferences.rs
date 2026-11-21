@@ -63,23 +63,23 @@ pub(super) async fn dispatch(
                 };
                 let cancellation = prepared.cancellation();
                 let prepared = std::cell::RefCell::new(prepared);
-                let persist = || {
-                    state.plugins.security.with_authorized_database_then(
+                state
+                    .plugins
+                    .security
+                    .with_authorized_fenced_database_then(
                         &state.db,
                         &lease,
                         &["settings.write"],
                         || cancellation.check(),
+                        origin
+                            .as_ref()
+                            .map(|origin| origin as &dyn crate::services::operations::Authority),
                         |conn| prepared.borrow().persist_on(conn),
                         |revision| {
                             prepared.borrow_mut().committed_revision(revision);
                             Ok(())
                         },
-                    )
-                };
-                match &origin {
-                    Some(origin) => origin.with_current(persist)?,
-                    None => persist()?,
-                };
+                    )?;
                 encode(prepared.into_inner().finish_preferences()?)
             })
             .await

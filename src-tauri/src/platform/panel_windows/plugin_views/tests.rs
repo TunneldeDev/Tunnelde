@@ -1063,7 +1063,18 @@ fn mount_documentation_requires_committed_native_ownership() {
 
 #[test]
 fn host_metadata_writes_require_committed_exact_origin_and_retain_the_handoff_fence() {
-    for method in ["hosts.routes.save", "hosts.setFields"] {
+    for method in [
+        "hosts.routes.save",
+        "hosts.setFields",
+        "hosts.create",
+        "hosts.update",
+        "hosts.delete",
+        "hosts.markUsed",
+        "hosts.reorder",
+        "groups.create",
+        "groups.update",
+        "groups.delete",
+    ] {
         let mut f = Fixture::new();
         f.owned("source");
         let offer = f.offer();
