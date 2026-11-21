@@ -2858,8 +2858,6 @@
     "stateLossConfirm": "Reopen without view state",
     "actionInterrupted": "The coordinator reloaded during an action. Its outcome is unknown, so this panel is locked to prevent repetition. Check the resource state before restarting Tunnelde to clear the safety lock.",
     "moveToGroup": "Move to group {{index}}",
-    "inOtherWindow": "This panel is open in another window.",
-    "focusWindow": "Show window",
     "newWindow": "Move to a new window",
     "moveToWindow": "Move to window {{index}}",
     "returnToMainWindow": "Return to main window",
