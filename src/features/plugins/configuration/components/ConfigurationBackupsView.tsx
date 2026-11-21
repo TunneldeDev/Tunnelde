@@ -23,7 +23,10 @@ export function ConfigurationBackupsView({
   const { t } = useTranslation();
   const { client, useViewState } = services;
   const [opened, setOpened] = useViewState(`configuration:${plugin.id}:backupsOpen`, false);
-  const [backups, setBackups] = useState<ConfigurationBackup[]>([]);
+  const [backups, setBackups] = useViewState<ConfigurationBackup[]>(
+    `configuration:${plugin.id}:${plugin.fingerprint ?? ""}:backups`,
+    [],
+  );
   const [error, setError] = useState<string | null>(null);
   const [sequence, setSequence] = useState(0);
   useEffect(() => {
@@ -42,7 +45,7 @@ export function ConfigurationBackupsView({
     return () => {
       alive = false;
     };
-  }, [plugin.id, plugin.fingerprint, revision, sequence, pending, client]);
+  }, [plugin.id, plugin.fingerprint, revision, sequence, pending, client, setBackups]);
   return (
     <details
       className="plugin-configuration__backups"

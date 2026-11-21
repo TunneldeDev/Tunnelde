@@ -41,6 +41,15 @@ type Request =
       viewId: string;
       selectionRevision: number;
     }
+  | { action: "describePreferencesProvider"; target: NativePluginViewTarget }
+  | {
+      action: "openPreferencesProvider";
+      target: NativePluginViewTarget;
+      pluginId: string;
+      runtimeId: string;
+      viewId: string;
+      selectionRevision: number;
+    }
   | { action: "describeTasksProvider"; target: NativePluginViewTarget }
   | {
       action: "openTasksProvider";
@@ -287,6 +296,31 @@ export function createNativePluginViewClient(
       return acceptSession(
         await request<FrontendSession>({
           action: "openHostsProvider",
+          target,
+          pluginId: descriptor.view.pluginId,
+          runtimeId: descriptor.view.runtimeId,
+          viewId: descriptor.view.viewId,
+          selectionRevision: descriptor.selectionRevision,
+        }),
+      );
+    },
+    async describePreferencesProvider(target: NativePluginViewTarget) {
+      check();
+      const value = await request<NativeForwardingProviderDescriptor | null>({
+        action: "describePreferencesProvider",
+        target,
+      });
+      check();
+      return value;
+    },
+    async openPreferencesProvider(
+      target: NativePluginViewTarget,
+      descriptor: NativeForwardingProviderDescriptor,
+    ) {
+      check();
+      return acceptSession(
+        await request<FrontendSession>({
+          action: "openPreferencesProvider",
           target,
           pluginId: descriptor.view.pluginId,
           runtimeId: descriptor.view.runtimeId,

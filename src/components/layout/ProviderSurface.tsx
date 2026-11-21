@@ -218,7 +218,10 @@ export function ProviderSurface({
   const [renderedLease, setRenderedLease] = useState<object | null>(null);
   const mounted = useCallback(() => setRenderedLease(accessLease), [accessLease]);
   const nativeState =
-    target === "forwarding" || target === "backgroundTasks" || target === "hostList";
+    target === "forwarding" ||
+    target === "backgroundTasks" ||
+    target === "hostList" ||
+    target === "preferences";
   const panelController = usePanelViewController();
   const hostListFloating = target !== "hostList" || selected?.view.allowFloating !== false;
   useLayoutEffect(() => {

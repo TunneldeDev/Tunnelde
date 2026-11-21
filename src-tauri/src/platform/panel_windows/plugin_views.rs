@@ -26,6 +26,7 @@ struct View {
     panel_id: String,
     authority: Authority,
     provider: Option<provider::Binding>,
+    preferences_provider: Option<crate::plugins::frontend::native::Source>,
     hosts_provider: Option<crate::plugins::frontend::native::Source>,
     tasks_provider: Option<crate::plugins::frontend::native::Source>,
     preview_provider: Option<crate::plugins::frontend::native::Source>,
@@ -115,6 +116,7 @@ impl Ownership {
                 panel_id,
                 authority,
                 provider,
+                preferences_provider: None,
                 hosts_provider: None,
                 tasks_provider: None,
                 preview_provider: None,
@@ -325,6 +327,7 @@ mod host_provider;
 pub(crate) mod origin;
 #[cfg(not(windows))]
 pub(crate) mod pickers;
+mod preferences_provider;
 mod preview_provider;
 mod provider;
 mod task_provider;

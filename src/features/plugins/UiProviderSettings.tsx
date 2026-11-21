@@ -14,7 +14,7 @@ import type { FrontendProviderTarget } from "@/lib/extensions/contracts/frontend
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 
-export function UiProviderSettings({ expanded = false }: { expanded?: boolean }) {
+export function useMainUiProviderSettings() {
   const plugins = usePlugins((state) => state.items);
   const selections = useSettings((state) => state.settings.uiProviders);
   const [busy, setBusy] = useState(false);
@@ -72,12 +72,14 @@ export function UiProviderSettings({ expanded = false }: { expanded?: boolean })
       label: `${plugin.name} · ${view.title}`,
     })),
   }));
+  return { rows, busy, choose };
+}
+export function UiProviderSettings({ expanded = false }: { expanded?: boolean }) {
+  const binding = useMainUiProviderSettings();
   return (
     <UiProviderSettingsView
-      rows={rows}
-      busy={busy}
+      {...binding}
       expanded={expanded}
-      choose={choose}
       useViewState={useViewState}
       useBusyGuard={useBackgroundGuard}
     />

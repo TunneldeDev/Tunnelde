@@ -12,7 +12,7 @@ import {
   type PluginSourceServices,
 } from "./components/PluginSettingsSectionView";
 import { changePluginSources } from "./data/sourceMutations";
-const services: PluginSourceServices = {
+export const mainPluginSourceServices: PluginSourceServices = {
   useData() {
     const { config, configError, configLoading, ready } = useMarketplace();
     return { sources: config.sources, configError, configLoading, ready };
@@ -35,5 +35,5 @@ const services: PluginSourceServices = {
   renderRuntime: () => <NodeRuntimeSection />,
 };
 export function PluginSettingsSection() {
-  return <PluginSettingsSectionView services={services} />;
+  return <PluginSettingsSectionView services={mainPluginSourceServices} />;
 }

@@ -36,12 +36,20 @@ impl ProviderSelection {
             target: "hostList",
         }
     }
+    #[cfg(test)]
+    pub(crate) fn test_preferences_selection(revision: u64) -> Self {
+        Self {
+            revision,
+            target: "preferences",
+        }
+    }
     pub(crate) fn target(&self) -> &'static str {
         self.target
     }
     pub(crate) fn permissions(&self) -> &'static [&'static str] {
         match self.target {
             "hostList" => &["ui.trusted", "hosts.read"],
+            "preferences" => &["ui.trusted", "settings.read"],
             "filePreview" => &["ui.trusted", "filePreview.read"],
             "backgroundTasks" => &["ui.trusted", "backgroundTasks.read"],
             _ => &["ui.trusted", "hosts.read", "forwards.read"],
@@ -98,6 +106,14 @@ pub(crate) async fn selected_hosts_source(app: &AppHandle) -> AppResult<Option<S
     tokio::time::timeout(std::time::Duration::from_secs(15), resolve(app, "hostList"))
         .await
         .map_err(|_| AppError::validation("plugin.timeout"))?
+}
+pub(crate) async fn selected_preferences_source(app: &AppHandle) -> AppResult<Option<Source>> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        resolve(app, "preferences"),
+    )
+    .await
+    .map_err(|_| AppError::validation("plugin.timeout"))?
 }
 async fn resolve(app: &AppHandle, target: &'static str) -> AppResult<Option<Source>> {
     let state = app.state::<AppState>();

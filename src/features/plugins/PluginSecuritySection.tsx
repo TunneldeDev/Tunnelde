@@ -44,7 +44,7 @@ export function PluginRestrictedAction() {
   );
 }
 
-const services: PluginSecurityServices = {
+export const mainPluginSecurityServices: PluginSecurityServices = {
   useData() {
     const { state, ready, loading, busy, error, failure, recoveryDismissed } = usePluginSecurity();
     const plugins = usePlugins((s) => s.items);
@@ -59,5 +59,5 @@ const services: PluginSecurityServices = {
   dismissRecovery: () => usePluginSecurity.getState().dismissRecovery(),
 };
 export function PluginSecuritySection() {
-  return <PluginSecuritySectionView services={services} />;
+  return <PluginSecuritySectionView services={mainPluginSecurityServices} />;
 }

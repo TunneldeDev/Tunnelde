@@ -18,6 +18,7 @@ pub(crate) mod public;
 pub(crate) mod public_moves;
 pub(crate) mod public_panels;
 mod read_models;
+mod settings_pages;
 pub(crate) mod terminal;
 #[cfg(test)]
 mod tests;

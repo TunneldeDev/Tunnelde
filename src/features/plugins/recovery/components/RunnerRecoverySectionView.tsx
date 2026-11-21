@@ -120,7 +120,7 @@ function RecoveryPage({
 function RecoveryBrowser({ services }: { services: RunnerRecoveryServices }) {
   const { t } = useTranslation();
   const { client, useViewState } = services;
-  const [owners, setOwners] = useState<RecoveryOwners | null>(null),
+  const [owners, setOwners] = useViewState<RecoveryOwners | null>("recovery:owners", null),
     [owner, setOwner] = useViewState("recovery:owner", "");
   const [offset, setOffset] = useViewState("recovery:offset", 0),
     [error, setError] = useState<string | null>(null);
@@ -140,7 +140,7 @@ function RecoveryBrowser({ services }: { services: RunnerRecoveryServices }) {
     return () => {
       active = false;
     };
-  }, [client, setOwner]);
+  }, [client, setOwner, setOwners]);
   return (
     <div className="runner-recovery__browser">
       {error && <RecoveryError message={error} services={services} />}

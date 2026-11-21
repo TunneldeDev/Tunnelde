@@ -14,7 +14,7 @@ import {
 } from "./components/KeyboardShortcutsView";
 import { changeShortcutSettings } from "./data/shortcutMutations";
 const EMPTY = {};
-const services: KeyboardShortcutsServices = {
+export const mainKeyboardShortcutsServices: KeyboardShortcutsServices = {
   useData() {
     const plugins = usePlugins((s) => s.items);
     const definitions = useMemo(() => shortcutCommands(plugins), [plugins]);
@@ -55,5 +55,5 @@ const services: KeyboardShortcutsServices = {
   confirm: (options) => useDialogs.getState().confirm(options),
 };
 export function KeyboardShortcuts() {
-  return <KeyboardShortcutsView services={services} />;
+  return <KeyboardShortcutsView services={mainKeyboardShortcutsServices} />;
 }

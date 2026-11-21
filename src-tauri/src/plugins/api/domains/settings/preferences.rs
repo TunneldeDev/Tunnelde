@@ -13,14 +13,16 @@ pub(super) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     use crate::services::settings::{preferences, read, write};
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
     match method {
         "preferences.observe" => {
             let request: preferences::contracts::Observe = serde_json::from_value(params)
                 .map_err(|_| AppError::validation("plugin.api.invalid:params"))?;
             let worker = context.clone();
             encode(
-                read::observe(&context.app, request, move || {
-                    authorize(&worker, &["settings.read"])
+                read::observe(&context.app, request, move || match &origin {
+                    Some(origin) => origin.with_current(|| authorize(&worker, &["settings.read"])),
+                    None => authorize(&worker, &["settings.read"]),
                 })
                 .await?,
             )
@@ -34,8 +36,11 @@ pub(super) async fn dispatch(
             }
             let worker = context.clone();
             encode(
-                read::snapshot(&context.app, move || authorize(&worker, &["settings.read"]))
-                    .await?,
+                read::snapshot(&context.app, move || match &origin {
+                    Some(origin) => origin.with_current(|| authorize(&worker, &["settings.read"])),
+                    None => authorize(&worker, &["settings.read"]),
+                })
+                .await?,
             )
         }
         "preferences.update" => {
@@ -44,7 +49,11 @@ pub(super) async fn dispatch(
             let worker = context.clone();
             write(&context.app, move |writer| {
                 let state = worker.app.state::<AppState>();
-                authorize(&worker, &["settings.write"])?;
+                if let Some(origin) = &origin {
+                    origin.with_current(|| authorize(&worker, &["settings.write"]))?;
+                } else {
+                    authorize(&worker, &["settings.write"])?;
+                }
                 let prepared = writer.prepare_preferences(request)?;
                 let lease = crate::plugins::security::Lease {
                     id: worker.id.clone(),
@@ -54,17 +63,23 @@ pub(super) async fn dispatch(
                 };
                 let cancellation = prepared.cancellation();
                 let prepared = std::cell::RefCell::new(prepared);
-                state.plugins.security.with_authorized_database_then(
-                    &state.db,
-                    &lease,
-                    &["settings.write"],
-                    || cancellation.check(),
-                    |conn| prepared.borrow().persist_on(conn),
-                    |revision| {
-                        prepared.borrow_mut().committed_revision(revision);
-                        Ok(())
-                    },
-                )?;
+                let persist = || {
+                    state.plugins.security.with_authorized_database_then(
+                        &state.db,
+                        &lease,
+                        &["settings.write"],
+                        || cancellation.check(),
+                        |conn| prepared.borrow().persist_on(conn),
+                        |revision| {
+                            prepared.borrow_mut().committed_revision(revision);
+                            Ok(())
+                        },
+                    )
+                };
+                match &origin {
+                    Some(origin) => origin.with_current(persist)?,
+                    None => persist()?,
+                };
                 encode(prepared.into_inner().finish_preferences()?)
             })
             .await
