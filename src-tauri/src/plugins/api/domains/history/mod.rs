@@ -41,7 +41,7 @@ pub(in crate::plugins::api) async fn dispatch(
                     .map(|origin| origin as &dyn crate::services::operations::Authority),
                 |conn| {
                     crate::db::hosts::find_host(conn, &host_id)?;
-                    Ok(crate::db::history::record(conn, &host_id, &command)?)
+                    crate::db::history::record(conn, &host_id, &command)
                 },
                 move |entry| {
                     if entry.is_some() {
