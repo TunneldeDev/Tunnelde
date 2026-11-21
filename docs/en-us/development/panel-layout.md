@@ -1533,3 +1533,14 @@ document-local data/effect services. Main composition retains the real profiles,
 consent, plugin providers and specialized settings sections. This extraction does
 not admit settings to native windows: every custom section and draft/effect path
 must be adapted before exposing that entry; it is not a whole-store IPC proxy.
+
+Specialized preference controls (themes, file icons, host-list defaults, CSS and
+updates) also expose owner-independent renderers. Theme/color and host-list
+merges remain in the owner so an old displayed snapshot cannot overwrite newer
+unrelated values. CSS chooser/export, update installation and diagnostic
+navigation are explicit effects. Numeric inputs, custom update-source drafts and
+release-note expansion accept document-local view-state hooks; the native
+adapter must supply capture-aware hooks instead of recreating singleton stores.
+The terminal preview accepts the existing read-only terminal preference source.
+Profiles, proxy credentials, storage migration, shortcuts and plugin-provider
+sections still require complete adaptation before settings can move natively.

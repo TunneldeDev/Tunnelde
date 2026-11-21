@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 设置的主题、文件图标、主机列表默认值、CSS 和更新控件采用可注入的数据／操作接口，数字及更新源输入可保留未完成草稿；不提前开放尚未完整适配的设置独立窗口。Settings theme, file-icon, host-list, CSS and update controls accept explicit data/effects, with capture-ready numeric and update-source drafts; incomplete native settings windows remain unavailable.
+
 - 提取完整设置界面的渲染器与文档内副作用服务，保留原配置方案、专用板块和确认流程；设置独立窗口入口尚未开放。Extract the full settings renderer and document-local effect services while retaining profiles, custom sections and consent; native settings windows are not enabled yet.
 
 - 内置主机详情支持独立窗口往返，保留转发规则与组草稿，主机操作及转发写入按原资源所有权执行；使用旧式主机贡献者或已选转发提供者时暂留主窗。Builtin host details support native-window roundtrips with forwarding rule/group drafts retained and owner-scoped host/forwarding actions; legacy host contributions and selected forwarding providers stay in main for now.

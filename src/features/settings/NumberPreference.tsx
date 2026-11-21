@@ -1,4 +1,5 @@
-import { useId, useState } from "react";
+import { useId } from "react";
+import { useLocalControlState, type SettingsControlState } from "./components/controlState";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/form/Field";
 
@@ -12,6 +13,8 @@ interface NumberPreferenceProps {
   descriptionId?: string;
   unit?: string;
   onChange: (value: number) => void;
+  useViewState?: SettingsControlState;
+  stateKey?: string;
 }
 /** Keep incomplete input local; only a complete valid value becomes a preference. */
 export function NumberPreference({
@@ -24,12 +27,14 @@ export function NumberPreference({
   descriptionId,
   unit,
   onChange,
+  useViewState = useLocalControlState,
+  stateKey = `settings:number:${label}`,
 }: NumberPreferenceProps) {
   const { t } = useTranslation();
   const errorId = useId();
-  const [draft, setDraft] = useState<string | null>(null);
-  const [invalid, setInvalid] = useState(false);
-  const [sourceValue, setSourceValue] = useState(value);
+  const [draft, setDraft] = useViewState<string | null>(`${stateKey}:draft`, null);
+  const [invalid, setInvalid] = useViewState(`${stateKey}:invalid`, false);
+  const [sourceValue, setSourceValue] = useViewState(`${stateKey}:source`, value);
   if (sourceValue !== value) {
     setSourceValue(value);
     setDraft(null);
