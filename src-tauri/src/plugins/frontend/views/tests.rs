@@ -360,11 +360,26 @@ fn staged_snapshot_policy_is_explicit_not_name_or_permission_inference() {
         "hosts.routes.get",
         "hosts.routes.observe",
         "hosts.getFields",
+        "app.info",
+        "settings.get",
+        "history.list",
+        "forwards.list",
+        "forwards.groups.list",
+        "forwards.automation.list",
+        "tasks.list",
+        "tasks.status",
+        "tasks.readOutput",
+        "profiles.catalogue",
+        "profiles.observe",
+        "profiles.read",
+        "hosts.transfer.export",
+        "hosts.transfer.preview",
+        "storage.locations.observe",
+        "storage.recovery.observe",
     ] {
         assert!(super::super::native::call_policy(method).is_some_and(|p| p.staged()));
     }
     for method in [
-        "hosts.transfer.export",
         "mounts.rules.get.extra",
         "mounts.rules.save",
         "mounts.groups.observe",
