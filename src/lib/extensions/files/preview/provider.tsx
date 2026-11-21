@@ -35,23 +35,23 @@ export function guardFilePreviewProvider(
     },
     close() {
       check(true);
-      context.close();
+      return context.close();
     },
     retry() {
       check(true);
-      context.retry();
+      return context.retry();
     },
     dock() {
       check(true);
-      context.dock();
+      return context.dock();
     },
     undock() {
       check(true);
-      context.undock();
+      return context.undock();
     },
     selectProvider(providerId) {
       check(true);
-      context.selectProvider(providerId);
+      return context.selectProvider(providerId);
     },
   });
 }

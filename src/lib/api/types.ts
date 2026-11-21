@@ -67,6 +67,7 @@ export interface Settings {
   preloadCount: number;
   motion: MotionPreference;
   showStatusBar: boolean;
+  mountHostDetailsSelection: { pluginId: string; contributionId: string } | null;
   uiProviders: Partial<
     Record<
       | "hostList"
@@ -85,6 +86,7 @@ export interface Settings {
     >
   >;
   restoreWorkspace: boolean;
+  disconnectOnPanelClose: boolean;
   hostActivation: HostActivation;
   hostDirectConnect: boolean;
   terminalScrollback: number;
@@ -447,9 +449,24 @@ export interface RemoteStats {
   processes: RemoteProcess[];
   sampledAt: number;
 }
+export type TextEncoding =
+  | "utf-8"
+  | "utf-16le"
+  | "utf-16be"
+  | "gb18030"
+  | "gbk"
+  | "big5"
+  | "shift-jis"
+  | "euc-jp"
+  | "euc-kr"
+  | "windows-1252";
+
 export interface TextFile {
   content: string;
   size: number;
+  /** Older native builds omit these fields; current reads always provide them. */
+  encoding?: TextEncoding;
+  bom?: boolean;
 }
 export type PluginStatus = "stopped" | "running" | "failed";
 
@@ -461,8 +478,9 @@ export interface PluginCommand {
   title: string;
   keybindings?: string[];
   macKeybindings?: string[];
-  /** Explicit user invocation receives a document snapshot and returns {text}. */
-  editor?: { extensions: string[]; format?: boolean };
+  /** Explicit invocation receives a document snapshot. `syntax` is read-only highlighting;
+   * `format` returns replacement text and keeps the existing write permission contract. */
+  editor?: { extensions: string[]; format?: boolean; syntax?: boolean };
   fileMenu?: {
     sources: ("local" | "remote")[];
     kinds: ("file" | "directory")[];
@@ -471,10 +489,12 @@ export interface PluginCommand {
 }
 
 export interface PluginView {
+  /** Defaults to true. Only plugin-contributed views can disable floating. */
+  allowFloating?: boolean;
   id: string;
   title: string;
   location?: "sidebar" | "workspace";
-  kind?: "chat" | "blocks" | "component";
+  kind?: "chat" | "blocks" | "component" | "sharedMounts";
   icon?: string;
   provider?:
     | "hostList"
@@ -548,7 +568,15 @@ export interface NodeRuntimeInfo {
   issue: string | null;
 }
 
+export interface HostDetailsContribution {
+  id: string;
+  title: string;
+  viewId: string;
+  kind?: "mounts";
+}
+
 export interface PluginInfo {
+  hostDetails?: HostDetailsContribution[];
   hostFields?: HostFieldsSchema | null;
   configuration?: ConfigurationSchema | null;
   tags?: string[];

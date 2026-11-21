@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::error::{AppError, AppResult};
+use crate::services::files::text_encoding::{self, TextEncoding, TextSaveMode};
 use crate::state::AppState;
 
 mod admission;
@@ -18,6 +19,7 @@ mod artifacts;
 pub mod bandwidth;
 mod batch;
 mod compressed;
+pub(crate) mod directory;
 pub mod durable;
 mod lifecycle;
 #[cfg(windows)]
@@ -876,7 +878,7 @@ pub fn spawn_transfer(
     remove_source: bool,
     overwrite: bool,
 ) -> AppResult<String> {
-    spawn_transfer_inner(app, from, to, remove_source, overwrite, None).map(|task| task.id)
+    spawn_transfer_inner(app, from, to, remove_source, overwrite, None, None).map(|task| task.id)
 }
 
 pub(crate) fn spawn_plugin_transfer(
@@ -888,7 +890,7 @@ pub(crate) fn spawn_plugin_transfer(
 ) -> AppResult<String> {
     // Plugin transfers copy only; deleting the source requires a separate,
     // explicitly permitted file operation.
-    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner)).map(|task| task.id)
+    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner), None).map(|task| task.id)
 }
 
 /// Compatibility copy commands wait for the same journaled worker used by
@@ -931,7 +933,7 @@ pub(crate) fn start_copy(
     overwrite: bool,
     owner: Option<crate::plugins::security::Lease>,
 ) -> AppResult<TransferTask> {
-    spawn_transfer_inner(app, from, to, false, overwrite, owner)
+    spawn_transfer_inner(app, from, to, false, overwrite, owner, None)
 }
 
 /// Only the UI's confirmed local rename fallback uses this copy-based move.
@@ -956,7 +958,23 @@ pub(crate) fn start_local_move(
         true,
         overwrite,
         None,
+        None,
     )
+}
+
+/// Native file pages retain the original document/source authority in the
+/// actual transfer worker AND every queued mutation observation. Returning an
+/// asynchronous task ID or dropping a completion receiver never releases it.
+pub(crate) fn start_panel_transfer(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    remove_source: bool,
+    overwrite: bool,
+    origin: crate::services::operations::WorkLifetime,
+) -> AppResult<TransferTask> {
+    origin.with(|| Ok(()))?;
+    spawn_transfer_inner(app, from, to, remove_source, overwrite, None, Some(origin))
 }
 
 fn spawn_transfer_inner(
@@ -966,6 +984,7 @@ fn spawn_transfer_inner(
     remove_source: bool,
     overwrite: bool,
     owner: Option<crate::plugins::security::Lease>,
+    origin: Option<crate::services::operations::WorkLifetime>,
 ) -> AppResult<TransferTask> {
     if from.session == to.session && from.path == to.path {
         return Err(AppError::validation("sftp.samePath"));
@@ -997,6 +1016,16 @@ fn spawn_transfer_inner(
             .get_mut(&id)
             .ok_or_else(|| AppError::validation("sftp.transferBusy"))?
             .lease = Some(lease.clone());
+    }
+    if let Some(origin) = &origin {
+        if let Err(error) = app
+            .state::<AppState>()
+            .transfers
+            .bind_worker_origin(&id, origin.clone())
+        {
+            app.state::<AppState>().transfers.release(&id);
+            return Err(error);
+        }
     }
     let recorded = (|| -> AppResult<()> {
         let sessions = app.state::<AppState>().ssh.list();
@@ -1055,7 +1084,8 @@ fn spawn_transfer_inner(
     let transfer_id = id.clone();
     let (completed, completion) = tokio::sync::oneshot::channel();
     let receipt_app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    let origin = origin.unwrap_or_default();
+    tauri::async_runtime::spawn(origin.scope(async move {
         let app_handle = app.clone();
         let operation = run(
             &app_handle,
@@ -1087,7 +1117,7 @@ fn spawn_transfer_inner(
         finish(&app_handle, &transfer_id, &name, &outcome).await;
         notify_transfer_files(&app_handle, &from, &to, remove_source);
         let _ = completed.send(outcome.into_result());
-    });
+    }));
 
     Ok(TransferTask {
         id,
@@ -2786,6 +2816,9 @@ async fn run(
         Ok(observation) => observation,
         Err(error) => return Outcome::Failed(0, error),
     };
+    if let Err(error) = observation.authorize() {
+        return Outcome::from_result(Err(error), 0, cancel);
+    }
     let scheduler = app.state::<AppState>().transfers.scheduler.clone();
     let settings = app.state::<AppState>().settings();
     let archive_channels = options.durable && !options.overwrite && settings.transfer_optimization;
@@ -2811,6 +2844,9 @@ async fn run(
         Ok(permit) => permit,
         Err(error) => return Outcome::from_result(Err(error), 0, cancel),
     };
+    if let Err(error) = observation.authorize() {
+        return Outcome::from_result(Err(error), 0, cancel);
+    }
     phase(app, id, "preparing");
     let TransferOptions {
         remove_source,
@@ -3180,23 +3216,41 @@ const MAX_TEXT: u64 = 2 * 1024 * 1024;
 pub struct TextFile {
     pub content: String,
     pub size: u64,
+    pub encoding: TextEncoding,
+    pub bom: bool,
 }
 
-fn decode_text(bytes: Vec<u8>) -> AppResult<TextFile> {
+fn decode_text(bytes: Vec<u8>, mode: TextSaveMode) -> AppResult<TextFile> {
     let size = bytes.len() as u64;
     if size > MAX_TEXT {
         return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
-    let content =
-        String::from_utf8(bytes).map_err(|_| AppError::Ssh("sftp.unsupportedEncoding".into()))?;
-    if content.contains('\0') {
-        return Err(AppError::Ssh("sftp.binaryFile".into()));
+    let decoded = mode.decode(&bytes)?;
+    Ok(TextFile {
+        content: decoded.content,
+        size,
+        encoding: decoded.encoding,
+        bom: decoded.bom,
+    })
+}
+
+fn decode_written_text(bytes: Vec<u8>, mode: TextSaveMode) -> AppResult<TextFile> {
+    let size = bytes.len() as u64;
+    if size > MAX_TEXT {
+        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
-    Ok(TextFile { content, size })
+    let decoded = mode.decode_written(&bytes)?;
+    Ok(TextFile {
+        content: decoded.content,
+        size,
+        encoding: decoded.encoding,
+        bom: decoded.bom,
+    })
 }
 
 /// Read a local editor document with the same bounds and encoding checks as SFTP.
-pub async fn local_read_text(path: &str) -> AppResult<TextFile> {
+pub async fn local_read_text(path: &str, encoding: Option<&str>) -> AppResult<TextFile> {
+    let encoding = encoding.map(TextEncoding::parse).transpose()?;
     let path = Path::new(path);
     if !path.is_absolute() {
         return Err(AppError::validation("sftp.absolutePathRequired"));
@@ -3218,14 +3272,14 @@ pub async fn local_read_text(path: &str) -> AppResult<TextFile> {
         .take(MAX_TEXT + 1)
         .read_to_end(&mut bytes)
         .await?;
-    decode_text(bytes)
+    decode_text(bytes, TextSaveMode::editor_read(encoding))
 }
 
 /// Check the last loaded content before overwriting an existing local file.
 #[cfg(test)]
 pub async fn local_write_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
     // Internal tests run the same engine without an application journal.
-    local_editor::save_without_app(path, content, baseline).await
+    local_editor::save_without_app(path, content, baseline, TextEncoding::Utf8, false).await
 }
 
 fn validate_editor_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
@@ -3242,14 +3296,37 @@ fn validate_editor_text(path: &str, content: &str, baseline: &str) -> AppResult<
     Ok(())
 }
 
-pub async fn read_text(app: &AppHandle, session_id: &str, path: &str) -> AppResult<TextFile> {
+pub async fn read_text(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    encoding: Option<&str>,
+) -> AppResult<TextFile> {
+    let encoding = encoding.map(TextEncoding::parse).transpose()?;
     let sftp = session(app, session_id).await?;
-    let result = read_remote_text(&sftp, path).await;
+    let result = read_remote_text(&sftp, path, TextSaveMode::editor_read(encoding)).await;
     let _ = sftp.close().await;
     result
 }
 
-async fn read_remote_text(sftp: &SftpSession, path: &str) -> AppResult<TextFile> {
+/// Strict UTF-8 read for the public plugin file API. Unlike editor reads, a
+/// UTF-8 BOM remains part of the returned content and legacy bytes are rejected.
+pub(crate) async fn read_plugin_text(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+) -> AppResult<TextFile> {
+    let sftp = session(app, session_id).await?;
+    let result = read_remote_text(&sftp, path, TextSaveMode::utf8()).await;
+    let _ = sftp.close().await;
+    result
+}
+
+async fn read_remote_text(
+    sftp: &SftpSession,
+    path: &str,
+    mode: TextSaveMode,
+) -> AppResult<TextFile> {
     let metadata = sftp.metadata(path).await.map_err(map_sftp)?;
     if !metadata.is_regular() {
         return Err(AppError::validation("sftp.notRegularFile"));
@@ -3267,7 +3344,28 @@ async fn read_remote_text(sftp: &SftpSession, path: &str) -> AppResult<TextFile>
     let closed = reader.close().await;
     read?;
     closed?;
-    decode_text(bytes)
+    decode_text(bytes, mode)
+}
+
+async fn read_written_remote_text(
+    sftp: &SftpSession,
+    path: &str,
+    mode: TextSaveMode,
+) -> AppResult<TextFile> {
+    let metadata = sftp.metadata(path).await.map_err(map_sftp)?;
+    if !metadata.is_regular() || metadata.len() > MAX_TEXT {
+        return Err(AppError::validation("editor.metadataNotPreserved"));
+    }
+    let mut reader = sftp.open(path).await.map_err(map_sftp)?;
+    let mut bytes = Vec::new();
+    let read = (&mut reader)
+        .take(MAX_TEXT + 1)
+        .read_to_end(&mut bytes)
+        .await;
+    let closed = reader.close().await;
+    read?;
+    closed?;
+    decode_written_text(bytes, mode)
 }
 
 pub async fn write_text(
@@ -3276,63 +3374,83 @@ pub async fn write_text(
     path: &str,
     content: &str,
     baseline: Option<&str>,
+    options: &text_encoding::TextWriteOptions,
 ) -> AppResult<()> {
-    if content.len() as u64 > MAX_TEXT
-        || baseline.is_some_and(|value| value.len() as u64 > MAX_TEXT)
+    let mode = options.editor_mode()?;
+    let request = TextWriteRequest::new(path, content, baseline, mode);
+    if request.content.len() as u64 > MAX_TEXT
+        || request
+            .baseline
+            .is_some_and(|value| value.len() as u64 > MAX_TEXT)
     {
         return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
-    if content.contains('\0') {
+    if request.content.contains('\0') {
         return Err(AppError::Ssh("sftp.binaryFile".into()));
     }
-    if app
-        .state::<AppState>()
-        .native_saves
-        .save_if_ready(
-            app.clone(),
-            session_id.into(),
-            path.into(),
-            content.into(),
-            baseline.map(str::to_owned),
-        )
-        .await?
+    // The optional native helper accepts only BOM-less UTF-8 request text and
+    // has no encoding field. All other formats need the byte-safe SFTP path.
+    if request.mode.native_save_compatible()
+        && app
+            .state::<AppState>()
+            .native_saves
+            .save_if_ready(
+                app.clone(),
+                session_id.into(),
+                request.path.into(),
+                request.content.into(),
+                request.baseline.map(str::to_owned),
+            )
+            .await?
     {
         return Ok(());
     }
-    write_text_checked(
-        app,
-        session_id,
-        path,
-        content,
-        baseline,
-        remote_editor::policy::Native,
-    )
-    .await
+    write_text_checked(app, session_id, request, remote_editor::policy::Native).await
 }
 
 pub(crate) async fn write_text_checked(
     app: &AppHandle,
     session_id: &str,
-    path: &str,
-    content: &str,
-    baseline: Option<&str>,
+    request: TextWriteRequest<'_>,
     policy: impl remote_editor::policy::Policy,
 ) -> AppResult<()> {
-    if content.len() as u64 > MAX_TEXT || baseline.is_some_and(|s| s.len() as u64 > MAX_TEXT) {
-        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
-    }
-    if content.contains('\0') {
-        return Err(AppError::Ssh("sftp.binaryFile".into()));
-    }
     remote_editor::save(
         app.clone(),
-        session_id.into(),
-        path.into(),
-        content.into(),
-        baseline.map(str::to_owned),
+        remote_editor::SaveRequest {
+            session_id: session_id.into(),
+            host_id: String::new(),
+            address: String::new(),
+            path: request.path.into(),
+            content: request.content.into(),
+            mode: request.mode,
+            baseline: request.baseline.map(str::to_owned),
+        },
         policy,
     )
     .await
+}
+
+pub(crate) struct TextWriteRequest<'a> {
+    pub path: &'a str,
+    pub content: &'a str,
+    pub baseline: Option<&'a str>,
+    pub mode: TextSaveMode,
+}
+
+impl<'a> TextWriteRequest<'a> {
+    pub fn new(
+        path: &'a str,
+        content: &'a str,
+        baseline: Option<&'a str>,
+        mode: TextSaveMode,
+    ) -> Self {
+        Self {
+            path,
+            content,
+            baseline,
+            mode,
+        }
+    }
 }
 
 fn check_local_destination(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {
@@ -4588,7 +4706,10 @@ mod tests {
         let path = root.join("note.txt");
         std::fs::write(&path, "original").unwrap();
         let name = display_path(&path);
-        assert_eq!(local_read_text(&name).await.unwrap().content, "original");
+        assert_eq!(
+            local_read_text(&name, None).await.unwrap().content,
+            "original"
+        );
         local_write_text(&name, "short", "original").await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "short");
         std::fs::write(&path, "external").unwrap();
@@ -4605,15 +4726,15 @@ mod tests {
         assert!(!path.exists());
         std::fs::write(&path, b"binary\0text").unwrap();
         assert_eq!(
-            local_read_text(&name).await.unwrap_err().to_string(),
+            local_read_text(&name, None).await.unwrap_err().to_string(),
             "sftp.binaryFile"
         );
         std::fs::write(&path, vec![b'x'; MAX_TEXT as usize + 1]).unwrap();
         assert_eq!(
-            local_read_text(&name).await.unwrap_err().to_string(),
+            local_read_text(&name, None).await.unwrap_err().to_string(),
             "sftp.fileTooLarge"
         );
-        assert!(local_read_text("relative.txt").await.is_err());
+        assert!(local_read_text("relative.txt", None).await.is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -6187,8 +6308,9 @@ mod tests {
             state.delay_close.store(true, Ordering::SeqCst);
             let sftp = client(&root, state.clone()).await;
             let task_client = sftp.clone();
-            let operation =
-                tokio::spawn(async move { read_remote_text(&task_client, "note.txt").await });
+            let operation = tokio::spawn(async move {
+                read_remote_text(&task_client, "note.txt", TextSaveMode::editor(None, false)).await
+            });
             tokio::time::timeout(
                 std::time::Duration::from_secs(5),
                 state.close_started.notified(),
@@ -6232,24 +6354,40 @@ mod tests {
     }
 
     #[test]
-    fn text_decode_preserves_utf8_bytes_bom_and_line_endings() {
-        for original in ["", "hello\n", "\u{feff}中文 🌍\r\nnext\r\n", "literal �"] {
-            let decoded = decode_text(original.as_bytes().to_vec()).expect("UTF-8 text");
-            assert_eq!(decoded.content.as_bytes(), original.as_bytes());
+    fn text_decode_preserves_utf8_content_bom_metadata_and_line_endings() {
+        for (original, content, bom) in [
+            ("", "", false),
+            ("hello\n", "hello\n", false),
+            ("\u{feff}中文 🌍\r\nnext\r\n", "中文 🌍\r\nnext\r\n", true),
+            ("literal �", "literal �", false),
+        ] {
+            let decoded = decode_text(
+                original.as_bytes().to_vec(),
+                TextSaveMode::editor(None, false),
+            )
+            .expect("UTF-8 text");
+            assert_eq!(decoded.content, content);
             assert_eq!(decoded.size, original.len() as u64);
+            assert_eq!(decoded.encoding, TextEncoding::Utf8);
+            assert_eq!(decoded.bom, bom);
         }
     }
 
     #[test]
-    fn text_decode_rejects_non_utf8_instead_of_replacing_bytes() {
-        for bytes in [
-            vec![0xc4, 0xe3, 0xba, 0xc3],
-            vec![0xff, 0xfe, b'a', 0],
-            vec![0xe4, 0xb8],
-        ] {
-            let error = decode_text(bytes).expect_err("unsupported encoding");
-            assert_eq!(error.to_string(), "sftp.unsupportedEncoding");
-        }
+    fn text_decode_detects_common_legacy_encodings_and_rejects_invalid_explicit_input() {
+        let gb18030 = encoding_rs::GB18030.encode("中文").0;
+        let decoded = decode_text(gb18030.to_vec(), TextSaveMode::editor_read(None)).unwrap();
+        assert_eq!(decoded.content, "中文");
+        assert_eq!(decoded.encoding, TextEncoding::Gb18030);
+        assert_eq!(
+            decode_text(
+                vec![0xe4, 0xb8],
+                TextSaveMode::editor_read(Some(TextEncoding::Utf8)),
+            )
+            .unwrap_err()
+            .to_string(),
+            "sftp.unsupportedEncoding"
+        );
     }
 
     #[test]
@@ -6257,19 +6395,28 @@ mod tests {
         let mut bytes = vec![b'a'; 8192];
         bytes.push(0);
         assert_eq!(
-            decode_text(bytes).unwrap_err().to_string(),
+            decode_text(bytes, TextSaveMode::editor(None, false))
+                .unwrap_err()
+                .to_string(),
             "sftp.binaryFile"
         );
     }
 
     #[test]
     fn text_decode_checks_the_actual_file_size() {
-        let decoded = decode_text(vec![b'a'; MAX_TEXT as usize]).expect("at size limit");
+        let decoded = decode_text(
+            vec![b'a'; MAX_TEXT as usize],
+            TextSaveMode::editor(None, false),
+        )
+        .expect("at size limit");
         assert_eq!(decoded.size, MAX_TEXT);
         assert_eq!(
-            decode_text(vec![b'a'; MAX_TEXT as usize + 1])
-                .unwrap_err()
-                .to_string(),
+            decode_text(
+                vec![b'a'; MAX_TEXT as usize + 1],
+                TextSaveMode::editor(None, false),
+            )
+            .unwrap_err()
+            .to_string(),
             "sftp.fileTooLarge"
         );
     }

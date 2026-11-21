@@ -4,6 +4,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[cfg(test)]
 async fn copy_and_shutdown(
     mut reader: impl AsyncRead + Unpin,
     mut writer: impl AsyncWrite + Unpin,
@@ -14,6 +15,7 @@ async fn copy_and_shutdown(
     writer.shutdown().await
 }
 
+#[cfg(test)]
 pub(super) async fn bridge(
     remote: impl AsyncRead + AsyncWrite + Unpin,
     input: impl AsyncWrite + Unpin,
@@ -43,6 +45,63 @@ pub(super) async fn bridge(
                 ))?
         },
     }
+}
+
+/// Preserve the close owner through failed startup and process cancellation.
+/// Successful registry publication explicitly detaches only its creating work
+/// fence, not the channel, process or authenticated SSH session.
+pub(super) async fn bridge_owned(
+    mut channel: crate::ssh::channel::SplitChannel,
+    mut input: impl AsyncWrite + Unpin,
+    mut output: impl AsyncRead + Unpin,
+) -> std::io::Result<()> {
+    use russh::ChannelMsg;
+    use tokio::io::AsyncReadExt;
+    let result = {
+        let (reader, writer) = channel.parts();
+        let ended = tokio::sync::Notify::new();
+        let transfers = async {
+            tokio::try_join!(
+                async {
+                    loop {
+                        match reader.wait().await {
+                            Some(ChannelMsg::Data { data }) => input.write_all(&data).await?,
+                            Some(ChannelMsg::Eof | ChannelMsg::Close) | None => break,
+                            _ => {}
+                        }
+                    }
+                    ended.notify_one();
+                    input.shutdown().await
+                },
+                async {
+                    let mut bytes = [0; 32768];
+                    loop {
+                        let size = output.read(&mut bytes).await?;
+                        if size == 0 {
+                            break;
+                        }
+                        writer
+                            .data(&bytes[..size])
+                            .await
+                            .map_err(std::io::Error::other)?;
+                    }
+                    ended.notify_one();
+                    writer.eof().await.map_err(std::io::Error::other)
+                },
+            )?;
+            Ok(())
+        };
+        tokio::pin!(transfers);
+        tokio::select! {
+            result = &mut transfers => result,
+            () = ended.notified() => {
+                tokio::time::timeout(DRAIN_TIMEOUT, &mut transfers).await
+                    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "SSHFS peer kept its transport open after EOF"))?
+            },
+        }
+    };
+    channel.finish().await;
+    result
 }
 
 #[cfg(test)]

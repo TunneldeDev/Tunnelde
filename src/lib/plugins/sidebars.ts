@@ -12,7 +12,7 @@ export function pluginSidebars(plugins: PluginInfo[]) {
   return plugins.flatMap((plugin) =>
     plugin.runtime === "theme"
       ? []
-      : plugin.views
+      : (plugin.views ?? [])
           .filter((view) => !view.provider && view.location === "sidebar")
           .map((view) => ({
             ...view,

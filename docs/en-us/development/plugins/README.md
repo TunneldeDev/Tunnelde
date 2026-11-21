@@ -1,5 +1,9 @@
 # Plugins
 
+Host migration and isolated forwarding groups: [API](forwarding-groups.md).
+
+Interactive host-detail sections and mount contributor selection: [Host details](host-details.md).
+
 [简体中文](../../../zh-cn/development/plugins/README.md)
 
 Overview and compatibility: [English](../../guide/plugins.md) · [简体中文](../../../zh-cn/guide/plugins.md).
@@ -10,6 +14,8 @@ Required dependencies, approval and runtime readiness: [activation](activation.m
 
 Editor command and formatter contributions:
 [English](editor-plugins.md) · [简体中文](../../../zh-cn/development/plugins/editor-plugins.md).
+
+Editor syntax highlighting (experimental, read-only): [English](editor-syntax.md).
 
 Loaded buffer observation, paging and atomic edits: [editor buffer data](editor-buffers.md).
 
@@ -77,6 +83,9 @@ Diagnostic logs record the compatibility stage and these versions rather than
 only the internal error key. Installed plugins are independent of Node consent.
 
 ## SSHFS and data-only plugins (0.27.0+)
+
+See [shared mount APIs](mounts.md) for persistent rules, groups and dedicated connections.
+The older methods below retain per-plugin ownership.
 
 Mount providers can use the native mount panel, including declarative plugins that do not
 need Node. Connect a saved SSH host first,
@@ -150,7 +159,9 @@ hello/
 
 Runtime and engine requirements belong in manifest metadata and are shown by the
 marketplace. Use Rust semver version-range syntax for engine requirements. A
-`theme` runtime may contain themes, file icons or preview providers. Node commands
+`theme` runtime may contain themes, file icons or preview providers. Runtime
+plugins can register transient [file-list highlights](file-highlights.md) through
+`fileList.setHighlights`; no manifest field is required. Node commands
 may declare `keybindings`, `macKeybindings`, `editor` and `fileMenu` contributions;
 see [editor commands](editor-plugins.md) and the generated SDK for their
 validation rules. The host lists contributed bindings only while the plugin is
@@ -383,6 +394,7 @@ old cancellation cleanup affect a newer request. Completed remote effects are no
 | `app.read`, `app.openExternal`      | App/platform metadata; validated HTTP(S) browser links                                                                         |
 | `settings.read`, `settings.write`   | Read preferences; merge and validate preference patches                                                                        |
 | `hosts.read`, `hosts.write`         | Saved-host/group metadata, create/update/delete, order and usage                                                               |
+| `hosts.sshConfig.read`              | Preview host aliases, connection settings and identity paths from the local OpenSSH configuration                              |
 | `sessions.read`, `ssh.exec`         | Connected sessions; connect with normal host-key checks, disconnect, separate-channel command execution, terminal input/resize |
 | `fs.read`, `fs.write`               | Local directory listing, UTF-8 text reads/writes, file/folder creation, rename, copy and deletion                              |
 | `sftp.read`, `sftp.write`           | Corresponding remote file operations through existing SSH sessions                                                             |
@@ -651,8 +663,7 @@ them. Existing read-only views continue to work. See the hub plugin README for t
 ## Marketplace
 
 The official catalogue is `https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json`,
-maintained in the independent `TunneldeDev/tunnelde-hub` repository. The old `marketplace/index.json`
-is a compatibility snapshot for older clients. Settings → Plugins can add up to 20 sources
+maintained in `TunneldeDev/tunnelde-hub`. Settings → Plugins can add up to 20 sources
 including the official source. Custom sources are public HTTPS JSON catalogues and require an
 explicit trust confirmation. Disabling or removing a source keeps its installed plugins.
 Authentication-protected sources are outside this version's scope.
@@ -702,8 +713,6 @@ and include the repository LICENSE. In the hub, `npm run verify` checks catalogu
 algorithms and real JSON-RPC processes. `npm run package` produces ZIPs, SHA256SUMS and a
 catalogue under `artifacts/plugins/`. Push/PR CI and weekly published-asset audits run separately
 from desktop releases. Publish and verify versioned archives before merging registry changes.
-Legacy official-source configuration and package origins migrate to the hub while preserving
-custom sources and Node consent.
 
 ## Installing
 
@@ -784,6 +793,22 @@ Trusted components can compose the native file listing or render a paged replace
 
 The built-in host table accepts runtime-owned [typed plugin columns](host-columns.md), with user-controlled visibility, width, order and sorting.
 
+## OpenSSH import (experimental)
+
+`hosts.sshConfig.preview({ offset?, revision? })` requires `hosts.sshConfig.read` and uses the same importer as the welcome page. It reads the user's local OpenSSH config and supported `Include` files; the caller cannot supply a path. It does not return raw files, read private-key contents, run directives or open connections.
+
+Start with `{}`. The response is `{ found, revision, entries, total, nextOffset, issues }`. An entry has `alias`, `input`, `jumpAliases`, `issues` and `existingId`. `input` is a proposed host draft or `null`; nonempty `issues` mean the entry cannot be imported. Diagnostics and invalid route previews are bounded. Each page has at most 16 entries and may be shorter to fit the response budget. Pass `nextOffset` as `offset` with the same `revision` until `nextOffset` is `null`. `sshImport.changed` means the source changed; restart the preview. Saved-host matches are reevaluated on each call and at import.
+
+`hosts.sshConfig.import({ aliases, revision })` also requires `hosts.write`. It atomically saves the selected aliases and any supported `ProxyJump` dependencies, reuses matching saved hosts without editing them, and rejects conflicting or invalid selections. It returns `{ importedIds, skipped }`, including dependencies in both the created and reused counts, and publishes the same host invalidation as the welcome page.
+
+## Saved host routes (experimental)
+
+`hosts.routes.get({ hostId })` requires `hosts.read`. It returns `{ hostId, revision, route: { proxy, jumpHosts } }` for a saved host. `proxy` is a configured proxy ID, `direct`, `system`, or an empty string to inherit the application's SSH proxy. It never contains a proxy URL or credentials. `jumpHosts` lists saved host IDs in connection order.
+
+`hosts.routes.save({ hostId, expectedRevision, route })` also requires `hosts.write`. It validates and saves the route through the native host editor's persistence service. On `network.routeChanged`, read again and reconcile the edits. Saving a route does not modify credentials or reconnect existing sessions.
+
+`hosts.routes.observe({ hostId, revision? })` requires `hosts.read` and returns `{ revision, changed, snapshot }` immediately. A matching revision yields `snapshot: null`; otherwise `snapshot` is the current route. This also detects native editor changes. It observes the saved route and connection identity, not availability of proxies or jump hosts and not the runtime state of a connected session.
+
 ## Dynamic host sources (experimental)
 
 Plugins with `hosts.read` and `hosts.write` can publish runtime-owned discovery data with `hosts.setSource({ id, label, entries })` and remove it with `hosts.removeSource({ id })`. Each entry has a source-local `id`, `name`, `host`, `username`, optional `port` (22), `tags` and `note`. Credentials and private-key paths are rejected. A source allows 256 entries; a plugin allows 8 sources and 512 entries; the host allows 128 sources, 4096 entries and 4 MiB of source JSON. Each replacement also fits the shared 256 KiB request budget. Replacement is atomic; a failed validation leaves the previous source intact.
@@ -805,3 +830,8 @@ Use the returned `hostId` in `sessions.connect` or `workspace.openHost`. IDs bin
 - [Public profile writes and activation](profile-mutations.md)
 
 [Host quick-look preview API](file-preview.md).
+
+Contributed view entries may set `allowFloating: false` to opt out of the host's
+same-document floating presentation. Omission permits floating; all built-in
+pages and panels support it. This does not grant native-window ownership or
+resource permissions.

@@ -1,6 +1,43 @@
 //! Current-instance ownership and disposal; listener state remains authoritative.
 use super::*;
 impl ForwardRegistry {
+    /// One exact session transaction. The caller validates/removes its SSH
+    /// identity before ANY listener/ticket change. Cleanup is spawned before
+    /// returning and carries the initiating effect independently of delivery.
+    pub(crate) fn take_session<T>(
+        &self,
+        session: &str,
+        commit: impl FnOnce(&[String]) -> AppResult<T>,
+    ) -> AppResult<(T, Vec<StoppedForward>)> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        let ids: Vec<_> = active
+            .iter()
+            .filter(|(_, item)| item.session == session)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let result = commit(&ids)?;
+        self.invalidate(format!("session:{session}"));
+        let removed: Vec<_> = ids
+            .into_iter()
+            .filter_map(|id| active.remove(&id))
+            .collect();
+        drop(active);
+        let tasks = removed
+            .into_iter()
+            .map(|item| {
+                let work = crate::services::operations::WorkLifetime::current();
+                StoppedForward(Some(tauri::async_runtime::spawn(
+                    work.retirement().scope(item.shutdown()),
+                )))
+            })
+            .collect();
+        self.publish();
+        Ok((result, tasks))
+    }
+
     pub(super) fn remove_matching(
         &self,
         invalidation: Option<String>,
@@ -57,7 +94,12 @@ impl ForwardRegistry {
         id: &str,
         identity: &str,
     ) -> AppResult<StoppedForward> {
-        self.take_inner(id, Some(identity), Some((owner, generation)), || Ok(()))
+        self.take_inner(
+            id,
+            StopTarget::Snapshot(Some(identity)),
+            Some((owner, generation)),
+            || Ok(false),
+        )
     }
 }
 
@@ -71,6 +113,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let (cancel, _) = watch::channel(false);
         let item = ActiveForward {
+            work: crate::services::operations::WorkLifetime::current(),
             lifetime: None,
             admitted: Arc::new(AtomicBool::new(true)),
             identity: "instance".into(),
@@ -116,6 +159,7 @@ mod tests {
         registry.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                work: crate::services::operations::WorkLifetime::current(),
                 lifetime: None,
                 admitted: Arc::new(AtomicBool::new(true)),
                 identity: "replacement".into(),
@@ -140,5 +184,53 @@ mod tests {
             .finish()
             .await
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod automation_tests {
+    use super::*;
+    fn insert(registry: &ForwardRegistry, owner: Option<&str>) {
+        registry.active.lock().unwrap().insert(
+            "rule".into(),
+            ActiveForward {
+                work: crate::services::operations::WorkLifetime::current(),
+                lifetime: None,
+                admitted: Arc::new(AtomicBool::new(true)),
+                identity: "runtime".into(),
+                session: "ssh".into(),
+                owner: owner.map(str::to_owned),
+                generation: owner.map(|_| 1),
+                cancel: watch::channel(false).0,
+                listener: None,
+                remote: None,
+            },
+        );
+    }
+    #[tokio::test]
+    async fn recovery_snapshot_distinguishes_transport_loss_explicit_stops_and_plugin_ownership() {
+        let registry = ForwardRegistry::default();
+        insert(&registry, None);
+        let snapshot = || registry.inspect_automation(|read| read("rule")).unwrap();
+        let running = snapshot();
+        assert_eq!(running.session.as_deref(), Some("ssh"));
+        assert!(!running.plugin_owned);
+        registry.stop_session("ssh");
+        let interrupted = snapshot();
+        assert!(interrupted.session.is_none());
+        assert_eq!(running.stop_revision, interrupted.stop_revision);
+        registry.stop("rule").await.unwrap();
+        let stopped = snapshot();
+        assert_ne!(interrupted.stop_revision, stopped.stop_revision);
+        // Stops before network preparation must fence that preparation as well.
+        registry.stop("rule").await.unwrap();
+        assert_ne!(stopped.stop_revision, snapshot().stop_revision);
+        insert(&registry, Some("plugin"));
+        assert!(snapshot().plugin_owned);
+        registry.stop_generation("plugin", 1);
+        assert!(snapshot().session.is_none());
+        let before = snapshot().stop_revision;
+        registry.stop_all();
+        assert_ne!(before, snapshot().stop_revision);
     }
 }

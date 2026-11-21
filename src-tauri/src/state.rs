@@ -18,6 +18,7 @@ use crate::update::UpdateService;
 pub struct AppState {
     pub db: Database,
     pub(crate) vault: crate::vault::Vault,
+    pub(crate) host_imports: crate::services::hosts::transfer::runtime::Runtime,
     pub(crate) credentials: crate::services::credentials::Runtime,
     pub settings: RwLock<Settings>,
     /// Serializes read/validate/persist/publish for every settings writer.
@@ -28,7 +29,9 @@ pub struct AppState {
     pub ssh: SshManager,
     pub forwards: crate::ssh::forward::ForwardRegistry,
     pub(crate) forward_starts: crate::services::forwarding::start::ManagerState,
+    pub(crate) forward_automation: crate::services::forwarding::automation::Coordinator,
     pub mounts: crate::mounts::MountRegistry,
+    pub(crate) mount_runtime: crate::services::mounts::runtime::Coordinator,
     pub transfers: TransferRegistry,
     pub(crate) native_saves: std::sync::Arc<crate::ssh::files::native_save::runtime::Manager>,
     pub monitor: MonitorCache,
@@ -152,6 +155,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     )?;
 
     app.manage(AppState {
+        host_imports: Default::default(),
         db: database,
         vault,
         credentials,
@@ -163,7 +167,9 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         ssh: SshManager::default(),
         forwards: crate::services::forwarding::registry(app),
         forward_starts: Default::default(),
+        forward_automation: Default::default(),
         mounts: Default::default(),
+        mount_runtime: Default::default(),
         transfers,
         native_saves,
         monitor: MonitorCache::default(),

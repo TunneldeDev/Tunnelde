@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronLeft,
@@ -20,20 +20,112 @@ import {
   togglePluginTag,
   PLUGIN_PAGE_SIZE,
 } from "@/lib/plugins/discovery";
-import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
 import { supportsManifestVersion } from "@/lib/plugins/activation/compatibility";
 import { useMarketplace, boundTo, newerVersion } from "@/store/marketplace";
-import { usePlugins } from "@/store/plugins";
-import { useWorkspace } from "@/store/workspace";
-import { useNavigation } from "@/store/navigation";
 import { toast } from "@/store/toasts";
-import { LocalPluginInstall } from "./LocalPluginInstall";
-import { requestMarketInstall } from "./PluginDetailPage";
 import { PluginError } from "./PluginError";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { usePlugins } from "@/store/plugins";
+import { usePanelViewController, usePanelViewState } from "@/lib/panels/viewState";
+import { usePanelLeaseAction } from "@/lib/panels/interaction";
+import { translateError } from "@/lib/api/errors";
+import { pluginListSource } from "./panel/source";
+import { executePluginListCommand } from "./panel/actions";
+import {
+  validBrowserState,
+  pluginListKey,
+  type PluginBrowserData,
+  type PluginBrowserState,
+  type PluginListCommand,
+} from "./panel/model";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 
 export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
+  const controller = usePanelViewController();
+  const market = useMarketplace();
+  const [restored] = useState(() => controller?.read("plugins.browser", validBrowserState));
+  useLayoutEffect(() => {
+    if (restored) useMarketplace.setState(restored);
+  }, [restored]);
+  useLayoutEffect(
+    () =>
+      controller?.register("plugins.browser", () => {
+        const { query, tag, page, scope } = useMarketplace.getState();
+        return { query, tag, page, scope };
+      }),
+    [controller],
+  );
+  useLayoutEffect(
+    () => controller?.changed(),
+    [controller, market.query, market.tag, market.page, market.scope],
+  );
+  const data = useSyncExternalStore(pluginListSource.subscribe, pluginListSource.snapshot);
+  useEffect(() => {
+    void useMarketplace.getState().load();
+    void usePlugins.getState().load();
+  }, []);
+  const run = (command: PluginListCommand) => {
+    void executePluginListCommand(command).catch((e) => toast(translateError(e), "error"));
+  };
+  return (
+    <PluginsBrowser
+      sidebar={sidebar}
+      data={data}
+      state={market}
+      setQuery={market.setQuery}
+      setTag={market.setTag}
+      setPage={market.setPage}
+      setScope={market.setScope}
+      run={run}
+    />
+  );
+}
+export function WindowPluginsSection({ data }: { data: PluginBrowserData }) {
+  const [state, setState] = usePanelViewState<PluginBrowserState>(
+    "plugins.browser",
+    { query: "", tag: "", page: 0, scope: "market" },
+    validBrowserState,
+  );
+  const action = usePanelLeaseAction();
+  const run = (command: PluginListCommand) => {
+    const result = action({ kind: "plugins", command });
+    if (!result) {
+      toast(translateError(new Error("panel.window.staleOwner")), "error");
+      return;
+    }
+    void result.catch((e) => toast(translateError(e), "error"));
+  };
+  return (
+    <PluginsBrowser
+      sidebar
+      data={data}
+      state={state}
+      setQuery={(query) => setState((s) => ({ ...s, query, page: 0 }))}
+      setTag={(tag) => setState((s) => ({ ...s, tag, page: 0 }))}
+      setPage={(page) => setState((s) => ({ ...s, page }))}
+      setScope={(scope) => setState((s) => ({ ...s, scope, page: 0 }))}
+      run={run}
+    />
+  );
+}
+export function PluginsBrowser({
+  sidebar = false,
+  data,
+  state,
+  setQuery,
+  setTag,
+  setPage,
+  setScope,
+  run,
+}: {
+  sidebar?: boolean;
+  data: PluginBrowserData;
+  state: PluginBrowserState;
+  setQuery: (v: string) => void;
+  setTag: (v: string) => void;
+  setPage: (v: number) => void;
+  setScope: (v: PluginBrowserState["scope"]) => void;
+  run: (command: PluginListCommand) => void;
+}) {
   const { t, i18n } = useTranslation();
   const {
     config,
@@ -43,26 +135,14 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
     ready,
     configError,
     configLoading,
-    query,
-    tag,
-    page,
-    setPage,
-    scope,
+    items,
+    busyIds,
     tasks,
-    setQuery,
-    setScope,
-    load,
-  } = useMarketplace();
-  const items = usePlugins((s) => s.items),
-    busyIds = usePlugins((s) => s.busyIds),
-    loadPlugins = usePlugins((s) => s.load);
-  const active = useWorkspace((s) => s.activeId);
-  const [installRequest, setInstallRequest] = useState(0);
+    active,
+  } = data;
+  const { query, tag, page, scope } = state;
   const id = useId();
-  useEffect(() => {
-    void load();
-    void loadPlugins();
-  }, [load, loadPlugins]);
+  const target = (origin: string, id: string) => data.targets[pluginListKey(origin, id)]!;
   const sources = config.sources.filter((s) => s.enabled);
   const entries = sources.flatMap((source) =>
     (catalogues[source.id]?.entries ?? []).map((entry) => ({ entry, source })),
@@ -108,21 +188,16 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
     { key: "installed", label: t("plugins.installedTab"), count: items.length },
     { key: "updates", label: t("market.updates"), count: updates.length },
   ] as const;
-  const openSettings = () => {
-    useNavigation.getState().selectSettings("plugins");
-    useWorkspace.getState().openPage("settings");
-  };
   return (
     <section
       className={sidebar ? "plugins-sidebar" : "plugins-browser"}
       aria-label={t("settings.plugins")}
     >
-      <header className="sidebar__head plugins-sidebar__head">
-        <SidebarTitle view="plugins">{t("settings.plugins")}</SidebarTitle>
+      <PanelHeader view="plugins">
         <IconButton
           label={t("plugins.installTitle")}
           size="sm"
-          onClick={() => setInstallRequest((n) => n + 1)}
+          onClick={() => run({ operation: "localInstall" })}
         >
           <Plus size={14} />
         </IconButton>
@@ -131,20 +206,23 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
           size="sm"
           disabled={configLoading || loading.length > 0}
           onClick={() => {
-            void load(true);
-            void loadPlugins();
+            run({ operation: "refresh" });
           }}
         >
           <RefreshCw size={13} />
         </IconButton>
-        <IconButton label={t("market.manageSources")} size="sm" onClick={openSettings}>
+        <IconButton
+          label={t("market.manageSources")}
+          size="sm"
+          onClick={() => run({ operation: "settings" })}
+        >
           <Settings2 size={14} />
         </IconButton>
-        <SidebarDockControls view="plugins" />
-      </header>
+      </PanelHeader>
       <div className="sidebar__search">
         <SearchField
           aria-label={t("plugins.search")}
+          data-panel-focus="plugins.search"
           filterKeys={["tag", "name", "id", "author"]}
           placeholder={t("market.queryHint")}
           value={query}
@@ -200,6 +278,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
       </div>
       <OverlayScrollArea
         className="plugins-browser__list"
+        data-panel-scroll="plugins.list"
         role="tabpanel"
         id={`${id}-list`}
         aria-labelledby={`${id}-${scope}`}
@@ -228,7 +307,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
         {configError ? (
           <div className="plugins-sidebar__empty">
             <PluginError message={configError} />
-            <Button size="sm" onClick={() => void load(true)}>
+            <Button size="sm" onClick={() => run({ operation: "refresh" })}>
               {t("market.retry")}
             </Button>
           </div>
@@ -240,7 +319,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                   <strong>{s.name}</strong>
                   <p>{t("plugins.marketplaceUnavailable")}</p>
                   <PluginError message={errors[s.id]!} />
-                  <Button size="sm" onClick={() => void load(true)}>
+                  <Button size="sm" onClick={() => run({ operation: "refresh" })}>
                     {t("market.retry")}
                   </Button>
                 </div>
@@ -289,8 +368,8 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                 type="button"
                 className="extension-row__open"
                 aria-current={active === tabId ? "page" : undefined}
-                onClick={() => useWorkspace.getState().openPluginDetail(origin, info.id, info.name)}
-                onDoubleClick={() => useWorkspace.getState().keepTab(tabId)}
+                onClick={() => run({ operation: "open", target: target(origin, info.id) })}
+                onDoubleClick={() => run({ operation: "keep", target: target(origin, info.id) })}
               >
                 {info.runtime === "theme" ? (
                   <Palette size={29} aria-hidden="true" />
@@ -322,7 +401,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                           filter.values.includes(value.toLocaleLowerCase()),
                       )}
                       onClick={() => {
-                        useMarketplace.getState().setTag("");
+                        setTag("");
                         setQuery(togglePluginTag(query, value));
                       }}
                     >
@@ -343,7 +422,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                     size="sm"
                     variant="primary"
                     disabled={busy || !supportsManifestVersion(entry.apiVersion)}
-                    onClick={() => requestMarketInstall(entry, source, update)}
+                    onClick={() => run({ operation: "install", target: target(origin, info.id) })}
                   >
                     {t(busy ? "plugins.installing" : update ? "market.update" : "plugins.install")}
                   </Button>
@@ -385,12 +464,11 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
           size="sm"
           variant="ghost"
           leading={<FolderOpen size={13} />}
-          onClick={() => void api.pluginOpenDir().catch((e) => toast(translateError(e), "error"))}
+          onClick={() => run({ operation: "openDirectory" })}
         >
           {t("plugins.openFolder")}
         </Button>
       </div>
-      <LocalPluginInstall request={installRequest} />
     </section>
   );
 }

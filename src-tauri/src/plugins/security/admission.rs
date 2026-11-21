@@ -72,7 +72,7 @@ impl PluginSecurity {
         }
     }
 
-    pub(in crate::plugins) fn with_authorized_database<T>(
+    pub(crate) fn with_authorized_database<T>(
         &self,
         db: &Database,
         lease: &Lease,

@@ -34,6 +34,7 @@ pub(crate) fn page(
 
 pub(super) fn join(entry: RevisionedRule, active: Option<(String, String)>) -> RevisionedInfo {
     RevisionedInfo {
+        group_id: entry.group_id,
         runtime_id: active.as_ref().map(|(_, identity)| identity.clone()),
         revision: entry.revision,
         info: ForwardInfo {

@@ -3,7 +3,9 @@ use crate::{
     error::{AppError, AppResult},
     ssh::session::ClientHandler,
 };
-use russh::{client, ChannelMsg, ChannelStream};
+#[cfg(test)]
+use russh::ChannelStream;
+use russh::{client, ChannelMsg};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
@@ -25,19 +27,19 @@ async fn open<H: client::Handler + 'static>(
     .await
 }
 
-pub(super) async fn prepare(
+pub(super) async fn prepare_owned(
     handle: Arc<client::Handle<ClientHandler>>,
-) -> AppResult<ChannelStream<client::Msg>> {
+) -> AppResult<crate::ssh::channel::OwnedChannel> {
     static REQUESTS: std::sync::OnceLock<Arc<Semaphore>> = std::sync::OnceLock::new();
     let permits = REQUESTS.get_or_init(|| Arc::new(Semaphore::new(8)));
-    prepare_with_budget(handle, permits.clone(), TIMEOUT).await
+    prepare_owned_with_budget(handle, permits.clone(), TIMEOUT).await
 }
 
-async fn prepare_with_budget<H: client::Handler + 'static>(
+async fn prepare_owned_with_budget<H: client::Handler + 'static>(
     handle: Arc<client::Handle<H>>,
     permits: Arc<Semaphore>,
     budget: Duration,
-) -> AppResult<ChannelStream<client::Msg>> {
+) -> AppResult<crate::ssh::channel::OwnedChannel> {
     let permit = permits
         .try_acquire_owned()
         .map_err(|_| AppError::validation("mounts.connectionBusy"))?;
@@ -51,7 +53,7 @@ async fn prepare_with_budget<H: client::Handler + 'static>(
         let mut diagnostic_bytes = 0usize;
         loop {
             match channel.wait().await {
-                Some(ChannelMsg::Success) => return Ok(pending.into_stream()),
+                Some(ChannelMsg::Success) => return Ok(pending),
                 Some(ChannelMsg::Failure) => {
                     return Err(AppError::validation("mounts.subsystemRejected"));
                 }
@@ -74,6 +76,17 @@ async fn prepare_with_budget<H: client::Handler + 'static>(
     })
     .await
     .map_err(|_| AppError::validation("mounts.negotiationTimeout"))?
+}
+
+#[cfg(test)]
+async fn prepare_with_budget<H: client::Handler + 'static>(
+    handle: Arc<client::Handle<H>>,
+    permits: Arc<Semaphore>,
+    budget: Duration,
+) -> AppResult<ChannelStream<client::Msg>> {
+    Ok(prepare_owned_with_budget(handle, permits, budget)
+        .await?
+        .into_stream())
 }
 
 #[cfg(test)]

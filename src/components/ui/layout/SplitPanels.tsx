@@ -1,10 +1,13 @@
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { SplitGeometryScope, useSplitGeometry, type SplitResizeBatch } from "./SplitGeometry";
+import { useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SplitDirection } from "@/lib/layout/types";
 import { usePointerDrag } from "@/lib/session/usePointerDrag";
 import { cn } from "@/lib/text/format";
 import "./splitPanels.css";
 
 export interface SplitPanelsProps {
+  splitId?: string;
+  onResizeBatch?: SplitResizeBatch;
   direction?: SplitDirection;
   ratio: number;
   onRatioChange: (ratio: number) => void;
@@ -24,7 +27,19 @@ export interface SplitPanelsProps {
 }
 
 /** Controlled geometry with frame-bound DOM previews; children and persistence update only on commit. */
-export function SplitPanels({
+export function SplitPanels(props: SplitPanelsProps) {
+  const scope = useSplitGeometry();
+  return scope ? (
+    <SplitPanelsContent {...props} />
+  ) : (
+    <SplitGeometryScope>
+      <SplitPanelsContent {...props} />
+    </SplitGeometryScope>
+  );
+}
+function SplitPanelsContent({
+  splitId,
+  onResizeBatch,
   direction = "row",
   ratio,
   onRatioChange,
@@ -43,6 +58,10 @@ export function SplitPanels({
   separatorClassName,
 }: SplitPanelsProps) {
   const panel = useRef<HTMLDivElement>(null);
+  const separatorRef = useRef<HTMLDivElement>(null);
+  const generatedId = useId();
+  const id = splitId ?? generatedId;
+  const scope = useSplitGeometry();
   const beginResize = usePointerDrag();
   const clamp = (value: number) =>
     Math.max(minRatio, Math.min(maxRatio, Number.isFinite(value) ? value : resetRatio));
@@ -62,9 +81,45 @@ export function SplitPanels({
     const next = clamp(value);
     if (next !== savedRatio.current) onChange.current(next);
   };
+  const preview = (value: number) => {
+    const root = panel.current;
+    if (!root) return;
+    root.style.setProperty("--td-split-ratio", String(value));
+    if (mode === "grid") {
+      if (horizontal) root.style.gridTemplateColumns = grid(value);
+      else root.style.gridTemplateRows = grid(value);
+    }
+    separatorRef.current?.setAttribute("aria-valuenow", String(Math.round(value * 100)));
+    scope?.invalidate();
+  };
+  const geometry = useRef({ preview, commit });
+  useLayoutEffect(() => {
+    geometry.current = { preview, commit };
+  });
+  useLayoutEffect(() => {
+    if (!scope || !panel.current || !separatorRef.current) return;
+    return scope.register({
+      id: generatedId,
+      splitId: id,
+      element: panel.current,
+      separator: separatorRef.current,
+      direction,
+      min: minRatio,
+      max: maxRatio,
+      reset: resetRatio,
+      ratio: () => savedRatio.current,
+      preview: (value) => geometry.current.preview(value),
+      commit: (value) => geometry.current.commit(value),
+      batch: onResizeBatch,
+    });
+  }, [scope, id, generatedId, direction, minRatio, maxRatio, resetRatio, onResizeBatch]);
+  useLayoutEffect(() => {
+    scope?.invalidate();
+  }, [scope, current]);
   const style: CSSProperties & { "--td-split-ratio": number; "--td-split-size": string } = {
     "--td-split-ratio": current,
     "--td-split-size": `${separatorSize}px`,
+    position: "relative",
     display: mode === "grid" ? "grid" : "flex",
     flexDirection: direction,
     ...(mode === "grid"
@@ -78,7 +133,7 @@ export function SplitPanels({
     overflow: "hidden",
   };
   return (
-    <div ref={panel} className={cn("td-split-panels", className)} style={style}>
+    <div data-split-id={id} ref={panel} className={cn("td-split-panels", className)} style={style}>
       {mode === "grid" ? (
         first
       ) : (
@@ -90,6 +145,7 @@ export function SplitPanels({
         </div>
       )}
       <div
+        ref={separatorRef}
         className={cn("td-split-panels__separator", separatorClassName)}
         role="separator"
         tabIndex={0}
@@ -109,14 +165,6 @@ export function SplitPanels({
           const handle = event.currentTarget;
           const origin = horizontal ? event.clientX : event.clientY;
           let latest = current;
-          const preview = (value: number) => {
-            root.style.setProperty("--td-split-ratio", String(value));
-            if (mode === "grid") {
-              if (horizontal) root.style.gridTemplateColumns = grid(value);
-              else root.style.gridTemplateRows = grid(value);
-            }
-            handle.setAttribute("aria-valuenow", String(Math.round(value * 100)));
-          };
           beginResize(event, {
             move: (next) => {
               const rect = root.getBoundingClientRect();

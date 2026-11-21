@@ -1,11 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { PanelHeader, useWorkbenchPanel } from "@/components/layout/WorkbenchPanel";
 import type { PluginSidebarView } from "@/lib/plugins/sidebars";
 import { parsePluginSidebar } from "@/lib/plugins/sidebars";
 import { usePlugins } from "@/store/plugins";
-import { useWorkspace } from "@/store/workspace";
-import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { PluginViewPage } from "./PluginViewPage";
 import { PluginError } from "./PluginError";
 import { pluginFailure } from "@/lib/plugins/errors";
@@ -18,22 +16,20 @@ export function PluginSidebarPanel({
   visible?: boolean;
 }) {
   const { t } = useTranslation();
+  const scope = useWorkbenchPanel();
   const reference = parsePluginSidebar(view)!;
   const plugin = usePlugins((state) => state.items.find((item) => item.id === reference.pluginId));
   const busy = usePlugins((state) => state.busyIds.includes(reference.pluginId));
   const starting = usePlugins((state) => state.startingIds.includes(reference.pluginId));
-  const docked = useWorkspace((state) => state.tabs.some((tab) => tab.id === sidebarTabId(view)));
   const contribution = plugin?.views.find(
     (item) => item.id === reference.viewId && item.location === "sidebar",
   );
   return (
-    <section className="plugin-sidebar-panel" aria-label={contribution?.title ?? reference.viewId}>
-      {!docked ? (
-        <header className="sidebar__head">
-          <SidebarTitle view={view}>{contribution?.title ?? reference.viewId}</SidebarTitle>
-          <SidebarDockControls view={view} />
-        </header>
-      ) : null}
+    <section
+      className="plugin-sidebar-panel"
+      aria-label={scope ? undefined : (contribution?.title ?? reference.viewId)}
+    >
+      <PanelHeader view={view} />
       {!plugin || !contribution ? (
         <p className="plugins-sidebar__empty">{t("pluginChat.missingView")}</p>
       ) : plugin.status !== "running" ? (

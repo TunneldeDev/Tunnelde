@@ -7,6 +7,7 @@ async fn local_text_reads_are_bounded_and_reject_nonregular_or_binary_inputs() {
     let file = root.join("note.txt");
     for (bytes, error) in [
         (b"hello".to_vec(), None),
+        (b"\xEF\xBB\xBFhello".to_vec(), None),
         (vec![b'x'; MAX_TEXT], None),
         (vec![b'x'; MAX_TEXT + 1], Some("plugin.api.fileTooLarge")),
         (vec![b'a', 0], Some("plugin.api.invalidText")),

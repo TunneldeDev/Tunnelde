@@ -222,6 +222,24 @@ pub(crate) async fn test_reviewed(
     .await
 }
 
+/// Native-only captured acquisition. Correlation/cancellation is owned by the
+/// caller's exact origin; its browser ID must NEVER become a global test ID.
+pub(crate) async fn test_captured(
+    app: &AppHandle,
+    target: &super::session::review::Target,
+    credentials: &HashMap<String, HopCredential>,
+) -> AppResult<ConnectionQuality> {
+    let state = app.state::<AppState>();
+    let id = uuid::Uuid::new_v4().to_string();
+    run_registered(
+        &state.ssh,
+        &id,
+        target.host_id(),
+        measure(target.host_id(), || target.probe(app, credentials), BUDGET),
+    )
+    .await
+}
+
 pub fn cancel(ssh: &SshManager, id: &str) {
     if uuid::Uuid::parse_str(id).is_err() {
         return;

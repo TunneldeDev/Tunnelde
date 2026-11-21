@@ -1,0 +1,28 @@
+.shared-mounts,
+.shared-mounts__group {
+  display: grid;
+  min-width: 0;
+  gap: 0.55rem;
+}
+
+.shared-mounts__group {
+  border-top: 1px solid var(--border);
+  padding-block: 0.55rem;
+}
+
+.shared-mounts__row,
+.shared-mounts__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.shared-mounts__row {
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+
+.shared-mounts__rule {
+  padding-inline-start: 0.65rem;
+}

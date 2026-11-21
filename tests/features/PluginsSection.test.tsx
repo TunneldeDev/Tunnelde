@@ -195,3 +195,17 @@ describe("installed plugins sidebar", () => {
     expect(mock.api.pluginInstall).not.toHaveBeenCalled();
   });
 });
+
+describe("plugins browser native scrolling", () => {
+  it("uses a native overflow container without a simulated rail or wheel interception", async () => {
+    render(<PluginsSidebar />);
+    await screen.findByText("Formatter", { selector: "strong" });
+    const list = document.querySelector<HTMLElement>(".plugins-browser__list")!;
+    expect(list.classList.contains("td-scroll-area")).toBe(true);
+    expect(list.querySelector(".td-scroll-area__track")).toBeNull();
+    expect(list.querySelector(".td-scroll-area__thumb")).toBeNull();
+    const wheel = new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true });
+    fireEvent(list, wheel);
+    expect(wheel.defaultPrevented).toBe(false);
+  });
+});

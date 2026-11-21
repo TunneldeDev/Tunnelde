@@ -1,3 +1,9 @@
+import {
+  decodeTerminalCheckpoint,
+  encodeTerminalCheckpoint,
+  type TerminalCheckpointWire,
+} from "@/features/terminal/terminalCheckpointCodec";
+import { isFloatingRect } from "@/lib/layout/floatingPanel";
 import { useEffect } from "react";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import { flushEditorDrafts } from "@/lib/editor/recovery/persistence";
@@ -28,6 +34,8 @@ import { useFileClipboard } from "@/store/fileClipboard";
 import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useTransferPanel } from "@/store/transferPanel";
+import { usePanelPresentations, panelPresentation } from "@/store/panelPresentation";
+import { sidebarViewOf } from "@/lib/session/sidebarDock";
 import { useRestartPrompt } from "@/store/restartPrompt";
 import {
   backgroundTasksBlockSuspension,
@@ -47,20 +55,25 @@ function captureNavigation() {
 }
 
 interface WindowSnapshot {
-  version: 1;
+  version: 1 | 2;
   workspace: ReturnType<typeof captureWorkspace>;
   navigation: ReturnType<typeof captureNavigation>;
   editors: ReturnType<typeof useEditors.getState>["entries"];
   editorHistory?: ReturnType<typeof editorHistorySnapshot>;
   sessions: ReturnType<typeof useSsh.getState>["sessions"];
+  sessionHistory?: ReturnType<typeof useSsh.getState>["history"];
   outputs: ReturnType<typeof usePlugins.getState>["outputs"];
   storageDraft: ReturnType<typeof useStorage.getState>["draft"];
   restartPrompt?: Pick<ReturnType<typeof useRestartPrompt.getState>, "observed">;
   monitorHistory: ReturnType<typeof useMonitorHistory.getState>["samples"];
   clipboard: ReturnType<typeof useFileClipboard.getState>["clip"];
   views: Record<string, unknown>;
-  terminals: Record<string, TerminalCheckpoint>;
+  terminals: Record<string, TerminalCheckpoint | TerminalCheckpointWire>;
   transferPanel?: Pick<ReturnType<typeof useTransferPanel.getState>, "open" | "pinned" | "bounds">;
+  panelPresentations?: Record<
+    string,
+    Pick<ReturnType<typeof useTransferPanel.getState>, "open" | "pinned" | "bounds">
+  >;
   backgroundTaskHistory?: ReturnType<typeof backgroundTaskHistory>;
 }
 
@@ -70,18 +83,28 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   if (!text) return false;
   const snapshot = decodeViewSnapshot<WindowSnapshot>(text);
   if (
-    snapshot.version !== 1 ||
+    ![1, 2].includes(snapshot.version) ||
     !Array.isArray(snapshot.workspace?.tabs) ||
     !snapshot.editors ||
     !snapshot.terminals
   ) {
     throw new Error("window.invalidSnapshot");
   }
+  // Validate the complete new terminal batch before restoring any main store.
+  const terminals =
+    snapshot.version === 2
+      ? Object.fromEntries(
+          Object.entries(snapshot.terminals).map(([id, value]) => [
+            id,
+            decodeTerminalCheckpoint(value, "background"),
+          ]),
+        )
+      : (snapshot.terminals as Record<string, TerminalCheckpoint>);
   restoreViewState(snapshot.views);
-  restoreTerminalCheckpoints(snapshot.terminals);
+  restoreTerminalCheckpoints(terminals);
   useEditors.setState({ entries: snapshot.editors });
   restoreEditorHistory(snapshot.editorHistory);
-  useSsh.setState({ sessions: snapshot.sessions });
+  useSsh.setState({ sessions: snapshot.sessions, history: snapshot.sessionHistory ?? [] });
   usePlugins.setState({ outputs: snapshot.outputs });
   useStorage.setState({ draft: snapshot.storageDraft });
   useRestartPrompt.setState({ observed: snapshot.restartPrompt?.observed ?? null, open: false });
@@ -90,6 +113,23 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   useWorkspace.setState(snapshot.workspace);
   useNavigation.setState(snapshot.navigation);
   if (snapshot.transferPanel) useTransferPanel.setState(snapshot.transferPanel);
+  if (snapshot.panelPresentations)
+    for (const [id, state] of Object.entries(snapshot.panelPresentations)) {
+      const view = sidebarViewOf(`sidebar:${id}`);
+      if (
+        view &&
+        state &&
+        typeof state === "object" &&
+        typeof state.open === "boolean" &&
+        typeof state.pinned === "boolean" &&
+        (state.bounds === null || isFloatingRect(state.bounds))
+      )
+        panelPresentation(view).setState({
+          open: state.open,
+          pinned: state.pinned,
+          bounds: state.bounds,
+        });
+    }
   if (snapshot.backgroundTaskHistory) restoreBackgroundTaskHistory(snapshot.backgroundTaskHistory);
   return true;
 }
@@ -140,7 +180,13 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
     await flushEditorDrafts();
     if (cancellation !== revision || busy()) return;
     const snapshot: WindowSnapshot = {
-      version: 1,
+      version: 2,
+      panelPresentations: Object.fromEntries(
+        Object.entries(usePanelPresentations.getState().panels).map(([id, state]) => [
+          id,
+          { open: !!state?.open, pinned: !!state?.pinned, bounds: state?.bounds ?? null },
+        ]),
+      ),
       backgroundTaskHistory: backgroundTaskHistory(),
       transferPanel: {
         open: useTransferPanel.getState().open,
@@ -152,7 +198,13 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
       editors: useEditors.getState().entries,
       editorHistory: editorHistorySnapshot(),
       sessions,
-      terminals,
+      sessionHistory: useSsh.getState().history,
+      terminals: Object.fromEntries(
+        Object.entries(terminals).map(([id, value]) => [
+          id,
+          encodeTerminalCheckpoint(value, "background"),
+        ]),
+      ),
       outputs: usePlugins.getState().outputs,
       storageDraft: useStorage.getState().draft,
       restartPrompt: { observed: useRestartPrompt.getState().observed },

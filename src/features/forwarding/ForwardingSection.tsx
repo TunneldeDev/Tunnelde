@@ -1,3 +1,9 @@
+import type { ComponentProps, ReactNode } from "react";
+import { connectionPromptHost, type ConnectionPromptHost } from "@/features/connect/prompt";
+import { PanelViewStateGroup, usePanelViewState } from "@/lib/panels/viewState";
+import { groupEditor as validGroupEditor, type ForwardGroupEditor } from "./model/viewState";
+import { ForwardGroupDialog } from "./components/ForwardGroupDialog";
+import { HelpHint } from "@/components/ui/form/HelpHint";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -5,10 +11,13 @@ import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { useDialogs } from "@/store/dialogs";
 import type { Host } from "@/lib/api/types";
 import { ForwardRuleEditor } from "./components/ForwardRuleEditor";
-import { ForwardingEntries } from "./components/ForwardingEntries";
 import { ForwardingSurface } from "./components/ForwardingSurface";
-import { connectForwardingProvider } from "@/lib/extensions/forwarding/authority";
-import { useForwardingController } from "./runtime/useForwardingController";
+import { ForwardGroups } from "./components/ForwardGroups";
+import {
+  useForwardingController,
+  type ConnectionRequest,
+  type ForwardingController,
+} from "./runtime/useForwardingController";
 import "./forwarding.css";
 
 export type { ForwardRule } from "./model/contract";
@@ -26,12 +35,58 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
         </Button>
       </section>
     );
-  return <SavedForwardingSection key={props.host.id} {...props} />;
+  return (
+    <ForwardingHostSection
+      {...props}
+      host={connectionPromptHost(props.host)}
+      renderSurface={(surface) => <ForwardingSurface {...surface} />}
+      renderConnection={(connection, controller) => (
+        <ConnectDialog
+          host={props.host}
+          after="background"
+          purpose="forwarding"
+          onClose={controller.closeConnection}
+          connectSession={(request, review) =>
+            controller.connectAndStart(connection, request, review)
+          }
+          onConnected={(connected) => controller.connected(connection, connected)}
+        />
+      )}
+    />
+  );
 }
-function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
+
+export interface ForwardingHostSectionProps {
+  host: ConnectionPromptHost;
+  embedded?: boolean;
+  renderSurface(props: ComponentProps<typeof ForwardingSurface>): ReactNode;
+  renderConnection(connection: ConnectionRequest, controller: ForwardingController): ReactNode;
+}
+/** The shared host UI accepts display metadata and explicit presentation
+ * services. A satellite never fabricates a writable Host or falls back to the
+ * main document's dialog/provider runtime. */
+export function ForwardingHostSection(props: ForwardingHostSectionProps) {
+  if (props.host.source) throw new Error("panel.window.unsupportedView");
+  return (
+    <PanelViewStateGroup key={props.host.id} name="forwarding-host">
+      <SavedForwardingSection {...props} />
+    </PanelViewStateGroup>
+  );
+}
+function SavedForwardingSection({
+  host,
+  embedded = false,
+  renderSurface,
+  renderConnection,
+}: ForwardingHostSectionProps) {
   const { t } = useTranslation();
   const controller = useForwardingController(host);
-  const { rules, loading, session, isActive, form, busy, failure, connectingRules } = controller;
+  const [groupEditor, setGroupEditor] = usePanelViewState<ForwardGroupEditor>(
+    "group-editor",
+    null,
+    (value): value is ForwardGroupEditor => validGroupEditor(value, host.id),
+  );
+  const { rules, loading, session, canStart, form, busy, failure, connectingRules } = controller;
   return (
     <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
       <header className="forwarding__head">
@@ -45,13 +100,6 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
         </div>
         {!form ? (
           <div className="forwarding__tools">
-            <IconButton
-              label={t("forward.refresh")}
-              disabled={busy || loading}
-              onClick={controller.refresh}
-            >
-              <RefreshCw size={14} />
-            </IconButton>
             <Button
               size="sm"
               leading={<Plus size={14} />}
@@ -60,6 +108,22 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
             >
               {t("forward.add")}
             </Button>
+            <Button
+              size="sm"
+              leading={<Plus size={14} />}
+              disabled={busy || loading}
+              onClick={() => setGroupEditor({ hostId: host.id })}
+            >
+              {t("forward.addGroup")}
+            </Button>
+            <HelpHint label={t("forward.addGroup")}>{t("forward.groupHint")}</HelpHint>
+            <IconButton
+              label={t("forward.refresh")}
+              disabled={busy || loading}
+              onClick={controller.refresh}
+            >
+              <RefreshCw size={14} />
+            </IconButton>
           </div>
         ) : null}
       </header>
@@ -69,10 +133,8 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy || rules.every(isActive)}
-              onClick={() =>
-                controller.start(rules.filter((rule) => !isActive(rule)).map((rule) => rule.id))
-              }
+              disabled={busy || !rules.some(canStart)}
+              onClick={() => controller.start(rules.filter(canStart).map((rule) => rule.id))}
             >
               {t("forward.startAll")}
             </Button>
@@ -99,7 +161,9 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
         )}
       {form ? (
         <ForwardRuleEditor
+          key={`${host.id}:${form.id}:${form.revision ?? "new"}`}
           rule={form}
+          groups={controller.groups}
           hostName={host.name}
           busy={busy}
           error={failure?.target === "editor" ? failure.message : undefined}
@@ -107,39 +171,36 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           onCancel={controller.cancel}
         />
       ) : null}
-      <ForwardingSurface hostId={host.id} title={host.name} controller={controller}>
-        {loading ? (
+      {renderSurface({
+        hostId: host.id,
+        title: host.name,
+        controller,
+        children: loading ? (
           <p className="forwarding__empty" role="status">
             {t("common.loading")}
           </p>
-        ) : !rules.length && failure?.target !== "list" ? (
-          <div className="forwarding__empty">
-            <strong>{t("forward.noRules")}</strong>
-          </div>
         ) : (
-          <ForwardingEntries {...controller} />
-        )}
-      </ForwardingSurface>
+          <ForwardGroups
+            controller={controller}
+            hostId={host.id}
+            onEditGroup={(group) => setGroupEditor({ hostId: host.id, group })}
+          />
+        ),
+      })}
       {failure?.target === "list" ? (
         <p role="alert" className="td-field__error">
           {failure.message}
         </p>
       ) : null}
-      {connectingRules && (
-        <ConnectDialog
-          host={host}
-          after="background"
-          purpose="forwarding"
-          onClose={controller.closeConnection}
-          connectSession={
-            connectingRules.authority
-              ? (request, review) =>
-                  connectForwardingProvider(connectingRules.authority!, request, review)
-              : undefined
-          }
-          onConnected={(connected) => controller.connected(connectingRules, connected)}
+      {groupEditor && (
+        <ForwardGroupDialog
+          key={groupEditor.group?.id ?? "new"}
+          group={groupEditor.group}
+          hostId={host.id}
+          onClose={() => setGroupEditor(null)}
         />
       )}
+      {connectingRules && renderConnection(connectingRules, controller)}
     </section>
   );
 }

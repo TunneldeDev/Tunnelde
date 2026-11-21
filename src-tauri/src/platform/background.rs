@@ -28,7 +28,7 @@ fn enabled(app: &AppHandle) -> bool {
 }
 
 pub fn request(app: &AppHandle) {
-    if !enabled(app) {
+    if !enabled(app) || super::panel_windows::native::has_satellites(app) {
         return;
     }
     let Some(window) = app.get_webview_window("main") else {
@@ -265,18 +265,26 @@ pub async fn main_window_suspend(
     if snapshot.len() > MAX_SNAPSHOT_BYTES || !snapshot.starts_with('{') {
         return Err(AppError::validation("window.snapshotTooLarge"));
     }
-    if !enabled(&app) || window.is_visible()? {
+    if !enabled(&app)
+        || super::panel_windows::native::has_satellites(&app)
+        || window.is_visible()?
+    {
         return Ok(false);
     }
-    {
+    let committed = super::panel_windows::native::without_satellites(&app, || {
         let state = app.state::<BackgroundWindow>();
         let mut guard = state.0.lock().unwrap_or_else(|error| error.into_inner());
         if guard.request != Some(token) {
-            return Ok(false);
+            return false;
         }
         guard.request = None;
         guard.snapshot = Some(snapshot);
         guard.suspended = true;
+        true
+    })
+    .unwrap_or(false);
+    if !committed {
+        return Ok(false);
     }
     if let Err(error) = app.save_window_state(super::window::SAVED_STATE_FLAGS) {
         tracing::warn!(%error, "could not persist window geometry before suspension");

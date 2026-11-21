@@ -7,6 +7,7 @@ import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageRestartPlan, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
+import type { SshConfigPreview, SshConfigImportResult } from "./sshConfig";
 import type {
   ApplySettingsProfile,
   PortableSettings,
@@ -82,6 +83,9 @@ export interface OutputSnapshot {
 }
 
 export const api = {
+  sshConfigPreview: () => invoke<SshConfigPreview>("ssh_config_preview"),
+  sshConfigImport: (aliases: string[], revision: string) =>
+    invoke<SshConfigImportResult>("ssh_config_import", { aliases, revision }),
   editorDraftsRead: () => invoke<DraftSnapshot>("editor_drafts_read"),
   editorDraftsSave: (revision: string, drafts: EditorDraft[]) =>
     invoke<string>("editor_drafts_save", { revision, drafts }),
@@ -207,8 +211,8 @@ export const api = {
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
   knownHostsList: () => invoke<KnownHostEntry[]>("known_hosts_list"),
-  knownHostsForget: (host: string, port: number) =>
-    invoke<boolean>("known_hosts_forget", { host, port }),
+  knownHostsForget: (host: string, port: number, expected?: KnownHostEntry) =>
+    invoke<boolean>("known_hosts_forget", { host, port, ...(expected ? { expected } : {}) }),
 
   historyRecord: (hostId: string, command: string) =>
     invoke<HistoryEntry | null>("history_record", { hostId, command }),
@@ -303,7 +307,7 @@ export const api = {
       skipped: number;
     }>("files_search", { requestId, sessionId, root, query, content, selection }),
   filesSearchCancel: (requestId: string) => invoke<void>("files_search_cancel", { requestId }),
-  searchPreviewLocal: (path: string) => invoke<string>("search_preview_local", { path }),
+  searchPreviewLocal: (path: string) => invoke<TextFile>("search_preview_local", { path }),
   localHome: () => invoke<string>("local_home"),
   sftpMkdir: (sessionId: string, path: string) => invoke<void>("sftp_mkdir", { sessionId, path }),
   sftpRename: (sessionId: string, from: string, to: string, overwrite = false) =>
@@ -322,15 +326,44 @@ export const api = {
   localCopy: (from: string, to: string, overwrite = false) =>
     invoke<void>("local_copy", { from, to, overwrite }),
 
-  localReadText: (path: string) => invoke<TextFile>("local_read_text", { path }),
-  localWriteText: (path: string, content: string, baseline: string) =>
-    invoke<void>("local_write_text", { path, content, baseline }),
-  sftpReadText: (sessionId: string, path: string) =>
-    invoke<TextFile>("sftp_read_text", { sessionId, path }),
+  localReadText: (path: string, encoding?: string) =>
+    invoke<TextFile>("local_read_text", { path, encoding }),
+  localWriteText: (
+    path: string,
+    content: string,
+    baseline: string,
+    encoding: string,
+    bom: boolean,
+    baselineEncoding?: string,
+    baselineBom?: boolean,
+  ) =>
+    invoke<void>("local_write_text", {
+      path,
+      content,
+      baseline,
+      options: { encoding, bom, baselineEncoding, baselineBom },
+    }),
+  sftpReadText: (sessionId: string, path: string, encoding?: string) =>
+    invoke<TextFile>("sftp_read_text", { sessionId, path, encoding }),
   sftpSetupNativeSave: (sessionId: string, path: string) =>
     invoke<boolean>("sftp_setup_native_save", { sessionId, path }),
-  sftpWriteText: (sessionId: string, path: string, content: string, baseline?: string) =>
-    invoke<void>("sftp_write_text", { sessionId, path, content, baseline }),
+  sftpWriteText: (
+    sessionId: string,
+    path: string,
+    content: string,
+    baseline?: string,
+    encoding?: string,
+    bom?: boolean,
+    baselineEncoding?: string,
+    baselineBom?: boolean,
+  ) =>
+    invoke<void>("sftp_write_text", {
+      sessionId,
+      path,
+      content,
+      baseline,
+      options: { encoding, bom, baselineEncoding, baselineBom },
+    }),
 
   editorCleanupList: () => invoke<EditorCleanup[]>("editor_cleanup_list"),
   editorSaveCancel: (id: string) => invoke<void>("editor_save_cancel", { id }),

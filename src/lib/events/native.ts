@@ -18,16 +18,20 @@ import { createEventBus } from "./bus";
 import type { StatusBarSnapshot } from "@/lib/plugins/statusBar";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
 import type { HostDecorationSnapshot } from "@/lib/plugins/hostList";
+import type { FileHighlightSnapshot } from "@/lib/plugins/fileHighlights";
 import type { HostColumnsSnapshot } from "@/lib/hosts/columns";
 import type { FrontendActivation } from "@/lib/plugins/activation/contracts";
 
 export interface NativeEvents {
+  "mounts://changed": null;
+  "mounts://operation-changed": { id: string; revision: string };
   "plugin://activate-frontend": FrontendActivation;
   "plugin://configuration-changed": { pluginId: string; revision: string; schemaDigest: string };
   "plugin://host-columns-changed": HostColumnsSnapshot;
   "plugin://host-sources-changed": HostSourcesSnapshot;
   "hosts://fields-changed": { pluginId: string; hostId: string; revision: number };
   "plugin://host-list-changed": HostDecorationSnapshot;
+  "plugin://file-highlights-changed": FileHighlightSnapshot;
   "plugin://tab-bar-changed": TabBarSnapshot;
   "plugin://status-bar-changed": StatusBarSnapshot;
   "plugin://event": PluginEvent;

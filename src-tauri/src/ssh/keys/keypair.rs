@@ -24,7 +24,8 @@ impl Drop for Staging {
     }
 }
 
-pub(super) fn ensure_keypair(directory: &Path) -> AppResult<(PathBuf, String)> {
+#[cfg(test)]
+fn ensure_keypair(directory: &Path) -> AppResult<(PathBuf, String)> {
     ensure_with(directory, |_| Ok(()))
 }
 
@@ -37,7 +38,7 @@ fn regular(path: &Path) -> AppResult<bool> {
     }
 }
 
-fn ensure_with(
+pub(super) fn ensure_with(
     directory: &Path,
     before_publication: impl FnOnce(&Path) -> AppResult<()>,
 ) -> AppResult<(PathBuf, String)> {

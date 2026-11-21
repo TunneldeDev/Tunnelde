@@ -7,7 +7,9 @@ import { preferencePaths } from "@/lib/preferences/mapping";
 export function protectedPreference(definition: SettingDefinition): boolean {
   return (
     definition.key === "editorDraftRecovery" ||
-    ["uiProviders", "network", "shortcuts", "shortcutRules"].includes(definition.kind)
+    ["uiProviders", "mountHostDetails", "network", "shortcuts", "shortcutRules"].includes(
+      definition.kind,
+    )
   );
 }
 

@@ -43,6 +43,47 @@ passwords. Exported metadata includes proxy usernames and addresses. Importing o
 another computer requires entering its proxy passwords again. Deleting a proxy or
 resetting Network preferences forgets the removed profiles' stored passwords.
 
+## Import and export host configuration
+
+The **+** menu in the host panel offers **New host**, **Import SSH config** and
+**Import Tunnelde hosts**. **Export hosts** beside it opens a searchable selection
+for one or multiple hosts; each saved host's menu also offers export. Files include
+selected hosts, required jump hosts, proxies, folders, forwarding groups/rules and
+mount groups/rules. Choose whether to include saved passwords and private keys.
+Including credentials **requires encryption**; configuration-only exports can be
+plain or encrypted. Tokens, live sessions and custom plugin storage are excluded.
+
+Enter an export password, or leave it blank to generate a secure random password.
+Save the generated password and confirm before writing the file. The password is
+not stored in the export and cannot be recovered; send it separately from the file.
+Encrypted exports use Argon2id and authenticated XChaCha20-Poly1305 encryption.
+
+On another device, choose **Import Tunnelde hosts**. Encrypted files ask for the
+export password before showing a preview; older plain configuration files remain
+supported. Imported private keys go into managed storage, not source-device paths,
+and retain any original key encryption. Unsaved key passphrases and SSH Agent or
+hardware credentials must still be configured on the destination.
+
+Import previews skip matching names or address/port/username by default. Explicitly
+choose conflicting entries and dependencies as copies; all relationships receive
+fresh IDs. If system credential saving fails after hosts are created, use **Retry
+saving credentials**; do not import again. Closing the dialog discards pending
+secret material; credentials can then be configured manually in host/proxy settings.
+Import contexts expire after ten idle minutes. Files are limited to 64 MiB,
+configuration to 4 MiB, and individual private keys to 1 MiB.
+
+Review destination mount points. Imports do not connect or start rules. Forwarding
+startup preferences take effect on the next launch; system proxy selection uses
+the destination device's environment.
+
+## Import SSH config
+
+Choose **Import SSH config** on the welcome page or from the host panel’s **+** menu to preview this computer's
+`~/.ssh/config`, then import the selected named hosts and required jump hosts.
+Existing entries are preserved. Keys remain references to their original paths;
+unsupported options appear beside the affected host for manual configuration.
+Refresh the preview if the source changes before importing.
+
 ## SSH jump hosts
 
 Edit a saved host and expand **Proxy & jump hosts**. Choose a proxy and add saved
@@ -56,7 +97,7 @@ authenticated SSH `direct-tcpip` channels. Every hop retains its own password/ke
 authentication and host-key check. The connection dialog names the machine whose
 key is being reviewed, asks for any missing jump credentials, and verifies the
 destination before enabling Connect. Changing a route does not bypass key trust.
-SFTP, port forwards and SSHFS reuse the resulting authenticated connection.
+SFTP, port forwards and SSHFS use the same route and authentication checks.
 
 Each connection attempt captures the complete ordered route and its effective TCP
 proxy before opening a socket. Editing an address, username, authentication method,
@@ -476,9 +517,13 @@ select **Access a remote service** or **Share a local service**. The editor sepa
 the listening and service endpoints and names the computer that resolves each address.
 Names are optional and default to the service address and port. Choose **Save and
 start**, or **Save** to keep an inactive rule. Starting creates a dedicated background
-SSH connection when needed, using normal credential and host-key verification. All
-ports under that host share this connection; **Start all** starts its inactive ports
-and **Disconnect** stops its connection and ports. Existing terminal connections
+SSH connection when needed, using normal credential and host-key verification.
+Create or rename groups under a host and select the group when editing a rule. Rules
+in one group share one dedicated session; each other group and each ungrouped rule
+uses a separate session. Existing rules are initially ungrouped. Stop a rule before
+moving it, and move all rules out before deleting a group. The last listener releases
+its dedicated connection when stopped; **Start all** starts its inactive ports
+and **Disconnect** stops all of that host’s forwarding connections and ports. Existing terminal connections
 remain independent, and no SSH session selector is required. The forwarding panel
 can be dragged into any workspace group, collapsed and restored with its layout intact.
 
@@ -510,11 +555,21 @@ forwarding connection before retrying. Interrupted cleanup also reserves its rem
 endpoint until cancellation finishes, preventing an older cleanup from closing a
 new listener on the same port.
 
-Rules persist, but listeners start manually after connecting. Loopback is the
-default; exposing a listener requires confirmation. Remote listeners depend on
+Each rule has independent **Start when the app opens** and **Retry automatically** switches,
+both off for existing rules. Startup uses saved credentials and trusted host keys. Retry alone
+requires a manual start first. Failed starts and lost SSH connections retry after 2, 4, 8, 16,
+32 and 60 seconds, then at most once per minute. Authentication or host-key failures show
+**Needs attention**; resolve the problem and start manually. Stopping a rule or disconnecting
+that host's forwarding connections pauses recovery for this application run. Starting manually
+arms retry again. These tasks run while the forwarding page is closed; revoked plugin resources
+are not automatically recovered. Loopback is the default; exposing a listener requires confirmation. Remote listeners depend on
 the SSH server's forwarding policy and `GatewayPorts`. Stopping a rule or closing
 its session stops its listener and existing forwarded connections. Rules owned by
 a plugin also stop when its permissions are revoked or its runtime exits.
+
+The bottom-left connection count appears beside the saved host count. Click it for the live
+session count and each session's purpose (terminal, background or forwarding), address,
+connection time and session ID. Multiple connections to the same host appear separately.
 
 ## SSHFS plugins
 

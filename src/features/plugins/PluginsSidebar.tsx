@@ -1,5 +1,11 @@
 import { PluginsSection } from "@/features/plugins/PluginsSection";
 
-export function PluginsSidebar() {
-  return <PluginsSection sidebar />;
+import { PluginPanelDialogs } from "./panel/PluginPanelDialogs";
+export function PluginsSidebar({ dialogs = true }: { dialogs?: boolean }) {
+  return (
+    <>
+      <PluginsSection sidebar />
+      {dialogs ? <PluginPanelDialogs /> : null}
+    </>
+  );
 }

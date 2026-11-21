@@ -115,6 +115,7 @@ pub fn forwarding_provider_disconnect(
         }) {
             return Err(AppError::validation("ssh.sessionMissing"));
         }
+        crate::services::forwarding::automation::pause_session(&app, &session_id);
         crate::ssh::disconnect(&app, &session_id).map(|_| ())
     })
 }

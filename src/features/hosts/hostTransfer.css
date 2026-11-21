@@ -1,0 +1,7 @@
+.host-transfer .td-dialog__foot {
+  flex-wrap: wrap;
+}
+
+.host-transfer__select-all {
+  margin-inline-end: auto;
+}

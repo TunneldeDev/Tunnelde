@@ -7,13 +7,33 @@ import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 import { useMonitor } from "@/store/monitor";
 
+import { recordSessionEvent, type SessionHistory } from "./sshHistory";
+
 const connections = new Map<string, Promise<SshSession | null>>();
-const disconnections = new Map<string, Promise<void>>();
+interface Disconnection {
+  promise: Promise<void>;
+  reportToast: boolean;
+  failed: boolean;
+  error?: unknown;
+}
+const disconnections = new Map<string, Disconnection>();
+// Each caller observes the shared operation's failure in its own window. A
+// coalesced request must not mistake another caller's failed disconnect for success.
+function observeDisconnection(entry: Disconnection, onError?: (error: unknown) => void) {
+  if (!onError) {
+    entry.reportToast = true;
+    return entry.promise;
+  }
+  return entry.promise.then(() => {
+    if (entry.failed) onError(entry.error);
+  });
+}
 let sessionVersion = 0;
 let snapshotVersion = 0;
 
 interface SshStore {
   sessions: SshSession[];
+  history: SessionHistory[];
   connectingHostId: string | null;
   connectingHostIds: string[];
   disconnectingSessionIds: string[];
@@ -25,13 +45,17 @@ interface SshStore {
     onError?: (error: unknown) => void,
     acquisition?: { key: string; connect: (request: SshConnectRequest) => Promise<SshSession> },
   ) => Promise<SshSession | null>;
-  disconnect: (sessionId: string) => Promise<void>;
-  forget: (sessionId: string) => void;
+  disconnect: (sessionId: string, onError?: (error: unknown) => void) => Promise<void>;
+  disconnectMany: (
+    sessionIds: readonly string[],
+  ) => Promise<{ closed: string[]; failed: string[] }>;
+  forget: (sessionId: string, reason?: string) => void;
   renameHost: (hostId: string, title: string) => void;
 }
 
 export const useSsh = create<SshStore>((set, get) => ({
   sessions: [],
+  history: [],
   connectingHostId: null,
   connectingHostIds: [],
   disconnectingSessionIds: [],
@@ -40,6 +64,7 @@ export const useSsh = create<SshStore>((set, get) => ({
     sessionVersion += 1;
     set((state) => ({
       sessions: [...state.sessions.filter((item) => item.id !== session.id), session],
+      history: recordSessionEvent(state.history, session, "connected"),
     }));
   },
 
@@ -60,7 +85,10 @@ export const useSsh = create<SshStore>((set, get) => ({
       if (sessionVersion === version && snapshotVersion === request) {
         const alive = new Set(sessions.map((session) => session.id));
         const ended = get().sessions.filter((session) => !alive.has(session.id));
-        set({ sessions });
+        let history = get().history;
+        for (const session of sessions) history = recordSessionEvent(history, session, "connected");
+        for (const session of ended) history = recordSessionEvent(history, session, "ended");
+        set({ sessions, history });
         for (const session of ended) {
           useMonitor.getState().forget(session.id);
           useWorkspace.getState().closeSession(session.id);
@@ -108,19 +136,39 @@ export const useSsh = create<SshStore>((set, get) => ({
     return operation;
   },
 
-  disconnect: (sessionId) => {
+  disconnect: (sessionId, onError) => {
     const existing = disconnections.get(sessionId);
-    if (existing) {
-      return existing;
-    }
-    set((state) => ({ disconnectingSessionIds: [...state.disconnectingSessionIds, sessionId] }));
+    if (existing) return observeDisconnection(existing, onError);
+    const session = get().sessions.find((item) => item.id === sessionId);
+    if (!session) return Promise.resolve();
+    set((state) => ({
+      disconnectingSessionIds: [...state.disconnectingSessionIds, sessionId],
+      history: recordSessionEvent(state.history, session, "disconnecting"),
+    }));
+    const entry: Disconnection = {
+      promise: Promise.resolve(),
+      reportToast: !onError,
+      failed: false,
+    };
     const operation = (async () => {
       try {
         await api.sshDisconnect(sessionId);
         get().forget(sessionId);
         useWorkspace.getState().closeSession(sessionId);
       } catch (error) {
-        toast(translateError(error), "error");
+        if (get().sessions.some((item) => item.id === sessionId)) {
+          set((state) => ({
+            history: recordSessionEvent(
+              state.history,
+              session,
+              "disconnectFailed",
+              translateError(error),
+            ),
+          }));
+        }
+        entry.failed = true;
+        entry.error = error;
+        if (entry.reportToast) toast(translateError(error), "error");
       } finally {
         disconnections.delete(sessionId);
         set((state) => ({
@@ -128,13 +176,36 @@ export const useSsh = create<SshStore>((set, get) => ({
         }));
       }
     })();
-    disconnections.set(sessionId, operation);
-    return operation;
+    entry.promise = operation;
+    disconnections.set(sessionId, entry);
+    return observeDisconnection(entry, onError);
   },
 
-  forget: (sessionId) => {
+  disconnectMany: async (sessionIds) => {
+    const ids = [...new Set(sessionIds)].filter((id) => get().sessions.some((s) => s.id === id));
+    let next = 0;
+    // Bound simultaneous native cleanup; one busy mount or failed disconnect
+    // does not stop the rest. Existing per-session deduplication still applies.
+    await Promise.all(
+      Array.from({ length: Math.min(4, ids.length) }, async () => {
+        while (next < ids.length) await get().disconnect(ids[next++]!);
+      }),
+    );
+    const live = new Set(get().sessions.map((session) => session.id));
+    return { closed: ids.filter((id) => !live.has(id)), failed: ids.filter((id) => live.has(id)) };
+  },
+
+  forget: (sessionId, reason) => {
     sessionVersion += 1;
     useMonitor.getState().forget(sessionId);
-    set((state) => ({ sessions: state.sessions.filter((item) => item.id !== sessionId) }));
+    set((state) => {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      return {
+        sessions: state.sessions.filter((item) => item.id !== sessionId),
+        history: session
+          ? recordSessionEvent(state.history, session, "ended", reason)
+          : state.history,
+      };
+    });
   },
 }));

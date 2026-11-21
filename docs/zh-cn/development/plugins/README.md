@@ -1,5 +1,9 @@
 # 插件
 
+主机迁移、转发分组及专用连接：[API](forwarding-groups.md)。
+
+可交互主机详情板块与挂载贡献者选择，详见[主机详情扩展](host-details.md)。
+
 现有文件浏览器的发现、分页和宿主操作：[实时浏览器数据](file-browser-data.md)。
 
 必需依赖、授权与运行就绪：[插件依赖与激活](activation.md)。
@@ -9,6 +13,8 @@
 概览与兼容性：[中文](../../guide/plugins.md) · [English](../../../en-us/guide/plugins.md)。
 API 兼容性与安全：[中文](api.md) · [English](../../../en-us/development/plugins/api.md)。
 编辑器命令与格式化贡献：[中文](editor-plugins.md) · [English](../../../en-us/development/plugins/editor-plugins.md)。
+
+编辑器语法高亮（实验性、只读）：[中文](editor-syntax.md)。
 
 主机元数据扩展采用独立的 Manifest 字段结构和修订检查存储，详见[插件主机字段](host-fields.md)。
 
@@ -51,6 +57,8 @@ AI 视图按用户轮次折叠中间消息、原生思考摘要和工具活动�
 纯主题包只含清单与配色，不启动进程，也不需要 Node。
 
 ## SSHFS 与声明式插件（0.27.0 起）
+
+共享持久规则、挂载组和专用连接见 [共享挂载 API](mounts.md)。下文旧接口保留原插件隔离行为。
 
 挂载提供者可使用原生挂载面板，声明式插件无需 Node。先连接已保存 SSH 主机，再选择连接、
 浏览远端目录，并选择空的本地目录或未使用的 Windows 盘符。默认只读；挂载需手动操作，
@@ -107,11 +115,14 @@ hello/
 | `engines`           | 否       | `tunnelde` 及 Node 插件的 `node` 版本范围      |
 | `tags`              | 否       | 搜索标签，如 `["files","preview"]`             |
 | `fileIconThemes`    | 否       | 声明式文件名、后缀与图标映射                   |
+| `fileList`          | 否       | 内置文件列表中的语义化运行时高亮               |
 | `filePreviews`      | 否       | 声明式后缀与预览渲染器映射                     |
 | `mountedFileReveal` | 否       | 允许通过自身挂载在本机文件浏览器定位远端路径   |
 
 运行环境与版本要求属于清单元数据，市场会直接显示。`engines` 使用 Rust semver 范围语法。
-`theme` 运行时可只提供配色、文件图标或预览。Node 命令可声明 `keybindings`、
+`theme` 运行时可只提供配色、文件图标或预览。运行时插件可通过
+`fileList.setHighlights` 注册临时的[文件列表高亮](file-highlights.md)，无需清单字段。
+Node 命令可声明 `keybindings`、
 `macKeybindings`、`editor` 和 `fileMenu`；验证规则见[编辑器贡献](editor-plugins.md)和 SDK。
 只有已安装插件的绑定才会显示。冲突可保留、选择一个，或跳到快捷键设置以
 `@is:conflict` 和 `@plugins:plugin-id,another-id` 筛选解决。
@@ -291,6 +302,7 @@ schema 允许新增字段和未知稳定性值，不代表其余方法均已有�
 | `app.read`、`app.openExternal`      | 应用/平台元数据、经验证 HTTP(S) 浏览器链接                        |
 | `settings.read`、`settings.write`   | 读取偏好、合并并校验补丁                                          |
 | `hosts.read`、`hosts.write`         | 主机/分组元数据及增删改、顺序和使用记录                           |
+| `hosts.sshConfig.read`              | 预览本机 OpenSSH 配置中的主机别名、连接设置和私钥路径             |
 | `sessions.read`、`ssh.exec`         | 连接列表、正常密钥验证后的连接、断开、独立通道命令、终端输入/尺寸 |
 | `fs.read`、`fs.write`               | 本地目录、UTF-8 读写、创建、重命名、复制、删除                    |
 | `sftp.read`、`sftp.write`           | 通过现有 SSH 连接进行对应远端文件操作                             |
@@ -471,7 +483,7 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 ## 插件市场
 
 官方索引为 `https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json`，
-在独立市场仓库维护。旧 `marketplace/index.json` 保留为老客户端兼容快照。
+由 `TunneldeDev/tunnelde-hub` 维护。以前的软件市场已停止支持。
 **设置 → 插件**含官方来源最多可配 20 个来源。自定义来源需公开 HTTPS JSON，并明确确认信任。
 禁用/移除来源不删除已安装插件；当前不支持需要认证的来源。
 
@@ -508,7 +520,7 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 向独立市场提交源码、清单、README 和重新生成的 `registry.json`。确定性归档包含根 LICENSE。
 `npm run verify` 校验目录、验证器、算法及真实 JSON-RPC 进程，`npm run package` 在
 `artifacts/plugins/` 生成 ZIP、SHA256SUMS 和索引。Push/PR 检查与每周已发布包审计独立于桌面发布。
-先发布并验证版本化归档，再合并索引。旧官方来源和包归属会迁移到独立市场，保留自定义来源与 Node 同意状态。
+先发布并验证版本化归档，再合并索引。
 
 ## 安装
 
@@ -573,6 +585,22 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 
 内置主机表格支持运行时归属的[插件数据列](host-columns.md)，用户可控制显隐、宽度、顺序和排序。
 
+## OpenSSH 导入（实验性）
+
+`hosts.sshConfig.preview({ offset?, revision? })` 要求 `hosts.sshConfig.read`，复用欢迎页的导入服务。它读取本机 OpenSSH 配置及支持的 `Include` 文件，插件不能指定读取路径。接口不返回原始文件，不读取私钥内容，不执行配置指令，也不建立连接。
+
+首次传入 `{}`，返回 `{ found, revision, entries, total, nextOffset, issues }`。条目包含 `alias`、`input`、`jumpAliases`、`issues` 和 `existingId`。`input` 是待保存的主机草稿或 `null`，存在条目级 `issues` 表示该条目不可导入。诊断和无效跳转路径的预览有长度限制。每页最多 16 条，响应过大时会返回更少条目。后续用 `nextOffset` 作为 `offset` 并携带原 `revision`，直到 `nextOffset` 为 `null`。收到 `sshImport.changed` 后从头预览。每次预览和导入都会重新检查已保存主机是否匹配。
+
+`hosts.sshConfig.import({ aliases, revision })` 还要求 `hosts.write`。它在一个事务中保存选中的主机和支持的 `ProxyJump` 依赖，复用匹配的主机而不修改原记录，遇到冲突或无效选择则整批拒绝。返回 `{ importedIds, skipped }`，分别记录新增 ID 和复用数量，两者都含依赖项。提交后发出与欢迎页导入相同的主机变更通知。
+
+## 主机连接路由（实验性）
+
+`hosts.routes.get({ hostId })` 要求 `hosts.read`，返回已保存主机的 `{ hostId, revision, route: { proxy, jumpHosts } }`。`proxy` 是代理配置 ID、`direct`、`system`，或表示继承应用 SSH 代理设置的空字符串，不含代理 URL 或凭据。`jumpHosts` 按连接顺序列出跳板主机 ID。
+
+`hosts.routes.save({ hostId, expectedRevision, route })` 还要求 `hosts.write`，复用原生主机编辑器的路由校验与保存逻辑。收到 `network.routeChanged` 时应重新读取并协调修改。保存路由不会修改凭据，也不会重连已有会话。
+
+`hosts.routes.observe({ hostId, revision? })` 要求 `hosts.read`，立即返回 `{ revision, changed, snapshot }`。版本相同则 `snapshot` 为 `null`，否则返回当前快照。原生编辑器的修改也会反映在版本中。此接口观察已保存的路由和连接标识，不检测代理或跳板机是否可用，也不报告活动会话状态。
+
 ## 动态主机来源（实验性）
 
 拥有 `hosts.read` 与 `hosts.write` 的插件可通过 `hosts.setSource({ id, label, entries })` 发布运行实例所属的发现清单，通过 `hosts.removeSource({ id })` 移除。条目包含来源内唯一的 `id`、`name`、`host`、`username`，以及可选的 `port`（默认 22）、`tags` 和 `note`。接口拒绝凭据和私钥路径。每个来源最多 256 条；每个插件最多 8 个来源、512 条；全局最多 128 个来源、4096 条及 4 MiB 来源 JSON。每次替换也须符合共享的 256 KiB 请求上限。替换是原子的，验证失败会保留上一份清单。
@@ -596,3 +624,6 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 - [公共 Profile 写入与启用](profile-mutations.md)
 
 [宿主快速预览 API](file-preview.md).
+
+插件视图条目可设置 `allowFloating: false`，禁用宿主的同文档小窗展示。省略则
+允许；所有内置页面和面板都支持小窗。此字段不授予原生窗口所有权或资源权限。

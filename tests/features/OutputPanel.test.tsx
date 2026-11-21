@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { OutputPanel } from "@/features/output/OutputPanel";
+import { useTabBarContent } from "@/store/tabBar";
 import { useNavigation } from "@/store/navigation";
 import {
   boundOutput,
@@ -231,3 +232,92 @@ it("preserves plain-text formatting for untimestamped and empty messages", async
     container.querySelector(".output-panel__lines")!.textContent!.trimEnd(),
   );
 });
+
+it("renders the full remote output controls without starting a satellite log reader and restores its filters", async () => {
+  const { OutputModelScope } = await import("@/lib/panels/outputModel");
+  const { PanelViewStateScope, createPanelViewState } = await import("@/lib/panels/viewState");
+  const remote = {
+    entries: [{ ...parseDiagnostic(diagnostic), id: 4 }],
+    truncated: false,
+    error: "",
+    info: null,
+    plugins: [],
+    sessionCount: 6,
+    refresh: vi.fn().mockResolvedValue(undefined),
+    clear: vi.fn(),
+    copy: vi.fn().mockResolvedValue(undefined),
+    openLatest: vi.fn().mockResolvedValue(undefined),
+    openDirectory: vi.fn().mockResolvedValue(undefined),
+  };
+  const state = createPanelViewState();
+  const tree = (controller: typeof state) => (
+    <OutputModelScope value={remote}>
+      <PanelViewStateScope controller={controller}>
+        <OutputPanel active />
+      </PanelViewStateScope>
+    </OutputModelScope>
+  );
+  const view = render(tree(state));
+  expect(api.logsOutputRead).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Copy displayed output" }));
+  expect(remote.copy).toHaveBeenCalledWith(expect.stringContaining("[WARN] [formatter]"));
+  expect(api.clipboardWriteText).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Clear displayed output" }));
+  expect(remote.clear).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
+  expect(remote.refresh).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open original log" }));
+  expect(remote.openLatest).toHaveBeenCalledOnce();
+  expect(api.openLatestLog).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter output…" }), {
+    target: { value: "@level:WARN failed" },
+  });
+  const capsule = state.capture();
+  expect(capsule.fields["output.query"]).toBe("@level:WARN failed");
+  view.unmount();
+  render(tree(createPanelViewState(capsule)));
+  expect((screen.getByRole("textbox", { name: "Filter output…" }) as HTMLInputElement).value).toBe(
+    "@level:WARN failed",
+  );
+  expect(api.logsOutputRead).not.toHaveBeenCalled();
+});
+
+it("bounds UTF-8 JSON including non-ASCII messages and metadata rather than only UTF-16 message lengths", () => {
+  const entry = {
+    ...parseDiagnostic(diagnostic),
+    id: 1,
+    domain: "中文".repeat(100),
+    message: '汉😀\\"'.repeat(2000),
+  };
+  const result = boundOutput(Array.from({ length: 2000 }, (_, i) => ({ ...entry, id: i })));
+  expect(result.omitted).toBe(true);
+  expect(result.entries.at(-1)?.id).toBe(1999);
+  expect(new TextEncoder().encode(JSON.stringify(result.entries)).length).toBeLessThanOrEqual(
+    1024 * 1024 + 2,
+  );
+});
+
+it.each([false, true])(
+  "keeps output actions only beside filters, without tab contributions (docked=%s)",
+  async (docked) => {
+    const { container } = render(<OutputPanel active docked={docked} />);
+    await screen.findByText(/plugin start failed · reason=/);
+    const toolbar = container.querySelector(".output-panel__filters")!;
+    expect(
+      useTabBarContent.getState().items.filter((item) => item.tabId === "sidebar:output"),
+    ).toEqual([]);
+    for (const label of [
+      "Follow latest output",
+      "Clear displayed output",
+      "Output actions",
+      "Output channel",
+      "Minimum log level",
+    ])
+      expect(screen.getByRole("button", { name: label }).closest(".output-panel__filters")).toBe(
+        toolbar,
+      );
+  },
+);

@@ -1,4 +1,6 @@
 import {
+  FileInput,
+  FileOutput,
   ChevronRight,
   FolderClosed,
   FolderPlus,
@@ -10,7 +12,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useViewState } from "@/lib/session/viewState";
+import { usePanelViewState } from "@/lib/panels/viewState";
+import { HostPanelScope, useHostPanel } from "@/features/hosts/panel/context";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -19,19 +22,9 @@ import { buildHostTree, type HostGroupNode } from "@/lib/hosts/tree";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
-import { copyText } from "@/lib/session/clipboard";
-import { connectHostDirectly } from "@/lib/session/connectHost";
-import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
-import { useHosts } from "@/store/hosts";
-import { useWorkspace } from "@/store/workspace";
-import { useSettings } from "@/store/settings";
-import { useSsh } from "@/store/ssh";
 import type { Group, Host } from "@/lib/api/types";
-import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
-import { useHostDecorations } from "@/store/hostDecorations";
-import { usePlugins } from "@/store/plugins";
-import { useHostColumns } from "@/store/hostColumns";
+import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import {
   builtinHostColumns,
   visibleHostColumns,
@@ -41,8 +34,6 @@ import {
 import { matchesHostQuery, parseHostQuery } from "@/lib/hosts/query";
 import { HostListViewMenu, HostTableHeader } from "./HostTable";
 import { HostRowFields } from "./HostRowFields";
-import { savedHostInput } from "@/lib/hosts/sources";
-import { hostMenuCommands, runHostMenuCommand } from "@/lib/plugins/hostMenu";
 import type { PluginContextCommand } from "@/lib/plugins/contextCommand";
 import {
   HostDecorationBadges,
@@ -52,25 +43,6 @@ import {
 } from "./HostDecorations";
 
 const HOST_MIME = "application/x-tunnelde-host";
-
-function connectTerminal(host: Host): void {
-  if (useSettings.getState().settings.hostDirectConnect) void connectHostDirectly(host);
-  else useDialogs.getState().openConnect(host, "terminal");
-}
-
-/** Single click and Enter follow the configured action. */
-function activateHost(host: Host): void {
-  switch (useSettings.getState().settings.hostActivation) {
-    case "details":
-      useWorkspace.getState().openHost(host, { preview: true });
-      return;
-    case "edit":
-      useDialogs.getState().openHost(host);
-      return;
-    default:
-      connectTerminal(host);
-  }
-}
 
 interface HostRowProps {
   host: Host;
@@ -96,23 +68,26 @@ function HostRow({
   details,
 }: HostRowProps) {
   const { t } = useTranslation();
-  const openHost = useWorkspace((state) => state.openHost);
-  const openHostDialog = useDialogs((state) => state.openHost);
-  const confirm = useDialogs((state) => state.confirm);
-  const toggleFavorite = useHosts((state) => state.toggleFavorite);
-  const deleteHost = useHosts((state) => state.deleteHost);
-  const createHost = useHosts((state) => state.createHost);
-  const moveHost = useHosts((state) => state.moveHost);
-  const removeHostTab = useWorkspace((state) => state.removeHost);
+  const { data, run, hostTarget, groupTarget } = useHostPanel();
+  const groups = data.groups;
+  const connecting = data.connecting.includes(host.id);
+  const decorations = data.decorations.find(([id]) => id === host.id)?.[1] ?? NO_HOST_DECORATIONS;
+  const command = (
+    operation:
+      | "open"
+      | "connect"
+      | "sftp"
+      | "edit"
+      | "export"
+      | "copySsh"
+      | "copyAddress"
+      | "installKey"
+      | "favorite"
+      | "delete"
+      | "saveCopy"
+      | "activate",
+  ) => void run({ operation, host: hostTarget(host.id) });
   const openMenu = useContextMenu((state) => state.open);
-  const openConnect = useDialogs((state) => state.openConnect);
-  const groups = useHosts((state) => state.groups);
-  const moveToGroup = useHosts((state) => state.moveToGroup);
-  const os = useSettings((state) => state.info?.os);
-  const connecting = useSsh((state) => state.connectingHostIds.includes(host.id));
-  const decorations = useHostDecorations(
-    (state) => state.byHost.get(host.id) ?? NO_HOST_DECORATIONS,
-  );
   const [over, setOver] = useState<"before" | "after" | null>(null);
   const row = useRef<HTMLDivElement>(null);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,60 +98,52 @@ function HostRow({
     [],
   );
 
-  const removeHost = () =>
-    confirm({
-      title: t("host.deleteTitle"),
-      body: t("host.deleteBody", { name: host.name }),
-      confirmLabel: t("common.delete"),
-      danger: true,
-      onConfirm: async () => {
-        if (await deleteHost(host.id)) {
-          removeHostTab(host.id);
-        }
-      },
-    });
-
-  const quote = (value: string): string => {
-    if (/^[A-Za-z0-9_.:@%[\]-]+$/.test(value)) return value;
-    return os === "windows"
-      ? `'${value.replaceAll("'", "''")}'`
-      : `'${value.replaceAll("'", `'"'"'`)}'`;
-  };
-  const address = `${host.username ? `${host.username}@` : ""}${host.host.includes(":") && !host.host.startsWith("[") ? `[${host.host}]` : host.host}`;
-  const command = [
-    "ssh",
-    ...(host.port !== 22 ? ["-p", String(host.port)] : []),
-    ...(host.username ? ["-l", quote(host.username)] : []),
-    ...(host.authMethod === "key" && host.keyPath ? ["-i", quote(host.keyPath)] : []),
-    "--",
-    quote(host.host),
-  ].join(" ");
   const builtinItems = [
-    { label: t("host.open"), onSelect: () => openHost(host) },
-    { label: t("terminal.connect"), onSelect: () => openConnect(host, "terminal") },
-    { label: t("sftp.title"), onSelect: () => openConnect(host, "sftp") },
+    { label: t("host.open"), onSelect: () => command("open") },
+    { label: t("terminal.connect"), onSelect: () => command("connect") },
+    { label: t("sftp.title"), onSelect: () => command("sftp") },
     {
       label: t("menu.edit"),
       separatorBefore: true,
       icon: <Pencil size={13} />,
-      onSelect: () => openHostDialog(host),
+      onSelect: () => command("edit"),
     },
-    { label: t("menu.copySsh"), onSelect: () => copyText(command) },
-    { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
+    {
+      label: t("hostTransfer.exportTitle"),
+      icon: <FileOutput size={13} />,
+      onSelect: () => command("export"),
+    },
+    { label: t("menu.copySsh"), onSelect: () => command("copySsh") },
+    { label: t("menu.copyAddress"), onSelect: () => command("copyAddress") },
     {
       label: t("connect.installKey"),
       separatorBefore: true,
-      onSelect: () => openConnect(host, "terminal", "installKey"),
+      onSelect: () => command("installKey"),
     },
     {
       label: t("menu.moveGroup"),
       onSelect: () => {
         const bounds = row.current?.getBoundingClientRect();
         openMenu(bounds?.left ?? 0, bounds?.bottom ?? 0, [
-          { label: t("sidebar.ungrouped"), onSelect: () => moveToGroup(host.id, null) },
+          {
+            label: t("sidebar.ungrouped"),
+            onSelect: () =>
+              void run({
+                operation: "moveToGroup",
+                host: hostTarget(host.id),
+                group: null,
+                favorite: false,
+              }),
+          },
           ...groups.map((group) => ({
             label: group.name,
-            onSelect: () => moveToGroup(host.id, group.id),
+            onSelect: () =>
+              void run({
+                operation: "moveToGroup",
+                host: hostTarget(host.id),
+                group: groupTarget(group.id),
+                favorite: false,
+              }),
           })),
         ]);
       },
@@ -184,43 +151,54 @@ function HostRow({
     {
       label: host.favorite ? t("menu.unfavorite") : t("menu.favorite"),
       icon: <Star size={13} />,
-      onSelect: () => void toggleFavorite(host),
+      onSelect: () => command("favorite"),
     },
     ...pluginCommands.map((command) => ({
       label: command.title,
       description: command.pluginName,
       separatorBefore: command.first,
-      onSelect: () => void runHostMenuCommand(command, host),
+      onSelect: () =>
+        void run({
+          operation: "plugin",
+          host: hostTarget(host.id),
+          pluginId: command.pluginId,
+          command: command.command,
+          fingerprint: command.fingerprint ?? null,
+        }),
     })),
     {
       label: t("menu.delete"),
       separatorBefore: true,
       icon: <Trash2 size={13} />,
       danger: true,
-      onSelect: removeHost,
+      onSelect: () => command("delete"),
     },
   ];
 
   const menuItems = host.source
     ? [
-        { label: t("host.open"), onSelect: () => openHost(host) },
-        { label: t("terminal.connect"), onSelect: () => openConnect(host, "terminal") },
-        { label: t("sftp.title"), onSelect: () => openConnect(host, "sftp") },
+        { label: t("host.open"), onSelect: () => command("open") },
+        { label: t("terminal.connect"), onSelect: () => command("connect") },
+        { label: t("sftp.title"), onSelect: () => command("sftp") },
         {
           label: t("hostSources.saveCopy"),
           separatorBefore: true,
-          onSelect: () =>
-            void createHost(savedHostInput(host)).then((copy) => {
-              if (copy) openHost(copy);
-            }),
+          onSelect: () => command("saveCopy"),
         },
-        { label: t("menu.copySsh"), onSelect: () => copyText(command) },
-        { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
+        { label: t("menu.copySsh"), onSelect: () => command("copySsh") },
+        { label: t("menu.copyAddress"), onSelect: () => command("copyAddress") },
         ...pluginCommands.map((command) => ({
           label: command.title,
           description: command.pluginName,
           separatorBefore: command.first,
-          onSelect: () => void runHostMenuCommand(command, host),
+          onSelect: () =>
+            void run({
+              operation: "plugin",
+              host: hostTarget(host.id),
+              pluginId: command.pluginId,
+              command: command.command,
+              fingerprint: command.fingerprint ?? null,
+            }),
         })),
       ]
     : builtinItems;
@@ -272,23 +250,24 @@ function HostRow({
         event.preventDefault();
         event.stopPropagation();
         const bounds = event.currentTarget.getBoundingClientRect();
-        moveHost(
-          dragged,
-          host.id,
-          event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
-        );
+        void run({
+          operation: "move",
+          host: hostTarget(dragged),
+          target: hostTarget(host.id),
+          position: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
+        });
       }}
       onClick={(event) => {
         if (event.target instanceof Element && event.target.closest("button, [role='menu']"))
           return;
         onFocusRow();
         if (event.detail > 1) return;
-        if (useSettings.getState().settings.hostActivation === "details") activateHost(host);
+        if (data.activation === "details") command("activate");
         else {
           if (clickTimer.current) clearTimeout(clickTimer.current);
           clickTimer.current = setTimeout(() => {
             clickTimer.current = null;
-            activateHost(host);
+            void run({ operation: "activate", host: hostTarget(host.id) });
           }, 300);
         }
       }}
@@ -298,7 +277,7 @@ function HostRow({
         if (clickTimer.current) clearTimeout(clickTimer.current);
         clickTimer.current = null;
         onFocusRow();
-        connectTerminal(host);
+        command("connect");
       }}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -499,13 +478,24 @@ function GroupRow({
 }
 
 export function HostTree() {
-  const plugins = usePlugins((state) => state.items);
-  const pluginCommands = useMemo(() => hostMenuCommands(plugins), [plugins]);
+  const { data, remoteActions } = useHostPanel();
+  return (
+    <HostPanelScope data={data} requireRemote={remoteActions}>
+      <HostTreeView />
+    </HostPanelScope>
+  );
+}
+function HostTreeView() {
+  const { data, run, hostTarget, groupTarget } = useHostPanel();
+  const pluginCommands = data.commands;
   const { t } = useTranslation();
-  const groups = useHosts((state) => state.groups);
-  const hosts = useHosts((state) => state.hosts);
-  const pluginColumns = useHostColumns((state) => state.columns);
-  const preferences = useSettings((state) => state.settings.hostList);
+  const groups = data.groups,
+    hosts = data.hosts;
+  const pluginColumns = useMemo(
+    () => data.columns.map((column) => ({ ...column, values: new Map(column.values) })),
+    [data.columns],
+  );
+  const preferences = data.preferences;
   const table = preferences.view === "table";
   const allColumns = useMemo(
     () => [
@@ -524,18 +514,38 @@ export function HostTree() {
     () => visibleHostColumns(allColumns, preferences),
     [allColumns, preferences],
   );
-  const activeHostId = useWorkspace((state) => {
-    const tab = state.tabs.find((item) => item.id === state.activeId);
-    return tab?.kind === "host" ? tab.hostId : null;
-  });
-  const openHostDialog = useDialogs((state) => state.openHost);
-  const openGroupDialog = useDialogs((state) => state.openGroup);
-  const confirm = useDialogs((state) => state.confirm);
-  const deleteGroup = useHosts((state) => state.deleteGroup);
-  const moveToGroup = useHosts((state) => state.moveToGroup);
-  const [query, setQuery] = useViewState("hosts:query", "");
-  const [collapsed, setCollapsed] = useViewState<Set<string>>("hosts:collapsed", new Set());
-  const [searchCollapse, setSearchCollapse] = useState({ query: "", ids: new Set<string>() });
+  const activeHostId = data.activeHostId;
+  const openHostDialog = () => void run({ operation: "newHost", group: null });
+  const openGroupDialog = () => void run({ operation: "newGroup" });
+  const moveToGroup = (id: string, groupId: string | null, favorite = false) =>
+    void run({
+      operation: "moveToGroup",
+      host: hostTarget(id),
+      group: groupTarget(groupId),
+      favorite,
+    });
+  const [query, setQuery] = usePanelViewState(
+    "hosts.query",
+    "",
+    (v): v is string => typeof v === "string",
+  );
+  const [collapsed, setCollapsed] = usePanelViewState<string[]>(
+    "hosts.collapsed",
+    [],
+    (v): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string"),
+  );
+  const [searchCollapse, setSearchCollapse] = usePanelViewState(
+    "hosts.searchCollapse",
+    { query: "", ids: [] as string[] },
+    (v): v is { query: string; ids: string[] } =>
+      !!v &&
+      typeof v === "object" &&
+      "query" in v &&
+      typeof v.query === "string" &&
+      "ids" in v &&
+      Array.isArray(v.ids) &&
+      v.ids.every((x) => typeof x === "string"),
+  );
 
   const tags = useMemo(
     () => Array.from(new Set(hosts.flatMap((host) => host.tags))).sort(),
@@ -562,7 +572,7 @@ export function HostTree() {
         const ids = new Set(current.query === query ? current.ids : []);
         if (ids.has(id)) ids.delete(id);
         else ids.add(id);
-        return { query, ids };
+        return { query, ids: [...ids] };
       });
       return;
     }
@@ -573,13 +583,17 @@ export function HostTree() {
       } else {
         next.add(id);
       }
-      return next;
+      return [...next];
     });
   };
 
   const isEmpty = hosts.length === 0;
 
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusId, setFocusId] = usePanelViewState<string | null>(
+    "hosts.focus",
+    null,
+    (v): v is string | null => v === null || typeof v === "string",
+  );
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -587,7 +601,7 @@ export function HostTree() {
     const row = rows.find((item) => item.dataset.hostId === focusId);
     row?.scrollIntoView?.({ block: "nearest" });
     if (focusId && !row) setFocusId(null);
-  }, [focusId, query, collapsed, searchCollapse, hosts, groups, table, tableHosts]);
+  }, [focusId, query, collapsed, searchCollapse, hosts, groups, table, tableHosts, setFocusId]);
 
   const dropHandlers = (groupId: string | null, favorite = false) => ({
     onDragOver: (event: React.DragEvent<HTMLElement>) => {
@@ -649,7 +663,7 @@ export function HostTree() {
       if (host) {
         event.preventDefault();
         if (event.key === "Enter" && !event.repeat && !event.nativeEvent.isComposing)
-          activateHost(host);
+          void run({ operation: "activate", host: hostTarget(host.id) });
       }
     }
   };
@@ -671,8 +685,8 @@ export function HostTree() {
     readOnly = false,
   ): React.ReactNode => {
     const isCollapsed = searching
-      ? searchCollapse.query === query && searchCollapse.ids.has(group.id)
-      : collapsed.has(group.id);
+      ? searchCollapse.query === query && searchCollapse.ids.includes(group.id)
+      : collapsed.includes(group.id);
     return (
       <div key={group.id} role="group">
         <GroupRow
@@ -681,22 +695,12 @@ export function HostTree() {
           depth={depth}
           collapsed={isCollapsed}
           onToggle={() => toggle(group.id)}
-          onNewHost={() => openHostDialog(null, group.id)}
+          onNewHost={() => void run({ operation: "newHost", group: groupTarget(group.id) })}
           canReorder={canReorder && !readOnly}
           readOnly={readOnly}
           onDropHost={(id) => moveToGroup(id, group.id)}
-          onRename={() => openGroupDialog(group)}
-          onDelete={() =>
-            confirm({
-              title: t("group.deleteTitle"),
-              body: t("group.deleteBody", { name: group.name }),
-              confirmLabel: t("common.delete"),
-              danger: true,
-              onConfirm: async () => {
-                await deleteGroup(group.id);
-              },
-            })
-          }
+          onRename={() => void run({ operation: "editGroup", group: groupTarget(group.id)! })}
+          onDelete={() => void run({ operation: "deleteGroup", group: groupTarget(group.id)! })}
         />
         {!isCollapsed ? (
           <>
@@ -718,24 +722,40 @@ export function HostTree() {
 
   return (
     <div className="sidebar hosts-sidebar">
-      <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
-        <SidebarTitle view="hosts">{t("sidebar.hosts")}</SidebarTitle>
-        <IconButton size="sm" label={t("sidebar.newHost")} onClick={() => openHostDialog()}>
-          <Plus size={15} />
+      <PanelHeader view="hosts">
+        <Menu
+          label={t("hostTransfer.addMenu")}
+          trigger={<Plus size={15} />}
+          items={[
+            { label: t("sidebar.newHost"), onSelect: () => openHostDialog() },
+            { label: t("sshImport.title"), onSelect: () => void run({ operation: "importSsh" }) },
+            {
+              label: t("hostTransfer.importTitle"),
+              icon: <FileInput size={13} />,
+              onSelect: () => void run({ operation: "import" }),
+            },
+          ]}
+        />
+        <IconButton
+          size="sm"
+          label={t("hostTransfer.exportTitle")}
+          disabled={!hosts.some((host) => !host.source)}
+          onClick={() => void run({ operation: "exportAll" })}
+        >
+          <FileOutput size={15} />
         </IconButton>
         <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
           <FolderPlus size={15} />
         </IconButton>
-        <SidebarDockControls view="hosts" />
         <HostListViewMenu columns={allColumns} />
-      </div>
+      </PanelHeader>
       <div className="sidebar__search">
         <HostSearch
           query={query}
           tags={tags}
           onChange={(value) => {
             setQuery(value);
-            setSearchCollapse({ query: value, ids: new Set() });
+            setSearchCollapse({ query: value, ids: [] });
           }}
         />
       </div>

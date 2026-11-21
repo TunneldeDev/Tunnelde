@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { FileEntry, Listing } from "@/lib/api/types";
-import { columnAncestors, pathCrumbs } from "@/lib/files/navigation";
+import {
+  columnAncestors,
+  pathCrumbs,
+  pathForEditing,
+  pathForNavigation,
+} from "@/lib/files/navigation";
 import { typeSelect } from "@/lib/files/typeSelect";
 import { sampleTransfer, transferProgress } from "@/lib/files/transferProgress";
 
@@ -15,6 +20,27 @@ const entry = (name: string, directory = false): FileEntry => ({
 });
 
 describe("file navigation", () => {
+  it("converts only strict remote Windows drive spellings in both directions", () => {
+    const remote = { kind: "remote" as const, sessionId: "ssh" };
+    expect(pathForEditing("/C:/qq-bridge/src", remote)).toBe("C:/qq-bridge/src");
+    expect(pathForEditing("/C:/", remote)).toBe("C:/");
+    expect(pathForEditing("/C:relative", remote)).toBe("/C:relative");
+    expect(pathForEditing("//server/share", remote)).toBe("//server/share");
+    expect(pathForEditing("/home/a\\b", remote)).toBe("/home/a\\b");
+    expect(pathForEditing("C:\\work", { kind: "local" })).toBe("C:\\work");
+
+    expect(pathForNavigation("D:/next", remote)).toBe("/D:/next");
+    expect(pathForNavigation("D:\\next\\deep", remote)).toBe("/D:/next/deep");
+    expect(pathForNavigation("D:/", remote)).toBe("/D:/");
+    expect(pathForNavigation("/D:\\next", remote)).toBe("/D:\\next");
+    expect(pathForNavigation("/D:/next", remote)).toBe("/D:/next");
+    expect(pathForNavigation("/", remote)).toBe("/");
+    expect(pathForNavigation("/C:relative", remote)).toBe("/C:relative");
+    expect(pathForNavigation("//server/share", remote)).toBe("//server/share");
+    expect(pathForNavigation("/home/a\\b", remote)).toBe("/home/a\\b");
+    expect(pathForNavigation("D:\\next", { kind: "local" })).toBe("D:\\next");
+  });
+
   it("preserves Windows drive, UNC and POSIX roots in breadcrumb paths", () => {
     expect(pathCrumbs("C:\\work\\src", { kind: "local" }).map((item) => item.path)).toEqual([
       "C:\\",

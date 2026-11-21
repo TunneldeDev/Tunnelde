@@ -1,7 +1,10 @@
+import { useWorkspace } from "@/store/workspace";
+import { useNavigation } from "@/store/navigation";
+import { SidebarContents, FloatingPanelLayer } from "@/components/layout/SidebarDock";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
-import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
+import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import {
   registerBackgroundTaskSource,
   runBackgroundTask,
@@ -13,6 +16,8 @@ import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
 let dispose: (() => void) | undefined;
 beforeEach(async () => {
   await i18n.changeLanguage("en-US");
+  useWorkspace.setState({ tabs: [] });
+  useNavigation.setState({ sidebarVisible: false, visitedSidebars: ["tasks"] });
   useBackgroundTaskPanel.setState({ open: true, pinned: false, bounds: null });
 });
 afterEach(async () => {
@@ -49,7 +54,10 @@ it("mixes sources, hides optional tasks and does not count invisible work", () =
   render(
     <>
       <BackgroundTaskStatusButton />
-      <BackgroundTasks />
+      <>
+        <SidebarContents />
+        <FloatingPanelLayer />
+      </>
     </>,
   );
   expect(screen.getByText("1 task")).toBeTruthy();
@@ -164,7 +172,12 @@ it("cancels cooperative work, waits for settlement, and clears completed records
     });
   });
   const rejected = expect(result).rejects.toMatchObject({ name: "AbortError" });
-  render(<BackgroundTasks />);
+  render(
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Cancel task" }));
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Cancel task" }).hasAttribute("disabled")).toBe(true),
@@ -198,7 +211,12 @@ it("handles source action failures in the row without losing the task", async ()
     subscribe: () => () => {},
     snapshot: () => [task],
   });
-  render(<BackgroundTasks />);
+  render(
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>,
+  );
   fireEvent.click(screen.getByRole("button", { name: "Retry indexing" }));
   await waitFor(() => expect(retry).toHaveBeenCalledOnce());
   expect(screen.getByRole("article", { name: "Index workspace" })).toBeTruthy();
@@ -241,7 +259,12 @@ it("clears every removable record with one click while groups are collapsed and 
       return () => {};
     },
   });
-  render(<BackgroundTasks />);
+  render(
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>,
+  );
   expect(screen.queryByRole("article", { name: "Finished 0" })).toBeNull();
   const button = screen.getByRole("button", { name: "Clear finished tasks" });
   fireEvent.click(button);
@@ -272,7 +295,12 @@ it("keeps the bulk action busy until clearing settles and allows retrying failur
       },
     ],
   });
-  render(<BackgroundTasks />);
+  render(
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>,
+  );
   const button = screen.getByRole("button", { name: "Clear finished tasks" });
   fireEvent.click(button);
   fireEvent.click(button);

@@ -28,6 +28,8 @@
 
   --td-radius: 8px;
   --td-radius-sm: 6px;
+  --td-radius-xs: 4px;
+  --td-radius-lg: 12px;
 
   --td-ui-font:
     "IBM Plex Sans", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
@@ -36,6 +38,7 @@
   --td-font-size: 13px;
   --td-mono-size: 14px;
   --td-row-h: 32px;
+  --td-workbench-header-h: 34px;
   --td-statusbar-h: 26px;
 
   --td-ease: 120ms cubic-bezier(0.2, 0, 0, 1);

@@ -1,10 +1,10 @@
+import { SidebarContents, SidebarArea, FloatingPanelLayer } from "@/components/layout/SidebarDock";
 import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true, api: {} }));
 import i18n from "@/i18n/i18n";
-import { BackgroundTasks, DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
 import { registerBackgroundTaskSource, useBackgroundTasks } from "@/lib/tasks/registry";
 import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
 import { useSettings } from "@/store/settings";
@@ -41,7 +41,7 @@ beforeEach(async () => {
   omit = false;
   retry.mockReset();
   useWorkspace.setState({ tabs: [] });
-  useNavigation.setState({ sidebarVisible: false });
+  useNavigation.setState({ sidebarVisible: false, visitedSidebars: ["tasks"] });
   useBackgroundTaskPanel.setState({ open: true, pinned: false, bounds: null });
   useSettings.setState({
     settings: {
@@ -80,7 +80,12 @@ afterEach(() => {
 });
 
 it("preserves native task nodes and host controls through provider restoration", async () => {
-  render(<BackgroundTasks />);
+  render(
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>,
+  );
   const row = await screen.findByRole("article", { name: "Recover index" });
   expect(screen.getByRole("region", { name: "Custom task view" }).contains(row)).toBe(true);
   expect(retained.snapshot.presentation).toBe("floating");
@@ -95,7 +100,12 @@ it("preserves native task nodes and host controls through provider restoration",
 });
 
 it("retires old actions on publication, selection and permission changes", async () => {
-  render(<BackgroundTasks />);
+  render(
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>,
+  );
   await screen.findByRole("region", { name: "Custom task view" });
   const old = retained;
   act(changed);
@@ -121,7 +131,13 @@ it("retires old actions on publication, selection and permission changes", async
 it("omits Entries without cancelling native tasks and invalidates actions in inactive embedded panels", async () => {
   omit = true;
   useNavigation.setState({ sidebarVisible: true, activeSidebar: "tasks" });
-  render(<DockedBackgroundTasks />);
+  useBackgroundTaskPanel.getState().close();
+  render(
+    <>
+      <SidebarArea />
+      <SidebarContents />
+    </>,
+  );
   await screen.findByText("Entries omitted");
   expect(retained.snapshot.presentation).toBe("embedded");
   expect(useBackgroundTasks.getState().items).toHaveLength(1);
@@ -144,7 +160,12 @@ it("recovers native Entries after a duplicate mount without dropping task owners
       </>
     );
   });
-  render(<BackgroundTasks />);
+  render(
+    <>
+      <SidebarContents />
+      <FloatingPanelLayer />
+    </>,
+  );
   await screen.findByRole("alert");
   expect(screen.getAllByRole("article", { name: "Recover index" })).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Retry index" }));

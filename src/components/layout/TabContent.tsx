@@ -1,21 +1,21 @@
+import { MainNativeEditorPage } from "@/features/editor/NativeEditorPage";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/ui/display/Misc";
 import { AboutPage } from "@/features/about/AboutPage";
-import { EditorPage } from "@/features/editor/EditorPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { PluginCommandPage } from "@/features/plugins/PluginCommandPage";
 import { PluginDetailPage } from "@/features/plugins/PluginDetailPage";
-import { HostPage } from "@/features/hosts/HostPage";
-import { SftpPage } from "@/features/sftp/SftpPage";
+import { MainNativeHostPage } from "@/features/hosts/detail/NativeHostPage";
+import { MainNativeFilePage } from "@/features/sftp/NativeFilePage";
 import { RestoredFilePane } from "@/features/sftp/RestoredFilePane";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { KnownHostsPage } from "@/features/settings/KnownHostsPage";
-import { TerminalPage } from "@/features/terminal/TerminalPage";
+import { MainNativeTerminalPage } from "@/features/terminal/NativeTerminalPage";
 import { useNavigation } from "@/store/navigation";
 import { WelcomePage } from "@/features/welcome/WelcomePage";
 import { useWorkspace, type WorkspaceTab } from "@/store/workspace";
@@ -39,7 +39,7 @@ function TabBody({
     case "welcome":
       return <WelcomePage />;
     case "host":
-      return <HostPage hostId={tab.hostId} />;
+      return <MainNativeHostPage tabId={tab.id} hostId={tab.hostId} />;
     case "settings":
       return <SettingsPage visible={visible} />;
     case "knownHosts":
@@ -49,7 +49,7 @@ function TabBody({
     case "updates":
       return <LegacyUpdates visible={visible} />;
     case "terminal":
-      return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
+      return <MainNativeTerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
       if (
         tab.filePane?.source.kind === "remote" &&
@@ -58,7 +58,7 @@ function TabBody({
       )
         return <RestoredFilePane tab={tab} />;
       return (
-        <SftpPage
+        <MainNativeFilePage
           key={tab.filePane ? `${tab.id}:single` : `${tab.id}:dual`}
           sessionId={
             tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "").split(":copy:")[0]!
@@ -69,7 +69,7 @@ function TabBody({
         />
       );
     case "editor":
-      return <EditorPage tabId={tab.id} active={active} />;
+      return <MainNativeEditorPage tabId={tab.id} active={active} />;
     case "history":
       return <HistoryPage sessionId={tab.id.replace("history:", "")} />;
     case "monitor":

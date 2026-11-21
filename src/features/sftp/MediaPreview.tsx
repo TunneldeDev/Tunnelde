@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { usePreviewMediaState } from "./preview/mediaState";
 import { useTranslation } from "react-i18next";
 
 export function MediaPreview({
@@ -7,17 +8,20 @@ export function MediaPreview({
   name,
   onError,
   onReady,
+  active = true,
 }: {
   kind: "image" | "audio" | "video";
   url: string;
   name: string;
   onError: () => void;
   onReady?: () => void;
+  active?: boolean;
 }) {
   const { t } = useTranslation();
-  const media = useRef<HTMLMediaElement | null>(null);
+  const mediaRef = useRef<HTMLMediaElement | null>(null);
+  const restore = usePreviewMediaState(mediaRef, active);
   useEffect(() => {
-    const element = media.current;
+    const element = mediaRef.current;
     if (!element) return;
     // Cleanup also runs during StrictMode's mount replay and before URL
     // changes. Restore the source in setup so a surviving player can reload.
@@ -27,7 +31,7 @@ export function MediaPreview({
       element.removeAttribute("src");
       element.load();
     };
-  }, [kind, url]);
+  }, [kind, url, mediaRef]);
   return (
     <div className={`file-preview__media file-preview__media--${kind}`}>
       {kind === "image" ? (
@@ -35,13 +39,16 @@ export function MediaPreview({
       ) : kind === "video" ? (
         <video
           ref={(element) => {
-            media.current = element;
+            mediaRef.current = element;
           }}
           src={url}
           controls
           preload="metadata"
           onError={onError}
-          onLoadedMetadata={onReady}
+          onLoadedMetadata={() => {
+            restore();
+            onReady?.();
+          }}
           aria-label={name}
         />
       ) : (
@@ -49,13 +56,16 @@ export function MediaPreview({
           <p>{name}</p>
           <audio
             ref={(element) => {
-              media.current = element;
+              mediaRef.current = element;
             }}
             src={url}
             controls
             preload="metadata"
             onError={onError}
-            onLoadedMetadata={onReady}
+            onLoadedMetadata={() => {
+              restore();
+              onReady?.();
+            }}
             aria-label={name}
           />
         </div>

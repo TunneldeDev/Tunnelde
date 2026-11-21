@@ -33,7 +33,12 @@ beforeEach(async () => {
 
 describe("file preview", () => {
   it("reads local text without opening an external application and restores focus on close", async () => {
-    vi.mocked(api.searchPreviewLocal).mockResolvedValue("hello preview");
+    vi.mocked(api.searchPreviewLocal).mockResolvedValue({
+      content: "hello preview",
+      size: 13,
+      encoding: "utf-8",
+      bom: false,
+    });
     render(
       <>
         <button onClick={() => useFilePreview.getState().show("C:\\notes.txt")}>Preview</button>
@@ -54,7 +59,12 @@ describe("file preview", () => {
   it("opens local text from preview in the built-in editor", async () => {
     const open = vi.fn();
     useWorkspace.setState({ openLocalEditor: open });
-    vi.mocked(api.searchPreviewLocal).mockResolvedValue("hello");
+    vi.mocked(api.searchPreviewLocal).mockResolvedValue({
+      content: "hello",
+      size: 5,
+      encoding: "utf-8",
+      bom: false,
+    });
     useFilePreview.getState().show("C:\\notes.txt");
     render(<FilePreview />);
     await screen.findByRole("textbox");
@@ -69,7 +79,7 @@ describe("file preview", () => {
     useFilePreview.getState().show("/srv/readme.md", 0, 0, { kind: "remote", sessionId: "ssh-2" });
     render(<FilePreview />);
     expect(await screen.findByRole("heading", { name: "Preview title" })).toBeTruthy();
-    expect(api.sftpReadText).toHaveBeenCalledWith("ssh-2", "/srv/readme.md");
+    expect(api.sftpReadText).toHaveBeenCalledWith("ssh-2", "/srv/readme.md", undefined);
     expect(api.searchPreviewLocal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Show source" }));
     const source = screen.getByRole("textbox") as HTMLTextAreaElement;
@@ -78,19 +88,26 @@ describe("file preview", () => {
   });
 
   it("ignores a stale request when another file is selected", async () => {
-    let finish!: (value: string) => void;
+    let finish!: (value: {
+      content: string;
+      size: number;
+      encoding: "utf-8";
+      bom: boolean;
+    }) => void;
     vi.mocked(api.searchPreviewLocal)
       .mockReturnValueOnce(
         new Promise((resolve) => {
           finish = resolve;
         }),
       )
-      .mockResolvedValueOnce("new content");
+      .mockResolvedValueOnce({ content: "new content", size: 11, encoding: "utf-8", bom: false });
     useFilePreview.getState().show("/old.txt");
     render(<FilePreview />);
     act(() => useFilePreview.getState().show("/new.txt"));
     await screen.findByRole("textbox");
-    await act(async () => finish("old content"));
+    await act(async () =>
+      finish({ content: "old content", size: 11, encoding: "utf-8", bom: false }),
+    );
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("new content");
   });
 
@@ -101,8 +118,13 @@ describe("file preview", () => {
     source.sessionId = "unselected-session";
     render(<FilePreview />);
     expect(((await screen.findByRole("textbox")) as HTMLTextAreaElement).value).toBe("first");
-    expect(api.sftpReadText).toHaveBeenCalledWith("selected-session", "/same.txt");
-    let finish!: (value: { content: string; size: number }) => void;
+    expect(api.sftpReadText).toHaveBeenCalledWith("selected-session", "/same.txt", undefined);
+    let finish!: (value: {
+      content: string;
+      size: number;
+      encoding: "utf-8";
+      bom: boolean;
+    }) => void;
     vi.mocked(api.sftpReadText).mockReturnValueOnce(
       new Promise((resolve) => {
         finish = resolve;
@@ -115,7 +137,7 @@ describe("file preview", () => {
     );
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByRole("status")).toBeTruthy();
-    await act(async () => finish({ content: "fresh", size: 5 }));
+    await act(async () => finish({ content: "fresh", size: 5, encoding: "utf-8", bom: false }));
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("fresh");
   });
 
@@ -124,7 +146,7 @@ describe("file preview", () => {
     async (cause) => {
       vi.mocked(api.searchPreviewLocal)
         .mockRejectedValueOnce(cause)
-        .mockResolvedValueOnce("recovered");
+        .mockResolvedValueOnce({ content: "recovered", size: 9, encoding: "utf-8", bom: false });
       useFilePreview.getState().show("/same.txt");
       render(<FilePreview />);
       await screen.findByRole("alert");

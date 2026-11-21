@@ -4,13 +4,15 @@ use crate::services::files::operations::Cancellation;
 
 pub(super) fn save(
     app: Option<&AppHandle>,
-    requested: &str,
-    content: &str,
-    baseline: Option<&str>,
+    request: &SaveRequest,
     policy: &impl policy::Policy,
     job: &Cancellation,
     mut hook: impl FnMut(&str, &Record) -> AppResult<()>,
 ) -> AppResult<()> {
+    let requested = request.path.as_str();
+    let content = request.content.as_str();
+    let baseline = request.baseline.as_deref();
+    let mode = request.mode;
     job.check()?;
     policy.authorize()?;
     let requested = Path::new(requested);
@@ -27,11 +29,18 @@ pub(super) fn save(
     if metadata.permissions().readonly() {
         return Err(AppError::validation("editor.readOnlyFile"));
     }
-    let original = decode_text(native::read_bounded(&mut source, MAX_TEXT)?)?;
+    let original = match decode_text(native::read_bounded(&mut source, MAX_TEXT)?, mode) {
+        Ok(original) => original,
+        Err(error) if error.to_string() == "editor.textFormatChanged" => {
+            return Err(AppError::validation("editor.localFileChanged"));
+        }
+        Err(error) => return Err(error),
+    };
     let baseline = baseline.unwrap_or(&original.content);
+    let encoded = mode.encode_from_metadata(content, original.encoding, original.bom)?;
     policy.check(&target, &original.content)?;
     job.check()?;
-    if original.content == content {
+    if original.content == content && mode.same_format() {
         policy.admit(job)?;
         return Ok(());
     }
@@ -79,17 +88,25 @@ pub(super) fn save(
         if Some(native::identity(&stage)?) != record.staging_identity {
             return Err(AppError::validation("editor.cleanupUnrecognized"));
         }
-        native::write_staging(&mut stage, content.as_bytes(), MAX_TEXT)?;
+        native::write_staging(&mut stage, &encoded, MAX_TEXT)?;
         native::preserve_metadata(&source, &stage)?;
         drop(stage);
         native::preserve_security(&target, &staging)?;
         native::verify_security(&target, &staging)?;
+        let mut staged = native::open_regular(&staging, false)?;
+        if decode_written_text(native::read_bounded(&mut staged, MAX_TEXT)?, mode)?.content
+            != content
+        {
+            return Err(AppError::validation("editor.metadataNotPreserved"));
+        }
         hook("staged", &record)?;
         let mut current = native::open_regular(&target, false)?;
         if native::identity(&current)? != source_identity
             || !native::same_metadata(&metadata, &source.metadata()?)
-            || decode_text(native::read_bounded(&mut source, MAX_TEXT)?)?.content != baseline
-            || decode_text(native::read_bounded(&mut current, MAX_TEXT)?)?.content != baseline
+            || !decode_text(native::read_bounded(&mut source, MAX_TEXT)?, mode)
+                .is_ok_and(|current| current.content == baseline)
+            || !decode_text(native::read_bounded(&mut current, MAX_TEXT)?, mode)
+                .is_ok_and(|current| current.content == baseline)
             || std::fs::canonicalize(requested)? != target
         {
             return Err(AppError::validation("editor.localFileChanged"));

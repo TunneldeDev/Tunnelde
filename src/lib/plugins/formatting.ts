@@ -27,6 +27,23 @@ export const useFormatting = create<{
   picker: { document: EditorDocument; providers: EditorProvider[] } | null;
 }>(() => ({ busy: [], picker: null }));
 
+/** Syntax-only contributions are automatic decorations, never replacement commands. */
+export function writableEditorCommand(command: {
+  editor?: { format?: boolean; syntax?: boolean };
+}): boolean {
+  return !!command.editor && (command.editor.format === true || command.editor.syntax !== true);
+}
+
+function writableEditorProvider(plugin: PluginInfo, provider: EditorProvider): boolean {
+  const command = plugin.commands.find((item) => item.id === provider.command);
+  return (
+    !!command &&
+    writableEditorCommand(command) &&
+    plugin.permissions.includes("editor.read") &&
+    plugin.permissions.includes("editor.write")
+  );
+}
+
 export function editorCommandMatches(path: string, extensions: readonly string[]): boolean {
   const name = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
   return extensions.some((extension) => name.endsWith(`.${extension.toLowerCase()}`));
@@ -63,6 +80,7 @@ export async function runEditorPlugin(
     if (
       !plugin ||
       !command?.editor ||
+      !writableEditorProvider(plugin, provider) ||
       !editorCommandMatches(document.path, command.editor.extensions)
     )
       throw new Error(i18n.t("editor.noFormatter"));
@@ -72,6 +90,7 @@ export async function runEditorPlugin(
     if (
       !original ||
       !samePluginAction(plugin, original, { id: provider.id, command: provider.command }) ||
+      !writableEditorProvider(plugin, provider) ||
       plugin.status !== "running"
     )
       return false;
@@ -115,6 +134,7 @@ export async function runEditorPlugin(
           throw new Error(i18n.t("editor.documentChanged"));
         if (
           !samePluginAction(runtime, original, { id: provider.id, command: provider.command }) ||
+          !writableEditorProvider(runtime, provider) ||
           runtime.status !== "running"
         )
           throw new Error(i18n.t("editor.formatRevoked"));
@@ -126,6 +146,7 @@ export async function runEditorPlugin(
     const security = usePluginSecurity.getState().state;
     if (
       !samePluginAction(latest, original, { id: provider.id, command: provider.command }) ||
+      !writableEditorProvider(latest, provider) ||
       latest.status !== "running" ||
       !samePluginRuntime(latest, running) ||
       (isTauri() && (security.restricted || !hasPluginGrant(security, latest)))

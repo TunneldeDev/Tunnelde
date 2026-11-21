@@ -97,3 +97,39 @@ async fn abandoning_an_unpolled_worker_result_also_disposes_its_resource() {
         "queued result"
     );
 }
+
+#[tokio::test]
+async fn undelivered_cleanup_retains_its_original_scope_after_the_receiver_context_is_gone() {
+    use crate::services::operations::WorkLifetime;
+    struct Fence(Option<tokio::sync::oneshot::Sender<()>>);
+    impl Drop for Fence {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+    let (settled, mut done) = tokio::sync::oneshot::channel();
+    let (release, wait) = tokio::sync::oneshot::channel();
+    let delivered = WorkLifetime::new(Fence(Some(settled)))
+        .scope(async {
+            Delivery::new((), move |_| {
+                let work = WorkLifetime::current();
+                tokio::spawn(work.scope(async {
+                    let _ = wait.await;
+                }));
+            })
+        })
+        .await;
+    assert!(done.try_recv().is_err());
+    // This drop happens outside the original scope; cleanup must explicitly
+    // reinstall the retained lifetime before it creates descendants.
+    drop(delivered);
+    tokio::task::yield_now().await;
+    assert!(done.try_recv().is_err());
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), done)
+        .await
+        .unwrap()
+        .unwrap();
+}

@@ -34,6 +34,26 @@ fn close(observation: &native_save::runtime::MutationObservation) -> AppResult<(
 }
 
 impl TransferRegistry {
+    /// Attach only to the original registered instance before spawning it.
+    /// Observation clones preserve this guard through queued remote requests;
+    /// unresolved requests retain their fence rather than pretending to finish.
+    pub(super) fn bind_worker_origin(
+        &self,
+        id: &str,
+        origin: crate::services::operations::WorkLifetime,
+    ) -> AppResult<()> {
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|_| AppError::internal("sftp.transferRegistry"))?;
+        let task = state
+            .active
+            .get_mut(id)
+            .ok_or_else(|| AppError::validation("sftp.transferBusy"))?;
+        task.observation = task.observation.guarded(move || origin.with(|| Ok(())));
+        Ok(())
+    }
+
     pub(super) fn observation(
         &self,
         id: &str,

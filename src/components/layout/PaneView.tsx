@@ -1,5 +1,10 @@
+import type { MenuAction } from "@/components/ui/overlay/Menu";
+import { nativePanelMoveActions } from "@/lib/panels/windowMoves";
+import { panelDropZone as zoneOf, type PanelDropZone as DropHint } from "@/lib/layout/dropZone";
 import {
   Activity,
+  GripVertical,
+  PanelTop,
   Blocks,
   Home,
   Download,
@@ -21,6 +26,8 @@ import type { ComponentType, DragEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PanelFrame } from "./PanelFrame";
+import type { useFloatingPanel } from "./useFloatingPanel";
 import { TabContent } from "@/components/layout/TabContent";
 import { TabBarContributions } from "./TabBarContributions";
 import { EmptyState } from "@/components/ui/display/Misc";
@@ -29,13 +36,15 @@ import { useFileIconResolver } from "@/lib/files/icons";
 import { IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { sidebarMoveActions } from "@/components/layout/SidebarDockControls";
+import { canFloatTab } from "@/lib/plugins/presentation";
+import { usePlugins } from "@/store/plugins";
 import { cn } from "@/lib/text/format";
 import { closeTab } from "@/lib/session/tabActions";
 import { useContextMenu } from "@/store/contextMenu";
 import { useSettings } from "@/store/settings";
 import { useNavigation } from "@/store/navigation";
 import { isTauri } from "@/lib/api/ipc";
-import { useEditors } from "@/store/editors";
+import { editorHasPendingChanges, useEditors } from "@/store/editors";
 import { isWorkspaceDrag, readWorkspaceDrop } from "@/lib/session/workspaceDrag";
 import {
   sidebarLabel,
@@ -103,7 +112,7 @@ function TabLabel({ tab }: { tab: WorkspaceTab }) {
   const { t } = useTranslation();
   const dirty = useEditors((state) => {
     const entry = state.entries[tab.id];
-    return !!entry && !entry.loading && entry.content !== entry.baseline;
+    return !!entry && !entry.loading && editorHasPendingChanges(entry);
   });
   const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
   if (sidebar) return <>{sidebarLabel(sidebar, t)}</>;
@@ -118,8 +127,15 @@ function TabLabel({ tab }: { tab: WorkspaceTab }) {
   return <>{t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS])}</>;
 }
 
-function TabStrip({ pane }: { pane: WorkspacePane }) {
+function TabStrip({
+  pane,
+  geometry,
+}: {
+  pane: WorkspacePane;
+  geometry?: ReturnType<typeof useFloatingPanel>;
+}) {
   const resolveFileIcon = useFileIconResolver();
+  usePlugins((state) => state.items);
   const { t } = useTranslation();
   const tabs = useWorkspace((state) => state.tabs);
   const activate = useWorkspace((state) => state.activate);
@@ -144,9 +160,19 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const sidebarOpen =
     sidebarRequested && !tabs.some((tab) => tab.id === sidebarTabId(activeSidebar));
   const reserveControls =
-    isTauri() && compact && !mac && !panelOpen && topCornerPane(layout, "right") === pane.id;
+    !pane.floating &&
+    isTauri() &&
+    compact &&
+    !mac &&
+    !panelOpen &&
+    topCornerPane(layout, "right") === pane.id;
   const reserveTrafficLights =
-    isTauri() && compact && mac && !sidebarOpen && topCornerPane(layout, "left") === pane.id;
+    !pane.floating &&
+    isTauri() &&
+    compact &&
+    mac &&
+    !sidebarOpen &&
+    topCornerPane(layout, "left") === pane.id;
   const [before, setBefore] = useState<string | null>(null);
   const strip = useRef<HTMLDivElement>(null);
 
@@ -193,9 +219,20 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
     : null;
   const activeSidebarView = activeTab?.kind === "sidebar" ? sidebarViewOf(activeTab.id) : null;
   const focusActiveTab = () => {
+    // A split/close may unmount this strip. Scope the deferred focus to the
+    // surviving workbench root, never a later unrelated document/render tree.
+    let root: HTMLElement | null = strip.current?.closest(".pane")?.parentElement ?? null;
+    for (let parent = strip.current?.parentElement; parent; parent = parent.parentElement) {
+      if (parent.classList.contains("pane-layout")) root = parent.parentElement;
+      if (parent.classList.contains("workspace")) {
+        root = parent;
+        break;
+      }
+    }
+    const activeId = useWorkspace.getState().activeId;
     requestAnimationFrame(() => {
-      const activeId = useWorkspace.getState().activeId;
-      Array.from(document.querySelectorAll<HTMLElement>("[data-tab-id]"))
+      if (!root?.isConnected || useWorkspace.getState().activeId !== activeId) return;
+      Array.from(root.querySelectorAll<HTMLElement>("[data-tab-id]"))
         .find((element) => element.dataset.tabId === activeId)
         ?.focus({ preventScroll: true });
     });
@@ -221,6 +258,14 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
     return null;
   };
 
+  // Empty workspaces remain drop targets, not empty tab toolbars. Compact
+  // native chrome still needs its reserved drag/control area to stay reachable.
+  if (!items.length) {
+    return reserveControls || reserveTrafficLights ? (
+      <div className="pane__empty-chrome" data-tauri-drag-region aria-hidden="true" />
+    ) : null;
+  }
+
   return (
     <div
       className={cn(
@@ -229,6 +274,17 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
         reserveTrafficLights && "has-native-window-controls",
       )}
     >
+      {geometry && (
+        <IconButton
+          size="sm"
+          className="pane__float-grip"
+          label={t("panels.moveHint")}
+          {...geometry.handle("move")}
+          onDoubleClick={geometry.reset}
+        >
+          <GripVertical size={13} />
+        </IconButton>
+      )}
       {contributionContext ? (
         <TabBarContributions placement="leading" context={contributionContext} />
       ) : null}
@@ -310,7 +366,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                const items = [
+                const items: MenuAction[] = [
                   {
                     label: t("tab.keepOpen"),
                     disabled: !tab.preview,
@@ -336,13 +392,27 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
                     separatorBefore: true,
                     onSelect: () => useWorkspace.getState().returnSidebar(sidebar),
                   });
-                if (panes.length > 1) {
+                if (!sidebar && !pane.floating && canFloatTab(tab))
+                  items.push({
+                    label: t("panels.floatWindow"),
+                    separatorBefore: true,
+                    onSelect: () => useWorkspace.getState().floatTab(tab.id),
+                  });
+                if (pane.floating)
+                  items.push({
+                    label: t("docking.moveToWorkspace"),
+                    separatorBefore: true,
+                    onSelect: () => useWorkspace.getState().dockPane(pane.id),
+                  });
+                if (panes.length > 1 && !pane.floating) {
                   items.push({
                     label: t("tab.closePane"),
                     separatorBefore: true,
                     onSelect: closeGroup,
                   });
                 }
+                if (["terminal", "sftp", "editor", "host"].includes(tab.kind))
+                  items.push(...nativePanelMoveActions(tab.id, t));
                 openMenu(event.clientX, event.clientY, items, event.currentTarget);
               }}
               onKeyDown={(event) => {
@@ -400,6 +470,16 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
       </div>
       {contributionContext ? <TabBarContributions context={contributionContext} /> : null}
       <div className="pane__actions">
+        {pane.floating && (
+          <IconButton
+            size="sm"
+            label={t("docking.moveToWorkspace")}
+            onClick={() => useWorkspace.getState().dockPane(pane.id)}
+          >
+            <PanelTop size={13} />
+          </IconButton>
+        )}
+
         <IconButton
           label={t(pane.locked ? "tab.unlockPane" : "tab.lockPane")}
           size="sm"
@@ -461,13 +541,23 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               separatorBefore: true,
               onSelect: () => togglePaneLock(pane.id),
             },
+            ...(!activeSidebarView && activeTab && !pane.floating && canFloatTab(activeTab)
+              ? [
+                  {
+                    label: t("panels.floatWindow"),
+                    separatorBefore: true,
+                    onSelect: () => useWorkspace.getState().floatTab(activeTab.id),
+                  },
+                ]
+              : []),
+            ...(geometry ? [{ label: t("panels.resetLayout"), onSelect: geometry.reset }] : []),
             ...(activeSidebarView
               ? sidebarMoveActions(activeSidebarView, t).map((action, index) => ({
                   ...action,
                   separatorBefore: index === 0 || action.separatorBefore,
                 }))
               : []),
-            ...(paneCount > 1
+            ...(paneCount > 1 && !pane.floating
               ? [{ label: t("tab.closePane"), separatorBefore: true, onSelect: closeGroup }]
               : []),
           ]}
@@ -477,27 +567,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   );
 }
 
-type DropHint = "left" | "right" | "top" | "bottom";
-
-export function zoneOf(
-  element: HTMLDivElement,
-  event: { clientX: number; clientY: number },
-): DropHint | null {
-  const rect = element.getBoundingClientRect();
-  if (!rect.width || !rect.height) return null;
-  const x = (event.clientX - rect.left) / rect.width;
-  const y = (event.clientY - rect.top) / rect.height;
-  // Keep the middle quarter for merging; divide the remainder by the nearest
-  // edge so corners do not make the top and bottom targets unreachable.
-  if (x >= 0.375 && x <= 0.625 && y >= 0.375 && y <= 0.625) return null;
-  const distances: [DropHint, number][] = [
-    ["left", x],
-    ["right", 1 - x],
-    ["top", y],
-    ["bottom", 1 - y],
-  ];
-  return distances.reduce((best, candidate) => (candidate[1] < best[1] ? candidate : best))[0];
-}
+export { panelDropZone as zoneOf } from "@/lib/layout/dropZone";
 
 export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolean }) {
   const tabs = useWorkspace((state) => state.tabs);
@@ -506,6 +576,7 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
   const splitTab = useWorkspace((state) => state.splitTab);
   const [hint, setHint] = useState<DropHint | null>(null);
   const body = useRef<HTMLDivElement>(null);
+  const isFloating = !!pane.floating;
 
   const activeTab = tabs.find((tab) => tab.id === pane.activeId) ?? null;
 
@@ -529,7 +600,7 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
       event.stopPropagation();
       setHint(null);
       const zone = zoneOf(element, event);
-      if (!zone) {
+      if (!zone || isFloating) {
         moveTab(dropped.tabId, pane.id);
         dropped.finish();
         return;
@@ -554,26 +625,46 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
       element.removeEventListener("dragleave", leave);
       element.removeEventListener("drop", drop);
     };
-  }, [pane.id, moveTab, splitTab]);
+  }, [pane.id, isFloating, moveTab, splitTab]);
 
+  const content = (
+    <div ref={body} className="pane__body">
+      {activeTab ? (
+        <TabContent paneId={pane.id} />
+      ) : (
+        <div className="page">
+          <EmptyState title="—" />
+        </div>
+      )}
+      {hint ? <div className={cn("pane__drop", `is-${hint}`)} aria-hidden="true" /> : null}
+    </div>
+  );
   return (
     <section
       className={cn("pane", active && "is-active")}
       data-pane-id={pane.id}
-      onMouseDown={() => activatePane(pane.id)}
+      onPointerDown={() => activatePane(pane.id)}
       onFocusCapture={() => activatePane(pane.id)}
     >
-      <TabStrip pane={pane} />
-      <div ref={body} className="pane__body">
-        {activeTab ? (
-          <TabContent paneId={pane.id} />
-        ) : (
-          <div className="page">
-            <EmptyState title="—" />
-          </div>
-        )}
-        {hint ? <div className={cn("pane__drop", `is-${hint}`)} aria-hidden="true" /> : null}
-      </div>
+      {pane.floating ? (
+        <PanelFrame
+          floating
+          location="floating"
+          label={activeTab?.title ?? ""}
+          panelId={`workspace:${pane.id}`}
+          bounds={pane.floating.bounds}
+          onBounds={(bounds) => useWorkspace.getState().setFloatingBounds(pane.id, bounds)}
+          onEscape={() => useWorkspace.getState().dockPane(pane.id)}
+          header={(geometry) => <TabStrip pane={pane} geometry={geometry} />}
+        >
+          {content}
+        </PanelFrame>
+      ) : (
+        <>
+          <TabStrip pane={pane} />
+          {content}
+        </>
+      )}
     </section>
   );
 }

@@ -1,3 +1,5 @@
+import { createPanelViewState, PanelViewStateScope } from "@/lib/panels/viewState";
+import { PanelStateLossRequired } from "@/lib/panels/stateLoss";
 import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode, useEffect, useLayoutEffect } from "react";
@@ -196,4 +198,26 @@ it("recovers the original native rows after duplicate provider mounts", async ()
   await screen.findByText("Database");
   expect(screen.getByRole("alert").textContent).toContain("more than once");
   expect(screen.getAllByText("Database")).toHaveLength(1);
+});
+
+it("never transfers a provider-owned draft as unprivileged native editor state", async () => {
+  const state = createPanelViewState();
+  render(
+    <PanelViewStateScope controller={state}>
+      <ForwardingSection host={host} />
+    </PanelViewStateScope>,
+  );
+  await waitFor(() => expect(retained.snapshot.total).toBe(1));
+  await state.waitReady(new AbortController().signal);
+  const loss = await state.captureAsync().catch((error: unknown) => error);
+  expect(loss).toBeInstanceOf(PanelStateLossRequired);
+  const options = { consentedStateLoss: new Set((loss as PanelStateLossRequired).views) };
+  expect(JSON.stringify(await state.captureAsync(undefined, options))).not.toContain("token");
+  act(() => retained.requestEdit("rule"));
+  await expect(state.captureAsync(undefined, options)).rejects.toThrow(
+    "panels.finishInteractionBeforeMoving",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await expect(state.captureAsync(undefined, options)).resolves.toBeDefined();
+  expect(invoke).not.toHaveBeenCalledWith("forwarding_save", expect.anything());
 });

@@ -6,15 +6,6 @@ use crate::error::{AppError, AppResult};
 
 pub const OFFICIAL_URL: &str =
     "https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json";
-pub const LEGACY_OFFICIAL_URL: &str =
-    "https://raw.githubusercontent.com/TunneldeDev/Tunnelde/main/marketplace/index.json";
-
-pub fn migrate_official_source(source: &mut MarketSource) {
-    if source.id == "official" && source.url == LEGACY_OFFICIAL_URL {
-        source.url = OFFICIAL_URL.into();
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketSource {
@@ -91,12 +82,6 @@ pub fn load(conn: &Connection) -> AppResult<PluginConfig> {
         .optional()?;
     Ok(raw
         .and_then(|s| serde_json::from_str(&s).ok())
-        .map(|mut config: PluginConfig| {
-            for source in &mut config.sources {
-                migrate_official_source(source);
-            }
-            config
-        })
         .filter(|config: &PluginConfig| config.validate().is_ok())
         .unwrap_or_default())
 }
@@ -112,7 +97,7 @@ pub fn save(conn: &Connection, config: &PluginConfig) -> AppResult<()> {
 mod tests {
     use super::*;
     #[test]
-    fn migration_preserves_runtime_consent_and_custom_sources() {
+    fn save_load_preserves_runtime_consent_and_custom_sources() {
         let db = crate::db::Database::in_memory().unwrap();
         db.with(|conn| {
             let mut config = PluginConfig {
@@ -120,7 +105,6 @@ mod tests {
                 node_system_allowed: true,
                 ..PluginConfig::default()
             };
-            config.sources[0].url = LEGACY_OFFICIAL_URL.into();
             config.sources[0].enabled = false;
             config.sources.push(MarketSource {
                 id: "custom".into(),
@@ -128,10 +112,7 @@ mod tests {
                 url: "https://example.org/registry.json".into(),
                 enabled: true,
             });
-            conn.execute(
-                "INSERT INTO settings (key,value,updated_at) VALUES ('plugins',?1,0)",
-                [serde_json::to_string(&config)?],
-            )?;
+            save(conn, &config)?;
             let loaded = load(conn)?;
             assert_eq!(loaded.sources[0].url, OFFICIAL_URL);
             assert!(!loaded.sources[0].enabled);

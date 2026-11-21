@@ -48,6 +48,7 @@ pub(super) fn find(conn: &Connection, id: &str) -> AppResult<Option<RevisionedRu
                 return Err(AppError::validation("forward.invalid"));
             }
             Ok(RevisionedRule {
+                group_id: super::groups::membership(conn, id)?,
                 revision: revision(&raw, token)?,
                 rule,
             })
@@ -66,21 +67,26 @@ fn check(conn: &Connection, id: &str, expected: Option<&str>) -> AppResult<()> {
     Ok(())
 }
 pub(super) fn list(db: &Database) -> AppResult<Vec<RevisionedRule>> {
-    db.with(|conn| {
-        let mut stmt = conn.prepare(
+    db.with(list_conn)
+}
+pub(crate) fn list_conn(conn: &Connection) -> AppResult<Vec<RevisionedRule>> {
+    let mut stmt = conn.prepare(
             "SELECT r.value,v.value FROM settings r LEFT JOIN settings v ON v.key='forward-version:' || substr(r.key,9) WHERE r.key LIKE 'forward:%' ORDER BY r.updated_at DESC",
         )?;
-        let raw = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)))?;
-        let mut result = Vec::new();
-        for item in raw {
-            let (raw, token) = item?;
-            result.push(RevisionedRule {
-                rule: serde_json::from_str(&raw)?,
-                revision: revision(&raw, token)?,
-            });
-        }
-        Ok(result)
-    })
+    let raw = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+    })?;
+    let mut result = Vec::new();
+    for item in raw {
+        let (raw, token) = item?;
+        let rule: ForwardRule = serde_json::from_str(&raw)?;
+        result.push(RevisionedRule {
+            group_id: super::groups::membership(conn, &rule.id)?,
+            rule,
+            revision: revision(&raw, token)?,
+        });
+    }
+    Ok(result)
 }
 
 pub(super) fn page(
@@ -118,6 +124,7 @@ pub(super) fn page(
                 return Err(AppError::validation("forward.invalid"));
             }
             result.push(RevisionedRule {
+                group_id: super::groups::membership(conn, &rule.id)?,
                 rule,
                 revision: revision(&raw, token)?,
             });
@@ -126,23 +133,33 @@ pub(super) fn page(
     })
 }
 
-pub(super) fn save(
+pub(super) fn save_configured(
     db: &Database,
     rule: &ForwardRule,
     expected: Option<&str>,
+    options: super::automation::Options,
 ) -> AppResult<RevisionedRule> {
-    write(db, rule, expected, false)
+    write(db, rule, expected, false, options, None)
 }
 /// Public creation is conditional too: a caller-chosen ID must never replace
 /// an existing rule, including after an uncertain reply or concurrent create.
 pub(super) fn create(db: &Database, rule: &ForwardRule) -> AppResult<RevisionedRule> {
-    write(db, rule, None, true)
+    write(
+        db,
+        rule,
+        None,
+        true,
+        super::automation::Options::default(),
+        None,
+    )
 }
 fn write(
     db: &Database,
     rule: &ForwardRule,
     expected: Option<&str>,
     create_only: bool,
+    options: super::automation::Options,
+    grouping: Option<Option<&str>>,
 ) -> AppResult<RevisionedRule> {
     db.with(|conn| {
         let tx = conn.unchecked_transaction()?;
@@ -151,6 +168,8 @@ fn write(
         }
         check(&tx, &rule.id, expected)?;
         crate::db::hosts::find_host(&tx, &rule.host_id)?;
+        if let Some(group) = grouping { super::groups::assign_at(&tx, &rule.id, &rule.host_id, group)?; }
+        super::groups::validate_membership(&tx, &rule.host_id, super::groups::membership(&tx,&rule.id)?.as_deref())?;
         let revision = uuid::Uuid::new_v4().to_string();
         let updated = crate::models::now_ms();
         for (key, value) in [
@@ -159,8 +178,10 @@ fn write(
         ] {
             tx.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![key, value, updated])?;
         }
+        super::automation::settings::write(&tx, &rule.id, &revision, options)?;
+        let group_id = super::groups::membership(&tx, &rule.id)?;
         tx.commit()?;
-        Ok(RevisionedRule { rule: rule.clone(), revision })
+        Ok(RevisionedRule { group_id, rule: rule.clone(), revision })
     })
 }
 pub(super) fn remove(db: &Database, id: &str, expected: Option<&str>) -> AppResult<bool> {
@@ -169,7 +190,68 @@ pub(super) fn remove(db: &Database, id: &str, expected: Option<&str>) -> AppResu
         check(&tx, id, expected)?;
         let removed = tx.execute("DELETE FROM settings WHERE key=?1", [key(id)])? != 0;
         tx.execute("DELETE FROM settings WHERE key=?1", [version_key(id)])?;
+        super::automation::settings::clear(&tx, id)?;
+        tx.execute(
+            "DELETE FROM settings WHERE key=?1",
+            [format!("forward-membership:{id}")],
+        )?;
         tx.commit()?;
         Ok(removed)
     })
+}
+
+pub(crate) fn find_entry(app: &tauri::AppHandle, id: &str) -> AppResult<RevisionedRule> {
+    use tauri::Manager;
+    app.state::<crate::state::AppState>()
+        .db
+        .with(|conn| find(conn, id))?
+        .ok_or_else(|| AppError::validation("forward.missing"))
+}
+
+/// A private connection prompt may only inspect/approve the host of the exact
+/// rule it displayed. Call inside the same DB guard as the final publication.
+pub(crate) fn require_reviewed_host(
+    conn: &Connection,
+    id: &str,
+    revision: &str,
+    host_id: &str,
+) -> AppResult<()> {
+    match find(conn, id)? {
+        Some(entry) if entry.revision == revision && entry.rule.host_id == host_id => Ok(()),
+        _ => Err(AppError::validation("forward.changed")),
+    }
+}
+
+pub(crate) fn import_at(
+    conn: &Connection,
+    rule: &ForwardRule,
+    options: super::automation::Options,
+    group: Option<&str>,
+) -> AppResult<()> {
+    super::contract::validate(rule)?;
+    if find(conn, &rule.id)?.is_some() {
+        return Err(AppError::validation("forward.changed"));
+    }
+    let revision = uuid::Uuid::new_v4().to_string();
+    for (key, value) in [
+        (key(&rule.id), serde_json::to_string(rule)?),
+        (version_key(&rule.id), serde_json::to_string(&revision)?),
+    ] {
+        conn.execute(
+            "INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3)",
+            rusqlite::params![key, value, crate::models::now_ms()],
+        )?;
+    }
+    super::groups::assign_at(conn, &rule.id, &rule.host_id, group)?;
+    super::automation::settings::write(conn, &rule.id, &revision, options)
+}
+
+pub(super) fn save_grouped(
+    db: &Database,
+    rule: &ForwardRule,
+    expected: Option<&str>,
+    options: super::automation::Options,
+    group: Option<&str>,
+) -> AppResult<RevisionedRule> {
+    write(db, rule, expected, false, options, Some(group))
 }

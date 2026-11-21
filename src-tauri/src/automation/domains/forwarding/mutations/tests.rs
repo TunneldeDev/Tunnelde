@@ -9,6 +9,7 @@ fn entry(revision: &str, running: bool) -> RevisionedInfo {
         panic!()
     };
     RevisionedInfo {
+        group_id: None,
         revision: revision.into(),
         runtime_id: running.then(|| "private-runtime".into()),
         info: ForwardInfo {

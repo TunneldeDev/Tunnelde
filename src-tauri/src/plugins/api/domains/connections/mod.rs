@@ -55,7 +55,7 @@ pub(in crate::plugins::api) async fn dispatch(
             crate::plugins::sessions::connect(context, field(&params, "request")?).await?,
         )),
         "sessions.disconnect" => {
-            commands::ssh_disconnect(app.clone(), field(&params, "sessionId")?)?;
+            commands::ssh_disconnect(app.clone(), field(&params, "sessionId")?).await?;
             Ok(Value::Null)
         }
         "sessions.requestHandoff" => encode(

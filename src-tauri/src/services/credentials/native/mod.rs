@@ -5,6 +5,7 @@ use super::super::operations::Cancellation;
 use super::bindings::{self, Binding, Owner};
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
+use crate::services::operations::WorkLifetime;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -57,6 +58,7 @@ pub(super) struct Service<'a, P> {
 /// guard (e.g. dynamic-source policy); `check` runs within the original DB guard.
 /// Both repeat at actual worker admission and before result publication/use.
 pub(super) struct Request<'a, Before, Check> {
+    work: WorkLifetime,
     db: &'a Database,
     run: Uuid,
     binding: Binding,
@@ -83,11 +85,14 @@ impl<'a, P: Platform> Service<'a, P> {
         Before: Fn() -> AppResult<()>,
         Check: Fn(&Connection) -> AppResult<Stamp>,
     {
-        before()?;
-        let (stamp, binding) = self
-            .db
-            .with(|conn| Ok((check(conn)?, bindings::capture(conn, &owner)?)))?;
+        let work = WorkLifetime::current();
+        let (stamp, binding) = work.with(|| {
+            before()?;
+            self.db
+                .with(|conn| Ok((check(conn)?, bindings::capture(conn, &owner)?)))
+        })?;
         Ok(Request {
+            work,
             db: self.db,
             run: self.run,
             binding,
@@ -201,12 +206,16 @@ where
     Check: Fn(&Connection) -> AppResult<Stamp>,
 {
     fn with<T>(&self, effect: impl FnOnce(&Connection) -> AppResult<T>) -> AppResult<T> {
-        (self.before)()?;
-        self.db.with(|conn| {
-            if (self.check)(conn)? != self.stamp {
-                return Err(AppError::validation("credentials.changed"));
-            }
-            effect(conn)
+        // Authority -> DB, on both sides of OS access. Preserve the captured
+        // origin even if delivery/scope is lost; no guard spans platform IO.
+        self.work.with(|| {
+            (self.before)()?;
+            self.db.with(|conn| {
+                if (self.check)(conn)? != self.stamp {
+                    return Err(AppError::validation("credentials.changed"));
+                }
+                effect(conn)
+            })
         })
     }
 }

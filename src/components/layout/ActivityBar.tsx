@@ -33,7 +33,7 @@ import { usePlugins } from "@/store/plugins";
 import { pluginSidebars } from "@/lib/plugins/sidebars";
 import type { SidebarView } from "@/store/navigation";
 import { useQuickAccess } from "@/store/quickAccess";
-import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
+import { usePanelPresentations, panelPresentation } from "@/store/panelPresentation";
 
 const PLUGIN_ICONS = {
   bot: Bot,
@@ -52,6 +52,7 @@ const PLUGIN_ICONS = {
 
 export function ActivityBar() {
   const { t } = useTranslation();
+  const presentations = usePanelPresentations((state) => state.panels);
   const visible = useNavigation((state) => state.sidebarVisible);
   const activeSidebar = useNavigation((state) => state.activeSidebar);
   const select = useNavigation((state) => state.selectSidebar);
@@ -74,7 +75,10 @@ export function ActivityBar() {
     })),
   ] satisfies { view: SidebarView; Icon: typeof Server }[];
   const selectView = async (view: SidebarView) => {
-    if (view === "tasks") useBackgroundTaskPanel.getState().close();
+    if (panelPresentation(view).getState().open) {
+      panelPresentation(view).getState().raise();
+      return;
+    }
     const current = useWorkspace.getState();
     const currentTab = current.tabs.find((tab) => tab.id === sidebarTabId(view));
     if (
@@ -134,11 +138,12 @@ export function ActivityBar() {
         const docked = !!tab;
         const expanded = docked
           ? !tab.hidden && panes.some((pane) => pane.activeId === id)
-          : visible && activeSidebar === view;
+          : !!presentations[view]?.open || (visible && activeSidebar === view);
         return (
           <IconButton
             key={view}
             label={sidebarLabel(view, t)}
+            data-panel-trigger={view}
             active={expanded}
             aria-expanded={expanded}
             aria-controls={`sidebar-${view}`}

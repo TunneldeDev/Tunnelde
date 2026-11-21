@@ -1,3 +1,5 @@
+import { NativePluginPanel } from "@/components/layout/NativePluginPanel";
+import { usePanelWindows } from "@/store/panelWindows";
 import { Component, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
@@ -8,6 +10,7 @@ import { reportError } from "@/lib/diagnostics";
 import { usePlugins } from "@/store/plugins";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
+import type { FrontendViewProps } from "@/lib/extensions/contracts/frontend/views";
 
 class ViewBoundary extends Component<
   { children: ReactNode; pluginId: string; fallback: (error: Error) => ReactNode },
@@ -29,16 +32,21 @@ export function PluginComponentView({
   pluginId,
   viewId,
   visible = true,
+  hostDetails,
 }: {
   pluginId: string;
   viewId: string;
   visible?: boolean;
+  hostDetails?: FrontendViewProps["hostDetails"];
 }) {
   const { t } = useTranslation();
   const plugin = usePlugins((state) => state.items.find((item) => item.id === pluginId));
   const restricted = usePluginSecurity((state) => state.state.restricted);
   useSyncExternalStore(frontendRuntime.subscribe, frontendRuntime.revision);
   const token = frontendRuntime.token(pluginId);
+  const nativeAvailable = usePanelWindows((state) => state.available);
+  const nativeFactory =
+    nativeAvailable && frontendRuntime.factoryOwner(pluginId, viewId, plugin?.fingerprint);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +88,8 @@ export function PluginComponentView({
         <PluginRestrictedAction />
       ) : error ? (
         fallback(error)
+      ) : nativeFactory ? (
+        <NativePluginPanel panelId={`plugin:${pluginId}:${viewId}`} visible={visible} />
       ) : View ? (
         <ViewBoundary
           key={`${pluginId}:${viewId}:${token ?? "none"}`}
@@ -88,7 +98,7 @@ export function PluginComponentView({
         >
           <PluginRuntimeView
             View={View}
-            viewProps={{ pluginId, viewId, visible }}
+            viewProps={{ pluginId, viewId, visible, hostDetails }}
             token={token}
             fingerprint={plugin?.fingerprint}
             onFailure={setError}

@@ -304,3 +304,31 @@ describe("workspace group actions", () => {
     expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(false);
   });
 });
+it("does not render tab actions or a tab strip in an empty workspace", () => {
+  useWorkspace.setState({
+    tabs: [],
+    panes: [{ id: "empty", tabIds: [], activeId: null }],
+    activePaneId: "empty",
+    activeId: null,
+    layout: { kind: "pane", paneId: "empty" },
+  });
+  const { container } = render(<PaneLayout />);
+  expect(container.querySelector(".pane__header")).toBeNull();
+  expect(screen.queryByRole("tablist")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Lock group" })).toBeNull();
+  expect(container.querySelector(".pane__body")).toBeTruthy();
+});
+it("offers floating for an ordinary host-detail tab in the group menu", () => {
+  useWorkspace.setState({
+    tabs: [{ id: "host:main", kind: "host", title: "Main", hostId: "main", pinned: false }],
+    panes: [{ id: "first", tabIds: ["host:main"], activeId: "host:main" }],
+    activeId: "host:main",
+    layout: { kind: "pane", paneId: "first" },
+  });
+  render(<PaneLayout />);
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open as a floating window" }));
+  expect(
+    useWorkspace.getState().panes.some((p) => p.floating && p.tabIds.includes("host:main")),
+  ).toBe(true);
+});

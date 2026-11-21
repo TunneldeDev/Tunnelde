@@ -36,6 +36,7 @@ async fn cancelled_serial_waiter_keeps_capacity_without_entering_the_operation()
     let worker_serial = serial.clone();
     let (entered, ready) = tokio::sync::oneshot::channel();
     let (finished, done) = tokio::sync::oneshot::channel();
+    let (release, wait) = std::sync::mpsc::channel();
     let calls = Arc::new(AtomicUsize::new(0));
     let worker_calls = calls.clone();
     let caller = tokio::spawn(async move {
@@ -46,6 +47,10 @@ async fn cancelled_serial_waiter_keeps_capacity_without_entering_the_operation()
                     worker_calls.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 });
+                // Cancellation may be observed before blocking_lock is entered.
+                // Keep the physical worker alive through the capacity assertions
+                // even when that early cancellation has already returned.
+                wait.recv_timeout(Duration::from_secs(5)).unwrap();
                 finished
                     .send(result.as_ref().err().map(ToString::to_string))
                     .unwrap();
@@ -66,6 +71,7 @@ async fn cancelled_serial_waiter_keeps_capacity_without_entering_the_operation()
         ERRORS.busy
     );
     drop(held);
+    release.send(()).unwrap();
     assert_eq!(done.await.unwrap().as_deref(), Some(ERRORS.cancelled));
     available(capacity).await;
     assert_eq!(calls.load(Ordering::SeqCst), 0);

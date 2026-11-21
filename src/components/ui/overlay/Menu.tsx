@@ -157,7 +157,7 @@ export function Menu({
               <MenuItems
                 items={items}
                 onSelect={(item) => {
-                  close();
+                  if (!item.keepOpen) close();
                   item.onSelect();
                 }}
               />

@@ -3,6 +3,7 @@
 pub(crate) struct Delivery<T, Cleanup: FnOnce(&T)> {
     value: Option<T>,
     cleanup: Option<Cleanup>,
+    lifetime: super::WorkLifetime,
 }
 
 impl<T, Cleanup: FnOnce(&T)> Delivery<T, Cleanup> {
@@ -10,6 +11,7 @@ impl<T, Cleanup: FnOnce(&T)> Delivery<T, Cleanup> {
         Self {
             value: Some(value),
             cleanup: Some(cleanup),
+            lifetime: super::WorkLifetime::current(),
         }
     }
 
@@ -21,7 +23,7 @@ impl<T, Cleanup: FnOnce(&T)> Delivery<T, Cleanup> {
 impl<T, Cleanup: FnOnce(&T)> Drop for Delivery<T, Cleanup> {
     fn drop(&mut self) {
         if let (Some(value), Some(cleanup)) = (self.value.take(), self.cleanup.take()) {
-            cleanup(&value);
+            self.lifetime.clone().retirement().sync(|| cleanup(&value));
         }
     }
 }

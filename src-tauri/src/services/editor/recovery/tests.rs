@@ -4,6 +4,7 @@ use super::{
 };
 use crate::{
     db::{self, Database},
+    services::files::text_encoding::TextEncoding,
     settings::Settings,
 };
 
@@ -14,6 +15,10 @@ fn draft(path: String) -> Draft {
         source: Source::Local,
         baseline: "original\n中文".into(),
         content: "unsaved\n中文“草稿”".into(),
+        encoding: Some(TextEncoding::Utf8),
+        bom: Some(false),
+        baseline_encoding: Some(TextEncoding::Utf8),
+        baseline_bom: Some(false),
     }
 }
 
@@ -56,6 +61,32 @@ fn reopens_checkpoint_after_database_exit_without_writing_original() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "original\n中文");
     drop(reopened);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn draft_target_and_strict_baseline_formats_may_differ() {
+    let database = Database::in_memory().unwrap();
+    enabled(&database);
+    let path = std::env::temp_dir()
+        .join("replacement.txt")
+        .to_string_lossy()
+        .into_owned();
+    let mut replacement = draft(path);
+    replacement.encoding = Some(TextEncoding::Gb18030);
+    replacement.bom = Some(false);
+    replacement.content = replacement.baseline.clone();
+    replacement.baseline_encoding = Some(TextEncoding::Utf8);
+    replacement.baseline_bom = Some(true);
+    database
+        .with(|conn| {
+            repository::save(conn, "", vec![replacement.clone()])?;
+            assert_eq!(
+                repository::read(conn)?.drafts[0].baseline_encoding,
+                replacement.baseline_encoding
+            );
+            Ok(())
+        })
+        .unwrap();
 }
 
 #[test]

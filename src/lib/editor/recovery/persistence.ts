@@ -1,6 +1,6 @@
 import { api } from "@/lib/api/ipc";
 import { isIpcError } from "@/lib/api/types";
-import { useEditors, type EditorEntry } from "@/store/editors";
+import { editorHasPendingChanges, useEditors, type EditorEntry } from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import type { EditorDraft } from "./contracts";
@@ -17,7 +17,7 @@ export async function flushEditorDrafts(): Promise<void> {
 
 function drafts(entries: Record<string, EditorEntry>): EditorDraft[] {
   return Object.values(entries).flatMap((entry) => {
-    if (entry.content === entry.baseline) return [];
+    if (!editorHasPendingChanges(entry)) return [];
     // Never reconstruct remote authority from a stale session ID or host settings.
     // Reject the entire checkpoint instead of silently dropping a legacy draft.
     if (
@@ -36,6 +36,10 @@ function drafts(entries: Record<string, EditorEntry>): EditorDraft[] {
           : { kind: "local" as const },
         baseline: entry.baseline,
         content: entry.content,
+        encoding: entry.encoding,
+        bom: entry.bom,
+        baselineEncoding: entry.baselineEncoding,
+        baselineBom: entry.baselineBom,
       },
     ];
   });

@@ -16,7 +16,7 @@ const MAX_PROFILES: usize = 32;
 
 pub(crate) mod activation;
 pub(crate) mod content;
-mod files;
+pub(crate) mod files;
 mod native;
 mod worker;
 #[cfg(test)]
@@ -58,6 +58,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "uiProviders",
     "hostList",
     "restoreWorkspace",
+    "disconnectOnPanelClose",
     "hostActivation",
     "hostDirectConnect",
     "terminalScrollback",

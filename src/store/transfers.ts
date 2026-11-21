@@ -32,15 +32,23 @@ export interface TransferItem extends Omit<TransferEvent, "status"> {
   artifactRecovery?: string | null;
 }
 
+export interface TransferOperationOptions {
+  onError?: (error: unknown) => void;
+}
+function reportTransferError(error: unknown, options?: TransferOperationOptions) {
+  if (options?.onError) options.onError(error);
+  else toast(translateError(error), "error");
+}
+
 interface TransfersStore {
   items: TransferItem[];
   apply: (event: TransferEvent) => void;
-  cancel: (id: string) => void;
+  cancel: (id: string, options?: TransferOperationOptions) => Promise<void>;
   hydrate: () => Promise<void>;
-  pause: (id: string) => void;
-  resume: (id: string) => void;
-  clear: (id: string) => Promise<void>;
-  setSpeedLimit: (id: string, kib: number) => Promise<boolean>;
+  pause: (id: string, options?: TransferOperationOptions) => Promise<void>;
+  resume: (id: string, options?: TransferOperationOptions) => Promise<void>;
+  clear: (id: string, options?: TransferOperationOptions) => Promise<void>;
+  setSpeedLimit: (id: string, kib: number, options?: TransferOperationOptions) => Promise<boolean>;
 }
 
 const KEEP_FINISHED = 6;
@@ -48,7 +56,7 @@ let snapshotRequest = 0;
 
 export const useTransfers = create<TransfersStore>((set, get) => ({
   items: [],
-  setSpeedLimit: async (id, kib) => {
+  setSpeedLimit: async (id, kib, options) => {
     const item = get().items.find((x) => x.id === id);
     if (!item || item.status !== "running" || item.cancelling || item.pausing || item.clearing)
       return false;
@@ -59,7 +67,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       }));
       return true;
     } catch (error) {
-      toast(translateError(error), "error");
+      reportTransferError(error, options);
       return false;
     }
   },
@@ -121,7 +129,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       toast(translateError(error), "error");
     }
   },
-  pause: (id) => {
+  pause: async (id, options) => {
     const item = get().items.find((x) => x.id === id);
     if (
       !item ||
@@ -135,14 +143,14 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     set((state) => ({
       items: state.items.map((x) => (x.id === id ? { ...x, pausing: true } : x)),
     }));
-    void transferApi.pause(id).catch((error) => {
+    await transferApi.pause(id).catch((error) => {
       set((state) => ({
         items: state.items.map((x) => (x.id === id ? { ...x, pausing: false } : x)),
       }));
-      toast(translateError(error), "error");
+      reportTransferError(error, options);
     });
   },
-  resume: (id) => {
+  resume: async (id, options) => {
     const previous = get().items.find((x) => x.id === id);
     if (
       !previous ||
@@ -169,14 +177,14 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
           : x,
       ),
     }));
-    void transferApi.resume(id).catch((error) => {
+    await transferApi.resume(id).catch((error) => {
       set((state) => ({
         items: state.items.map((x) => (x.id === id && x.status === "running" ? previous : x)),
       }));
-      toast(translateError(error), "error");
+      reportTransferError(error, options);
     });
   },
-  clear: async (id) => {
+  clear: async (id, options) => {
     const item = get().items.find((x) => x.id === id);
     if (!item || item.status === "running" || item.clearing) return;
     if (!item.durable) {
@@ -203,7 +211,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
         set((state) => ({
           items: state.items.map((x) => (x.id === id ? { ...x, clearing: false } : x)),
         }));
-        toast(translateError(error), "error");
+        reportTransferError(error, options);
       });
   },
 
@@ -247,7 +255,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     });
   },
 
-  cancel: (id) => {
+  cancel: async (id, options) => {
     const item = get().items.find((entry) => entry.id === id);
     if (item && item.status === "running" && !item.cancelling && !item.pausing && !item.clearing) {
       set((state) => ({
@@ -255,13 +263,13 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
           entry.id === id ? { ...entry, cancelling: true } : entry,
         ),
       }));
-      void api.transferCancel(id).catch((error: unknown) => {
+      await api.transferCancel(id).catch((error: unknown) => {
         set((state) => ({
           items: state.items.map((entry) =>
             entry.id === id ? { ...entry, cancelling: false } : entry,
           ),
         }));
-        toast(translateError(error), "error");
+        reportTransferError(error, options);
       });
     }
   },

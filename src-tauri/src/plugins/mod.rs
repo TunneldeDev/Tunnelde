@@ -1,4 +1,5 @@
 pub mod api;
+mod bus;
 pub mod config;
 pub mod configuration;
 mod contributions;
@@ -6,12 +7,14 @@ mod declarative;
 mod engines;
 mod events;
 mod extensions;
+pub mod file_highlights;
 pub mod file_icons;
 mod files;
 pub mod forwarding;
 pub mod frontend;
 mod host;
 pub mod host_columns;
+pub mod host_details;
 pub mod host_fields;
 pub mod host_list;
 pub mod host_sources;
@@ -24,6 +27,7 @@ pub mod runners;
 mod runtime;
 pub mod security;
 mod sessions;
+pub(crate) mod shared_mounts;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod tasks;
@@ -31,6 +35,10 @@ mod tools;
 pub mod wasm;
 
 pub use runtime::activation::{ActivationPlan, PackageReview, PluginDependency, StartPermit};
+
+// Native presentation commits may consume the transport's bounded cancellation
+// fence, never its request IDs, module tokens or arbitrary plugin commands.
+pub(crate) use runtime::requests::{current_invocation_fence, InvocationFence};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -70,6 +78,7 @@ pub struct PluginInfo {
     pub api_version: u32,
     pub dependencies: Vec<PluginDependency>,
     pub host_fields: Option<crate::services::host_fields::Schema>,
+    pub host_details: Vec<host_details::Contribution>,
     pub configuration:
         Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
     pub description: Option<String>,
@@ -166,6 +175,7 @@ impl Instance {
             api_version: self.manifest.api_version,
             dependencies: self.manifest.dependencies.clone(),
             host_fields: self.manifest.host_fields.clone(),
+            host_details: self.manifest.host_details.clone(),
             configuration: self.manifest.configuration.clone(),
             description: self.manifest.description.clone(),
             commands: self.manifest.commands.clone(),
@@ -210,10 +220,12 @@ pub struct PluginsManager {
     status_bar: contributions::Registry<status_bar::StatusBarItem>,
     tab_bar: contributions::Registry<tab_bar::TabBarItem>,
     host_list: contributions::Registry<host_list::DecorationSet>,
+    file_highlights: contributions::Registry<file_highlights::HighlightSet>,
     host_columns: contributions::Registry<host_columns::Column>,
     host_sources: contributions::Registry<host_sources::Source>,
     sessions: Arc<runtime::ownership::Registry<String>>,
     file_content: files::content::Content,
+    bus: bus::Bus,
     profile_drafts: Arc<crate::settings_profiles::mutations::drafts::Registry>,
 }
 
@@ -403,10 +415,12 @@ impl PluginsManager {
             status_bar: contributions::Registry::default(),
             tab_bar: contributions::Registry::default(),
             host_list: contributions::Registry::with_limit_error("plugin.hostList.limit"),
+            file_highlights: contributions::Registry::with_limit_error("plugin.fileList.limit"),
             host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
             sessions: runtime::ownership::Registry::new(8, 64),
             file_content: files::content::Content::default(),
+            bus: bus::Bus::default(),
             profile_drafts: Arc::default(),
         }
     }

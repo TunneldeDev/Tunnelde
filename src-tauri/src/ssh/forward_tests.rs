@@ -137,7 +137,7 @@ impl server::Handler for TestServer {
         }
     }
 }
-async fn fixture() -> (
+pub(crate) async fn fixture() -> (
     Arc<client::Handle<ClientHandler>>,
     Arc<RemoteRoutes>,
     JoinHandle<()>,
@@ -932,6 +932,70 @@ async fn prepared_listeners_cannot_relay_until_the_authorized_commit() {
         registry.stop(&rule.id).await.unwrap();
         assert_closed(socket, port).await;
     }
+    server.abort();
+    echo_task.abort();
+}
+
+#[tokio::test]
+async fn cancelled_native_preparation_retains_effect_until_real_ssh_remote_cancellation_ack() {
+    struct Fence(Option<tokio::sync::oneshot::Sender<()>>);
+    impl Drop for Fence {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+    let forward_gate = Arc::new(Gate::default());
+    let cancel_gate = Arc::new(Gate::default());
+    let (address, fingerprint, server) =
+        server_with_gates(Some(forward_gate.clone()), Some(cancel_gate.clone())).await;
+    let socket = TcpStream::connect(address).await.unwrap();
+    let (mut client, _, routes) =
+        super::super::session::handshake(Box::pin(socket), Some(fingerprint))
+            .await
+            .unwrap();
+    assert!(client.authenticate_none("test").await.unwrap().success());
+    let handle = Arc::new(client);
+    let (target_port, echo_task) = echo().await;
+    let rule = ForwardRule {
+        id: "native-pending".into(),
+        host_id: "host".into(),
+        name: "native-pending".into(),
+        mode: "remote".into(),
+        bind_host: "127.0.0.1".into(),
+        bind_port: free_port().await,
+        target_host: "127.0.0.1".into(),
+        target_port,
+    };
+    let registry = Arc::new(ForwardRegistry::default());
+    let (settled, mut done) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(
+        crate::services::operations::WorkLifetime::new(Fence(Some(settled)))
+            .scope(async move { prepare(&registry, &rule, "session", handle, routes, None).await }),
+    );
+    tokio::time::timeout(Duration::from_secs(3), forward_gate.entered.notified())
+        .await
+        .unwrap();
+    task.abort();
+    assert!(matches!(task.await, Err(error) if error.is_cancelled()));
+    assert!(
+        done.try_recv().is_err(),
+        "cancelled caller released effect before remote cleanup"
+    );
+    forward_gate.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), cancel_gate.entered.notified())
+        .await
+        .unwrap();
+    assert!(
+        done.try_recv().is_err(),
+        "queued CANCEL is not peer acknowledgement"
+    );
+    cancel_gate.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), done)
+        .await
+        .unwrap()
+        .unwrap();
     server.abort();
     echo_task.abort();
 }

@@ -151,16 +151,18 @@ export function shortcutCommands(plugins: readonly PluginInfo[] = []): ShortcutC
             defaults: [],
             plugin: { id: plugin.id, view: view.id },
           })),
-        ...plugin.commands.map((item) => ({
-          id: `plugin.c.${plugin.id.length}.${plugin.id}.${item.id}`,
-          label: "pluginView.run",
-          title: `${plugin.name}: ${item.title}`,
-          scope: (item.editor ? "editor" : "workbench") as CommandScope,
-          input: true,
-          defaults: item.keybindings ?? [],
-          macDefaults: item.macKeybindings,
-          plugin: { id: plugin.id, command: item.id },
-        })),
+        ...plugin.commands
+          .filter((item) => !(item.editor?.syntax === true && item.editor.format !== true))
+          .map((item) => ({
+            id: `plugin.c.${plugin.id.length}.${plugin.id}.${item.id}`,
+            label: "pluginView.run",
+            title: `${plugin.name}: ${item.title}`,
+            scope: (item.editor ? "editor" : "workbench") as CommandScope,
+            input: true,
+            defaults: item.keybindings ?? [],
+            macDefaults: item.macKeybindings,
+            plugin: { id: plugin.id, command: item.id },
+          })),
       ]),
   ];
 }

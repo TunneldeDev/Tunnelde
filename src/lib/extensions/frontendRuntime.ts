@@ -10,13 +10,16 @@ import {
 } from "./resourceScope";
 import { uiSdk, type FrontendContext, type FrontendModule, type FrontendViewProps } from "./uiSdk";
 
+import { createFrontendFactoryComponent } from "./runtime/views/factory";
+import type { FrontendViewOwner } from "./runtime/views/frontend";
+import { openFrontendView } from "./runtime/views/frontend";
 import { createBackgroundTaskRunner } from "./backgroundTasks/execution";
 import { samePluginRuntime } from "@/lib/plugins/commands/runtime";
 import { usePlugins } from "@/store/plugins";
 import { callFrontend } from "./runtime/requests/frontend";
 import type { UiResourceOptions } from "./contracts/runtime/resources";
 
-interface Session {
+export interface FrontendSession {
   token: string;
   pluginId: string;
   generation: number;
@@ -31,7 +34,10 @@ interface Runtime {
   activated: boolean;
   retiring: boolean;
   token?: string;
+  session?: FrontendSession;
+  viewFactory?: boolean;
   views: Map<string, ComponentType<FrontendViewProps>>;
+  factoryViews: Map<string, ComponentType<FrontendViewProps>>;
   commands: Map<
     string,
     (input: Record<string, unknown>, signal: AbortSignal) => unknown | Promise<unknown>
@@ -39,7 +45,9 @@ interface Runtime {
 }
 
 export interface FrontendTransport {
-  open(id: string, runtimeId: string): Promise<Session>;
+  open(id: string, runtimeId: string): Promise<FrontendSession>;
+  /** Coordinator-only until an owner/document-scoped native gateway admits it. */
+  openView?(token: string, viewId: string, instanceId: string): Promise<FrontendSession>;
   current(plugin: PluginInfo): boolean;
   ready(token: string): Promise<void>;
   close(token: string): Promise<void>;
@@ -50,7 +58,7 @@ export interface FrontendTransport {
     params: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<T>;
-  load(session: Session): Promise<FrontendModule>;
+  load(session: FrontendSession): Promise<FrontendModule>;
   report(pluginId: string, operation: string, error: unknown): void;
 }
 
@@ -74,6 +82,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
     runtimes.delete(id);
     runtime.scope.dispose();
     runtime.views.clear();
+    runtime.factoryViews.clear();
     runtime.commands.clear();
     changed();
   };
@@ -97,6 +106,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         activated: false,
         retiring: false,
         views: new Map(),
+        factoryViews: new Map(),
         commands: new Map(),
       };
       runtime = current;
@@ -137,8 +147,10 @@ export function createFrontendRuntime(transport: FrontendTransport) {
             throw new Error("plugin.frontend.sdkMismatch");
           if (session.runtimeId !== plugin.runtimeId) throw new ResourceScopeClosed();
           current.token = session.token;
+          current.session = session;
           const module = await scope.run(() => transport.load(session), { timeoutMs: 15_000 });
           live();
+          current.viewFactory = typeof module.createView === "function";
           if (typeof module.activate !== "function")
             throw new Error("plugin.frontend.missingActivate");
           const context: FrontendContext = Object.freeze({
@@ -196,6 +208,29 @@ export function createFrontendRuntime(transport: FrontendTransport) {
           live();
           await scope.run(() => transport.ready(session.token), { timeoutMs: 15_000 });
           live();
+          // Existing registered renderers retain their exact compatibility path.
+          // Factory-only declarations gain a stable per-mounted-view adapter.
+          if (current.viewFactory && transport.openView) {
+            for (const view of plugin.views) {
+              // These providers have no synchronous required Workspace/Screen
+              // slot. Other providers still need their own
+              // async slot/handle admission; never opt them in implicitly.
+              if (
+                view.kind !== "component" ||
+                (view.provider &&
+                  view.provider !== "forwarding" &&
+                  view.provider !== "backgroundTasks" &&
+                  view.provider !== "hostList") ||
+                current.views.has(view.id)
+              )
+                continue;
+              const View = createFrontendFactoryComponent((signal, state) =>
+                mountView(plugin.id, view.id, session.token, state, signal),
+              );
+              register(current.views, view.id, View, true);
+              current.factoryViews.set(view.id, View);
+            }
+          }
           current.activated = true;
           changed();
         } catch (error) {
@@ -224,6 +259,44 @@ export function createFrontendRuntime(transport: FrontendTransport) {
     )
       throw new ResourceScopeClosed();
     return runtime;
+  };
+  /** Optional per-view initialization; never activates or starts a plugin.
+   * null means legacy frontend: its component remains document-local.
+   */
+  const mountView = async (
+    id: string,
+    viewId: string,
+    token: string,
+    state?: { value: unknown },
+    signal?: AbortSignal,
+  ) => {
+    const runtime = runtimes.get(id);
+    const check = () => {
+      if (
+        !runtime ||
+        runtimes.get(id) !== runtime ||
+        runtime.token !== token ||
+        !runtime.activated ||
+        runtime.retiring ||
+        runtime.scope.signal.aborted ||
+        !transport.current(runtime.plugin) ||
+        !runtime.plugin.views.some((view) => view.id === viewId && view.kind === "component")
+      )
+        throw new ResourceScopeClosed();
+    };
+    check();
+    if (!runtime!.viewFactory || !transport.openView) return null;
+    return openFrontendView({
+      plugin: runtime!.plugin,
+      viewId,
+      activation: runtime!.session!,
+      parent: runtime!.scope,
+      transport,
+      openView: transport.openView.bind(transport),
+      check,
+      state,
+      signal,
+    });
   };
   return {
     ensure: async (plugin: PluginInfo) => {
@@ -254,7 +327,46 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         ? runtime.views.get(viewId)
         : undefined;
     },
+    /** Exact renderer identity only; not native adapter admission or authority. */
+    isFactoryView(id: string, viewId: string, component: ComponentType<FrontendViewProps>) {
+      const runtime = runtimes.get(id);
+      return !!(
+        runtime?.activated &&
+        !runtime.retiring &&
+        !runtime.scope.signal.aborted &&
+        transport.current(runtime.plugin) &&
+        runtime.factoryViews.get(viewId) === component &&
+        runtime.views.get(viewId) === component
+      );
+    },
+    /** Main-host admission candidates only; this neither opens nor activates a
+     * module. Legacy registered renderers are NOT silently swapped for factories.
+     * Return a fresh, non-secret owner projection, never the activation session.
+     */
+    factoryOwner(id: string, viewId: string, fingerprint?: string): FrontendViewOwner | undefined {
+      const runtime = runtimes.get(id);
+      const contribution = runtime?.plugin.views.find((view) => view.id === viewId);
+      const component = runtime?.factoryViews.get(viewId);
+      if (
+        !runtime?.activated ||
+        runtime.retiring ||
+        runtime.scope.signal.aborted ||
+        !runtime.session ||
+        !component ||
+        runtime.views.get(viewId) !== component ||
+        !transport.current(runtime.plugin) ||
+        (fingerprint !== undefined && runtime.plugin.fingerprint !== fingerprint) ||
+        contribution?.location !== "sidebar" ||
+        contribution.kind !== "component" ||
+        contribution.provider ||
+        contribution.allowFloating === false
+      )
+        return undefined;
+      const { pluginId, runtimeId, generation, entry, sdkVersion } = runtime.session;
+      return { pluginId, runtimeId, generation, entry, sdkVersion };
+    },
     token: (id: string) => runtimes.get(id)?.token,
+    mountView,
     /** Admit a committed view only against its exact activated module and renderer. */
     viewScope(
       id: string,
@@ -347,6 +459,8 @@ export function createFrontendRuntime(transport: FrontendTransport) {
 
 export const frontendRuntime = createFrontendRuntime({
   open: (id, runtimeId) => invoke("plugin_frontend_open", { id, runtimeId }),
+  openView: (token, viewId, instanceId) =>
+    invoke("plugin_frontend_view_open", { token, viewId, instanceId }),
   current: (plugin) => {
     const state = usePlugins.getState();
     return (

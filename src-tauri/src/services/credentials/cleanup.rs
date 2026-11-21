@@ -46,12 +46,14 @@ pub(crate) fn schedule(app: &AppHandle) {
             let mut more = true;
             for _ in 0..256 {
                 let worker_app = app.clone();
-                let result = WORKERS
-                    .blocking(move |job| {
+                let result = running
+                    .0
+                    .work()
+                    .scope(WORKERS.blocking(move |job| {
                         let state = worker_app.state::<AppState>();
                         native::Service::new(&state.db, &state.vault, state.credentials.run)?
                             .retire_one(job)
-                    })
+                    }))
                     .await;
                 match result {
                     Ok(true) => {}

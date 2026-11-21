@@ -1,3 +1,7 @@
+import {
+  encodeTerminalCheckpoint,
+  decodeTerminalCheckpoint,
+} from "@/features/terminal/terminalCheckpointCodec";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
@@ -66,9 +70,24 @@ describe("terminal window recreation", () => {
   ) {
     const addon = new serializeModule.exports.SerializeAddon();
     terminal.loadAddon(addon);
-    const parser = decode.checkpoint();
-    const state = captureTerminalState(terminal);
-    const data = addon.serialize();
+    // Exercise the actual native JSON boundary, not an in-memory state copy.
+    const snapshot = decodeTerminalCheckpoint(
+      JSON.parse(
+        JSON.stringify(
+          encodeTerminalCheckpoint({
+            sequence: 7,
+            cols: terminal.cols,
+            rows: terminal.rows,
+            viewportY: terminal.buffer.active.viewportY,
+            data: addon.serialize(),
+            decoder: decode.checkpoint(),
+            state: captureTerminalState(terminal),
+            input: { text: "", escape: 0 },
+          }),
+        ),
+      ),
+    );
+    const { decoder: parser, state, data } = snapshot;
     const restored = createTerminal();
     await write(restored, data);
     restoreTerminalState(restored, state);
