@@ -10,7 +10,7 @@ use crate::{
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 impl PluginsManager {
-    pub(in crate::plugins) async fn run_bound(
+    pub(crate) async fn run_bound(
         &self,
         id: &str,
         command: &str,
