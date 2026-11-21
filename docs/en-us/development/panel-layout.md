@@ -1593,3 +1593,22 @@ cancel, download event registration and the shared activation decision stay with
 the main runtime owner; remounting the renderer displays the same installation
 rather than starting another. These boundaries do not move permission/first-use
 gates into native views or enable native Settings prematurely.
+
+Plugin configuration, catalogue-source settings and runner recovery also use
+explicit display/effect services. Configuration captures the draft together with
+its original revision/schema baseline: reading a newer document after remount
+must not silently rebase old edits. Backup deletion retains field drafts. Source
+trust/deletion consent remains owner-controlled; narrow commands validate the
+expected source against the current list, preserving unrelated additions. One
+captured source-editor draft is cleared on cancel/save rather than leaking stale
+values into the next edit.
+
+Recovery captures the selected owner/page, disclosure and token-qualified
+observations, pruning records that no longer exist. A saved record or connected
+SSH session is never proof of a running process. SSH acquisition, authentication,
+verification and file navigation remain with the main recovery-files owner;
+views receive only browse/status/render effects. A future native adapter must
+retain that auth/dialog lifecycle or coordinate pending handoff explicitly; a
+null satellite dialog is not a complete adapter. These changes still do not
+admit Settings to native windows. Full provider presentation, private secret
+draft transfer and owner/readiness coordination remain required.
