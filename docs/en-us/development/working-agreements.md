@@ -62,6 +62,10 @@ page durable; put temporary plans, screenshots and handoff notes in `.tmp/`.
   acceptance beta after the requested scope is complete. Use the automated
   immutable release snapshot workflow; verify platform builds, release assets,
   signatures and updater metadata. A beta is not a claim of stable acceptance.
+- **A stable release must bind to a published, explicitly accepted Beta built
+  from the same product source.** Stable preparation and publication fail unless
+  a maintainer records acceptance on that Beta Release. Green CI, successful
+  builds or verbal approval never replace this gate.
 - Keep English and Chinese development guidance and UI translations aligned.
   Document real limitations instead of marking partially implemented work done.
 - Coding subagents may use only `deepseek-ai/DeepSeek-V4.1-Flash` unless the

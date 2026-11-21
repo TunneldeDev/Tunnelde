@@ -46,6 +46,12 @@ impl CallPolicy {
     }
 }
 pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
+    policy(method)
+}
+
+/// Exact method classes are shared by native admission and coordinator reply
+/// revalidation. Prefixes and permissions never widen this closed list.
+fn policy(method: &str) -> Option<CallPolicy> {
     match method {
         "api.describe" | "extensions.describe" => Some(CallPolicy::Metadata),
         "bus.advertise" | "bus.discover" | "bus.snapshot" | "bus.decline" | "bus.create"
@@ -75,12 +81,72 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         | "preferences.observe"
         | "configuration.schema"
         | "configuration.snapshot"
-        | "configuration.backups" => Some(CallPolicy::StagedData),
+        | "configuration.backups"
+        | "sessions.list"
+        | "files.local.home"
+        | "files.transferStatus"
+        | "resources.snapshot"
+        | "workspace.snapshot"
+        | "workspace.panels.list"
+        | "workspace.panels.observe"
+        | "workspace.panels.ownership"
+        | "workspace.windows.list"
+        | "workspace.windows.observe"
+        | "editor.active"
+        | "editor.observe"
+        | "editor.readRange"
+        | "fileBrowser.observe"
+        | "fileBrowser.read"
+        | "filePreview.observe"
+        | "filePreview.providers" => Some(CallPolicy::StagedData),
         // Mutations await actual I/O; even keyring reads can prompt/perform OS
         // work, so they are NOT admitted during staging.
-        "hosts.routes.save" | "hosts.setFields" | "hosts.create" | "hosts.update"
-        | "hosts.delete" | "hosts.markUsed" | "hosts.reorder" | "groups.create"
-        | "groups.update" | "groups.delete" => Some(CallPolicy::OwnedData),
+        "hosts.routes.save"
+        | "hosts.setFields"
+        | "hosts.create"
+        | "hosts.update"
+        | "hosts.delete"
+        | "hosts.markUsed"
+        | "hosts.reorder"
+        | "groups.create"
+        | "groups.update"
+        | "groups.delete"
+        | "files.local.writeText"
+        | "files.local.createFile"
+        | "files.local.mkdir"
+        | "files.local.rename"
+        | "files.local.delete"
+        | "files.local.copy"
+        | "files.sftp.writeText"
+        | "files.sftp.createFile"
+        | "files.sftp.mkdir"
+        | "files.sftp.rename"
+        | "files.sftp.delete"
+        | "files.sftp.copy"
+        | "files.upload"
+        | "files.download"
+        | "files.cancelTransfer"
+        | "files.local.list"
+        | "files.local.readText"
+        | "files.sftp.list"
+        | "files.sftp.resolveDirectory"
+        | "files.sftp.readText"
+        | "sessions.connect"
+        | "sessions.disconnect"
+        | "sessions.requestHandoff"
+        | "sessions.exec"
+        | "terminal.write"
+        | "terminal.resize"
+        | "editor.applyEdits"
+        | "editor.replace"
+        | "fileBrowser.action"
+        | "filePreview.action"
+        | "filePreview.open"
+        | "workspace.panels.setPresentation"
+        | "workspace.panels.close"
+        | "workspace.panels.moveToWindow"
+        | "workspace.windows.create"
+        | "workspace.windows.close" => Some(CallPolicy::OwnedData),
         "preferences.update"
         | "storage.set"
         | "storage.delete"
@@ -94,6 +160,98 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         _ => mounts::policy(method),
     }
 }
+#[cfg(test)]
+mod workspace_and_file_tests {
+    use super::*;
+    #[test]
+    fn reviewed_workspace_and_file_methods_have_closed_native_lifetimes() {
+        for method in [
+            "sessions.list",
+            "files.local.home",
+            "files.transferStatus",
+            "resources.snapshot",
+            "workspace.snapshot",
+            "workspace.panels.list",
+            "workspace.panels.observe",
+            "workspace.panels.ownership",
+            "workspace.windows.list",
+            "workspace.windows.observe",
+            "editor.active",
+            "editor.observe",
+            "editor.readRange",
+            "fileBrowser.observe",
+            "fileBrowser.read",
+            "filePreview.observe",
+            "filePreview.providers",
+        ] {
+            assert!(
+                crate::plugins::api::method_info(method).is_some(),
+                "{method}"
+            );
+            let policy = call_policy(method).unwrap();
+            assert_eq!(policy, CallPolicy::StagedData, "{method}");
+            assert!(policy.staged() && policy.retained() && policy.blocks_move());
+        }
+        for method in [
+            "files.local.list",
+            "files.local.readText",
+            "files.sftp.list",
+            "files.sftp.resolveDirectory",
+            "files.sftp.readText",
+            "files.local.writeText",
+            "files.local.createFile",
+            "files.local.mkdir",
+            "files.local.rename",
+            "files.local.delete",
+            "files.local.copy",
+            "files.sftp.writeText",
+            "files.sftp.createFile",
+            "files.sftp.mkdir",
+            "files.sftp.rename",
+            "files.sftp.delete",
+            "files.sftp.copy",
+            "files.upload",
+            "files.download",
+            "files.cancelTransfer",
+            "sessions.connect",
+            "sessions.disconnect",
+            "sessions.requestHandoff",
+            "sessions.exec",
+            "terminal.write",
+            "terminal.resize",
+            "editor.applyEdits",
+            "editor.replace",
+            "fileBrowser.action",
+            "filePreview.action",
+            "filePreview.open",
+            "workspace.panels.setPresentation",
+            "workspace.panels.close",
+            "workspace.panels.moveToWindow",
+            "workspace.windows.create",
+            "workspace.windows.close",
+        ] {
+            assert!(
+                crate::plugins::api::method_info(method).is_some(),
+                "{method}"
+            );
+            let policy = call_policy(method).unwrap();
+            assert_eq!(policy, CallPolicy::OwnedData, "{method}");
+            assert!(!policy.staged() && policy.retained() && policy.blocks_move());
+        }
+        for method in [
+            "files.content.open",
+            "files.content.read",
+            "files.content.close",
+            "files.content.observe",
+            "workspace.openPage",
+            "workspace.windows.unknown",
+            "sessions.connect.extra",
+        ] {
+            assert!(call_policy(method).is_none(), "{method}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

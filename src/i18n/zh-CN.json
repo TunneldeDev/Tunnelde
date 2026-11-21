@@ -2858,8 +2858,6 @@
     "stateLossConfirm": "丢弃视图状态并重新打开",
     "actionInterrupted": "主窗口在操作期间重载，操作结果未知。为避免重复执行，此面板已锁定。请先检查资源状态，再重启 Tunnelde 解除保护。",
     "moveToGroup": "移至分组 {{index}}",
-    "inOtherWindow": "此面板已在另一个窗体中打开。",
-    "focusWindow": "显示所在窗体",
     "newWindow": "移至新窗体",
     "moveToWindow": "移至窗体 {{index}}",
     "returnToMainWindow": "移回主窗体",

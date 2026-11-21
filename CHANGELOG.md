@@ -6,6 +6,37 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.5.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.4.0...v2.5.0) - 2026-11-21
+
+### 更新概览 | Highlights
+
+- **plugins:** retain private declarative form drafts
+- **plugins:** admit reviewed native workspace and file RPCs
+- **plugins:** retain main secret draft across strict replay
+- **release:** require accepted beta before stable
+- **panels:** remove source placeholder after detach
+
+<details open>
+<summary>详细变更 | Details (6)</summary>
+
+### 新增 | New
+
+- **plugins:** retain private declarative form drafts ([#506](https://github.com/TunneldeDev/Tunnelde/pull/506)) @quyansiyuanwang
+- **plugins:** admit reviewed native workspace and file RPCs ([#507](https://github.com/TunneldeDev/Tunnelde/pull/507)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **plugins:** retain main secret draft across strict replay ([#510](https://github.com/TunneldeDev/Tunnelde/pull/510)) @quyansiyuanwang
+- **release:** require accepted beta before stable ([#508](https://github.com/TunneldeDev/Tunnelde/pull/508)) @quyansiyuanwang
+- **panels:** remove source placeholder after detach ([#511](https://github.com/TunneldeDev/Tunnelde/pull/511)) @quyansiyuanwang
+- **plugins:** route native frontend calls through coordinator ([#512](https://github.com/TunneldeDev/Tunnelde/pull/512)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.4.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.3.1...v2.4.0) - 2026-11-21
 
 ### 更新概览 | Highlights

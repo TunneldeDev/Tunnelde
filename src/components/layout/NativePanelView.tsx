@@ -1,6 +1,5 @@
 import { PanelViewBoundary } from "@/lib/panels/viewBoundary";
 import { PanelInteractionScope } from "@/lib/panels/interaction";
-import { Button } from "@/components/ui/form/Button";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { capturePanelDomState, restorePanelDomState } from "@/lib/panels/domState";
@@ -143,27 +142,12 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
 }
 
 export function NativePanelView({ panelId, children }: { panelId: string; children: ReactNode }) {
-  const { t } = useTranslation();
   const available = usePanelWindows((s) => s.available);
   const record = useWindowViews((s) => s.entries.get(panelId));
   if (!available || !renderablePanel(panelId)) return children;
-  if (!record)
-    return (
-      <div className="native-panel-placeholder" role="status">
-        <span>{t("panels.inOtherWindow")}</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            void windowViews()
-              ?.client.focus(panelId)
-              .catch(() => {});
-          }}
-        >
-          {t("panels.focusWindow")}
-        </Button>
-      </div>
-    );
+  // A moved panel has no body in the source window. Rendering a placeholder
+  // would leave a stale surface that looks like a second, disabled panel.
+  if (!record) return null;
   return (
     <OwnedNativeView key={record.key} record={record}>
       {children}

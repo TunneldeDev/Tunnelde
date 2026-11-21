@@ -15,13 +15,18 @@ import {
   type PluginFormBlock,
 } from "@/lib/plugins/pluginView";
 import type { DeclarativePluginView, DeclarativeViewOwner } from "@/lib/plugins/views/declarative";
-import type { useViewState } from "@/lib/session/viewState";
+import type { usePanelViewStateBridge } from "@/lib/panels/viewState";
 import { PluginCommandResultView } from "./PluginCommandResultView";
 import "@/styles/pluginTools.css";
 
 export interface DeclarativeViewServices {
   run: DeclarativeViewOwner["run"];
-  useViewState: typeof useViewState;
+  useViewState: typeof usePanelViewStateBridge;
+  useSecretState: <T>(
+    key: string,
+    initial: T | (() => T),
+    validate: (value: unknown) => value is T,
+  ) => [T, (next: T | ((previous: T) => T)) => void];
   useBusyGuard: (busy: boolean) => void;
 }
 /** All JSON blocks retain the same renderer. Domain blocks and effects are
@@ -172,6 +177,21 @@ export function DeclarativePluginView({
   );
 }
 
+const isRecord = (value: unknown): value is Record<string, string> =>
+  !!value &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  Object.values(value).every((item) => typeof item === "string");
+const isResultOrNull = (value: unknown): value is ReturnType<typeof normalizeResult> | null =>
+  value === null ||
+  (!!value &&
+    typeof value === "object" &&
+    typeof (value as { text?: unknown }).text === "string" &&
+    typeof (value as { title?: unknown }).title === "string" &&
+    typeof (value as { error?: unknown }).error === "boolean");
+const isStringOrNull = (value: unknown): value is string | null =>
+  value === null || typeof value === "string";
+
 function PluginToolForm({
   pluginId,
   viewId,
@@ -195,12 +215,27 @@ function PluginToolForm({
   const id = useId();
   // Workspace tabs remain mounted while inactive, preserving each tool's drafts and results.
   const key = `tool:${pluginId}:${viewId}:${block.id}`;
-  const [draft, setDraft] = services.useViewState<Record<string, string>>(`${key}:draft`, {});
+  const [plainDraft, setPlainDraft] = services.useViewState<Record<string, string>>(
+    `${key}:draft`,
+    {},
+    isRecord,
+  );
+  const [secretDraft, setSecretDraft] = services.useSecretState<Record<string, string>>(
+    `${key}:secret`,
+    {},
+    isRecord,
+  );
+  const setDraft = setPlainDraft;
   const [result, setResult] = services.useViewState<ReturnType<typeof normalizeResult> | null>(
     `${key}:result`,
     null,
+    isResultOrNull,
   );
-  const [error, setError] = services.useViewState<string | null>(`${key}:error`, null);
+  const [error, setError] = services.useViewState<string | null>(
+    `${key}:error`,
+    null,
+    isStringOrNull,
+  );
   const [busy, setBusy] = useState<string | null>(null);
   services.useBusyGuard(busy !== null);
   const pending = useRef(false);
@@ -215,7 +250,7 @@ function PluginToolForm({
   );
 
   const fieldValue = (field: PluginField) => {
-    const value = draft[field.id];
+    const value = field.type === "password" ? (secretDraft[field.id] ?? "") : plainDraft[field.id];
     if (
       value === undefined ||
       (field.type === "select" && !field.options.some((option) => option.value === value))
@@ -290,8 +325,11 @@ function PluginToolForm({
           {block.fields.map((field) => {
             const fieldId = `${id}-${field.id}`;
             const value = fieldValue(field);
-            const change = (value: string) =>
-              setDraft((previous) => ({ ...previous, [field.id]: value }));
+            const change = (value: string) => {
+              if (field.type === "password")
+                setSecretDraft((previous) => ({ ...previous, [field.id]: value }));
+              else setDraft((previous) => ({ ...previous, [field.id]: value }));
+            };
             return (
               <Field key={field.id} label={field.label} htmlFor={fieldId}>
                 {field.type === "select" ? (

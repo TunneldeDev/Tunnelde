@@ -90,6 +90,45 @@ impl Fixture {
     }
 }
 #[test]
+fn staged_calls_keep_their_class_on_later_policy_rechecks() {
+    let mut f = Fixture::new();
+    f.owned("source");
+    let id = f.offer();
+    f.staged(&id, "destination");
+    assert_eq!(
+        f.r.native_view_policy_current(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::StagedData,
+            f.now,
+        )
+        .unwrap(),
+        f.plugin
+    );
+    assert!(f
+        .r
+        .native_view_policy_current(
+            "target",
+            &f.target,
+            "destination",
+            CallPolicy::OwnedData,
+            f.now,
+        )
+        .is_err());
+    assert!(f
+        .r
+        .native_view_policy_current(
+            "main",
+            &f.main,
+            "destination",
+            CallPolicy::StagedData,
+            f.now,
+        )
+        .is_err());
+}
+
+#[test]
 fn native_view_requires_exact_document_panel_and_contribution_not_token_possession() {
     let mut f = Fixture::new();
     f.owned("owner");
