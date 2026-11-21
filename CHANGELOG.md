@@ -6,6 +6,92 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.3.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.2.0...v2.3.0) - 2026-11-21
+
+### 更新概览 | Highlights
+
+- 修复原生插件偏好更新在数据库繁忙时长时间持有窗口所有权锁的问题；排队期间释放来源与权限锁，持久提交至内存发布仍保留同一授权边界。Fix native plugin preference updates retaining window ownership while the database is busy; queued attempts release origin and policy locks while durable commit and in-memory publication keep one authorization boundary.
+
+- 已提交的原生插件视图可增删改主机与分组、更新使用时间和排序；复用原业务校验、审计与凭据清理，排队期间取消、撤权或来源失效不会迟到写入。Committed native plugin views can manage hosts/groups, last-used times and ordering through the original validation, audit and credential-cleanup services, rejecting cancelled, revoked or retired callers before queued writes.
+
+- 原生插件独立窗口可保存主机路由和自身扩展字段；提交时复核原窗口、文档、权限、包指纹和 revision，等待数据库期间不占用窗口所有权锁，过期操作不会延迟落盘。Native plugin windows can save host routes and their own metadata fields, with original document/permission/package/revision checks at commit and no ownership lock held across database admission waits.
+
+- 设置页跨窗适配接入完整生产渲染器与主窗操作所有者；草稿保留导航条件，代理密码通过独立私有通道交接，不进入布局或操作任务。已验证 macOS 内置／工厂提供者跨窗草稿往返与主窗确认，其他平台仍待实际验收。Settings window integration uses the complete production renderer and main-owned effects; drafts retain navigation filters and proxy passwords use a separate private channel, not layout or action jobs. Actual macOS builtin/factory-provider draft roundtrips and main-owned consent passed; other platforms still need real acceptance.
+
+- 设置字段提供者容器支持显式展示服务，提供者切换保留同一份字段 DOM 和草稿，不替换或绕过旧式提供者；完整设置跨窗适配仍在继续。Preference provider surfaces accept explicit presentation services while preserving one field DOM/draft and genuine legacy providers; complete native Settings adaptation continues.
+
+- 插件配置、软件源和任务恢复采用显式所有者服务，保留配置草稿原 revision、信任确认及认证生命周期；修复旧软件源编辑残留与失效恢复记录状态。设置独立窗口仍待完整适配。Plugin configuration, sources and recovery use explicit owner services with original draft revisions, trust consent and authentication lifecycles retained; prevent stale source-editor and recovery-record state. Native Settings remains pending.
+
+- 插件安全与 Node 设置拆分读取和操作边界，授权展示不再间接导入启动门禁／剪贴板；安装、取消与确认仍由原主窗所有者执行。Plugin security and Node settings separate display/effects without indirectly importing activation gates or clipboard owners; installation, cancellation and consent stay main-owned.
+
+- 界面提供者、主机挂载贡献者选择及关于页采用共享展示边界，保留主窗启动／指纹校验，折叠与许可证弹窗状态可捕获；设置独立窗口仍待完整适配。Provider selectors and About use shared view boundaries with main-owned activation/fingerprint checks and capture-ready disclosure/license state; native settings remain pending.
+
+- 快捷键编辑器分离展示和所有者操作，录制与高级规则草稿可捕获，失败保存保留编辑，按命令合并避免覆盖其他绑定；设置独立窗口仍待完整适配。Keyboard settings separate presentation from owner effects with capture-ready recorder/advanced drafts, retained failed edits and command-scoped merges; native settings remain pending.
+
+- 存储设置以窄范围所有者命令保留审核、迁移计划与重启确认，目录选择不覆盖其他类别草稿；设置独立窗口仍待完整适配。Storage settings retain review, migration scheduling and restart consent through narrow owner commands, without chooser results replacing unrelated drafts; native settings remain pending.
+
+- 配置方案渲染器支持显式所有者服务及可捕获的命名／导入预览草稿，保留确认前 revision 及确认后读取当前配置的语义；设置独立窗口仍待完整适配。Settings profiles use explicit owner services and capture-ready naming/import-preview drafts while retaining revision and consent semantics; native settings remain pending.
+
+- 网络设置与连接质量诊断使用限定操作接口，路由操作在所有者当前快照上合并，凭据草稿与普通可捕获视图状态分离；设置独立窗口仍待完整适配。Network settings and connection diagnostics use scoped effects and current-owner route merges; credential drafts are separate from ordinary capturable view state. Native settings windows still await full adaptation.
+
+- 设置的主题、文件图标、主机列表默认值、CSS 和更新控件采用可注入的数据／操作接口，数字及更新源输入可保留未完成草稿；不提前开放尚未完整适配的设置独立窗口。Settings theme, file-icon, host-list, CSS and update controls accept explicit data/effects, with capture-ready numeric and update-source drafts; incomplete native settings windows remain unavailable.
+
+- 提取完整设置界面的渲染器与文档内副作用服务，保留原配置方案、专用板块和确认流程；设置独立窗口入口尚未开放。Extract the full settings renderer and document-local effect services while retaining profiles, custom sections and consent; native settings windows are not enabled yet.
+
+- 内置主机详情支持独立窗口往返，保留转发规则与组草稿，主机操作及转发写入按原资源所有权执行；使用旧式主机贡献者或已选转发提供者时暂留主窗。Builtin host details support native-window roundtrips with forwarding rule/group drafts retained and owner-scoped host/forwarding actions; legacy host contributions and selected forwarding providers stay in main for now.
+
+- 本地与 SFTP 文本编辑器支持独立窗体往返，保留未保存文本、主窗撤销历史及选区；编码切换、保存和冲突恢复由原资源所有者执行，修复撤销后焦点丢失及编码菜单键盘输入穿透。Local and SFTP text editors support native-window roundtrips with dirty text, main-owned undo history and selection retained; encoding, saves and conflict recovery use the original owner. Fix undo focus loss and encoding-menu key leakage into the editor.
+
+- 内置在线文件面板支持移入独立窗体并返回，保留目录、筛选和选择；创建、重命名、复制、删除及双向传输使用原 SSH 与受限资源代理，远端选择器、编辑器和插件动作由主窗执行。选中文件浏览界面提供者时暂留主窗。Live builtin file pages support native-window roundtrips with directory/filter/selection retained; creation, rename, copy, deletion and bidirectional transfer reuse SSH through scoped resources, while source selection, editors and plugin actions remain main-owned. Selected file-browser interface providers stay in main for now.
+
+- 内置终端标签支持移入独立窗体和返回，保留原 SSH、屏幕及未完成输入；断开和文件导航由主窗执行。当前选中终端界面插件时保留在主窗，其他页面适配仍在继续。Builtin terminal tabs support native-window roundtrips with the original SSH, screen and partial input retained; disconnect/navigation remain main-owned. Selected terminal interface providers stay in main for now; other page adapters remain in progress.
+
+- 终端渲染器支持只读设置与限定作用域的连接服务，普通检查点不会被误当成迁移交接；远程 shell 在暂离期间退出时，为交接保留最后输出。Terminal rendering supports read-only preferences and scoped I/O; periodic checkpoints are distinct from move barriers, and detached shell exit retains final output for handoff. The native terminal page entry remains pending.
+
+- 原生终端流具备按窗口/文档/面板代次校验的私有端点，交接保留原 SSH 与序列回放；为后续终端页面跨窗接入提供基础，暂未开放该页面入口。Private native terminal endpoints enforce window/document/panel generations and retain the original SSH stream with sequence replay; terminal page window integration remains pending.
+
+- 终端交接按会话隔离并支持失败恢复，后台恢复不会抢占正在迁移的终端；保留字符集、键盘协议和分包状态的 JSON 快照为终端跨窗接入提供基础。Terminal handoff reserves individual sessions with rollback/retry; background resume cannot steal a pending handoff, and lossless JSON checkpoints prepare the terminal window adapter.
+
+- 原生插件视图可读取已保存主机、发现来源、路由及自身扩展字段的元数据快照；暂存期间仍禁止导入、修改、凭据访问和建立连接。Native plugin views can read saved-host, discovery-source, route and own-field metadata snapshots; staging still forbids host mutations, imports, credentials and connection creation.
+
+- 插件列表支持独立窗体与返回，保留搜索、筛选及分页；详情、安装确认和本地安装草稿由主窗持有，安装操作重新校验目录条目而不接收独立窗提交的下载地址。Plugin lists support native-window roundtrips with search/filter/page state; details, installation confirmation and local-install drafts remain main-owned, with catalogue targets revalidated instead of accepting satellite-supplied download URLs.
+
+- 主机列表可移入独立窗体并返回，保留搜索、折叠与兼容插件草稿；收藏、视图设置等操作回到主协调器执行，凭据及导入导出对话框仍由主窗持有。Host lists support native-window roundtrips with search, collapsed groups and compatible provider drafts preserved; actions execute through the main coordinator, while credential/import/export dialogs remain main-owned.
+
+- 停靠的文件预览支持移入独立窗体并返回，保留受支持的插件草稿、PDF 页码/缩放和媒体位置，复用原文件资源；修复元数据更新抢夺文本焦点及异步正文就绪被错误取消。Docked file previews support explicit native-window roundtrips with supported provider drafts, PDF page/zoom and media position preserved on the original resource; fix metadata-driven text focus resets and retired async readiness cancelling replacement renderers.
+
+- 预览元数据与读取状态由宿主独立持有，正文暂时移除不会使插件观察丢失；补齐文本、PDF 和媒体的视图状态捕获，为完整跨窗口预览继续铺设基础。Preview metadata/read state survives an absent renderer; text, PDF and media state capture prepares the remaining native preview adapter.
+
+- 文件预览资源由独立宿主持有，移除正文不会重新读取远程文件或关闭媒体票据；增加绑定文档与面板实例的只读窗口句柄，为后续预览跨窗适配提供基础。Preview reads outlive renderer bodies; private document/panel-scoped read handles prepare native preview handoff without reopening remote files or exposing the underlying ticket.
+
+- 独立窗口中的插件支持创建一次性 SSHFS 挂载；启动失败或结果丢失会清理自身进程和通道，不断开借用的 SSH 会话。Plugins in native panel windows can create one-off SSHFS mounts, with owned startup cleanup that preserves the borrowed SSH session.
+- 后台任务插件界面支持独立窗口迁移，保留草稿和任务状态，操作受权限保护且不会重复启动插件。Background-task interface providers support native window handoff with preserved drafts/task state and permission-checked actions, without replaying plugin activation.
+
+- 面板独立窗口预览：连接、后台任务、输出、已知主机和端口转发面板，以及兼容的侧栏插件视图可在窗口间移动；迁移保留受支持的视图状态。其他页面及无工厂旧插件视图的跨窗口适配仍在进行。Native panel-window preview supports connections, background tasks, output, known hosts, forwarding and compatible sidebar plugin views with supported view-state transfer; other pages and legacy factoryless views remain in progress.
+- 改进挂载目录浏览、状态读取、打开和卸载，复用原 SSH 连接并在取消操作后完成资源清理。Improve mount browsing, snapshots, opening and teardown while reusing the original SSH connection and completing resource cleanup after cancellation.
+
+- 存储位置支持逐项或批量恢复默认，并在迁移前展示计划、保护已有数据。Storage locations can reset individually or in batches with a reviewed migration plan and existing-data protection.
+- 插件可直接格式化当前编辑器文件，支持可配置快捷键、撤销重做和异步修改冲突保护。Plugins can format the active editor with configurable shortcuts, undo/redo and protection against stale asynchronous edits.
+- 更新说明可展开查看当前版本至目标版本的累计变更；历史不完整或加载失败时会明确提示并允许重试。Update notes include changes from the installed version through the selected target, with clear incomplete-history notices and retry.
+- 测试连接显示沿实际代理与跳板路径的三次 SSH 建立耗时、波动和成功次数，支持取消与重测。Connection tests show three SSH establishment measurements through the configured route, their spread and success count, with cancel and retry.
+
+<details open>
+<summary>详细变更 | Details (2)</summary>
+
+### 新增 | New
+
+- **plugins:** admit native host and group management ([#498](https://github.com/TunneldeDev/Tunnelde/pull/498)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **plugins:** release native preference locks during database waits ([#500](https://github.com/TunneldeDev/Tunnelde/pull/500)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.2.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.1.0...v2.2.0) - 2026-11-21
 
 ### 更新概览 | Highlights

@@ -78,7 +78,9 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         | "configuration.backups" => Some(CallPolicy::StagedData),
         // Mutations await actual I/O; even keyring reads can prompt/perform OS
         // work, so they are NOT admitted during staging.
-        "hosts.routes.save" | "hosts.setFields" => Some(CallPolicy::OwnedData),
+        "hosts.routes.save" | "hosts.setFields" | "hosts.create" | "hosts.update"
+        | "hosts.delete" | "hosts.markUsed" | "hosts.reorder" | "groups.create"
+        | "groups.update" | "groups.delete" => Some(CallPolicy::OwnedData),
         "preferences.update"
         | "storage.set"
         | "storage.delete"
@@ -231,14 +233,6 @@ mod host_metadata_tests {
             "hosts.transfer.export",
             "hosts.transfer.preview",
             "hosts.transfer.apply",
-            "hosts.create",
-            "hosts.update",
-            "hosts.delete",
-            "hosts.markUsed",
-            "hosts.reorder",
-            "groups.create",
-            "groups.update",
-            "groups.delete",
             "hosts.setSource",
             "hosts.removeSource",
             "hostList.setColumn",
@@ -280,19 +274,25 @@ mod host_write_tests {
     use super::*;
     #[test]
     fn only_audited_host_writes_are_committed_and_retained() {
-        for method in ["hosts.routes.save", "hosts.setFields"] {
+        for method in [
+            "hosts.routes.save",
+            "hosts.setFields",
+            "hosts.create",
+            "hosts.update",
+            "hosts.delete",
+            "hosts.markUsed",
+            "hosts.reorder",
+            "groups.create",
+            "groups.update",
+            "groups.delete",
+        ] {
             assert!(crate::plugins::api::method_info(method).is_some());
             let policy = call_policy(method).unwrap();
             assert_eq!(policy, CallPolicy::OwnedData);
             assert!(!policy.staged());
             assert!(policy.retained() && policy.blocks_move());
         }
-        for method in [
-            "hosts.routes.save.extra",
-            "hosts.setFields\0",
-            "hosts.update",
-            "hosts.delete",
-        ] {
+        for method in ["hosts.routes.save.extra", "hosts.setFields\0"] {
             assert!(call_policy(method).is_none());
         }
     }
