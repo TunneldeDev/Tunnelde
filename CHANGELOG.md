@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 快捷键编辑器分离展示和所有者操作，录制与高级规则草稿可捕获，失败保存保留编辑，按命令合并避免覆盖其他绑定；设置独立窗口仍待完整适配。Keyboard settings separate presentation from owner effects with capture-ready recorder/advanced drafts, retained failed edits and command-scoped merges; native settings remain pending.
+
 - 存储设置以窄范围所有者命令保留审核、迁移计划与重启确认，目录选择不覆盖其他类别草稿；设置独立窗口仍待完整适配。Storage settings retain review, migration scheduling and restart consent through narrow owner commands, without chooser results replacing unrelated drafts; native settings remain pending.
 
 - 配置方案渲染器支持显式所有者服务及可捕获的命名／导入预览草稿，保留确认前 revision 及确认后读取当前配置的语义；设置独立窗口仍待完整适配。Settings profiles use explicit owner services and capture-ready naming/import-preview drafts while retaining revision and consent semantics; native settings remain pending.

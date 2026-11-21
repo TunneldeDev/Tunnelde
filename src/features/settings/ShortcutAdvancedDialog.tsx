@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useLocalControlState, type SettingsControlState } from "./components/controlState";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { displayShortcut, type ShortcutCommand } from "@/lib/keyboard/registry";
-import { shortcutRule, type ShortcutRules, type ShortcutPropagation } from "@/lib/keyboard/routing";
+import { shortcutRule, type ShortcutRules, type ShortcutPropagation } from "@/lib/keyboard/rules";
 
 export function ShortcutAdvancedDialog({
   command,
@@ -15,6 +15,7 @@ export function ShortcutAdvancedDialog({
   saving,
   onSave,
   onClose,
+  useViewState = useLocalControlState,
 }: {
   command: ShortcutCommand;
   label: string;
@@ -23,9 +24,11 @@ export function ShortcutAdvancedDialog({
   saving: boolean;
   onSave: (rules: ShortcutRules[string]) => Promise<boolean>;
   onClose: () => void;
+  useViewState?: SettingsControlState;
 }) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState(() =>
+  const [draft, setDraft] = useViewState(
+    "settings:shortcuts:rules",
     Object.fromEntries(
       bindings.map((key) => [
         key,

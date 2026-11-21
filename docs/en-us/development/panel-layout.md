@@ -1568,3 +1568,10 @@ replace unrelated category edits. Selection, review and recovery expansion use
 capturable view state; an in-flight chooser/schedule blocks background release.
 The owner retains native path validation, migration scheduling/cancellation and
 restart consent. Merely reviewing or moving a view never schedules migration.
+
+The keyboard-shortcut editor receives explicit command definitions, preferences,
+query and effects. Recorded bindings, advanced-rule drafts and sort/selection
+state are capture-ready; rejected saves retain the editor. Command-scoped writes
+merge with the owner's current preferences and reject vanished/stale bindings
+instead of replacing unrelated shortcuts. Rule presentation helpers are pure,
+while routing/actions remain main-owned and retain their existing exports.

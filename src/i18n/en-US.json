@@ -1903,7 +1903,8 @@
       "sort": "Shortcut order",
       "sortDefault": "Command order",
       "sortPriority": "Priority: high to low"
-    }
+    },
+    "changed": "Keyboard shortcuts changed. Review the current bindings and try again."
   },
   "profiles": {
     "operation": {
