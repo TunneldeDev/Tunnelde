@@ -427,7 +427,18 @@ export function createEditorWindowBinding(
       send("undo", { redo, selection });
       return true;
     },
-    clearLocation() {},
+    clearLocation() {
+      const model = store.getState().model,
+        target = model.editor.location;
+      if (!target) return;
+      store.setState({ model: { ...model, editor: { ...model.editor, location: null } } });
+      void client
+        .action(owned(), {
+          kind: "editor",
+          command: { operation: "clearLocation", data: { target } },
+        })
+        .catch(report);
+    },
     interaction(value) {
       uiBlocked = value;
     },

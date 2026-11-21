@@ -27,7 +27,8 @@ export type EditorWindowOperation =
   | "review"
   | "syntax"
   | "clipboard"
-  | "recover";
+  | "recover"
+  | "clearLocation";
 export interface EditorWindowCommand {
   operation: EditorWindowOperation;
   data: Record<string, unknown>;

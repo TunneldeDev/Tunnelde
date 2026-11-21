@@ -18,6 +18,7 @@ import { useSsh } from "@/store/ssh";
 import { syntaxProviders } from "@/lib/plugins/syntax";
 import { runSyntaxHighlighting } from "@/lib/plugins/syntaxRunner";
 import { reviewEditorWindow } from "./editorWindowReview";
+import { useEditorLocation } from "@/store/editorLocation";
 import { useWorkspace } from "@/store/workspace";
 import { api } from "@/lib/api/ipc";
 import type { TextEncoding } from "@/lib/api/types";
@@ -103,6 +104,18 @@ export async function executeEditorWindowAction(
     });
     await show();
     return { tabId: `editor:recovered:${id}` };
+  }
+  if (command.operation === "clearLocation") {
+    const current = useEditorLocation.getState().target;
+    const requested = d.target as typeof current;
+    if (
+      current?.tabId === tabId &&
+      requested?.tabId === tabId &&
+      requested.line === current.line &&
+      requested.column === current.column
+    )
+      useEditorLocation.getState().clear();
+    return null;
   }
   // Encoding has its own CAS because changing output format doesn't bump text version.
   if (

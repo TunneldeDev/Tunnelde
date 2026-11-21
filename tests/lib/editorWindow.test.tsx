@@ -1,3 +1,4 @@
+import { useEditorLocation } from "@/store/editorLocation";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { createEditorWindowBinding } from "@/features/editor/editorWindowBinding";
@@ -331,4 +332,21 @@ it("does not acknowledge a staged editor using a stale pre-move model", async ()
   binding.services.rendered?.(true);
   await wait;
   expect(ready).toBe(true);
+});
+
+it("clears only the exact editor navigation target and preserves a newer request", async () => {
+  const target = { tabId, line: 3, column: 2 };
+  useEditorLocation.setState({ target });
+  await executeEditorWindowAction(
+    lease,
+    { operation: "clearLocation", data: { target: { ...target, line: 2 } } },
+    async () => {},
+  );
+  expect(useEditorLocation.getState().target).toEqual(target);
+  await executeEditorWindowAction(
+    lease,
+    { operation: "clearLocation", data: { target } },
+    async () => {},
+  );
+  expect(useEditorLocation.getState().target).toBeNull();
 });

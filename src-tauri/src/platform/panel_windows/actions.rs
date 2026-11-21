@@ -99,6 +99,7 @@ pub(crate) enum EditorOperation {
     Syntax,
     Clipboard,
     Recover,
+    ClearLocation,
 }
 impl EditorCommand {
     fn valid(&self) -> bool {
