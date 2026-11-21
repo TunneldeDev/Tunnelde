@@ -22,6 +22,32 @@ export function WindowForwardingPanel({
   record: WindowViewRecord;
   data: ForwardingReadData;
 }) {
+  const { binding, ready } = useWindowForwardingBinding(client, record);
+  return (
+    <ForwardingReadScope value={data}>
+      <ForwardingPanelView
+        hosts={data.hosts}
+        hostsLoading={data.hostsLoading}
+        sessions={data.sessions}
+        rules={data.rules.entries ?? []}
+        error={data.rules.error ?? data.groups.error}
+        renderHost={(host) => (
+          <WindowForwardingSection
+            client={client}
+            lease={ready?.lease}
+            service={ready?.service}
+            owner={binding.owner}
+            host={host}
+            embedded
+          />
+        )}
+      />
+    </ForwardingReadScope>
+  );
+}
+
+/** Shared native owner lifecycle for forwarding and full host-detail pages. */
+export function useWindowForwardingBinding(client: PanelWindowClient, record: WindowViewRecord) {
   const [binding] = useState(() => {
     const views = windowViews();
     return createWindowForwardingOwner(client, record, {
@@ -72,25 +98,5 @@ export function WindowForwardingPanel({
     active.lease.generation === lease.generation
       ? active
       : undefined;
-  return (
-    <ForwardingReadScope value={data}>
-      <ForwardingPanelView
-        hosts={data.hosts}
-        hostsLoading={data.hostsLoading}
-        sessions={data.sessions}
-        rules={data.rules.entries ?? []}
-        error={data.rules.error ?? data.groups.error}
-        renderHost={(host) => (
-          <WindowForwardingSection
-            client={client}
-            lease={ready?.lease}
-            service={ready?.service}
-            owner={binding.owner}
-            host={host}
-            embedded
-          />
-        )}
-      />
-    </ForwardingReadScope>
-  );
+  return { binding, ready };
 }

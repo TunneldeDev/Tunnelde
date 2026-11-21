@@ -4,6 +4,7 @@ mod editor_pages;
 pub(crate) mod file_pages;
 pub(crate) mod forwarding;
 mod geometry;
+mod host_pages;
 mod lifecycle;
 mod moves;
 pub(crate) mod native;

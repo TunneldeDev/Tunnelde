@@ -1,3 +1,4 @@
+import { usePanelWindows } from "@/store/panelWindows";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
 import type { WindowViewRecord } from "@/lib/panels/windowViews";
@@ -17,7 +18,11 @@ export function createWindowForwardingOwner(
   },
 ) {
   const { key, panelId, controller } = record;
-  if (panelId !== "forwarding") throw new Error("panel.window.unsupportedView");
+  if (
+    panelId !== "forwarding" &&
+    !usePanelWindows.getState().snapshot.hostPages?.some((v) => v.panelId === panelId)
+  )
+    throw new Error("panel.window.unsupportedView");
   const listeners = new Set<() => void>();
   type Active = { lease: PanelLease; service: ReturnType<typeof createWindowForwardingActions> };
   let active: Active | null = null;

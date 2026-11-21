@@ -42,6 +42,9 @@ pub(crate) enum HostCommand {
     Favorite {
         host: HostTarget,
     },
+    Duplicate {
+        host: HostTarget,
+    },
     SaveCopy {
         host: HostTarget,
     },
@@ -125,6 +128,18 @@ pub(crate) enum Column {
     Sort,
 }
 impl HostCommand {
+    pub(super) fn detail_host(&self) -> Option<&str> {
+        match self {
+            Self::Connect { host }
+            | Self::Sftp { host }
+            | Self::Favorite { host }
+            | Self::Edit { host }
+            | Self::Delete { host }
+            | Self::Duplicate { host } => Some(&host.id),
+            _ => None,
+        }
+    }
+
     pub(super) fn valid(&self) -> bool {
         match self {
             Self::Activate { host }
@@ -133,6 +148,7 @@ impl HostCommand {
             | Self::Edit { host }
             | Self::Delete { host }
             | Self::Favorite { host }
+            | Self::Duplicate { host }
             | Self::SaveCopy { host }
             | Self::Export { host }
             | Self::CopySsh { host }

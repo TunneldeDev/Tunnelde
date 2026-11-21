@@ -1,4 +1,11 @@
 import {
+  hostDetailIds,
+  hostDetailTabId,
+  bindHostDetail,
+  synchronizeHostDetails,
+} from "@/features/hosts/detail/registration";
+import { useHosts } from "@/store/hosts";
+import {
   editorWindowIds,
   editorWindowTabId,
   bindEditorWindow,
@@ -61,6 +68,7 @@ export async function startPanelWindows(signal: AbortSignal) {
       ...pluginSidebars(usePlugins.getState().items).map((item) => item.view),
       ...fileWindowTabs().map((tab) => tab.id),
       ...editorWindowIds(),
+      ...hostDetailIds(),
       ...useWorkspace
         .getState()
         .tabs.filter(
@@ -74,15 +82,18 @@ export async function startPanelWindows(signal: AbortSignal) {
         .map((tab) => tab.id),
     ],
     registerPanel: (id) =>
-      editorWindowTabId(id)
-        ? bindEditorWindow(current, id)
-        : id.startsWith("terminal:")
-          ? current.terminals.bind(id.slice("terminal:".length))
-          : fileWindowTabs().some((tab) => tab.id === id)
-            ? bindFileWindow(current, id)
-            : current.control({ action: "addPanel", panelId: id }),
+      hostDetailTabId(id)
+        ? bindHostDetail(current, id)
+        : editorWindowTabId(id)
+          ? bindEditorWindow(current, id)
+          : id.startsWith("terminal:")
+            ? current.terminals.bind(id.slice("terminal:".length))
+            : fileWindowTabs().some((tab) => tab.id === id)
+              ? bindFileWindow(current, id)
+              : current.control({ action: "addPanel", panelId: id }),
     synchronize: async (snapshot) => {
       await synchronizeFileWindows(current);
+      await synchronizeHostDetails(current, snapshot);
       const allow = !useSettings.getState().settings.uiProviders.terminal;
       for (const view of snapshot.terminalViews ?? [])
         if (view.allowMove !== allow) await current.terminals.configure(view.panelId, allow);
@@ -113,6 +124,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     frontendRuntime.subscribe(coordinator.refresh),
     useFilePreview.subscribe(coordinator.refresh),
     useWorkspace.subscribe(coordinator.refresh),
+    useHosts.subscribe(coordinator.refresh),
     useSsh.subscribe(coordinator.refresh),
     useSettings.subscribe(coordinator.refresh),
   ];

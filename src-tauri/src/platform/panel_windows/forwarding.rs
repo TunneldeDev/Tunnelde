@@ -38,7 +38,7 @@ impl Ownership {
         lease: &Lease,
         interaction: Option<&str>,
     ) -> Result<(), &'static str> {
-        if lease.panel_id != "forwarding" {
+        if lease.panel_id != "forwarding" && !self.host_page_registered(&lease.panel_id) {
             return Err("unsupported panel action");
         }
         self.resource_action(window, document, lease)?;
@@ -252,6 +252,16 @@ async fn dispatch(
     // reloading the coordinator cannot unlock a still-running native operation.
     let work = WorkLifetime::authorized(effect.clone());
     let result = tauri::async_runtime::spawn(work.scope(async move {
+        let current = effect.clone();
+        let request = crate::services::credentials::inspect(move || {
+            current.with_ownership(|owner| {
+                if let Some(host) = owner.host_page_host(&current.lease.panel_id) {
+                    request.authorize_host(&current.app, host)?;
+                }
+                Ok(request)
+            })
+        })
+        .await?;
         match request {
             Request::CopyAddress { text } => clipboard::copy(effect, text).await,
             Request::Disconnect {

@@ -411,7 +411,7 @@ function TabStrip({
                     onSelect: closeGroup,
                   });
                 }
-                if (["terminal", "sftp", "editor"].includes(tab.kind))
+                if (["terminal", "sftp", "editor", "host"].includes(tab.kind))
                   items.push(...nativePanelMoveActions(tab.id, t));
                 openMenu(event.clientX, event.clientY, items, event.currentTarget);
               }}

@@ -10,7 +10,7 @@ import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { PluginCommandPage } from "@/features/plugins/PluginCommandPage";
 import { PluginDetailPage } from "@/features/plugins/PluginDetailPage";
-import { HostPage } from "@/features/hosts/HostPage";
+import { MainNativeHostPage } from "@/features/hosts/detail/NativeHostPage";
 import { MainNativeFilePage } from "@/features/sftp/NativeFilePage";
 import { RestoredFilePane } from "@/features/sftp/RestoredFilePane";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -39,7 +39,7 @@ function TabBody({
     case "welcome":
       return <WelcomePage />;
     case "host":
-      return <HostPage hostId={tab.hostId} />;
+      return <MainNativeHostPage tabId={tab.id} hostId={tab.hostId} />;
     case "settings":
       return <SettingsPage visible={visible} />;
     case "knownHosts":

@@ -1,3 +1,4 @@
+import { executeHostDetailAction } from "@/features/hosts/detail/actions";
 import { executeEditorWindowAction } from "@/features/editor/editorWindowActions";
 import { executeFileWindowAction } from "@/features/sftp/fileWindowActions";
 import { executeTerminalWindowAction } from "@/features/terminal/terminalWindowActions";
@@ -24,6 +25,8 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
     client,
     async ({ request, lease }) => {
       switch (request.kind) {
+        case "hostDetail":
+          return executeHostDetailAction(lease, request.command, () => client.show());
         case "editor":
           return executeEditorWindowAction(lease, request.command, () => client.show());
         case "files":
