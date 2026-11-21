@@ -32,7 +32,10 @@ impl Ownership {
         // draft capsules keep their separate stricter 1 MiB limit.
         // A decoded preview is <=2MiB UTF-8, but JSON escaping can
         // expand each byte sixfold. This is not a view draft/capsule.
-        let limit = if panel_id == "filePreview" {
+        let limit = if self.editor_page_registered(panel_id) {
+            // At most two 2MiB UTF-8 buffers with worst-case JSON escaping.
+            32 * 1024 * 1024
+        } else if panel_id == "filePreview" {
             16 * 1024 * 1024
         } else if panel_id == "output" {
             2 * 1024 * 1024

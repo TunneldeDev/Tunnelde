@@ -1,4 +1,9 @@
 import {
+  editorWindowIds,
+  editorWindowTabId,
+  bindEditorWindow,
+} from "@/features/editor/editorWindowRegistration";
+import {
   bindFileWindow,
   fileWindowTabs,
   synchronizeFileWindows,
@@ -55,6 +60,7 @@ export async function startPanelWindows(signal: AbortSignal) {
       ),
       ...pluginSidebars(usePlugins.getState().items).map((item) => item.view),
       ...fileWindowTabs().map((tab) => tab.id),
+      ...editorWindowIds(),
       ...useWorkspace
         .getState()
         .tabs.filter(
@@ -68,11 +74,13 @@ export async function startPanelWindows(signal: AbortSignal) {
         .map((tab) => tab.id),
     ],
     registerPanel: (id) =>
-      id.startsWith("terminal:")
-        ? current.terminals.bind(id.slice("terminal:".length))
-        : fileWindowTabs().some((tab) => tab.id === id)
-          ? bindFileWindow(current, id)
-          : current.control({ action: "addPanel", panelId: id }),
+      editorWindowTabId(id)
+        ? bindEditorWindow(current, id)
+        : id.startsWith("terminal:")
+          ? current.terminals.bind(id.slice("terminal:".length))
+          : fileWindowTabs().some((tab) => tab.id === id)
+            ? bindFileWindow(current, id)
+            : current.control({ action: "addPanel", panelId: id }),
     synchronize: async (snapshot) => {
       await synchronizeFileWindows(current);
       const allow = !useSettings.getState().settings.uiProviders.terminal;

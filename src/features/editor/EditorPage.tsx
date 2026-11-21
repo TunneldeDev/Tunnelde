@@ -1,7 +1,5 @@
 import { RefreshCw, Save, ShieldCheck, WandSparkles } from "lucide-react";
-import { shortcutCommands } from "@/lib/keyboard/registry";
-import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Select } from "@/components/ui/form/Select";
 import { Dialog } from "@/components/ui/overlay/Dialog";
@@ -9,46 +7,16 @@ import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
-import {
-  beginEditorComposition,
-  beginEditorInput,
-  consumeEditorSelectionRestore,
-  endEditorComposition,
-  editorDocument,
-  editorHasPendingChanges,
-  peekEditorSelectionRestore,
-  rememberEditorSelection,
-  undoEditorEdit,
-  useEditors,
-  type EditorSelectionSnapshot,
-} from "@/store/editors";
-import { usePlugins } from "@/store/plugins";
-import {
-  documentFormatters,
-  editorCommandMatches,
-  formatEditorDocument,
-  useFormatting,
-} from "@/lib/plugins/formatting";
-import { openPluginAction } from "@/lib/plugins/actions";
-import { useDialogs } from "@/store/dialogs";
-import { useSsh } from "@/store/ssh";
-import { useSettings } from "@/store/settings";
-import { useWorkspace } from "@/store/workspace";
-import { useEditorLocation } from "@/store/editorLocation";
+import { editorHasPendingChanges, type EditorSelectionSnapshot } from "@/store/editors";
+import type { EditorPageServices } from "./editorPageServices";
+import { mainEditorPageServices } from "./mainEditorPageServices";
 import { useBackgroundGuard } from "@/lib/session/viewState";
-import { useCodeEditorSyntax } from "./syntax/useCodeEditorSyntax";
-import { EditorConflictDialog } from "./EditorConflictDialog";
-import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import type { TextEncoding } from "@/lib/api/types";
 import type { EditorView } from "@codemirror/view";
 import { editorTextMap, editorToSource, sourceToEditor } from "./editorText";
-import {
-  locationOffset,
-  restoreLargeEditorSelection,
-  suspendLargeEditorSelection,
-} from "./largeEditorState";
+import { locationOffset } from "./largeEditorState";
 
 const LargeEditor = lazy(() =>
   import("./LargeEditor").then((module) => ({ default: module.LargeEditor })),
@@ -108,27 +76,20 @@ function EncodingPickerDialog({
   );
 }
 
-export function EditorPage({ tabId, active }: EditorPageProps) {
+export function EditorPage(props: EditorPageProps) {
+  return <EditorPageView {...props} services={mainEditorPageServices} />;
+}
+export function EditorPageView({
+  tabId,
+  active,
+  services,
+}: EditorPageProps & { services: EditorPageServices }) {
   const { t } = useTranslation();
-  const entry = useEditors((state) => state.entries[tabId]);
-  const change = useEditors((state) => state.change);
-  const changeSaveEncoding = useEditors((state) => state.changeSaveEncoding);
-  const save = useEditors((state) => state.save);
-  const reconnect = useEditors((state) => state.reconnect);
-  const reopen = useEditors((state) => state.reopen);
-  const wordWrap = useSettings((state) => state.settings.editorWordWrap);
-  const tabSize = useSettings((state) => state.settings.editorTabSize);
-  const spellCheck = useSettings((state) => state.settings.editorSpellCheck);
-  const tabHostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
-  const hostId = tabHostId ?? entry?.recoveryTarget?.hostId;
-  const candidate = useSsh((state) =>
-    state.sessions.find(
-      (session) =>
-        session.hostId === hostId &&
-        session.purpose !== "forwarding" &&
-        (!entry?.recoveryTarget || session.address === entry.recoveryTarget.address),
-    ),
-  );
+  const model = services.useModel(tabId);
+  const { entry, candidate, formatting, hasFormatter, location } = model;
+  const { wordWrap, tabSize, spellCheck } = model.preferences;
+  const { change, changeSaveEncoding, save, reconnect, reopen } = services;
+  const ConflictDialog = services.ConflictDialog;
   const [reconnecting, setReconnecting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [settingUp, setSettingUp] = useState(false);
@@ -149,10 +110,6 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     { value: "windows-1252", label: "Windows-1252" },
   ];
   const [enabledScope, setEnabledScope] = useState<string | null>(null);
-  const formatting = useFormatting((state) => state.busy.includes(tabId));
-  const hasFormatter = usePlugins(
-    (state) => !!entry && documentFormatters(entry.path, state.items).length > 0,
-  );
   const largeView = useRef<EditorView | null>(null);
   const page = useRef<HTMLDivElement>(null);
   const [fallbackDocumentId] = useState(() => entry?.documentId ?? crypto.randomUUID());
@@ -172,7 +129,11 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       : null;
   const composing = useRef(false);
   const [syntaxComposing, setSyntaxComposing] = useState(false);
-  const syntax = useCodeEditorSyntax(syntaxDocument, active && !!syntaxDocument, syntaxComposing);
+  const syntax = services.useSyntax(
+    syntaxDocument,
+    active && !!syntaxDocument && !model.frozen,
+    syntaxComposing,
+  );
   const lastEditorContent = useRef(entry?.content ?? "");
   const [selectionRevision, setSelectionRevision] = useState(0);
   const [largeRestore, setLargeRestore] = useState<{
@@ -181,13 +142,18 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   } | null>(null);
   useEffect(() => {
     if (entry && !entry.loading && !entry.error && entry.documentId === undefined)
-      editorDocument(tabId);
+      services.document(tabId);
     // The upgrade runs once per stable document state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry?.documentId, entry?.error, entry?.loading, tabId]);
   useBackgroundGuard(
     reconnecting || formatting || reviewing || settingUp || reopening || reopenPicker,
   );
+  useLayoutEffect(() => {
+    services.interaction?.(
+      reconnecting || formatting || reviewing || settingUp || reopening || reopenPicker,
+    );
+  }, [services, reconnecting, formatting, reviewing, settingUp, reopening, reopenPicker]);
   const setup = async () => {
     if (!entry?.sessionId || settingUp) return;
     const session = entry.sessionId;
@@ -195,7 +161,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     setSetupFailure(null);
     setSettingUp(true);
     try {
-      if (await api.sftpSetupNativeSave(session, path)) {
+      if (await services.setup(session, path)) {
         setEnabledScope(`${session}:${path}`);
         toast(t("editor.nativeSetupComplete"), "success");
       }
@@ -210,7 +176,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   useEffect(() => {
     const instance = largeView.current;
     if (!instance || composing.current || !entry?.documentId || entry.version === undefined) return;
-    const restored = consumeEditorSelectionRestore(
+    const restored = services.consumeSelection(
       tabId,
       entry.documentId,
       entry.version,
@@ -220,7 +186,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       queueMicrotask(() =>
         setLargeRestore((current) => ({ token: (current?.token ?? 0) + 1, selection: restored })),
       );
-  }, [entry, selectionRevision, tabId]);
+  }, [entry, selectionRevision, tabId, services]);
 
   useEffect(() => {
     if (entry?.content !== undefined) lastEditorContent.current = entry.content;
@@ -245,7 +211,6 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       scrollLeft: view.scrollDOM.scrollLeft,
     };
   };
-  const location = useEditorLocation((state) => state.target);
   useEffect(() => {
     void (async () => {
       const instance = largeView.current;
@@ -272,9 +237,9 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         ],
       });
       instance.focus();
-      useEditorLocation.getState().clear();
+      services.clearLocation();
     })();
-  }, [active, location, tabId, entry]);
+  }, [active, location, tabId, entry, services]);
 
   const reopenWithEncoding = async (encoding: TextEncoding) => {
     if (!entry || reopening || dirty || entry.loading || entry.saving || entry.disconnected) return;
@@ -298,7 +263,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       const target = { hostId: candidate.hostId, address: candidate.address };
       const result = await reconnect(tabId, candidate.id, false, target);
       if (result === "conflict")
-        useDialogs.getState().confirm({
+        services.confirm({
           title: t("editor.conflictTitle"),
           body: t("editor.conflictBody"),
           confirmLabel: t("editor.reconnect"),
@@ -315,22 +280,12 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     if (!active) return;
     const element = page.current;
     if (!element) return;
-    return bindShortcutProvider(element, (event) => {
-      const plugins = usePlugins.getState().items;
-      const commands = shortcutCommands(plugins).filter((item) => {
-        if (item.scope !== "editor" || !entry || entry.loading || entry.error || entry.disconnected)
-          return false;
-        if (!item.plugin?.command) return true;
-        const contributed = plugins
-          .find((plugin) => plugin.id === item.plugin?.id)
-          ?.commands.find((command) => command.id === item.plugin?.command);
-        return (
-          !!contributed?.editor && editorCommandMatches(entry.path, contributed.editor.extensions)
-        );
-      });
-      const document = editorDocument(tabId);
+    return services.bindShortcuts(element, (event) => {
+      const commands =
+        !entry || entry.loading || entry.error || entry.disconnected ? [] : model.commands;
+      const document = services.document(tabId);
       let queue = Promise.resolve();
-      return scopedShortcutCandidates(
+      return services.shortcutCandidates(
         event,
         commands.map((command) => command.id),
         (id) => {
@@ -341,21 +296,35 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             });
           else if (id === "editor.undo" || id === "editor.redo") {
             const selection = currentSourceSelection();
-            if (selection) rememberEditorSelection(tabId, selection);
-            return undoEditorEdit(tabId, id === "editor.redo");
+            if (selection) services.rememberSelection(tabId, selection);
+            return services.undo(tabId, id === "editor.redo");
           } else {
             const action = commands.find((command) => command.id === id)?.plugin;
             if (!action) return false;
             queue = queue.then(async () => {
-              await openPluginAction(action, document);
+              await services.openPluginAction(action, document);
             });
           }
           return true;
         },
       );
     });
-  }, [active, save, tabId, entry, settingUp]);
+  }, [active, save, tabId, entry, settingUp, services, model.commands]);
 
+  const [viewReady, setViewReady] = useState(false);
+  useLayoutEffect(() => {
+    services.rendered?.(!!entry && !entry.loading && (viewReady || !!entry.error));
+  }, [entry, services, viewReady]);
+  useLayoutEffect(
+    () => services.attachView?.(currentSourceSelection, () => largeView.current?.hasFocus ?? false),
+    [services],
+  );
+  useLayoutEffect(() => {
+    if (!model.frozen)
+      services.resumeFocus?.(() => {
+        if (document.hasFocus()) largeView.current?.focus();
+      });
+  }, [model.frozen, services]);
   if (!entry) {
     return (
       <div className="page">
@@ -427,7 +396,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             aria-label={t(formatting ? "editor.formatting" : "editor.format")}
             title={t(formatting ? "editor.formatting" : "editor.format")}
             disabled={formatting || entry.loading || !!entry.error || entry.disconnected}
-            onClick={() => formatEditorDocument(tabId)}
+            onClick={() => services.format(tabId)}
           >
             {t(formatting ? "editor.formatting" : "editor.format")}
           </Button>
@@ -459,6 +428,11 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         }}
       />
 
+      {model.syncFailure ? (
+        <div className="editor-offline" role="alert">
+          {model.syncFailure}
+        </div>
+      ) : null}
       {setupFailure?.scope === `${entry.sessionId}:${entry.path}` ? (
         <div className="editor-offline" role="alert">
           <span>{setupFailure.message}</span>
@@ -479,9 +453,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           ) : null}
         </div>
       ) : null}
-      {reviewing ? (
-        <EditorConflictDialog tabId={tabId} onClose={() => setReviewing(false)} />
-      ) : null}
+      {reviewing ? <ConflictDialog tabId={tabId} onClose={() => setReviewing(false)} /> : null}
 
       {entry.disconnected ? (
         <div className="editor-offline" role="status">
@@ -507,7 +479,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
                 <Button
                   size="sm"
                   leading={<RefreshCw size={13} />}
-                  onClick={() => void useEditors.getState().retryOpen(tabId)}
+                  onClick={() => void services.retryOpen(tabId)}
                 >
                   {t("common.retry")}
                 </Button>
@@ -532,7 +504,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             documentId={documentId}
             version={documentVersion}
             label={entry.name}
-            readOnly={entry.disconnected}
+            readOnly={entry.disconnected || model.frozen}
             wordWrap={wordWrap}
             tabSize={tabSize}
             spellCheck={spellCheck}
@@ -542,13 +514,14 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             onVisibleRangeSettled={syntax.onVisibleRangeSettled}
             viewRef={largeView}
             onViewReady={() => {
-              const pending = peekEditorSelectionRestore(
+              setViewReady(true);
+              const pending = services.peekSelection(
                 tabId,
                 documentId,
                 documentVersion,
                 entry.content,
               );
-              const restored = pending ?? restoreLargeEditorSelection(tabId);
+              const restored = pending ?? services.restoreSelection(tabId);
               if (restored)
                 setLargeRestore((current) => ({
                   token: (current?.token ?? 0) + 1,
@@ -557,41 +530,43 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             }}
             restoreSelection={largeRestore?.selection}
             restoreToken={largeRestore?.token}
-            onBeforeInput={(inputType, selection) => beginEditorInput(tabId, inputType, selection)}
+            onBeforeInput={(inputType, selection) =>
+              services.beforeInput(tabId, inputType, selection)
+            }
             onChange={(content, selection) => {
               lastEditorContent.current = content;
               change(tabId, content, selection);
-              rememberEditorSelection(tabId, selection);
+              services.rememberSelection(tabId, selection);
             }}
             onSelection={(selection) => {
-              rememberEditorSelection(tabId, selection);
-              suspendLargeEditorSelection(tabId, selection);
+              services.rememberSelection(tabId, selection);
+              services.suspendSelection(tabId, selection);
             }}
             onSelectionSnapshot={(selection) => {
-              rememberEditorSelection(tabId, selection);
-              suspendLargeEditorSelection(tabId, selection);
+              services.rememberSelection(tabId, selection);
+              services.suspendSelection(tabId, selection);
             }}
-            onSelectionChanged={(selection) => suspendLargeEditorSelection(tabId, selection)}
+            onSelectionChanged={(selection) => services.suspendSelection(tabId, selection)}
             onCompositionStart={(selection) => {
               composing.current = true;
               setSyntaxComposing(true);
-              beginEditorComposition(tabId, selection);
+              services.beginComposition(tabId, selection);
             }}
             onCompositionEnd={(selection) => {
               composing.current = false;
               setSyntaxComposing(false);
-              endEditorComposition(tabId, selection);
+              services.endComposition(tabId, selection);
               setSelectionRevision((revision) => revision + 1);
             }}
             onUndo={() => {
               const selection = currentSourceSelection();
-              if (selection) rememberEditorSelection(tabId, selection);
-              return undoEditorEdit(tabId);
+              if (selection) services.rememberSelection(tabId, selection);
+              return services.undo(tabId);
             }}
             onRedo={() => {
               const selection = currentSourceSelection();
-              if (selection) rememberEditorSelection(tabId, selection);
-              return undoEditorEdit(tabId, true);
+              if (selection) services.rememberSelection(tabId, selection);
+              return services.undo(tabId, true);
             }}
           />
         </Suspense>

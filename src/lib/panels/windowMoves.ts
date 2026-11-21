@@ -1,3 +1,4 @@
+import { canonicalWorkspacePanelId } from "@/features/editor/editorWindowRegistration";
 import type { PanelLease } from "./windowProtocol";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
 import type { TFunction } from "i18next";
@@ -14,6 +15,7 @@ export async function movePanelToWindow(
   operationId?: string,
   signal?: AbortSignal,
 ) {
+  panelId = canonicalWorkspacePanelId(panelId);
   const views = windowViews();
   if (!views || !transferablePanel(panelId)) throw new Error("panel.window.unsupportedView");
   const client = views.client;
@@ -100,6 +102,7 @@ export async function movePanelToWindow(
 }
 
 export function nativePanelMoveActions(panelId: string, t: TFunction): MenuAction[] {
+  panelId = canonicalWorkspacePanelId(panelId);
   const state = usePanelWindows.getState();
   if (!state.available || !transferablePanel(panelId)) return [];
   if (

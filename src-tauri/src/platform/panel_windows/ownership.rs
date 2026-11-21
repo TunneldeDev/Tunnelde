@@ -130,6 +130,7 @@ pub(super) struct Ownership {
     pub(super) preview_resources: super::preview::Resources,
     pub(super) terminals: super::terminal::Resources,
     pub(super) file_pages: super::file_pages::Resources,
+    pub(super) editor_pages: super::editor_pages::Resources,
 }
 impl Ownership {
     pub(super) fn file_page_transfer_pending(&self, id: &str) -> bool {
@@ -386,6 +387,7 @@ impl Ownership {
         self.remove_plugin_adapter(panel_id);
         self.retire_terminal(panel_id);
         self.retire_file_page(panel_id);
+        self.retire_editor_page(panel_id);
         self.transfers
             .retain(|_, pending| pending.lease.panel_id != panel_id);
         self.drags

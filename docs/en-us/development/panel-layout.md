@@ -1465,3 +1465,39 @@ cleaned. A separate chooser check reused the existing connection in main. This
 is not physical pointer, mixed-DPI, Windows/Linux, FUSE or arbitrary-server
 acceptance. A nonblocking transient validation toast during return is tracked for
 later polish; it does not prevent ownership transfer or file operations.
+
+### Native text-editor renderer
+
+Editor pages use the production `EditorPageView` with an injected owner boundary.
+The main document alone owns the file resource, baseline, conflict checks, undo
+history and plugin execution. Native IDs are short, explicitly admitted
+`editor-view:<UUID>` identities, not file paths. Satellites receive a private
+read model rather than hydrating main editor or plugin stores.
+
+Satellite input is optimistic and batched as ordered source-text patches, with
+exact document/version/output-encoding checks before a whole batch is applied.
+Save, undo, formatting, encoding and conflict review drain pending input first.
+IME commits as one undo transaction and blocks movement while composing. The
+handoff capsule contains caret/selection/scroll only; text and history remain
+with main, and readiness requires the actual editor or error render. A stale
+publication cannot overwrite newer pending input. If an external edit conflicts,
+the rejected draft is copied to a separate main-owned recovery document before
+movement is allowed; failed recovery retains the local draft and movement fence.
+Neither path overwrites the externally changed document.
+
+Only explicitly registered editor models and actions get the larger bounded
+JSON-escaped document budget; the general view-state capsule stays at 1 MiB and
+queued action data has a separate aggregate bound. SFTP and editor tab menus use
+the standard native move actions. Host-detail/settings and factoryless plugin
+pages still require their own adapters; this does not enable general native
+plugin factories or establish cross-platform pointer/FUSE acceptance.
+
+Isolated macOS acceptance used the actual `SatelliteApp` with local files and a
+localhost SSH/SFTP server: dirty buffers survived roundtrips, undo/redo and their
+caret focus worked without an extra click, keyboard encoding selection changed
+the dirty remote draft to UTF-16 LE and saved bytes decoded identically, and
+local edits saved through the native window. Old-generation mutations were
+rejected, there was one SSH authentication across both moves, and isolated
+hosts/sessions/known-host entries were cleaned. Physical pointer/mixed-DPI,
+Windows/Linux and real plugin-formatting/conflict-dialog flows are not covered
+by this native-window acceptance; their contract/component tests are separate.

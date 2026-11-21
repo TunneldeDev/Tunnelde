@@ -28,6 +28,9 @@ pub(crate) enum Command {
     ClosePreviewHandle {
         id: String,
     },
+    BindEditorPage {
+        panel_id: String,
+    },
     Snapshot {},
     BeginPluginModel {
         panel_id: String,
@@ -210,8 +213,11 @@ impl Ownership {
             Command::BeginPluginModel { panel_id, revision } => Ok(json!(
                 self.begin_plugin_model(window, document, &panel_id, &revision)?
             )),
+            Command::BindEditorPage { panel_id } => {
+                Ok(json!(self.bind_editor_page(window, document, &panel_id)?))
+            }
             Command::Snapshot {} => Ok(
-                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters(), "terminalViews": self.terminal_descriptors(), "filePages": self.file_page_descriptors()}),
+                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters(), "terminalViews": self.terminal_descriptors(), "filePages": self.file_page_descriptors(), "editorPages": self.editor_page_descriptors()}),
             ),
             Command::RequestAction { lease, request } => Ok(json!(
                 self.request_action(window, document, &lease, request, now)?

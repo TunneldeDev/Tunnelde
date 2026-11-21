@@ -17,6 +17,9 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Editor {
+        command: EditorCommand,
+    },
     Files {
         command: FileCommand,
     },
@@ -72,6 +75,36 @@ pub(crate) enum ViewAction {
     Disconnect {
         session_id: String,
     },
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct EditorCommand {
+    operation: EditorOperation,
+    data: Value,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum EditorOperation {
+    Edit,
+    Save,
+    Encoding,
+    Reopen,
+    RetryOpen,
+    Reconnect,
+    Setup,
+    Format,
+    Plugin,
+    Undo,
+    Review,
+    Syntax,
+    Clipboard,
+    Recover,
+}
+impl EditorCommand {
+    fn valid(&self) -> bool {
+        self.data.is_object()
+            && serde_json::to_vec(&self.data).is_ok_and(|v| v.len() <= 16 * 1024 * 1024)
+    }
 }
 // Closed owner-only operations. Data is additionally feature-validated in the
 // coordinator against its acknowledged source set before any effect. It cannot
@@ -294,6 +327,7 @@ impl TransferPrompt {
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
+            Self::Editor { .. } => "editor",
             Self::Files { .. } => "files",
             Self::Terminal { .. } => "terminal",
             Self::Plugins { .. } => "plugins",
@@ -313,6 +347,7 @@ impl ViewAction {
     fn validate(&self) -> Result<(), &'static str> {
         let bounded = |s: &str, max| !s.is_empty() && s.len() <= max;
         let valid = match self {
+            Self::Editor { command } => command.valid(),
             Self::Files { command } => command.valid(),
             Self::Terminal { command } => command.valid(),
             Self::Plugins { command } => command.valid(),
@@ -440,12 +475,26 @@ impl Ownership {
         if serde_json::to_vec(&request)
             .map_err(|_| "invalid panel action")?
             .len()
-            > 2 * 1024 * 1024 + 4096
+            > if matches!(request, ViewAction::Editor { .. }) {
+                16 * 1024 * 1024 + 4096
+            } else {
+                2 * 1024 * 1024 + 4096
+            }
         {
             return Err("panel action limit");
         }
+        let queued_bytes: usize = self
+            .actions
+            .values()
+            .map(|job| serde_json::to_vec(&job.request).map_or(0, |v| v.len()))
+            .sum();
+        if queued_bytes + serde_json::to_vec(&request).map_or(0, |v| v.len()) > 32 * 1024 * 1024 {
+            return Err("panel action limit");
+        }
         self.authorize_action_interaction(window, document, lease, &request)?;
-        if if matches!(request, ViewAction::Files { .. }) {
+        if if matches!(request, ViewAction::Editor { .. }) {
+            !self.editor_page_registered(&lease.panel_id)
+        } else if matches!(request, ViewAction::Files { .. }) {
             !self.file_page_registered(&lease.panel_id)
         } else if matches!(request, ViewAction::Terminal { .. }) {
             !self.terminal_registered(&lease.panel_id)

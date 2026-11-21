@@ -26,6 +26,19 @@ function Tags({
 const saved = () => JSON.parse(screen.getByLabelText("Saved tags").textContent!) as string[];
 
 describe("Select keyboard and focus", () => {
+  it("focuses a pointer-opened trigger instead of leaving keys in the underlying editor", () => {
+    render(
+      <>
+        <input aria-label="Editor" />
+        <Select label="Language" value="en" options={options} onChange={() => {}} />
+      </>,
+    );
+    screen.getByRole("textbox", { name: "Editor" }).focus();
+    const trigger = screen.getByRole("button", { name: "Language" });
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it("ignores a queued focus scroll at the current anchor but closes when the anchor actually moves", () => {
     render(
       <div data-testid="scroller">
