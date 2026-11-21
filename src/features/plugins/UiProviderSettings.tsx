@@ -1,7 +1,9 @@
-import { useId, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Disclosure } from "@/components/ui/layout/Disclosure";
-import { Select } from "@/components/ui/form/Select";
+import {
+  UiProviderSettingsView,
+  UI_PROVIDER_SETTINGS_TARGETS,
+} from "./components/UiProviderSettingsView";
+import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
+import { useRef, useState } from "react";
 import { usePlugins } from "@/store/plugins";
 import { useSettings } from "@/store/settings";
 import { api, isTauri } from "@/lib/api/ipc";
@@ -12,24 +14,7 @@ import type { FrontendProviderTarget } from "@/lib/extensions/contracts/frontend
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 
-const TARGETS = [
-  "hostList",
-  "workbench",
-  "fileBrowser",
-  "filePreview",
-  "terminal",
-  "history",
-  "forwarding",
-  "monitor",
-  "backgroundTasks",
-  "processes",
-  "quickAccess",
-  "preferences",
-] as const;
-
-export function UiProviderSettings({ expanded = false }: { expanded?: boolean }) {
-  const { t } = useTranslation();
-  const id = useId();
+export function useMainUiProviderSettings() {
   const plugins = usePlugins((state) => state.items);
   const selections = useSettings((state) => state.settings.uiProviders);
   const [busy, setBusy] = useState(false);
@@ -79,60 +64,24 @@ export function UiProviderSettings({ expanded = false }: { expanded?: boolean })
       setBusy(false);
     }
   };
-  const customCount = TARGETS.filter((target) => selections?.[target]).length;
-  const unavailableCount = TARGETS.filter((target) => {
-    const selected = selections?.[target];
-    return (
-      selected &&
-      !uiProviders(plugins, target).some(
-        ({ plugin, view }) => plugin.id === selected.pluginId && view.id === selected.viewId,
-      )
-    );
-  }).length;
+  const rows = UI_PROVIDER_SETTINGS_TARGETS.map((target) => ({
+    target,
+    selected: selections?.[target] ?? null,
+    candidates: uiProviders(plugins, target).map(({ plugin, view }) => ({
+      value: JSON.stringify([plugin.id, view.id]),
+      label: `${plugin.name} · ${view.title}`,
+    })),
+  }));
+  return { rows, busy, choose };
+}
+export function UiProviderSettings({ expanded = false }: { expanded?: boolean }) {
+  const binding = useMainUiProviderSettings();
   return (
-    <section className="settings-subsection ui-provider-settings" aria-label={t("providers.title")}>
-      <Disclosure
-        heading={t("providers.title")}
-        summary={[
-          customCount
-            ? t("providers.customCount", { count: customCount })
-            : t("providers.allBuiltin"),
-          unavailableCount ? t("providers.unavailableCount", { count: unavailableCount }) : "",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-        open={expanded || undefined}
-      >
-        <p className="settings-hint">{t("providers.hint")}</p>
-        <div className="ui-provider-settings__rows">
-          {TARGETS.map((target) => {
-            const selected = selections?.[target];
-            const value = selected ? JSON.stringify([selected.pluginId, selected.viewId]) : "";
-            const options = uiProviders(plugins, target).map(({ plugin, view }) => ({
-              value: JSON.stringify([plugin.id, view.id]),
-              label: `${plugin.name} · ${view.title}`,
-            }));
-            if (selected && !options.some((option) => option.value === value))
-              options.push({
-                value,
-                label: `${selected.pluginId} · ${selected.viewId} (${t("providers.unavailable")})`,
-              });
-            return (
-              <div key={target} className="ui-provider-settings__row">
-                <label htmlFor={`${id}-${target}`}>{t(`providers.${target}`)}</label>
-                <Select
-                  id={`${id}-${target}`}
-                  value={value}
-                  disabled={busy}
-                  label={t(`providers.${target}`)}
-                  options={[{ value: "", label: t("providers.builtin") }, ...options]}
-                  onChange={(next) => void choose(target, next)}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </Disclosure>
-    </section>
+    <UiProviderSettingsView
+      {...binding}
+      expanded={expanded}
+      useViewState={useViewState}
+      useBusyGuard={useBackgroundGuard}
+    />
   );
 }

@@ -1,3 +1,4 @@
+import { MainSettingsWindowOwner } from "@/features/settings/window/NativeSettingsPage";
 import { PluginPanelDialogs } from "@/features/plugins/panel/PluginPanelDialogs";
 import { HostPanelDialogs } from "@/features/hosts/panel/HostPanelDialogs";
 import { SplitGeometryScope } from "@/components/ui/layout/SplitGeometry";
@@ -252,6 +253,7 @@ export function AppShell() {
           <surfaces.slots.StatusBar />
         </ProviderSurface>
         <SidebarContents />
+        <MainSettingsWindowOwner />
         <WorkspaceContents />
         {createPortal(
           <>

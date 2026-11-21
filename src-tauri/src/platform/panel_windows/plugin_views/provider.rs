@@ -145,6 +145,9 @@ impl Ownership {
             let (_, permission) = self.preview_provider_endpoint()?;
             source.with_permissions(app, &[permission], || Ok(()))?;
         }
+        if let Some(source) = &view.preferences_provider {
+            source.with_current(app, || Ok(()))?;
+        }
         if let Some(source) = &view.hosts_provider {
             source.with_current(app, || Ok(()))?;
         }

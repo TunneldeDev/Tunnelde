@@ -61,14 +61,18 @@ export function useRecoveryFiles(pluginId: string) {
     );
   }, []);
   const browse = useCallback(
-    async (entry: RecoveryEntry) => {
+    async (entry: RecoveryEntry, ownerPluginId = pluginId) => {
       if (!active.current || operation.current) return;
       const id = crypto.randomUUID();
       operation.current = id;
       setPending(true);
       setError(null);
       try {
-        const plan = await client.prepareBrowser({ id, pluginId, token: entry.token });
+        const plan = await client.prepareBrowser({
+          id,
+          pluginId: ownerPluginId,
+          token: entry.token,
+        });
         if (!active.current || operation.current !== id) {
           await client.cancelBrowser(id);
           return;

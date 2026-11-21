@@ -1525,3 +1525,139 @@ not permission to silently omit a contributor or replay singleton activation.
 Settings and factoryless plugin pages remain separate rollout work. Physical
 pointer/mixed-DPI, Windows/Linux and live SSH/FUSE continuity require separate
 acceptance; this adapter does not claim those checks or a general public API.
+
+### Settings renderer boundary
+
+`SettingsPageView`, `PreferenceFieldsView` and `PreferenceRowView` use explicit
+document-local data/effect services. Main composition retains the real profiles,
+consent, plugin providers and specialized settings sections. This extraction does
+not admit settings to native windows: every custom section and draft/effect path
+must be adapted before exposing that entry; it is not a whole-store IPC proxy.
+
+Specialized preference controls (themes, file icons, host-list defaults, CSS and
+updates) also expose owner-independent renderers. Theme/color and host-list
+merges remain in the owner so an old displayed snapshot cannot overwrite newer
+unrelated values. CSS chooser/export, update installation and diagnostic
+navigation are explicit effects. Numeric inputs, custom update-source drafts and
+release-note expansion accept document-local view-state hooks; the native
+adapter must supply capture-aware hooks instead of recreating singleton stores.
+The terminal preview accepts the existing read-only terminal preference source.
+Profiles, proxy credentials, storage migration, shortcuts and plugin-provider
+sections still require complete adaptation before settings can move natively.
+
+Network settings and route-quality diagnostics use separate display/effect
+services. Default/feature/delete actions pass narrow commands and merge against
+the current owner snapshot. Credential drafts have a distinct memory-only hook;
+they must not enter ordinary layout/view capsules. Profile save replies expose
+only credential-error status to the renderer, not a whole settings store. The
+main wrapper retains credential persistence and in-flight background guards.
+Diagnostics can capture drafts/results and ignore results for changed routes;
+this does not yet enable native settings or establish a cross-window secret
+handoff implementation.
+
+Settings-profile rendering also uses document-local services: saved application
+passes only its identity and the revision captured before consent; updating the
+current profile reads portable preferences in the owner after confirmation.
+Naming, management and import-preview drafts accept capture-aware state hooks.
+Import/export choosers, destructive consent and canonical profile persistence
+remain owner effects. This boundary alone does not admit native settings.
+
+Storage settings use an explicit owner snapshot and narrow draft commands, merged
+against the owner's current draft so an asynchronous folder chooser cannot
+replace unrelated category edits. Selection, review and recovery expansion use
+capturable view state; an in-flight chooser/schedule blocks background release.
+The owner retains native path validation, migration scheduling/cancellation and
+restart consent. Merely reviewing or moving a view never schedules migration.
+
+The keyboard-shortcut editor receives explicit command definitions, preferences,
+query and effects. Recorded bindings, advanced-rule drafts and sort/selection
+state are capture-ready; rejected saves retain the editor. Command-scoped writes
+merge with the owner's current preferences and reject vanished/stale bindings
+instead of replacing unrelated shortcuts. Rule presentation helpers are pure,
+while routing/actions remain main-owned and retain their existing exports.
+
+Interface-provider selectors, the mount host-detail contributor selector and About
+also share owner-independent renderers. Provider views receive only eligible
+choice metadata, never the singleton runtime or permission authority. Activation,
+fingerprint checks, live workspace persistence and current-owner selection
+merges stay in main. Provider activation blocks background release; disclosure
+and local-license dialog state can be captured. About external links use named
+owner actions, not arbitrary URLs. Plugin security/runtime/configuration sections
+and the complete native Settings adapter still remain to be implemented.
+
+Plugin-security and Node-runtime settings have separate read/effect services.
+Grant displays and permission descriptions never import activation gates or the
+clipboard owner; error copying is an explicit supplied action. Restriction and
+revocation still use the main security store. Runtime detect/path/consent/install/
+cancel, download event registration and the shared activation decision stay with
+the main runtime owner; remounting the renderer displays the same installation
+rather than starting another. These boundaries do not move permission/first-use
+gates into native views or enable native Settings prematurely.
+
+Plugin configuration, catalogue-source settings and runner recovery also use
+explicit display/effect services. Configuration captures the draft together with
+its original revision/schema baseline: reading a newer document after remount
+must not silently rebase old edits. Backup deletion retains field drafts. Source
+trust/deletion consent remains owner-controlled; narrow commands validate the
+expected source against the current list, preserving unrelated additions. One
+captured source-editor draft is cleared on cancel/save rather than leaking stale
+values into the next edit.
+
+Recovery captures the selected owner/page, disclosure and token-qualified
+observations, pruning records that no longer exist. A saved record or connected
+SSH session is never proof of a running process. SSH acquisition, authentication,
+verification and file navigation remain with the main recovery-files owner;
+views receive only browse/status/render effects. A future native adapter must
+retain that auth/dialog lifecycle or coordinate pending handoff explicitly; a
+null satellite dialog is not a complete adapter. These changes still do not
+admit Settings to native windows. Full provider presentation, private secret
+draft transfer and owner/readiness coordination remain required.
+
+`PreferenceSurfaceView` likewise receives explicit data, current-frame validation
+and provider presentation services. Its persistent native `Fields` DOM remains
+single-owned when a provider relocates it; an omitted `Fields` is not silently
+replaced with a second builtin form. Main keeps the genuine selected/legacy
+provider and its authorization/recovery behavior. A native implementation must
+supply that presentation contract as well, rather than substituting the builtin
+form merely because a provider cannot yet move. Stale/hidden/unmounted frames
+retain their read/mutation fences.
+
+### Settings native document contract
+
+The Settings adapter uses the same complete production renderer in main and
+satellite documents, including profiles, proxy editing/diagnostics, updates,
+storage, shortcuts, sources, plugin configuration/security/runtime and runner
+recovery. One persistent main Settings owner retains the writer, real authentication
+and consent dialogs, installation, file choosers and navigation across moves.
+Closing a Settings origin cancels its pending confirmation; it cannot reopen an
+orphan prompt after asynchronous main-window activation.
+
+Ordinary drafts use one bounded nested capture map, retaining unmounted sections
+and arbitrary plugin IDs without relaxing the aggregate capsule limits. Navigation
+request counters travel with drafts: restoring a view does not clear its search.
+Proxy passwords are excluded from capsules, models, layout, descriptors and action
+jobs. They use a private exact-lease/staged-target channel backed by zeroizing
+native memory. Save jobs carry only the credential action; main retrieves the
+private draft after verifying the originating owner. Removal/reload clears native
+drafts, and failed flush/restore cannot acknowledge a destination.
+
+Preferences providers use genuine scoped factory attachments and the same
+persistent `Fields` contract, never duplicate singleton activation. Selected
+factoryless/legacy or non-floating providers remain in main pending their own
+presentation adapter; they are not silently replaced by builtin controls.
+Preferences schema/snapshot/observe calls are explicitly staging-safe retained
+reads, while updates retain committed origin authority through durable commit.
+The closed Settings operation grammar has a regression parity check against the
+main handlers. Source/test completion does not substitute for isolated production
+native-window and credential/authentication roundtrip acceptance.
+
+Isolated macOS acceptance uses the production SatelliteApp and complete Settings
+body: builtin and genuine preferences factory roundtrips, retained provider draft,
+main-owned reset confirmation cancellation, native import chooser cancellation,
+and a committed preference update were exercised. The singleton activates once
+and isolated plugin/session/host resources are cleaned. A proxy password draft
+also survives a builtin roundtrip without appearing in its capsule; no credential
+was saved to the OS keychain. All categories render in the independent window.
+This does not prove actual SSH recovery authentication, Windows/Linux or physical
+pointer/mixed-DPI behavior. Factory preferences are admitted by exact renderer
+identity, not the sidebar-only `factoryOwner` contract.

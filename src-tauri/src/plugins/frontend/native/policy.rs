@@ -70,12 +70,16 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         | "hosts.getFields"
         | "storage.get"
         | "storage.observe"
+        | "preferences.schema"
+        | "preferences.snapshot"
+        | "preferences.observe"
         | "configuration.schema"
         | "configuration.snapshot"
         | "configuration.backups" => Some(CallPolicy::StagedData),
         // Mutations await actual I/O; even keyring reads can prompt/perform OS
         // work, so they are NOT admitted during staging.
-        "storage.set"
+        "preferences.update"
+        | "storage.set"
         | "storage.delete"
         | "configuration.update"
         | "configuration.migrate"
@@ -242,6 +246,32 @@ mod host_metadata_tests {
             "hostList.setDecorations",
         ] {
             assert!(call_policy(method).is_none(), "{method}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod preferences_tests {
+    use super::*;
+    #[test]
+    fn preferences_reads_are_staging_safe_but_writes_require_owned_retained_effects() {
+        for method in [
+            "preferences.schema",
+            "preferences.snapshot",
+            "preferences.observe",
+        ] {
+            assert!(crate::plugins::api::method_info(method).is_some());
+            assert_eq!(call_policy(method), Some(CallPolicy::StagedData));
+        }
+        let write = call_policy("preferences.update").unwrap();
+        assert!(!write.staged() && write.retained() && write.blocks_move());
+        for method in [
+            "settings.get",
+            "settings.update",
+            "preferences.snapshot.extra",
+            "preferences.import",
+        ] {
+            assert!(call_policy(method).is_none());
         }
     }
 }
