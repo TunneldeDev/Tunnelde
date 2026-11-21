@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 内置在线文件面板支持移入独立窗体并返回，保留目录、筛选和选择；创建、重命名、复制、删除及双向传输使用原 SSH 与受限资源代理，远端选择器、编辑器和插件动作由主窗执行。选中文件浏览界面提供者时暂留主窗。Live builtin file pages support native-window roundtrips with directory/filter/selection retained; creation, rename, copy, deletion and bidirectional transfer reuse SSH through scoped resources, while source selection, editors and plugin actions remain main-owned. Selected file-browser interface providers stay in main for now.
+
 - 内置终端标签支持移入独立窗体和返回，保留原 SSH、屏幕及未完成输入；断开和文件导航由主窗执行。当前选中终端界面插件时保留在主窗，其他页面适配仍在继续。Builtin terminal tabs support native-window roundtrips with the original SSH, screen and partial input retained; disconnect/navigation remain main-owned. Selected terminal interface providers stay in main for now; other page adapters remain in progress.
 
 - 终端渲染器支持只读设置与限定作用域的连接服务，普通检查点不会被误当成迁移交接；远程 shell 在暂离期间退出时，为交接保留最后输出。Terminal rendering supports read-only preferences and scoped I/O; periodic checkpoints are distinct from move barriers, and detached shell exit retains final output for handoff. The native terminal page entry remains pending.

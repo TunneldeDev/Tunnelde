@@ -112,7 +112,8 @@ export function nativePanelMoveActions(panelId: string, t: TFunction): MenuActio
     void movePanelToWindow(panelId, target).catch((error) => toast(translateError(error), "error"));
   };
   const blocked =
-    state.snapshot.terminalViews?.find((view) => view.panelId === panelId)?.allowMove === false;
+    state.snapshot.terminalViews?.find((view) => view.panelId === panelId)?.allowMove === false ||
+    state.snapshot.filePages?.find((view) => view.panelId === panelId)?.allowMove === false;
   return [
     ...(!blocked
       ? [{ label: t("panels.newWindow"), separatorBefore: true, onSelect: () => move() }]

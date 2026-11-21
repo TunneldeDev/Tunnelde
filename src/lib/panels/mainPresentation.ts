@@ -11,12 +11,14 @@ import type { SourcePanelPresentation } from "./sourcePresentation";
  * the native source router must select the exact current document first. */
 export function createMainPanelPresentation(): SourcePanelPresentation {
   const closed = new Map<string, SourcePanelMetadata>();
-  const terminal = (id: string) =>
-    useWorkspace.getState().tabs.find((tab) => tab.kind === "terminal" && tab.id === id);
-  const terminalRows = (): SourcePanelMetadata[] => {
+  const workspaceTab = (id: string) =>
+    useWorkspace
+      .getState()
+      .tabs.find((tab) => (tab.kind === "terminal" || tab.kind === "sftp") && tab.id === id);
+  const workspaceRows = (): SourcePanelMetadata[] => {
     const state = useWorkspace.getState();
     return state.tabs
-      .filter((tab) => tab.kind === "terminal")
+      .filter((tab) => tab.kind === "terminal" || tab.kind === "sftp")
       .map((tab) => {
         const pane = state.panes.find((pane) => pane.tabIds.includes(tab.id));
         return {
@@ -38,11 +40,11 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
       !state.snapshot.panels.some((panel) => panel.panelId === id && panel.windowId === "main")
     )
       throw new Error("panel.window.staleOwner");
-    return terminal(id) ? id : requirePanel(id);
+    return workspaceTab(id) ? id : requirePanel(id);
   };
   const read = () => {
     const state = usePanelWindows.getState();
-    return [...panelSnapshot(), ...terminalRows(), ...closed.values()].filter(
+    return [...panelSnapshot(), ...workspaceRows(), ...closed.values()].filter(
       (panel) =>
         !state.available ||
         state.snapshot.panels.some(
@@ -52,10 +54,10 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
   };
   return {
     read,
-    readStaged: (id) => [...panelSnapshot(), ...terminalRows()].find((panel) => panel.id === id),
+    readStaged: (id) => [...panelSnapshot(), ...workspaceRows()].find((panel) => panel.id === id),
     set(id, presentation) {
       local(id);
-      if (terminal(id)) {
+      if (workspaceTab(id)) {
         if (presentation === "floating") useWorkspace.getState().floatTab(id);
         else if (presentation === "workspace") {
           const pane = useWorkspace.getState().panes.find((pane) => pane.tabIds.includes(id));
@@ -74,15 +76,15 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
     },
     close: (id) => {
       local(id);
-      if (terminal(id)) {
-        const row = terminalRows().find((row) => row.id === id)!;
+      if (workspaceTab(id)) {
+        const row = workspaceRows().find((row) => row.id === id)!;
         closed.set(id, { ...row, visible: false, available: false });
         useWorkspace.getState().close(id);
       } else closePanel(requirePanel(id));
     },
     reveal: (id) => {
       local(id);
-      if (terminal(id)) useWorkspace.getState().activate(id);
+      if (workspaceTab(id)) useWorkspace.getState().activate(id);
       else revealPanel(requirePanel(id));
     },
     subscribe: (changed) => {

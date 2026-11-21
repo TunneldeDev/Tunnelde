@@ -292,3 +292,41 @@ fn transfer_validation_checks_both_sources_and_paths_without_session_fallback() 
     unknown["windowId"] = json!("main");
     assert!(serde_json::from_value::<Operation>(unknown).is_err());
 }
+
+#[test]
+fn file_ui_action_relay_requires_a_registered_file_page_and_closed_bounded_command() {
+    use super::super::actions::ViewAction;
+    let (mut owner, main, _, _, lease) = fixture();
+    let now = Instant::now();
+    let request = || {
+        serde_json::from_value::<ViewAction>(
+            json!({"kind":"files", "command":{"operation":"clipboard", "data":{"text":"test"}}}),
+        )
+        .unwrap()
+    };
+    assert!(owner
+        .request_action(MAIN, &main, &lease, request(), now)
+        .is_ok());
+    let other = owner.add_panel(MAIN, &main, "connections").unwrap();
+    assert!(owner
+        .request_action(MAIN, &main, &other, request(), now)
+        .is_err());
+    for command in [
+        json!({"operation":"invoke", "data":{"method":"delete_host"}}),
+        json!({"operation":"clipboard", "data":{}, "document":"spoof"}),
+    ] {
+        assert!(
+            serde_json::from_value::<ViewAction>(json!({"kind":"files", "command":command}))
+                .is_err()
+        );
+    }
+    for data in [json!(null), json!({"text":"x".repeat(1024 * 1024)})] {
+        let action = serde_json::from_value::<ViewAction>(
+            json!({"kind":"files", "command":{"operation":"clipboard", "data":data}}),
+        )
+        .unwrap();
+        assert!(owner
+            .request_action(MAIN, &main, &lease, action, now)
+            .is_err());
+    }
+}

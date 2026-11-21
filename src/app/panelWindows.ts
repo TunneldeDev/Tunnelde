@@ -1,3 +1,8 @@
+import {
+  bindFileWindow,
+  fileWindowTabs,
+  synchronizeFileWindows,
+} from "@/features/sftp/fileWindowRegistration";
 import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
@@ -49,6 +54,7 @@ export async function startPanelWindows(signal: AbortSignal) {
         (view) => view !== "filePreview" || useFilePreview.getState().file !== null,
       ),
       ...pluginSidebars(usePlugins.getState().items).map((item) => item.view),
+      ...fileWindowTabs().map((tab) => tab.id),
       ...useWorkspace
         .getState()
         .tabs.filter(
@@ -64,8 +70,11 @@ export async function startPanelWindows(signal: AbortSignal) {
     registerPanel: (id) =>
       id.startsWith("terminal:")
         ? current.terminals.bind(id.slice("terminal:".length))
-        : current.control({ action: "addPanel", panelId: id }),
+        : fileWindowTabs().some((tab) => tab.id === id)
+          ? bindFileWindow(current, id)
+          : current.control({ action: "addPanel", panelId: id }),
     synchronize: async (snapshot) => {
+      await synchronizeFileWindows(current);
       const allow = !useSettings.getState().settings.uiProviders.terminal;
       for (const view of snapshot.terminalViews ?? [])
         if (view.allowMove !== allow) await current.terminals.configure(view.panelId, allow);

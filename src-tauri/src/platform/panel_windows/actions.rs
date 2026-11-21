@@ -17,6 +17,9 @@ const RESULT_TTL: Duration = Duration::from_secs(10);
     deny_unknown_fields
 )]
 pub(crate) enum ViewAction {
+    Files {
+        command: FileCommand,
+    },
     Terminal {
         command: TerminalCommand,
     },
@@ -69,6 +72,43 @@ pub(crate) enum ViewAction {
     Disconnect {
         session_id: String,
     },
+}
+// Closed owner-only operations. Data is additionally feature-validated in the
+// coordinator against its acknowledged source set before any effect. It cannot
+// name an application IPC method or a caller/document authority.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FileCommand {
+    operation: FileOperation,
+    data: Value,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum FileOperation {
+    Preference,
+    OpenLocal,
+    Clipboard,
+    Clip,
+    PickRemote,
+    OpenLog,
+    Editor,
+    Preview,
+    Reveal,
+    SetSession,
+    Rename,
+    Retain,
+    OpenPane,
+    Roots,
+    MenuList,
+    MenuRun,
+    MountList,
+    MountReveal,
+}
+impl FileCommand {
+    fn valid(&self) -> bool {
+        self.data.is_object()
+            && serde_json::to_vec(&self.data).is_ok_and(|v| v.len() <= 1024 * 1024)
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(
@@ -254,6 +294,7 @@ impl TransferPrompt {
 impl ViewAction {
     fn panel(&self) -> &'static str {
         match self {
+            Self::Files { .. } => "files",
             Self::Terminal { .. } => "terminal",
             Self::Plugins { .. } => "plugins",
             Self::Hosts { .. } => "hosts",
@@ -272,6 +313,7 @@ impl ViewAction {
     fn validate(&self) -> Result<(), &'static str> {
         let bounded = |s: &str, max| !s.is_empty() && s.len() <= max;
         let valid = match self {
+            Self::Files { command } => command.valid(),
             Self::Terminal { command } => command.valid(),
             Self::Plugins { command } => command.valid(),
             Self::Hosts { command } => command.valid(),
@@ -403,7 +445,9 @@ impl Ownership {
             return Err("panel action limit");
         }
         self.authorize_action_interaction(window, document, lease, &request)?;
-        if if matches!(request, ViewAction::Terminal { .. }) {
+        if if matches!(request, ViewAction::Files { .. }) {
+            !self.file_page_registered(&lease.panel_id)
+        } else if matches!(request, ViewAction::Terminal { .. }) {
             !self.terminal_registered(&lease.panel_id)
         } else {
             request.panel() != lease.panel_id

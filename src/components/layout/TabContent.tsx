@@ -11,7 +11,7 @@ import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { PluginCommandPage } from "@/features/plugins/PluginCommandPage";
 import { PluginDetailPage } from "@/features/plugins/PluginDetailPage";
 import { HostPage } from "@/features/hosts/HostPage";
-import { SftpPage } from "@/features/sftp/SftpPage";
+import { MainNativeFilePage } from "@/features/sftp/NativeFilePage";
 import { RestoredFilePane } from "@/features/sftp/RestoredFilePane";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { KnownHostsPage } from "@/features/settings/KnownHostsPage";
@@ -58,7 +58,7 @@ function TabBody({
       )
         return <RestoredFilePane tab={tab} />;
       return (
-        <SftpPage
+        <MainNativeFilePage
           key={tab.filePane ? `${tab.id}:single` : `${tab.id}:dual`}
           sessionId={
             tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "").split(":copy:")[0]!

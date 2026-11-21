@@ -19,7 +19,32 @@ export function createFileWindowFileSystem(
   target: () => FileWindowTarget,
   external: ExternalEffects,
 ): FileSystem {
+  const browser = createFileWindowPageFileSystem(client, target);
   const owned = () => {
+    const current = target();
+    if (current.kind !== "owned") throw new Error("staged file page is read only");
+    return current.lease;
+  };
+  return {
+    ...browser,
+    async readText(...args) {
+      return external.readText(owned(), ...args);
+    },
+    async writeText(...args) {
+      await external.writeText(owned(), ...args);
+    },
+    async openLocal(path) {
+      await external.openLocal(owned(), path);
+    },
+  };
+}
+export function createFileWindowPageFileSystem(
+  client: Client,
+  target: () => FileWindowTarget,
+  mutationLease?: () => PanelLease,
+): Omit<FileSystem, "readText" | "writeText" | "openLocal"> {
+  const owned = () => {
+    if (mutationLease) return mutationLease();
     const current = target();
     if (current.kind !== "owned") throw new Error("staged file page is read only");
     return current.lease;
@@ -44,15 +69,6 @@ export function createFileWindowFileSystem(
     },
     async transfer(from, fromPath, to, toPath, removeSource, overwrite = false) {
       return client.transfer(owned(), from, fromPath, to, toPath, removeSource, overwrite);
-    },
-    async readText(...args) {
-      return external.readText(owned(), ...args);
-    },
-    async writeText(...args) {
-      await external.writeText(owned(), ...args);
-    },
-    async openLocal(path) {
-      await external.openLocal(owned(), path);
     },
   };
 }

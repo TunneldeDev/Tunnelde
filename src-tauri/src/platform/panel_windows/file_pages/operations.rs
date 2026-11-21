@@ -7,7 +7,7 @@ use crate::{
     state::AppState,
 };
 use std::sync::LazyLock;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 static LOCAL: LazyLock<Budget> = LazyLock::new(|| Budget::new(8, ERRORS));
 static READ: LazyLock<Budget> = LazyLock::new(|| Budget::new(8, ERRORS));
 const ERRORS: Errors = Errors {
@@ -108,6 +108,17 @@ impl Drop for Call {
         if let Some((lease, id)) = &self.fence {
             native::lock(&self.app.state::<native::Registry>())
                 .finish_native_action(&lease.panel_id, id);
+            // Broadcast from actual worker settlement, not caller delivery.
+            for source in &self.sources {
+                let session = match source {
+                    Source::Local {} => None,
+                    Source::Remote { session_id } => Some(session_id),
+                };
+                let _ = self.app.emit(
+                    "plugin://domain-changed",
+                    json!({"domain":"files","sessionId":session}),
+                );
+            }
             native::changed(&self.app);
         }
     }

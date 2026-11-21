@@ -18,7 +18,7 @@ import {
   PanelRightOpen,
   GripVertical,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
@@ -286,7 +286,16 @@ export function SftpPageView({
       view: preferencesFor("b", { kind: "remote", sessionId }),
     },
   }));
+  const [initialized, setInitialized] = useState(false);
   const [active, setActive] = services.useViewState<PaneId>(`${checkpointKey}:active`, "a");
+  useLayoutEffect(() => {
+    services.rendered?.(
+      initialized &&
+        visiblePaneIds.every(
+          (id) => !panes[id].state.busy && !!(panes[id].state.listing || panes[id].state.error),
+        ),
+    );
+  }, [services, panes, visiblePaneIds, initialized]);
   const sourceA = panes.a.source;
   const sourceB = panes.b.source;
   useEffect(() => {
@@ -614,6 +623,7 @@ export function SftpPageView({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      setInitialized(true);
       const first = panesRef.current.a.state;
       void load("a", first.listing?.path ?? initialSinglePath.current);
       if (!isSingle) {
@@ -2024,7 +2034,10 @@ export function SftpPageView({
                   renaming: { path: entry.path, value: event.target.value },
                 })
               }
-              onBlur={() => patch(id, { renaming: null })}
+              data-panel-focus={`file:${id}:rename`}
+              onBlur={() => {
+                if (!services.preserveDraftOnBlur?.()) patch(id, { renaming: null });
+              }}
               onClick={(event) => event.stopPropagation()}
               onDoubleClick={(event) => event.stopPropagation()}
               onKeyDown={(event) => {
@@ -2255,6 +2268,8 @@ export function SftpPageView({
 
         <FilePathBar
           list={fs.list}
+          captureKey={`file:${id}`}
+          preserveDraftOnBlur={services.preserveDraftOnBlur}
           key={keyForSource(source)}
           source={source}
           path={state.listing?.path ?? ""}
@@ -2284,6 +2299,7 @@ export function SftpPageView({
             }}
           >
             <SearchField
+              data-panel-focus={`file:${id}:filter`}
               aria-label={t("sftp.filterFiles")}
               filterKeys={["name", "ext", "type", "is", "path", "size", "modified"]}
               placeholder={t("sftp.filterPlaceholder")}
@@ -2368,9 +2384,11 @@ export function SftpPageView({
                     <div
                       className="sftp-pane__body"
                       data-column-path={listing.path}
+                      data-panel-scroll={`file:${id}:column:${columnIndex}`}
                       onScroll={(event) =>
                         rememberColumnScroll(id, listing.path, event.currentTarget.scrollTop)
                       }
+                      data-panel-focus={`file:${id}:column:${columnIndex}`}
                       role="listbox"
                       tabIndex={0}
                       aria-label={listing.path}
@@ -2591,6 +2609,8 @@ export function SftpPageView({
               )}
 
               <div
+                data-panel-scroll={`file:${id}:body`}
+                data-panel-focus={`file:${id}:body`}
                 ref={(element) => {
                   bodies.current[id] = element;
                 }}
@@ -2675,7 +2695,10 @@ export function SftpPageView({
                       onChange={(event) =>
                         patch(id, { creating: { kind: creating.kind, value: event.target.value } })
                       }
-                      onBlur={() => patch(id, { creating: null })}
+                      data-panel-focus={`file:${id}:create`}
+                      onBlur={() => {
+                        if (!services.preserveDraftOnBlur?.()) patch(id, { creating: null });
+                      }}
                       onClick={(event) => event.stopPropagation()}
                       onDoubleClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => {
