@@ -1584,3 +1584,12 @@ merges stay in main. Provider activation blocks background release; disclosure
 and local-license dialog state can be captured. About external links use named
 owner actions, not arbitrary URLs. Plugin security/runtime/configuration sections
 and the complete native Settings adapter still remain to be implemented.
+
+Plugin-security and Node-runtime settings have separate read/effect services.
+Grant displays and permission descriptions never import activation gates or the
+clipboard owner; error copying is an explicit supplied action. Restriction and
+revocation still use the main security store. Runtime detect/path/consent/install/
+cancel, download event registration and the shared activation decision stay with
+the main runtime owner; remounting the renderer displays the same installation
+rather than starting another. These boundaries do not move permission/first-use
+gates into native views or enable native Settings prematurely.

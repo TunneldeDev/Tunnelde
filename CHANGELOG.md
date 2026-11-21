@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 插件安全与 Node 设置拆分读取和操作边界，授权展示不再间接导入启动门禁／剪贴板；安装、取消与确认仍由原主窗所有者执行。Plugin security and Node settings separate display/effects without indirectly importing activation gates or clipboard owners; installation, cancellation and consent stay main-owned.
+
 - 界面提供者、主机挂载贡献者选择及关于页采用共享展示边界，保留主窗启动／指纹校验，折叠与许可证弹窗状态可捕获；设置独立窗口仍待完整适配。Provider selectors and About use shared view boundaries with main-owned activation/fingerprint checks and capture-ready disclosure/license state; native settings remain pending.
 
 - 快捷键编辑器分离展示和所有者操作，录制与高级规则草稿可捕获，失败保存保留编辑，按命令合并避免覆盖其他绑定；设置独立窗口仍待完整适配。Keyboard settings separate presentation from owner effects with capture-ready recorder/advanced drafts, retained failed edits and command-scoped merges; native settings remain pending.
