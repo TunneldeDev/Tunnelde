@@ -1,4 +1,5 @@
 import { plugin as installedPlugin } from "../fixtures/plugins";
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -176,6 +177,28 @@ describe("PluginViewPage", () => {
         "boot:1",
       ),
     );
+  });
+
+  it("keeps a live owner after StrictMode effect replay without activating another plugin", async () => {
+    apiMock.pluginRenderView.mockResolvedValue({
+      blocks: [
+        {
+          type: "form",
+          id: "strict",
+          fields: [],
+          actions: [{ id: "run", label: "Run strict", command: "strict-command" }],
+        },
+      ],
+    });
+    apiMock.pluginRun.mockClear().mockResolvedValue({ text: "Strict result" });
+    render(
+      <StrictMode>
+        <PluginViewPage pluginId="example" viewId="main" />
+      </StrictMode>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Run strict" }));
+    expect(await screen.findByLabelText("Result")).toHaveProperty("value", "Strict result");
+    expect(apiMock.pluginRun).toHaveBeenCalledTimes(1);
   });
 
   it("renders heading, key/value and table blocks", async () => {
