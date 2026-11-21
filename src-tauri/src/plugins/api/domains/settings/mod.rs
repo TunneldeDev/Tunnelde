@@ -39,6 +39,7 @@ pub(in crate::plugins::api) async fn dispatch(
                 return Err(AppError::validation("editor.recoveryConsentRequired"));
             }
             let worker = context.clone();
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
             crate::services::settings::write(app, move |writer| {
                 let state = worker.app.state::<AppState>();
                 authorize(&worker, &["settings.write"])?;
@@ -52,17 +53,24 @@ pub(in crate::plugins::api) async fn dispatch(
                 // Waiting for a concurrent commit is an authorization boundary too.
                 let cancellation = prepared.cancellation();
                 let prepared = std::cell::RefCell::new(prepared);
-                state.plugins.security.with_authorized_database_then(
-                    &state.db,
-                    &lease,
-                    &["settings.write"],
-                    || cancellation.check(),
-                    |conn| prepared.borrow().persist_on(conn),
-                    |revision| {
-                        prepared.borrow_mut().committed_revision(revision);
-                        Ok(())
-                    },
-                )?;
+                let authority = origin
+                    .as_ref()
+                    .map(|origin| origin as &dyn crate::services::operations::Authority);
+                state
+                    .plugins
+                    .security
+                    .with_authorized_fenced_database_then(
+                        &state.db,
+                        &lease,
+                        &["settings.write"],
+                        || cancellation.check(),
+                        authority,
+                        |conn| prepared.borrow().persist_on(conn),
+                        |revision| {
+                            prepared.borrow_mut().committed_revision(revision);
+                            Ok(())
+                        },
+                    )?;
                 encode(prepared.into_inner().finish())
             })
             .await

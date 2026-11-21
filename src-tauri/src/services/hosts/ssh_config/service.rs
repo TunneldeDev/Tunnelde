@@ -8,7 +8,7 @@ use crate::{
     error::{AppError, AppResult},
     models::Host,
     plugins::security::Lease,
-    services::operations::{Budget, Cancellation, Errors},
+    services::operations::{Authority, Budget, Cancellation, Errors},
 };
 use rusqlite::Connection;
 use std::{
@@ -81,6 +81,16 @@ async fn source_task<T: Send + 'static>(
     run: impl FnOnce(&Connection, &Discovered, &Cancellation) -> AppResult<T> + Send + 'static,
     publish: impl FnOnce(T) -> T + Send + 'static,
 ) -> AppResult<T> {
+    source_task_with_origin(app, authority, None, run, publish).await
+}
+
+async fn source_task_with_origin<T: Send + 'static>(
+    app: &AppHandle,
+    authority: Option<(Lease, &'static [&'static str])>,
+    origin: Option<crate::platform::panel_windows::plugin_views::origin::Origin>,
+    run: impl FnOnce(&Connection, &Discovered, &Cancellation) -> AppResult<T> + Send + 'static,
+    publish: impl FnOnce(T) -> T + Send + 'static,
+) -> AppResult<T> {
     let app = app.clone();
     WORKERS
         .blocking(move |cancel| {
@@ -102,11 +112,13 @@ async fn source_task<T: Send + 'static>(
             let discovered = parser::discover(&home)?;
             cancel.check()?;
             let result = if let Some((lease, permissions)) = authority {
-                state.plugins.security.with_authorized_database(
+                let authority = origin.as_ref().map(|origin| origin as &dyn Authority);
+                state.plugins.security.with_authorized_fenced_database(
                     &state.db,
                     &lease,
                     permissions,
                     || cancel.check(),
+                    authority,
                     |conn| run(conn, &discovered, cancel),
                 )
             } else {
@@ -125,7 +137,7 @@ pub(crate) async fn import(
     aliases: Vec<String>,
     revision: String,
 ) -> AppResult<ImportResult> {
-    import_checked(app, aliases, revision, None).await
+    import_checked(app, aliases, revision, None, None).await
 }
 
 pub(crate) async fn import_checked(
@@ -133,6 +145,7 @@ pub(crate) async fn import_checked(
     aliases: Vec<String>,
     revision: String,
     lease: Option<Lease>,
+    origin: Option<crate::platform::panel_windows::plugin_views::origin::Origin>,
 ) -> AppResult<ImportResult> {
     if aliases.is_empty()
         || aliases.len() > 1024
@@ -144,9 +157,10 @@ pub(crate) async fn import_checked(
     let handle = app.clone();
     // Publish from the retained worker even if the caller drops its response
     // after the transaction has already been admitted.
-    source_task(
+    source_task_with_origin(
         app,
         lease.map(|lease| (lease, IMPORT)),
+        origin,
         move |conn, source, cancel| {
             match_revision(source, &revision)?;
             import_at(conn, source, &aliases, || cancel.commit())

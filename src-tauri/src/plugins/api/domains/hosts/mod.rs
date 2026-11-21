@@ -44,13 +44,12 @@ pub(in crate::plugins::api) async fn dispatch(
             .await?,
         ),
         "hosts.sshConfig.import" => {
-            let result = ssh_config::import_checked(
-                app,
-                field(&params, "aliases")?,
-                field(&params, "revision")?,
-                Some(lease(context)),
-            )
-            .await?;
+            let aliases = field(&params, "aliases")?;
+            let revision = field(&params, "revision")?;
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let result =
+                ssh_config::import_checked(app, aliases, revision, Some(lease(context)), origin)
+                    .await?;
             Ok(serde_json::json!({
                 "importedIds": result.imported.into_iter().map(|host| host.id).collect::<Vec<_>>(),
                 "skipped": result.skipped,

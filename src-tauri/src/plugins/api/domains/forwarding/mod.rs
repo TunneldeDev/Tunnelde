@@ -40,34 +40,78 @@ pub(in crate::plugins::api) async fn dispatch(
             let id: String = field(&params, "id")?;
             let revision: String = field(&params, "expectedRevision")?;
             let options = field(&params, "automation")?;
-            let lease = crate::plugins::security::Lease {
+            let lease = Lease {
                 id: context.id.clone(),
                 fingerprint: context.fingerprint.clone(),
                 permissions: context.permissions.clone(),
                 generation: context.generation,
             };
-            state
-                .plugins
-                .security
-                .with_authorized(&lease, &["forwards.write"], || {
-                    let entry = crate::services::forwarding::find(app, &id)?
-                        .ok_or_else(|| AppError::validation("forward.missing"))?;
-                    encode(crate::services::forwarding::automation::save(
-                        app,
-                        entry.info.rule,
-                        Some(&revision),
-                        options,
-                    )?)
-                })
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let entry = crate::services::forwarding::find(app, &id)?
+                .ok_or_else(|| AppError::validation("forward.missing"))?;
+            let mutation = || {
+                state
+                    .plugins
+                    .security
+                    .with_authorized(&lease, &["forwards.write"], || {
+                        encode(crate::services::forwarding::automation::save(
+                            app,
+                            entry.info.rule,
+                            Some(&revision),
+                            options,
+                        )?)
+                    })
+            };
+            match origin {
+                Some(origin) => origin.with_current(mutation),
+                None => mutation(),
+            }
         }
         "forwards.list" => encode(crate::services::forwarding::list(app)?),
-        "forwards.save" => encode(crate::services::forwarding::save(
-            app,
-            field(&params, "rule")?,
-        )?),
+        "forwards.save" => {
+            let rule = field(&params, "rule")?;
+            let lease = Lease {
+                id: context.id.clone(),
+                fingerprint: context.fingerprint.clone(),
+                permissions: context.permissions.clone(),
+                generation: context.generation,
+            };
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let mutation = || {
+                state
+                    .plugins
+                    .security
+                    .with_authorized(&lease, &["forwards.write"], || {
+                        encode(crate::services::forwarding::save(app, rule))
+                    })
+            };
+            match origin {
+                Some(origin) => origin.with_current(mutation),
+                None => mutation(),
+            }
+        }
         "forwards.remove" => {
-            crate::services::forwarding::remove(app, &field::<String>(&params, "id")?)?;
-            Ok(Value::Null)
+            let id = field::<String>(&params, "id")?;
+            let lease = Lease {
+                id: context.id.clone(),
+                fingerprint: context.fingerprint.clone(),
+                permissions: context.permissions.clone(),
+                generation: context.generation,
+            };
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let mutation = || {
+                state
+                    .plugins
+                    .security
+                    .with_authorized(&lease, &["forwards.write"], || {
+                        crate::services::forwarding::remove(app, &id)?;
+                        Ok(Value::Null)
+                    })
+            };
+            match origin {
+                Some(origin) => origin.with_current(mutation),
+                None => mutation(),
+            }
         }
         "forwards.start" => {
             start_one(

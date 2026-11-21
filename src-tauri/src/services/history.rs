@@ -32,11 +32,15 @@ pub(crate) trait Effects {
 pub(crate) struct Runtime<'a>(&'a AppHandle);
 impl Effects for Runtime<'_> {
     fn changed(&self, host_id: &str) {
-        let _ = self.0.emit(
-            "plugin://domain-changed",
-            serde_json::json!({"domain":"history","hostId":host_id,"sessionId":null}),
-        );
+        changed(self.0, host_id);
     }
+}
+
+pub(crate) fn changed(app: &AppHandle, host_id: &str) {
+    let _ = app.emit(
+        "plugin://domain-changed",
+        serde_json::json!({"domain":"history","hostId":host_id,"sessionId":null}),
+    );
 }
 
 pub(crate) fn service<'a>(app: &'a AppHandle, state: &'a AppState) -> History<'a, Runtime<'a>> {
