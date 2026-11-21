@@ -23,6 +23,14 @@ pub(in crate::plugins::api) async fn dispatch(
             encode(commands::remote_processes(app.clone(), field(&params, "sessionId")?).await?)
         }
         "monitor.kill" => {
+            // Native-view calls are refused before this adapter because the SSH
+            // effect cannot be fenced at its actual dispatch boundary yet.
+            // Ordinary non-native transports retain their existing authority.
+            if crate::platform::panel_windows::plugin_views::origin::current().is_some() {
+                return Err(AppError::validation(
+                    "plugin.frontend.nativeMethodUnavailable",
+                ));
+            }
             commands::remote_kill(
                 app.clone(),
                 field(&params, "sessionId")?,
