@@ -16,14 +16,13 @@ export function startPluginPanelAppearance(
     string,
     { revision: string; publisher?: string; serial: number; running: boolean; queued: boolean }
   >();
-  const current = (id: string, entry: { revision: string }) =>
-    !disposed &&
-    entries.get(id) === entry &&
-    usePanelWindows
-      .getState()
-      .snapshot.pluginViews?.some(
-        (view) => view.panelId === id && view.revision === entry.revision,
-      );
+  const current = (id: string, entry: { revision: string }) => {
+    if (disposed || entries.get(id) !== entry) return false;
+    const snapshot = usePanelWindows.getState().snapshot;
+    return [...(snapshot.pluginViews ?? []), ...(snapshot.declarativeViews ?? [])].some(
+      (view) => view.panelId === id && view.revision === entry.revision,
+    );
+  };
   const publish = (id: string) => {
     const entry = entries.get(id);
     if (!entry) return;
@@ -55,7 +54,8 @@ export function startPluginPanelAppearance(
     })();
   };
   const reconcile = () => {
-    const views = usePanelWindows.getState().snapshot.pluginViews ?? [];
+    const snapshot = usePanelWindows.getState().snapshot;
+    const views = [...(snapshot.pluginViews ?? []), ...(snapshot.declarativeViews ?? [])];
     for (const [id, entry] of entries)
       if (!views.some((view) => view.panelId === id && view.revision === entry.revision))
         entries.delete(id);

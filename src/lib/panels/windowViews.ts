@@ -5,6 +5,7 @@ import { create } from "zustand";
 import type { PanelWindowClient } from "./windowClient";
 import type {
   NativePanelSnapshot,
+  NativeDeclarativeViewDescriptor,
   NativePluginViewDescriptor,
   PanelLease,
   PanelTransferOffer,
@@ -18,6 +19,15 @@ export const pluginPanelDescriptor = (id: string, snapshot: NativePanelSnapshot)
     (view) =>
       view.panelId === id &&
       view.allowFloating &&
+      !!view.revision &&
+      id === `plugin:${view.pluginId}:${view.viewId}`,
+  );
+export const declarativePanelDescriptor = (id: string, snapshot: NativePanelSnapshot) =>
+  snapshot.declarativeViews?.find(
+    (view) =>
+      view.panelId === id &&
+      view.allowFloating &&
+      view.renderer === "json" &&
       !!view.revision &&
       id === `plugin:${view.pluginId}:${view.viewId}`,
   );
@@ -35,7 +45,8 @@ export const transferablePanel = (id: string, snapshot = usePanelWindows.getStat
   !!snapshot.editorPages?.some((view) => view.panelId === id) ||
   !!snapshot.filePages?.some((view) => view.panelId === id) ||
   !!snapshot.terminalViews?.some((view) => view.panelId === id) ||
-  !!pluginPanelDescriptor(id, snapshot);
+  !!pluginPanelDescriptor(id, snapshot) ||
+  !!declarativePanelDescriptor(id, snapshot);
 /** Rendering and movement remain explicit opt-ins. The native allowlist is the
  * independent authority; never infer support from the existence of a renderer. */
 export const renderablePanel = (id: string, snapshot = usePanelWindows.getState().snapshot) =>
@@ -45,6 +56,7 @@ export interface WindowViewRecord {
   panelId: string;
   controller: PanelViewState;
   plugin?: NativePluginViewDescriptor;
+  declarative?: NativeDeclarativeViewDescriptor;
   dom?: PanelDomState;
   staged: boolean;
   moving?: boolean;
@@ -97,6 +109,7 @@ export function createWindowViews(client: PanelWindowClient) {
       panelId,
       controller: createPanelViewState(parsed.view),
       plugin: pluginPanelDescriptor(panelId, descriptors),
+      declarative: declarativePanelDescriptor(panelId, descriptors),
       dom: parsed.dom,
       staged,
     };
@@ -171,6 +184,7 @@ export function createWindowViews(client: PanelWindowClient) {
       for (const [id, record] of records) {
         if (
           record.plugin?.revision !== pluginPanelDescriptor(id, snapshot)?.revision ||
+          record.declarative?.revision !== declarativePanelDescriptor(id, snapshot)?.revision ||
           (!owned.some((lease) => lease.panelId === id) &&
             !(record.staged && incoming.has(record.key)))
         )

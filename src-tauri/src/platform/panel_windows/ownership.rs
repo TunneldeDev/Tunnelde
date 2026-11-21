@@ -369,6 +369,8 @@ impl Ownership {
     }
     pub fn remove_panel(&mut self, window: &str, document: &str, panel_id: &str) -> Result<()> {
         self.main(window, document)?;
+        // A staged attachment is a read-only target and must be revoked by
+        // removing its source. Accepted effect fences still block removal.
         if self.native_view_busy(panel_id) {
             return Err("panel interaction in progress");
         }
@@ -387,6 +389,7 @@ impl Ownership {
             return Err("panel interaction in progress");
         }
         self.panels.remove(panel_id).ok_or("panel not found")?;
+        self.close_native_views_for_panel(panel_id);
         self.remove_plugin_adapter(panel_id);
         self.retire_terminal(panel_id);
         self.retire_file_page(panel_id);

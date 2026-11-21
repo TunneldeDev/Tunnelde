@@ -578,7 +578,13 @@ displayed incarnation while a panel body is temporarily unmounted and retires id
 as soon as the exact plugin runtime stops, restarts or unloads. Acquisition never activates
 a plugin; an unmanaged standalone caller still releases its owner with its last lease.
 Drafts/results remain ephemeral panel state and are not stored in the owner registry.
-This boundary does not yet admit JSON views into native windows: lease-bound transport,
-private password drafts and chat/mount lifecycle integration are still required. Arbitrary
-registered React closures still require their own adapter; singleton activation is never
-replayed to manufacture a factory. Frozen public v1 and `nativeWindows: false` are unchanged.
+Native JSON presentation now has a separate closed descriptor and transport path. A sidebar
+`kind: "blocks"` contribution is admitted only by the main coordinator for its exact plugin
+runtime, generation and panel lease; satellites receive no module, activation, permission or
+SDK identity. Opening binds a document/lease-scoped attachment, rendering and declared commands
+are checked against the current running runtime, staged views may read their host projection
+but cannot execute effects, and closing/disposal retires the attachment. This removes the need
+to manufacture a frontend factory for host-rendered JSON. It is still an opt-in internal
+adapter: password drafts, complete chat/mount lifecycle parity, arbitrary registered React
+closures and the remaining resource-RPC acceptance are pending. Frozen public v1 and
+`nativeWindows: false` are unchanged.

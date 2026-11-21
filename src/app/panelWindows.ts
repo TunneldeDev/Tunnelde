@@ -66,8 +66,9 @@ export async function startPanelWindows(signal: AbortSignal) {
   client = current;
   const views = createWindowViews(current);
   const uninstallViews = installWindowViews(views);
-  const uninstallDeclarativeOwners = installDeclarativeViewOwnerRegistry();
   const failure = (error: unknown) => reportError("panels.windows", "coordinator", error);
+  const declarativeClient = current.declarativeViews(failure);
+  const uninstallDeclarativeOwners = installDeclarativeViewOwnerRegistry();
   const coordinator = startPanelWindowCoordinator(current, {
     panelIds: () => [
       ...SIDEBAR_VIEWS.filter(
@@ -109,6 +110,19 @@ export async function startPanelWindows(signal: AbortSignal) {
       const allow = !useSettings.getState().settings.uiProviders.terminal;
       for (const view of snapshot.terminalViews ?? [])
         if (view.allowMove !== allow) await current.terminals.configure(view.panelId, allow);
+      const declarative = pluginSidebars(usePlugins.getState().items).flatMap((item) => {
+        const plugin = usePlugins.getState().items.find((entry) => entry.id === item.pluginId);
+        return item.kind === "blocks"
+          ? [
+              {
+                panelId: item.view,
+                pluginId: item.pluginId,
+                runtimeId: plugin?.runtimeId ?? "",
+                viewId: item.id,
+              },
+            ]
+          : [];
+      });
       await synchronizePluginAdapters(
         current.pluginViews(failure),
         snapshot,
@@ -116,6 +130,8 @@ export async function startPanelWindows(signal: AbortSignal) {
           const owner = frontendRuntime.factoryOwner(item.pluginId, item.id);
           return owner ? [{ panelId: item.view, viewId: item.id, owner }] : [];
         }),
+        declarative.filter((item) => !!item.runtimeId),
+        declarativeClient,
       );
     },
     receive: (snapshot) => {

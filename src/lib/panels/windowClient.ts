@@ -2,6 +2,7 @@ import { createFileWindowClient } from "@/features/sftp/fileWindowClient";
 import { createTerminalWindowClient } from "@/features/terminal/terminalWindowClient";
 import type { ForwardingWindowMutation } from "@/features/forwarding/runtime/windowProtocol";
 import { createNativePluginViewClient } from "./windowPluginClient";
+import { createNativeDeclarativeClient } from "@/lib/plugins/views/declarativeNative";
 import type { NativePluginUiPrompt } from "./windowPluginUi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -26,6 +27,7 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
   const terminals = createTerminalWindowClient(identity);
   const files = createFileWindowClient(identity);
   let pluginViews: ReturnType<typeof createNativePluginViewClient> | undefined;
+  let declarativeViews: ReturnType<typeof createNativeDeclarativeClient> | undefined;
   const cleanups = new Set<() => void>();
   const check = () => {
     if (disposed) throw new Error("panel.window.disposed");
@@ -69,6 +71,10 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
     pluginViews(report: (error: unknown) => void) {
       check();
       return (pluginViews ??= createNativePluginViewClient(identity, { report }));
+    },
+    declarativeViews(report: (error: unknown) => void) {
+      check();
+      return (declarativeViews ??= createNativeDeclarativeClient(identity, { report }));
     },
     control,
     /** Host-only view attachment. A late reply must still be retired even when
@@ -345,6 +351,7 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       files.dispose();
       disposed = true;
       pluginViews?.dispose();
+      declarativeViews?.dispose();
       for (const cleanup of cleanups) cleanup();
       cleanups.clear();
     },
