@@ -48,6 +48,8 @@ type Request =
     }
   | { action: "snapshotDeclarative"; target: Target }
   | { action: "modelDeclarative"; target: Target }
+  | { action: "readDeclarativeSecret"; target: Target; key: string }
+  | { action: "writeDeclarativeSecret"; target: Target; key: string; value: string }
   | { action: "closeDeclarative"; token: string };
 type NativeInvoke = <T>(
   command: "panel_window_plugin_view",
@@ -158,6 +160,27 @@ export function createNativeDeclarativeClient(
     async model(record: NativeDeclarativeRecord) {
       check();
       return request<unknown>({ action: "modelDeclarative", target: target(record) });
+    },
+    async readSecret(record: NativeDeclarativeRecord, key: string) {
+      check();
+      const value = await request<unknown>({
+        action: "readDeclarativeSecret",
+        target: target(record),
+        key,
+      });
+      check();
+      if (typeof value !== "string") throw new Error("panel.viewState.invalid");
+      return value;
+    },
+    async writeSecret(record: NativeDeclarativeRecord, key: string, value: string) {
+      check();
+      await request<unknown>({
+        action: "writeDeclarativeSecret",
+        target: target(record),
+        key,
+        value,
+      });
+      check();
     },
     describe(record: NativeDeclarativeRecord) {
       check();

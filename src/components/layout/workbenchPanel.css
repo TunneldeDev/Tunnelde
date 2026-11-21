@@ -183,12 +183,6 @@
   visibility: hidden;
   pointer-events: none;
 }
-.native-panel-placeholder {
-  padding: 16px;
-  color: var(--td-text-muted);
-  font-size: 12px;
-}
-
 .native-panel-frame {
   display: flex;
   flex-direction: column;

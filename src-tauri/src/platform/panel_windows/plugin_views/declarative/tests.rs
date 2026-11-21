@@ -1,4 +1,4 @@
-use super::Admission;
+use super::{super::Target, Admission};
 use crate::platform::panel_windows::ownership::Lease;
 use crate::platform::panel_windows::ownership::Ownership;
 use crate::plugins::security::Lease as PluginLease;
@@ -89,6 +89,160 @@ fn declarative_descriptor_is_separate_from_frontend_sources_and_exact_runtime_bo
         assert!(!wire.contains(secret));
     }
 }
+#[test]
+fn declarative_secrets_are_zeroized_private_and_follow_the_exact_panel_lease() {
+    let (mut owner, main, target, lease) = setup();
+    owner
+        .register_declarative_adapter(
+            "main",
+            &main,
+            Admission {
+                plugin: plugin_lease(),
+                runtime_id: "runtime".into(),
+                view_id: "files".into(),
+                title: "Sample files".into(),
+                allow_floating: true,
+            },
+        )
+        .unwrap();
+    let owned = Target::Owned {
+        lease: lease.clone(),
+    };
+    let now = std::time::Instant::now();
+    assert_eq!(
+        owner
+            .read_declarative_secret("main", &main, &owned, "tool:token", now)
+            .unwrap(),
+        ""
+    );
+    owner
+        .write_declarative_secret("main", &main, &owned, "tool:token", "private-secret".into())
+        .unwrap();
+    assert_eq!(
+        owner
+            .read_declarative_secret("main", &main, &owned, "tool:token", now)
+            .unwrap(),
+        "private-secret"
+    );
+    assert!(!json!(owner.declarative_adapters())
+        .to_string()
+        .contains("private-secret"));
+    assert!(
+        !json!(owner.panels.values().map(|p| &p.model).collect::<Vec<_>>())
+            .to_string()
+            .contains("private-secret")
+    );
+    let offer = owner
+        .prepare("main", &main, &lease, "target", Value::Null, now)
+        .unwrap();
+    assert!(owner
+        .write_declarative_secret(
+            "target",
+            &target,
+            &Target::Staged {
+                id: offer.id.clone()
+            },
+            "tool:token",
+            "staged-write".into(),
+        )
+        .is_err());
+    owner
+        .acknowledge("target", &target, &offer.id, now)
+        .unwrap();
+    assert_eq!(
+        owner
+            .read_declarative_secret(
+                "target",
+                &target,
+                &Target::Staged {
+                    id: offer.id.clone()
+                },
+                "tool:token",
+                now,
+            )
+            .unwrap(),
+        "private-secret"
+    );
+    let moved = owner.commit("main", &main, &offer.id, now).unwrap();
+    assert_eq!(
+        owner
+            .read_declarative_secret(
+                "target",
+                &target,
+                &Target::Owned {
+                    lease: moved.clone()
+                },
+                "tool:token",
+                now
+            )
+            .unwrap(),
+        "private-secret"
+    );
+    owner
+        .write_declarative_secret(
+            "target",
+            &target,
+            &Target::Owned {
+                lease: moved.clone(),
+            },
+            "tool:token",
+            String::new(),
+        )
+        .unwrap();
+    assert_eq!(
+        owner
+            .read_declarative_secret(
+                "target",
+                &target,
+                &Target::Owned { lease: moved },
+                "tool:token",
+                now,
+            )
+            .unwrap(),
+        ""
+    );
+}
+
+#[test]
+fn declarative_secret_values_are_bounded_and_retired_with_the_adapter() {
+    let (mut owner, main, _, lease) = setup();
+    owner
+        .register_declarative_adapter(
+            "main",
+            &main,
+            Admission {
+                plugin: plugin_lease(),
+                runtime_id: "runtime".into(),
+                view_id: "files".into(),
+                title: "Sample files".into(),
+                allow_floating: true,
+            },
+        )
+        .unwrap();
+    let owned = Target::Owned {
+        lease: lease.clone(),
+    };
+    assert!(owner
+        .write_declarative_secret("main", &main, &owned, "", "x".into())
+        .is_err());
+    assert!(owner
+        .write_declarative_secret("main", &main, &owned, "tool:token", "x".repeat(8193))
+        .is_err());
+    owner
+        .write_declarative_secret("main", &main, &owned, "tool:token", "secret".into())
+        .unwrap();
+    assert!(owner.retire_declarative_adapters(|_, _| true));
+    assert!(owner
+        .read_declarative_secret(
+            "main",
+            &main,
+            &owned,
+            "tool:token",
+            std::time::Instant::now()
+        )
+        .is_err());
+}
+
 #[test]
 fn declarative_model_requires_exact_revision_and_retirement_clears_state() {
     let (mut owner, main, _, lease) = setup();

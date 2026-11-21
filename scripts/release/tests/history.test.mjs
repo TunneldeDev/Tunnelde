@@ -13,6 +13,7 @@ import {
 } from "../automation.mjs";
 import { VERSION_PATHS, versionContents } from "../version.mjs";
 import { TARGET_PATH } from "../planning/target.mjs";
+import { BETA_ACCEPTANCE_MARKER } from "../publishing/acceptance.mjs";
 
 async function checkPromotions(t, milestone) {
   const directory = mkdtempSync(join(tmpdir(), "tunnelde-release-history-"));
@@ -184,6 +185,10 @@ async function checkPromotions(t, milestone) {
           assert.equal(state, "success", description),
         listReleases: async () => releases,
         createRelease: async (release) => releases.push({ ...release, id: releases.length + 1 }),
+        updateRelease: async ({ release_id, body }) => {
+          const release = releases.find((item) => item.id === release_id);
+          if (release) release.body = body;
+        },
       },
       pulls: {
         list: async () => (pull ? [pull] : []),
@@ -230,6 +235,28 @@ async function checkPromotions(t, milestone) {
     git(["switch", "-q", "main"]);
     git(["merge", "--no-ff", "-qm", `chore(main): release ${version}`, RELEASE_BRANCH]);
     for (const sha of originals) git(["merge-base", "--is-ancestor", sha, "main"]);
+    const beta = `v${version}-beta.1`;
+    const betaSource = plan.dev;
+    const betaCommit = git([
+      "commit-tree",
+      ref("main^{tree}"),
+      "-p",
+      betaSource,
+      "-m",
+      `chore: release ${version}-beta.1
+
+Release-source: ${betaSource}`,
+    ]);
+    git(["update-ref", `refs/tags/${beta}`, betaCommit]);
+    releases.push({
+      id: releases.length + 1,
+      tag_name: beta,
+      target_commitish: betaCommit,
+      draft: false,
+      prerelease: true,
+      body: BETA_ACCEPTANCE_MARKER,
+      sourceSha: betaSource,
+    });
     assert.equal(await prepareStable({ github, context }), `v${version}`);
     assert.equal(ref(`v${version}`), ref("main"));
     assert.equal((await planDevelopment({ github, context })).version, undefined);

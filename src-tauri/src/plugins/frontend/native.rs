@@ -354,6 +354,7 @@ pub(crate) struct NativeCall {
     owner: Lease,
     token: String,
     policy: CallPolicy,
+    origin: Option<super::super::super::platform::panel_windows::plugin_views::origin::Origin>,
 }
 /// Claim while the gateway still holds native ownership. There must not be a
 /// document reload between final view authorization and request admission.
@@ -372,9 +373,18 @@ pub(crate) fn claim(
         owner: owner.clone(),
         token: token.into(),
         policy,
+        origin: None,
     })
 }
 impl NativeCall {
+    /// The gateway installs the exact issuing document before this future is
+    /// polled. A coordinator bridge re-enters it from the pending request.
+    pub(crate) fn bind_origin(
+        &mut self,
+        origin: super::super::super::platform::panel_windows::plugin_views::origin::Origin,
+    ) {
+        self.origin = Some(origin);
+    }
     pub(crate) async fn run(
         mut self,
         app: &AppHandle,
@@ -395,15 +405,34 @@ impl NativeCall {
             tool_client: None,
             tool_request: None,
         };
+        let origin = self.origin.take();
+        if let Some(origin) = &origin {
+            origin.authorize_call(self.policy)?;
+        }
         // The domain dispatcher contains every resource future. Do not inline
         // its large state machine through request/origin/effect scopes: native
         // Tokio workers have bounded stacks, including in debug builds.
-        let work = Box::pin(crate::plugins::api::dispatch(&context, method, params));
+        let work = Box::pin(async {
+            let dispatch = crate::plugins::api::dispatch(&context, method, params);
+            match &origin {
+                Some(origin) => {
+                    crate::platform::panel_windows::plugin_views::origin::scope(
+                        origin.clone(),
+                        dispatch,
+                    )
+                    .await
+                }
+                None => dispatch.await,
+            }
+        });
         let result = if self.policy.retained() {
             self.lifetime.run_retained(work).await?
         } else {
             self.lifetime.run(work).await?
         };
+        if let Some(origin) = &origin {
+            origin.authorize_call(self.policy)?;
+        }
         with_owner(app, &self.token, &self.owner, || Ok(result))
     }
 }

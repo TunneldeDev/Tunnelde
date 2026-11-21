@@ -55,6 +55,10 @@ Beta 准备和正式 PR 生成共用该目标。推进策略根据固定 dev 源
 将实验 API 提升为稳定。合并正式推进前，应根据[有限核心契约范围](core-contracts.md)
 及最终安装包／升级验收判断是否可以发布。
 
+正式版准备和发布还必须存在同一目标版本、同一产品源码的已发布 Beta，且该 Beta
+Release 正文包含维护者验收标记 `<!-- tunnelde:beta-accepted -->`。通过 `acceptBeta`
+记录验收；CI 和安装包构建成功都不能替代这一步。
+
 ## 凭据与保护
 
 使用短期仓库 `GITHUB_TOKEN`，并在 **Settings → Actions → General → Workflow permissions** 中启用 **Allow GitHub Actions to create and approve pull requests**。不需要 PAT、App 密钥、组织级访问或规则集绕过；各工作流分别声明所需权限。自动化可以创建 PR，但不会批准或合并 PR。

@@ -155,6 +155,7 @@ impl Ownership {
         if window == MAIN {
             self.preview_placeholder = None;
             self.clear_settings_drafts();
+            self.clear_declarative_secrets();
         }
         self.save_pending_source(window);
         self.cancel_window_transfers(window);
@@ -402,6 +403,7 @@ impl Ownership {
     /// Retired factory state is never restored into a replacement runtime.
     /// Retain actual-effect fences until settlement; revocation is not rollback.
     pub(super) fn reset_plugin_panel(&mut self, panel_id: &str) {
+        self.clear_declarative_secret_panel(panel_id);
         self.retire_panel_moves(panel_id);
         // Cancel unadmitted presentation reservations; preserve an accepted
         // source UI effect until its exact document finalizes or disappears.

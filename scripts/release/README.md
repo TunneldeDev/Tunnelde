@@ -28,6 +28,12 @@ promotion PR. At the cap, preparation stops before creating a commit, tag or
 draft; it never promotes unfinished software automatically. Use `pnpm build:local`
 for intermediate testing. Same-source retries of beta.9 remain possible.
 
+Stable preparation and publication are blocked until an accepted Beta exists for
+the same target version and exact product source. Acceptance is recorded on the
+published Beta release body with `<!-- tunnelde:beta-accepted -->`; use
+`acceptBeta` from `scripts/release/publishing/acceptance.mjs` rather than editing
+release metadata by hand. A green CI run is not user acceptance.
+
 An optional `.github/release-target.json` declares a reviewed milestone with
 `schemaVersion: 1`, `baseVersion` and `targetVersion`. It applies only while
 main's stable version equals that baseline, cannot lower the automatic bump,
