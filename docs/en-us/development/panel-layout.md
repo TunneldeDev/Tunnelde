@@ -1544,3 +1544,27 @@ adapter must supply capture-aware hooks instead of recreating singleton stores.
 The terminal preview accepts the existing read-only terminal preference source.
 Profiles, proxy credentials, storage migration, shortcuts and plugin-provider
 sections still require complete adaptation before settings can move natively.
+
+Network settings and route-quality diagnostics use separate display/effect
+services. Default/feature/delete actions pass narrow commands and merge against
+the current owner snapshot. Credential drafts have a distinct memory-only hook;
+they must not enter ordinary layout/view capsules. Profile save replies expose
+only credential-error status to the renderer, not a whole settings store. The
+main wrapper retains credential persistence and in-flight background guards.
+Diagnostics can capture drafts/results and ignore results for changed routes;
+this does not yet enable native settings or establish a cross-window secret
+handoff implementation.
+
+Settings-profile rendering also uses document-local services: saved application
+passes only its identity and the revision captured before consent; updating the
+current profile reads portable preferences in the owner after confirmation.
+Naming, management and import-preview drafts accept capture-aware state hooks.
+Import/export choosers, destructive consent and canonical profile persistence
+remain owner effects. This boundary alone does not admit native settings.
+
+Storage settings use an explicit owner snapshot and narrow draft commands, merged
+against the owner's current draft so an asynchronous folder chooser cannot
+replace unrelated category edits. Selection, review and recovery expansion use
+capturable view state; an in-flight chooser/schedule blocks background release.
+The owner retains native path validation, migration scheduling/cancellation and
+restart consent. Merely reviewing or moving a view never schedules migration.
