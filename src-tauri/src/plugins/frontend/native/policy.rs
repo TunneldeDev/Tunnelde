@@ -78,6 +78,7 @@ pub(crate) fn call_policy(method: &str) -> Option<CallPolicy> {
         | "configuration.backups" => Some(CallPolicy::StagedData),
         // Mutations await actual I/O; even keyring reads can prompt/perform OS
         // work, so they are NOT admitted during staging.
+        "hosts.routes.save" | "hosts.setFields" => Some(CallPolicy::OwnedData),
         "preferences.update"
         | "storage.set"
         | "storage.delete"
@@ -227,11 +228,9 @@ mod host_metadata_tests {
             "hosts.snapshot\0",
             "hosts.sshConfig.preview",
             "hosts.sshConfig.import",
-            "hosts.routes.save",
             "hosts.transfer.export",
             "hosts.transfer.preview",
             "hosts.transfer.apply",
-            "hosts.setFields",
             "hosts.create",
             "hosts.update",
             "hosts.delete",
@@ -270,6 +269,29 @@ mod preferences_tests {
             "settings.update",
             "preferences.snapshot.extra",
             "preferences.import",
+        ] {
+            assert!(call_policy(method).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod host_write_tests {
+    use super::*;
+    #[test]
+    fn only_audited_host_writes_are_committed_and_retained() {
+        for method in ["hosts.routes.save", "hosts.setFields"] {
+            assert!(crate::plugins::api::method_info(method).is_some());
+            let policy = call_policy(method).unwrap();
+            assert_eq!(policy, CallPolicy::OwnedData);
+            assert!(!policy.staged());
+            assert!(policy.retained() && policy.blocks_move());
+        }
+        for method in [
+            "hosts.routes.save.extra",
+            "hosts.setFields\0",
+            "hosts.update",
+            "hosts.delete",
         ] {
             assert!(call_policy(method).is_none());
         }

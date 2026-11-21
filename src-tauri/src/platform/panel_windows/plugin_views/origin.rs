@@ -57,6 +57,13 @@ impl Origin {
         Ok(())
     }
 }
+// Database admission captures this exact origin before spawning its worker.
+// The trait gate is synchronous and must surround only a nonblocking attempt.
+impl crate::services::operations::Authority for Origin {
+    fn with_current(&self, effect: &mut dyn FnMut() -> AppResult<()>) -> AppResult<()> {
+        Origin::with_current(self, effect)
+    }
+}
 tokio::task_local! {
     static CURRENT: Origin;
 }
