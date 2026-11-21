@@ -1612,3 +1612,12 @@ retain that auth/dialog lifecycle or coordinate pending handoff explicitly; a
 null satellite dialog is not a complete adapter. These changes still do not
 admit Settings to native windows. Full provider presentation, private secret
 draft transfer and owner/readiness coordination remain required.
+
+`PreferenceSurfaceView` likewise receives explicit data, current-frame validation
+and provider presentation services. Its persistent native `Fields` DOM remains
+single-owned when a provider relocates it; an omitted `Fields` is not silently
+replaced with a second builtin form. Main keeps the genuine selected/legacy
+provider and its authorization/recovery behavior. A native implementation must
+supply that presentation contract as well, rather than substituting the builtin
+form merely because a provider cannot yet move. Stale/hidden/unmounted frames
+retain their read/mutation fences.
