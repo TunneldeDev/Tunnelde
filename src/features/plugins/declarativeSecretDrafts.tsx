@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -19,8 +20,10 @@ interface Binding {
   record?: WindowViewRecord;
 }
 const Context = createContext<Binding | null>(null);
-/** Main-only password drafts deliberately bypass the suspension snapshot. */
-const mainSecrets = new Map<string, unknown>();
+/** Main-only password drafts deliberately bypass the suspension snapshot.
+ * Owners are counted so StrictMode's setup/cleanup replay cannot erase the
+ * live draft, while real unmount still releases the module-memory entry. */
+const mainSecrets = new Map<string, { value: unknown; owners: number }>();
 
 function boundedKey(value: string) {
   let hash = 2166136261;
@@ -60,8 +63,9 @@ export function useMainDeclarativeSecretDraft<T>(
   initial: T | (() => T),
   validate: (value: unknown) => value is T,
 ): [T, Dispatch<SetStateAction<T>>] {
+  const owner = useId();
   const [value, setValue] = useState<T>(() => {
-    const stored = mainSecrets.get(key);
+    const stored = mainSecrets.get(key)?.value;
     return validate(stored)
       ? stored
       : typeof initial === "function"
@@ -69,10 +73,25 @@ export function useMainDeclarativeSecretDraft<T>(
         : initial;
   });
   useLayoutEffect(() => {
-    mainSecrets.set(key, value);
+    const current = mainSecrets.get(key);
+    mainSecrets.set(key, {
+      value: current ? current.value : value,
+      owners: (current?.owners ?? 0) + 1,
+    });
     return () => {
-      if (Object.is(mainSecrets.get(key), value)) mainSecrets.delete(key);
+      const retained = mainSecrets.get(key);
+      if (!retained) return;
+      if (retained.owners > 1) {
+        mainSecrets.set(key, { ...retained, owners: retained.owners - 1 });
+      } else {
+        mainSecrets.delete(key);
+      }
     };
+    // StrictMode cleanup must release only this owner, never another live hook.
+  }, [key, owner]);
+  useLayoutEffect(() => {
+    const retained = mainSecrets.get(key);
+    if (retained) mainSecrets.set(key, { ...retained, value });
   }, [key, value]);
   return [value, setValue];
 }
