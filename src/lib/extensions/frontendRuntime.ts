@@ -220,7 +220,8 @@ export function createFrontendRuntime(transport: FrontendTransport) {
                 (view.provider &&
                   view.provider !== "forwarding" &&
                   view.provider !== "backgroundTasks" &&
-                  view.provider !== "hostList") ||
+                  view.provider !== "hostList" &&
+                  view.provider !== "preferences") ||
                 current.views.has(view.id)
               )
                 continue;

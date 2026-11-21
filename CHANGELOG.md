@@ -6,7 +6,7 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
-- 设置页跨窗适配接入完整生产渲染器与主窗操作所有者；草稿保留导航条件，代理密码通过独立私有通道交接，不进入布局或操作任务。真实原生窗口验收仍在进行。Settings window integration uses the complete production renderer and main-owned effects; drafts retain navigation filters and proxy passwords use a separate private channel, not layout or action jobs. Actual native-window acceptance remains in progress.
+- 设置页跨窗适配接入完整生产渲染器与主窗操作所有者；草稿保留导航条件，代理密码通过独立私有通道交接，不进入布局或操作任务。已验证 macOS 内置／工厂提供者跨窗草稿往返与主窗确认，其他平台仍待实际验收。Settings window integration uses the complete production renderer and main-owned effects; drafts retain navigation filters and proxy passwords use a separate private channel, not layout or action jobs. Actual macOS builtin/factory-provider draft roundtrips and main-owned consent passed; other platforms still need real acceptance.
 
 - 设置字段提供者容器支持显式展示服务，提供者切换保留同一份字段 DOM 和草稿，不替换或绕过旧式提供者；完整设置跨窗适配仍在继续。Preference provider surfaces accept explicit presentation services while preserving one field DOM/draft and genuine legacy providers; complete native Settings adaptation continues.
 

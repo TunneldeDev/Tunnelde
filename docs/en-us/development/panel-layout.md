@@ -1650,3 +1650,14 @@ reads, while updates retain committed origin authority through durable commit.
 The closed Settings operation grammar has a regression parity check against the
 main handlers. Source/test completion does not substitute for isolated production
 native-window and credential/authentication roundtrip acceptance.
+
+Isolated macOS acceptance uses the production SatelliteApp and complete Settings
+body: builtin and genuine preferences factory roundtrips, retained provider draft,
+main-owned reset confirmation cancellation, native import chooser cancellation,
+and a committed preference update were exercised. The singleton activates once
+and isolated plugin/session/host resources are cleaned. A proxy password draft
+also survives a builtin roundtrip without appearing in its capsule; no credential
+was saved to the OS keychain. All categories render in the independent window.
+This does not prove actual SSH recovery authentication, Windows/Linux or physical
+pointer/mixed-DPI behavior. Factory preferences are admitted by exact renderer
+identity, not the sidebar-only `factoryOwner` contract.

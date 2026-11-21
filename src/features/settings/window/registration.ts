@@ -35,11 +35,15 @@ export function settingsAllowsMove() {
     useSettings.getState().settings.uiProviders,
     "preferences",
   );
+  const View = provider
+    ? frontendRuntime.view(provider.plugin.id, provider.view.id, provider.plugin.fingerprint)
+    : undefined;
   return (
     !selected ||
     (!!provider &&
       provider.view.allowFloating !== false &&
-      !!frontendRuntime.factoryOwner(selected.pluginId, selected.viewId))
+      !!View &&
+      frontendRuntime.isFactoryView(selected.pluginId, selected.viewId, View))
   );
 }
 export async function bindSettingsWindow(client: PanelWindowClient, panelId: string) {
