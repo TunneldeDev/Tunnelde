@@ -169,7 +169,7 @@ describe("complete production native Settings composition", () => {
   it("renders plugin security, sources, runtime and recovery in the actual plugins section", async () => {
     const f = fixture();
     f.data.page.section = "plugins";
-    render(f.display());
+    const view = render(f.display());
     await screen.findByRole("textbox", { name: "Search settings" });
     const recovery = document.querySelector<HTMLDetailsElement>(".runner-recovery details")!;
     expect(recovery).toBeTruthy();
@@ -185,5 +185,14 @@ describe("complete production native Settings composition", () => {
       expect.arrayContaining(["sources_load", "security_load", "node_load", "recovery_owners"]),
     );
     expect(document.querySelector(".network-settings")).toBeNull();
+    const loads = names.filter((name) => name.endsWith("_load"));
+    await act(async () =>
+      view.rerender(f.display({ ...f.data, node: { ...f.data.node, error: "probe failed" } })),
+    );
+    expect(
+      f.action.mock.calls
+        .map(([, request]) => request.command.operation)
+        .filter((name) => name.endsWith("_load")),
+    ).toEqual(loads);
   });
 });

@@ -63,10 +63,18 @@ function composition(
   adapter: Adapter,
   Provider: PreferenceSurfaceServices["Provider"],
 ): SettingsPageServices {
-  const method =
-    <K extends SettingsOperation>(name: K) =>
-    (...args: SettingsCalls[K]["args"]) =>
-      adapter.call(name, ...args);
+  // Component services survive every model publication. In particular load()
+  // identities must not change and retrigger backend probes after each result.
+  const methods = new Map<SettingsOperation, unknown>();
+  const method = <K extends SettingsOperation>(name: K) => {
+    type Handler = (...args: SettingsCalls[K]["args"]) => Promise<SettingsCalls[K]["result"]>;
+    let handler = methods.get(name) as Handler | undefined;
+    if (!handler) {
+      handler = (...args) => adapter.call(name, ...args);
+      methods.set(name, handler);
+    }
+    return handler;
+  };
   const notify = (message: string, kind: "success" | "error") => toast(message, kind);
   const effect = <K extends SettingsOperation>(name: K, ...args: SettingsCalls[K]["args"]) => {
     void adapter.call(name, ...args).catch((error) => notify(translateError(error), "error"));

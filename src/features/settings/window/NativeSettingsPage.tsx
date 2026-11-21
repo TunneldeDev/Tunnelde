@@ -49,7 +49,8 @@ export function MainNativeSettingsPage({ tabId, visible }: { tabId: string; visi
   const record = useWindowViews((s) => s.entries.get(id ?? ""));
   const projection = useSettingsOwner((s) => s.projection);
   const client = mainPanelWindowClient();
-  if (!isTauri()) return <SettingsPage visible={visible} />;
+  const available = usePanelWindows((s) => s.available);
+  if (!isTauri() || !available) return <SettingsPage visible={visible} />;
   if (!id) return <div role="status" aria-busy="true" />;
   return (
     <NativePanelView panelId={id}>

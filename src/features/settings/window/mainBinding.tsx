@@ -36,15 +36,17 @@ type OwnerHandlers = Omit<SettingsHandlers, "network_saveProfile" | "confirm"> &
 
 /** In-memory main owner only. Never exposed through the plugin frontend runtime. */
 export const useSettingsOwner = create<{
+  identity: object | null;
   projection: SettingsProjection | null;
   handlers: OwnerHandlers | null;
-}>(() => ({ projection: null, handlers: null }));
+}>(() => ({ identity: null, projection: null, handlers: null }));
 export async function executeSettingsCommand(
   command: SettingsWindowCommand,
   readPassword: () => Promise<string>,
   signal?: AbortSignal,
 ) {
-  const handlers = useSettingsOwner.getState().handlers;
+  const owner = useSettingsOwner.getState();
+  const handlers = owner.handlers;
   if (
     !handlers ||
     !Object.prototype.hasOwnProperty.call(handlers, command.operation) ||
@@ -66,7 +68,10 @@ export async function executeSettingsCommand(
         throw new Error("panel.window.staleOwner");
       const password = edit.credential.action === "save" ? await readPassword() : "";
       signal?.throwIfAborted();
-      if (useSettingsOwner.getState().handlers !== handlers)
+      if (
+        !useSettingsOwner.getState().handlers ||
+        useSettingsOwner.getState().identity !== owner.identity
+      )
         throw new Error("panel.window.staleOwner");
       return await handlers.network_saveProfile({
         profile: edit.profile,
@@ -314,9 +319,12 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
     [show, providers.choose, mountContributor.choose, browseRecovery, lifetime],
   );
   useLayoutEffect(() => {
-    useSettingsOwner.setState({ projection, handlers });
+    useSettingsOwner.setState({ identity: lifetime, projection, handlers });
   });
-  useLayoutEffect(() => () => useSettingsOwner.setState({ projection: null, handlers: null }), []);
+  useLayoutEffect(
+    () => () => useSettingsOwner.setState({ identity: null, projection: null, handlers: null }),
+    [],
+  );
   return files.connection ? (
     <ConnectDialog
       host={files.connection.host}
