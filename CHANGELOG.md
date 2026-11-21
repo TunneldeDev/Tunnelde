@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 设置字段提供者容器支持显式展示服务，提供者切换保留同一份字段 DOM 和草稿，不替换或绕过旧式提供者；完整设置跨窗适配仍在继续。Preference provider surfaces accept explicit presentation services while preserving one field DOM/draft and genuine legacy providers; complete native Settings adaptation continues.
+
 - 插件配置、软件源和任务恢复采用显式所有者服务，保留配置草稿原 revision、信任确认及认证生命周期；修复旧软件源编辑残留与失效恢复记录状态。设置独立窗口仍待完整适配。Plugin configuration, sources and recovery use explicit owner services with original draft revisions, trust consent and authentication lifecycles retained; prevent stale source-editor and recovery-record state. Native Settings remains pending.
 
 - 插件安全与 Node 设置拆分读取和操作边界，授权展示不再间接导入启动门禁／剪贴板；安装、取消与确认仍由原主窗所有者执行。Plugin security and Node settings separate display/effects without indirectly importing activation gates or clipboard owners; installation, cancellation and consent stay main-owned.
