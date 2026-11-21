@@ -28,6 +28,7 @@ vi.mock("@/features/plugins/PluginChat", () => ({
 import "@/i18n/i18n";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { usePlugins } from "@/store/plugins";
+import { installDeclarativeViewOwnerRegistry } from "@/lib/plugins/views/ownerRegistry";
 beforeEach(() => {
   nativeMock.mockReturnValue(false);
   authorizeMock.mockReset().mockResolvedValue(true);
@@ -177,6 +178,20 @@ describe("PluginViewPage", () => {
         "boot:1",
       ),
     );
+  });
+
+  it("restores the retained display without rerendering the plugin body after remount", async () => {
+    apiMock.pluginRenderView.mockResolvedValue({
+      blocks: [{ type: "text", text: "Retained body" }],
+    });
+    const stop = installDeclarativeViewOwnerRegistry();
+    const page = render(<PluginViewPage pluginId="example" viewId="main" />);
+    expect(await screen.findByText("Retained body")).toBeTruthy();
+    page.unmount();
+    render(<PluginViewPage pluginId="example" viewId="main" />);
+    expect(screen.getByText("Retained body")).toBeTruthy();
+    expect(apiMock.pluginRenderView).toHaveBeenCalledOnce();
+    stop();
   });
 
   it("keeps a live owner after StrictMode effect replay without activating another plugin", async () => {

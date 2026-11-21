@@ -573,6 +573,11 @@ Form requests carry form/action IDs, not command names; the owner resolves comma
 filters fields, checks input bounds and revalidates after consent. A replaced display
 cancels pending UI waits and rejects stale results, without claiming already-dispatched
 plugin effects were rolled back. Draft services remain ephemeral and main-owned.
+The main panel coordinator now installs a process-lifetime owner registry. It retains the
+displayed incarnation while a panel body is temporarily unmounted and retires idle owners
+as soon as the exact plugin runtime stops, restarts or unloads. Acquisition never activates
+a plugin; an unmanaged standalone caller still releases its owner with its last lease.
+Drafts/results remain ephemeral panel state and are not stored in the owner registry.
 This boundary does not yet admit JSON views into native windows: lease-bound transport,
 private password drafts and chat/mount lifecycle integration are still required. Arbitrary
 registered React closures still require their own adapter; singleton activation is never

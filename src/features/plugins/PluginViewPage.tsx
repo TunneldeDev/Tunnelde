@@ -10,10 +10,10 @@ import { EmptyState } from "@/components/ui/display/Misc";
 import { translateError } from "@/lib/api/errors";
 import { DeclarativePluginView } from "./DeclarativePluginView";
 import {
-  createDeclarativeViewOwner,
-  type DeclarativePluginView as RenderedView,
-  type DeclarativeViewOwner,
-} from "@/lib/plugins/views/declarative";
+  acquireDeclarativeViewOwner,
+  type DeclarativeViewOwnerLease,
+} from "@/lib/plugins/views/ownerRegistry";
+import type { DeclarativePluginView as RenderedView } from "@/lib/plugins/views/declarative";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { copyText } from "@/lib/session/clipboard";
 import { reportPluginExecutionFailure } from "@/store/pluginSecurity";
@@ -82,21 +82,32 @@ export function PluginViewPage({
 
 function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPageProps) {
   const { i18n } = useTranslation();
+  const running = usePlugins(
+    (state) => state.items.find((item) => item.id === pluginId)?.status === "running",
+  );
   const [view, setView] = useState<RenderedView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const owner = useRef<DeclarativeViewOwner | null>(null);
+  const owner = useRef<DeclarativeViewOwnerLease | null>(null);
   const requestId = useRef(0);
   const renderRequest = useRef<AbortController | null>(null);
 
   const load = useCallback(
-    (interactive = false) => {
+    (interactive = false, restore = false) => {
       const current = ++requestId.current;
       renderRequest.current?.abort();
       const controller = new AbortController();
       renderRequest.current = controller;
-      const source = owner.current;
+      const source = owner.current?.owner;
       if (!source) return Promise.resolve();
+      if (restore) {
+        const displayed = source.snapshot();
+        if (displayed) {
+          setView(displayed);
+          setLoading(false);
+          return Promise.resolve();
+        }
+      }
       return source
         .load(i18n.resolvedLanguage ?? i18n.language, {
           interactive,
@@ -126,15 +137,16 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
   }, []);
 
   useEffect(() => {
-    const source = createDeclarativeViewOwner(pluginId, viewId);
+    if (!running) return;
+    const source = acquireDeclarativeViewOwner(pluginId, viewId);
     owner.current = source;
-    void load();
+    void load(false, true);
     return () => {
       invalidate();
-      source.dispose();
+      source.release();
       if (owner.current === source) owner.current = null;
     };
-  }, [invalidate, load, pluginId, viewId]);
+  }, [invalidate, load, pluginId, running, viewId]);
 
   return (
     <DeclarativePluginView
@@ -152,7 +164,7 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
       services={{
         run: (request, signal) => {
           if (!owner.current) return Promise.reject(new PluginInvocationCancelled());
-          return owner.current.run(request, signal);
+          return owner.current.owner.run(request, signal);
         },
         useViewState,
         useBusyGuard: useBackgroundGuard,

@@ -48,6 +48,7 @@ import {
 } from "@/lib/panels/sourcePresentation";
 import { startPanelMoveRequests } from "@/lib/panels/windowMoveRequests";
 import { startPanelActions } from "./panelActions";
+import { installDeclarativeViewOwnerRegistry } from "@/lib/plugins/views/ownerRegistry";
 import { startPanelReadModels } from "./panelReadModels";
 
 let client: PanelWindowClient | null = null;
@@ -65,6 +66,7 @@ export async function startPanelWindows(signal: AbortSignal) {
   client = current;
   const views = createWindowViews(current);
   const uninstallViews = installWindowViews(views);
+  const uninstallDeclarativeOwners = installDeclarativeViewOwnerRegistry();
   const failure = (error: unknown) => reportError("panels.windows", "coordinator", error);
   const coordinator = startPanelWindowCoordinator(current, {
     panelIds: () => [
@@ -149,6 +151,7 @@ export async function startPanelWindows(signal: AbortSignal) {
     coordinator.dispose();
     stopModels();
     stopActions();
+    uninstallDeclarativeOwners();
     uninstallViews();
     current.dispose();
     if (client === current) {
