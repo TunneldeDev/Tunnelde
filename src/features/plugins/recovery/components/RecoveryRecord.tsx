@@ -16,7 +16,11 @@ export function RecoveryRecord({
   pending,
   onAction,
   onBrowse,
+  open,
+  onOpenChange,
 }: {
+  open?: boolean;
+  onOpenChange?(open: boolean): void;
   entry: RecoveryEntry;
   observation?: RecoveryObservation;
   capabilities?: RecoveryCapabilityObservation;
@@ -38,7 +42,7 @@ export function RecoveryRecord({
     : (entry.terminalStatus ?? (entry.launchUncertain ? "uncertain" : "unknown"));
   return (
     <article className="runner-recovery__record">
-      <details>
+      <details open={open} onToggle={(event) => onOpenChange?.(event.currentTarget.open)}>
         <summary>
           <ChevronRight size={14} aria-hidden="true" />
           <span className="runner-recovery__identity">

@@ -1313,7 +1313,8 @@
     "pageInfo": "{{page}} / {{pages}} · 共 {{count}} 个插件",
     "tlsHandshake": "当前线路 TLS 握手失败。请检查代理节点及 GitHub、release-assets.githubusercontent.com 规则，或在网络设置中选择其他代理。",
     "connectFailed": "无法通过插件市场所配置的线路连接，请检查网络设置。",
-    "timeout": "插件下载超时，请检查当前代理线路后重试。"
+    "timeout": "插件下载超时，请检查当前代理线路后重试。",
+    "sourceChanged": "此软件源在编辑期间已发生变化，请重新打开并检查当前设置。"
   },
   "node": {
     "required": "启动此插件前请配置 Node。",
