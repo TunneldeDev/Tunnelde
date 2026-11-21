@@ -53,13 +53,50 @@ impl Effects for Runtime<'_> {
 pub(crate) fn service<'a>(app: &'a AppHandle, state: &'a AppState) -> Hosts<'a, Runtime<'a>> {
     Hosts {
         db: &state.db,
+        admission: &state.db,
         effects: Runtime { app, state },
     }
 }
 
-pub(crate) struct Hosts<'a, E: Effects> {
+/// Inject write admission, not a second CRUD implementation. Reads used by
+/// audit/effect publication still address the original database after commit.
+/// Implementations must call the operation once and release all admission guards
+/// before returning; domain effects may acquire SSH, DB or OS cleanup owners.
+pub(crate) trait WriteAdmission {
+    fn with<T>(
+        &self,
+        operation: impl FnOnce(&rusqlite::Connection) -> AppResult<T>,
+    ) -> AppResult<T>;
+}
+impl WriteAdmission for &Database {
+    fn with<T>(
+        &self,
+        operation: impl FnOnce(&rusqlite::Connection) -> AppResult<T>,
+    ) -> AppResult<T> {
+        Database::with(self, operation)
+    }
+}
+pub(crate) struct Hosts<'a, E: Effects, A = &'a Database> {
     db: &'a Database,
     effects: E,
+    admission: A,
+}
+impl<'a, E: Effects, A> Hosts<'a, E, A> {
+    pub(crate) fn admitted<B>(self, admission: B) -> Hosts<'a, E, B> {
+        Hosts {
+            db: self.db,
+            effects: self.effects,
+            admission,
+        }
+    }
+}
+#[cfg(test)]
+pub(crate) fn test_service<E: Effects>(db: &Database, effects: E) -> Hosts<'_, E> {
+    Hosts {
+        db,
+        effects,
+        admission: db,
+    }
 }
 
 /// Resolve a public, content-bound dynamic identity or an ordinary saved host.
@@ -102,7 +139,7 @@ fn snapshot_connection(
     Ok(Snapshot { groups, hosts })
 }
 
-impl<E: Effects> Hosts<'_, E> {
+impl<E: Effects, A: WriteAdmission> Hosts<'_, E, A> {
     pub(crate) fn published_import(&self, hosts: &[Host]) {
         if hosts.is_empty() {
             return;
@@ -128,7 +165,9 @@ impl<E: Effects> Hosts<'_, E> {
     }
     pub fn create(&self, input: HostInput) -> AppResult<Host> {
         let draft = input.validate()?;
-        let host = self.db.with(|conn| db::hosts::create_host(conn, &draft))?;
+        let host = self
+            .admission
+            .with(|conn| db::hosts::create_host(conn, &draft))?;
         crate::logs::record(self.db, "host.create", Some(&host.id));
         self.effects.changed();
         Ok(host)
@@ -137,7 +176,7 @@ impl<E: Effects> Hosts<'_, E> {
     pub fn update(&self, id: &str, input: HostInput) -> AppResult<Host> {
         let draft = input.validate()?;
         let host = self
-            .db
+            .admission
             .with(|conn| db::hosts::update_host(conn, id, &draft))?;
         self.effects.renamed(id, &host.name);
         crate::logs::record(self.db, "host.update", Some(id));
@@ -146,7 +185,7 @@ impl<E: Effects> Hosts<'_, E> {
     }
 
     pub fn delete(&self, id: &str) -> AppResult<()> {
-        self.db.with(|conn| {
+        self.admission.with(|conn| {
             let transaction = conn.unchecked_transaction()?;
             db::hosts::delete_host(&transaction, id)?;
             transaction.execute("DELETE FROM settings WHERE key=?1", [format!("route:{id}")])?;
@@ -160,7 +199,7 @@ impl<E: Effects> Hosts<'_, E> {
     }
 
     pub fn mark_used(&self, id: &str) -> AppResult<()> {
-        self.db.with(|conn| db::hosts::mark_used(conn, id))?;
+        self.admission.with(|conn| db::hosts::mark_used(conn, id))?;
         self.effects.changed();
         Ok(())
     }
@@ -169,7 +208,7 @@ impl<E: Effects> Hosts<'_, E> {
         if ids.len() > 500 {
             return Err(AppError::validation("host.orderTooLarge"));
         }
-        self.db.with(|conn| {
+        self.admission.with(|conn| {
             let transaction = conn.unchecked_transaction()?;
             db::hosts::reorder_hosts(&transaction, ids)?;
             transaction.commit()?;
@@ -182,7 +221,7 @@ impl<E: Effects> Hosts<'_, E> {
     pub fn create_group(&self, input: GroupInput) -> AppResult<Group> {
         let (name, parent_id) = input.validate()?;
         let group = self
-            .db
+            .admission
             .with(|conn| db::hosts::create_group(conn, &name, parent_id.as_deref()))?;
         self.effects.changed();
         Ok(group)
@@ -191,14 +230,15 @@ impl<E: Effects> Hosts<'_, E> {
     pub fn update_group(&self, id: &str, input: GroupInput) -> AppResult<Group> {
         let (name, parent_id) = input.validate()?;
         let group = self
-            .db
+            .admission
             .with(|conn| db::hosts::update_group(conn, id, &name, parent_id.as_deref()))?;
         self.effects.changed();
         Ok(group)
     }
 
     pub fn delete_group(&self, id: &str) -> AppResult<()> {
-        self.db.with(|conn| db::hosts::delete_group(conn, id))?;
+        self.admission
+            .with(|conn| db::hosts::delete_group(conn, id))?;
         self.effects.changed();
         Ok(())
     }
@@ -233,6 +273,7 @@ mod tests {
         let db = Database::in_memory().unwrap();
         let hosts = Hosts {
             db: &db,
+            admission: &db,
             effects: Recorder::default(),
         };
         assert!(hosts.create(input(" ")).is_err());
@@ -248,6 +289,7 @@ mod tests {
         let db = Database::in_memory().unwrap();
         let hosts = Hosts {
             db: &db,
+            admission: &db,
             effects: Recorder::default(),
         };
         let group = hosts
@@ -301,6 +343,7 @@ mod tests {
         let db = Database::in_memory().unwrap();
         let hosts = Hosts {
             db: &db,
+            admission: &db,
             effects: Recorder::default(),
         };
         let host = hosts.create(input("Keep")).unwrap();
@@ -320,6 +363,7 @@ mod tests {
         let db = Database::in_memory().unwrap();
         let hosts = Hosts {
             db: &db,
+            admission: &db,
             effects: Recorder::default(),
         };
         let first = hosts.create(input("First")).unwrap();

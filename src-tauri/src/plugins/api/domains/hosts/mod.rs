@@ -5,11 +5,10 @@ use crate::plugins::{
 use crate::{
     error::{AppError, AppResult},
     services::hosts::ssh_config,
-    state::AppState,
 };
 use serde_json::Value;
-use tauri::Manager;
 
+mod mutations;
 mod routes;
 mod transfer;
 
@@ -19,7 +18,6 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     let app = &context.app;
-    let state = app.state::<AppState>();
     match method {
         "hosts.transfer.export" | "hosts.transfer.preview" | "hosts.transfer.apply" => {
             transfer::call(context, method, params).await
@@ -67,39 +65,9 @@ pub(in crate::plugins::api) async fn dispatch(
         "hosts.getFields" | "hosts.setFields" => {
             crate::plugins::host_fields::call(context, method, params).await
         }
-        "hosts.create" => {
-            encode(crate::services::hosts::service(app, &state).create(field(&params, "input")?)?)
-        }
-        "hosts.update" => encode(
-            crate::services::hosts::service(app, &state)
-                .update(&field::<String>(&params, "id")?, field(&params, "input")?)?,
-        ),
-        "hosts.delete" => {
-            crate::services::hosts::service(app, &state)
-                .delete(&field::<String>(&params, "id")?)?;
-            Ok(Value::Null)
-        }
-        "hosts.markUsed" => {
-            crate::services::hosts::service(app, &state)
-                .mark_used(&field::<String>(&params, "id")?)?;
-            Ok(Value::Null)
-        }
-        "hosts.reorder" => {
-            crate::services::hosts::service(app, &state)
-                .reorder(&field::<Vec<String>>(&params, "ids")?)?;
-            Ok(Value::Null)
-        }
-        "groups.create" => encode(
-            crate::services::hosts::service(app, &state).create_group(field(&params, "input")?)?,
-        ),
-        "groups.update" => encode(
-            crate::services::hosts::service(app, &state)
-                .update_group(&field::<String>(&params, "id")?, field(&params, "input")?)?,
-        ),
-        "groups.delete" => {
-            crate::services::hosts::service(app, &state)
-                .delete_group(&field::<String>(&params, "id")?)?;
-            Ok(Value::Null)
+        "hosts.create" | "hosts.update" | "hosts.delete" | "hosts.markUsed" | "hosts.reorder"
+        | "groups.create" | "groups.update" | "groups.delete" => {
+            mutations::call(context, method, params).await
         }
         "hostList.setDecorations" | "hostList.removeDecorations" => {
             crate::plugins::host_list::call(context, method, params)

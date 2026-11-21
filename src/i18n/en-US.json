@@ -4,6 +4,11 @@
       "busy": "Host readers are busy. Try again after the current reads finish.",
       "cancelled": "The host read was cancelled.",
       "unavailable": "The host reader stopped unexpectedly. Open the software log before retrying."
+    },
+    "mutation": {
+      "busy": "Host changes are busy. Try again after the current changes finish.",
+      "cancelled": "The host change was cancelled.",
+      "unavailable": "The host change could not be completed. Reload the saved hosts before retrying."
     }
   },
   "searchUi": {

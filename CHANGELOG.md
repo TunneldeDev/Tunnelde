@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 已提交的原生插件视图可增删改主机与分组、更新使用时间和排序；复用原业务校验、审计与凭据清理，排队期间取消、撤权或来源失效不会迟到写入。Committed native plugin views can manage hosts/groups, last-used times and ordering through the original validation, audit and credential-cleanup services, rejecting cancelled, revoked or retired callers before queued writes.
+
 - 原生插件独立窗口可保存主机路由和自身扩展字段；提交时复核原窗口、文档、权限、包指纹和 revision，等待数据库期间不占用窗口所有权锁，过期操作不会延迟落盘。Native plugin windows can save host routes and their own metadata fields, with original document/permission/package/revision checks at commit and no ownership lock held across database admission waits.
 
 - 设置页跨窗适配接入完整生产渲染器与主窗操作所有者；草稿保留导航条件，代理密码通过独立私有通道交接，不进入布局或操作任务。已验证 macOS 内置／工厂提供者跨窗草稿往返与主窗确认，其他平台仍待实际验收。Settings window integration uses the complete production renderer and main-owned effects; drafts retain navigation filters and proxy passwords use a separate private channel, not layout or action jobs. Actual macOS builtin/factory-provider draft roundtrips and main-owned consent passed; other platforms still need real acceptance.
