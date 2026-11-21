@@ -4,7 +4,7 @@ use super::Ownership;
 use crate::platform::panel_windows::native;
 use crate::{
     error::{AppError, AppResult},
-    plugins::security::Lease,
+    plugins::{frontend::native::CallPolicy, security::Lease},
 };
 use std::future::Future;
 use tauri::{AppHandle, Manager};
@@ -56,6 +56,26 @@ impl Origin {
         }
         Ok(())
     }
+    /// Coordinator replies have no task-local origin. Re-enter the exact native
+    /// document and retain the original staged/committed call class.
+    pub(crate) fn authorize_call(&self, policy: CallPolicy) -> AppResult<()> {
+        let registry = self.app.state::<native::Registry>();
+        let ownership = native::lock(&registry);
+        ownership.native_provider_current(&self.app, &self.window, &self.document, &self.token)?;
+        let plugin = ownership
+            .native_view_policy_current(
+                &self.window,
+                &self.document,
+                &self.token,
+                policy,
+                std::time::Instant::now(),
+            )
+            .map_err(native::invalid)?;
+        if plugin != self.plugin {
+            return Err(AppError::validation("plugin.frontend.expired"));
+        }
+        Ok(())
+    }
 }
 // Database admission captures this exact origin before spawning its worker.
 // The trait gate is synchronous and must surround only a nonblocking attempt.
@@ -67,7 +87,7 @@ impl crate::services::operations::Authority for Origin {
 tokio::task_local! {
     static CURRENT: Origin;
 }
-pub(super) async fn scope<T>(origin: Origin, work: impl Future<Output = T>) -> T {
+pub(crate) async fn scope<T>(origin: Origin, work: impl Future<Output = T>) -> T {
     CURRENT.scope(origin, work).await
 }
 pub(crate) fn current() -> Option<Origin> {

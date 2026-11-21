@@ -641,7 +641,7 @@ pub(crate) async fn panel_window_plugin_view(
         } => {
             let policy = frontend::call_policy(&method)
                 .ok_or_else(|| AppError::validation("plugin.frontend.nativeMethodUnavailable"))?;
-            let (call, id, owner) = {
+            let (mut call, id, owner) = {
                 let mut ownership = native::lock(&registry);
                 let owner = current(app, &ownership, window.label(), &document, &token)?;
                 let call = frontend::claim(app, &token, &owner, &request_id, policy)?;
@@ -678,7 +678,8 @@ pub(crate) async fn panel_window_plugin_view(
                             token.clone(),
                             owner,
                         );
-                        let result = origin::scope(origin, call.run(&app, &method, params)).await?;
+                        call.bind_origin(origin);
+                        let result = call.run(&app, &method, params).await?;
                         current(
                             &app,
                             &native::lock(&app.state::<native::Registry>()),

@@ -195,6 +195,25 @@ impl Ownership {
         self.resource_action(window, document, lease)?;
         Ok(view.plugin.clone())
     }
+    /// Recheck the exact native document and policy class without reserving a
+    /// second call. Reads admitted for staging must not silently become
+    /// committed mutations when a coordinator reply resumes later.
+    pub(super) fn native_view_policy_current(
+        &self,
+        window: &str,
+        document: &str,
+        token: &str,
+        policy: CallPolicy,
+        now: Instant,
+    ) -> Result<PluginLease> {
+        let view = self.native_view(window, document, token, now)?;
+        match &view.authority {
+            Authority::Owned(lease) => self.action(window, document, lease)?,
+            Authority::Staged { .. } if policy.staged() => {}
+            Authority::Staged { .. } => return Err("plugin.frontend.viewNotCommitted"),
+        }
+        Ok(view.plugin.clone())
+    }
     pub(super) fn native_view_call(
         &mut self,
         window: &str,
