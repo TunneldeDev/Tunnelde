@@ -562,3 +562,18 @@ DB waits. `hosts.routes.save` / `hosts.setFields` retain their existing read/wri
 grants, revisions and field schemas; general CRUD keeps its original full-replacement
 contract, not new CAS semantics. This admits no import, credential or connection
 creation methods implicitly.
+
+### Host-rendered JSON view ownership
+
+`DeclarativePluginView` shares the existing heading, text, table, form and domain-block
+presentation through explicit services/slots; it does not import activation, consent,
+clipboard or native IPC owners. `createDeclarativeViewOwner` binds rendering and form
+execution to the captured plugin runtime and a private normalized display incarnation.
+Form requests carry form/action IDs, not command names; the owner resolves commands,
+filters fields, checks input bounds and revalidates after consent. A replaced display
+cancels pending UI waits and rejects stale results, without claiming already-dispatched
+plugin effects were rolled back. Draft services remain ephemeral and main-owned.
+This boundary does not yet admit JSON views into native windows: lease-bound transport,
+private password drafts and chat/mount lifecycle integration are still required. Arbitrary
+registered React closures still require their own adapter; singleton activation is never
+replayed to manufacture a factory. Frozen public v1 and `nativeWindows: false` are unchanged.

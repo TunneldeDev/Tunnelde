@@ -2,15 +2,8 @@ import type { PluginInfo } from "@/lib/api/types";
 import { isTauri } from "@/lib/api/ipc";
 import { usePlugins } from "@/store/plugins";
 
-export class PluginInvocationCancelled extends Error {
-  constructor() {
-    super("plugin.invocation.cancelled");
-    this.name = "PluginInvocationCancelled";
-  }
-}
-
-export const isPluginInvocationCancelled = (error: unknown) =>
-  error instanceof PluginInvocationCancelled;
+import { PluginInvocationCancelled } from "./errors";
+export { PluginInvocationCancelled, isPluginInvocationCancelled } from "./errors";
 
 export function samePluginRuntime(current: PluginInfo | undefined, original: PluginInfo) {
   return (
