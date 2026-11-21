@@ -241,13 +241,20 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
         permissions: context.permissions.clone(),
         generation: context.generation,
     };
-    let result = apply(
-        &state.plugins.file_highlights,
-        lease,
-        method,
-        params,
-        |lease| authorize(app, lease),
-    )?;
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let mutate = || {
+        apply(
+            &state.plugins.file_highlights,
+            lease,
+            method,
+            params,
+            |lease| authorize(app, lease),
+        )
+    };
+    let result = match &origin {
+        Some(origin) => origin.with_current(mutate)?,
+        None => mutate()?,
+    };
     emit(app);
     Ok(result)
 }

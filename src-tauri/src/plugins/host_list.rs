@@ -197,14 +197,21 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
     } else {
         HashSet::new()
     };
-    let result = apply(
-        &state.plugins.host_list,
-        lease,
-        method,
-        params,
-        |id| hosts.contains(id),
-        |lease| authorize(app, lease),
-    )?;
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let mutate = || {
+        apply(
+            &state.plugins.host_list,
+            lease,
+            method,
+            params,
+            |id| hosts.contains(id),
+            |lease| authorize(app, lease),
+        )
+    };
+    let result = match &origin {
+        Some(origin) => origin.with_current(mutate)?,
+        None => mutate()?,
+    };
     emit(app);
     Ok(result)
 }
