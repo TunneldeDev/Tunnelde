@@ -1,7 +1,7 @@
 //! Wait for database admission without retaining global authorization. Actual
 //! statements still run under policy -> database; SQLite itself is not preempted.
 use super::{AppResult, Database, Lease, PluginSecurity, Policy};
-use crate::services::operations::{Budget, Cancellation, Errors};
+use crate::services::operations::{Authority, Budget, Cancellation, Errors};
 use rusqlite::Connection;
 use std::{sync::LazyLock, time::Duration};
 
@@ -121,19 +121,60 @@ impl PluginSecurity {
         lease: &Lease,
         permissions: &[&str],
         cancelled: impl Fn() -> AppResult<()>,
+        attempt: impl FnMut() -> AppResult<Option<T>>,
+    ) -> AppResult<T> {
+        self.with_authorized_fenced_attempt(lease, permissions, cancelled, None, attempt)
+    }
+
+    /// The original document's authority precedes policy/metadata/DB. Each
+    /// callback must try admission, never wait for another owner while fenced.
+    /// Release ALL guards before retrying; a retired origin can then interrupt
+    /// a DB wait without ever admitting SQL on behalf of its replacement.
+    pub(in crate::plugins) fn with_authorized_fenced_attempt<T>(
+        &self,
+        lease: &Lease,
+        permissions: &[&str],
+        cancelled: impl Fn() -> AppResult<()>,
+        authority: Option<&dyn Authority>,
         mut attempt: impl FnMut() -> AppResult<Option<T>>,
     ) -> AppResult<T> {
         loop {
             cancelled()?;
-            let result = self.with_authorized(lease, permissions, || {
-                cancelled()?;
-                attempt()
-            })?;
-            if let Some(result) = result {
+            let mut result = None;
+            let mut admit = || {
+                result = Some(self.with_authorized(lease, permissions, || {
+                    cancelled()?;
+                    attempt()
+                })?);
+                Ok(())
+            };
+            match authority {
+                Some(authority) => authority.with_current(&mut admit)?,
+                None => admit()?,
+            }
+            if let Some(result) = result.expect("authority must admit before succeeding") {
                 return Ok(result);
             }
             std::thread::sleep(Duration::from_millis(4));
         }
+    }
+
+    /// Short final database transaction under exact origin -> policy -> DB.
+    /// Unlike fencing the older blocking database loop, this never retains a
+    /// native ownership mutex while waiting for another database consumer.
+    pub(in crate::plugins) fn with_authorized_fenced_database<T>(
+        &self,
+        db: &Database,
+        lease: &Lease,
+        permissions: &[&str],
+        cancelled: impl Fn() -> AppResult<()>,
+        authority: Option<&dyn Authority>,
+        operation: impl FnOnce(&Connection) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let mut operation = Some(operation);
+        self.with_authorized_fenced_attempt(lease, permissions, cancelled, authority, || {
+            db.try_with(|conn| operation.take().expect("database operation admitted once")(conn))
+        })
     }
 
     pub(super) fn authorize_lease(

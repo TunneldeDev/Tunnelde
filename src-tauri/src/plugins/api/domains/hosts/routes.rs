@@ -120,13 +120,17 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
             {
                 return Err(AppError::validation("network.invalid"));
             }
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
             admission::blocking(move |cancel| {
                 let state = app.state::<AppState>();
-                let (current, changed) = state.plugins.security.with_authorized_database(
+                let (current, changed) = state.plugins.security.with_authorized_fenced_database(
                     &state.db,
                     &lease,
                     WRITE,
                     || cancel.check(),
+                    origin
+                        .as_ref()
+                        .map(|origin| origin as &dyn crate::services::operations::Authority),
                     |conn| save(conn, &host_id, &expected, &route, || cancel.commit()),
                 )?;
                 if changed {

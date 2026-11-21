@@ -530,3 +530,5 @@ async fn cancelled_admitted_permission_retains_package_exclusion_until_sql_settl
     drop(plugins);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+mod fenced;

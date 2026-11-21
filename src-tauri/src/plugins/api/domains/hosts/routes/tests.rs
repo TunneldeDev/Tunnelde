@@ -140,3 +140,104 @@ fn revoked_runtime_cannot_submit_a_captured_route_edit() {
         current.revision
     );
 }
+
+#[test]
+fn native_route_commit_requires_original_origin_and_keeps_the_revision_contract() {
+    use crate::services::operations::Authority;
+    use std::sync::Mutex;
+    struct Origin(Mutex<bool>);
+    impl Authority for Origin {
+        fn with_current(&self, effect: &mut dyn FnMut() -> AppResult<()>) -> AppResult<()> {
+            let live = self.0.lock().unwrap();
+            if !*live {
+                return Err(AppError::validation("origin.expired"));
+            }
+            effect()
+        }
+    }
+    let db = db::Database::in_memory().unwrap();
+    let security = crate::plugins::security::PluginSecurity::default();
+    let declared: Vec<_> = WRITE.iter().map(|s| s.to_string()).collect();
+    let digest = "a".repeat(64);
+    security
+        .set_permissions(
+            &db,
+            "router",
+            digest.clone(),
+            &declared,
+            Some(declared.clone()),
+        )
+        .unwrap();
+    let lease = security.lease("router", digest, declared).unwrap();
+    let original = db
+        .with(|conn| {
+            let id = add_host(conn, "host")?;
+            snapshot(conn, &id)
+        })
+        .unwrap();
+    let route = ConnectionRoute {
+        proxy: "direct".into(),
+        ..Default::default()
+    };
+    let origin = Origin(Mutex::new(true));
+    let (updated, changed) = security
+        .with_authorized_fenced_database(
+            &db,
+            &lease,
+            WRITE,
+            || Ok(()),
+            Some(&origin),
+            |conn| {
+                save(conn, &original.host_id, &original.revision, &route, || {
+                    Ok(())
+                })
+            },
+        )
+        .unwrap();
+    assert!(changed);
+    assert_eq!(updated.route, route);
+    assert_ne!(updated.revision, original.revision);
+    assert!(security
+        .with_authorized_fenced_database(
+            &db,
+            &lease,
+            WRITE,
+            || Ok(()),
+            Some(&origin),
+            |conn| save(
+                conn,
+                &original.host_id,
+                &original.revision,
+                &original.route,
+                || panic!("stale CAS admitted")
+            ),
+        )
+        .is_err());
+    *origin.0.lock().unwrap() = false;
+    let error = security
+        .with_authorized_fenced_database(
+            &db,
+            &lease,
+            WRITE,
+            || Ok(()),
+            Some(&origin),
+            |conn| {
+                save(
+                    conn,
+                    &updated.host_id,
+                    &updated.revision,
+                    &original.route,
+                    || panic!("retired origin admitted"),
+                )
+            },
+        )
+        .err()
+        .unwrap();
+    assert_eq!(error.to_string(), "origin.expired");
+    assert_eq!(
+        db.with(|conn| snapshot(conn, &updated.host_id))
+            .unwrap()
+            .revision,
+        updated.revision
+    );
+}

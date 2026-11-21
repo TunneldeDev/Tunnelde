@@ -1060,3 +1060,49 @@ fn mount_documentation_requires_committed_native_ownership() {
             .is_err());
     }
 }
+
+#[test]
+fn host_metadata_writes_require_committed_exact_origin_and_retain_the_handoff_fence() {
+    for method in ["hosts.routes.save", "hosts.setFields"] {
+        let mut f = Fixture::new();
+        f.owned("source");
+        let offer = f.offer();
+        f.staged(&offer, "destination");
+        let policy = crate::plugins::frontend::native::call_policy(method).unwrap();
+        assert!(!policy.staged());
+        assert!(f
+            .r
+            .native_view_call("target", &f.target, "destination", policy, f.now)
+            .is_err());
+        let lease = f.commit(&offer);
+        assert!(f
+            .r
+            .native_view_call("main", &f.main, "source", policy, f.now)
+            .is_err());
+        assert!(f
+            .r
+            .native_view_call("other", &f.other, "destination", policy, f.now)
+            .is_err());
+        assert!(f
+            .r
+            .native_view_call("target", &f.other, "destination", policy, f.now)
+            .is_err());
+        let (_, call) =
+            f.r.native_view_call("target", &f.target, "destination", policy, f.now)
+                .unwrap();
+        assert!(f.r.native_view_busy(&lease.panel_id));
+        assert!(f
+            .r
+            .prepare("target", &f.target, &lease, "main", Value::Null, f.now)
+            .is_err());
+        f.r.close_native_view("target", &f.target, "destination")
+            .unwrap();
+        assert!(f
+            .r
+            .native_view_resource("target", &f.target, "destination", f.now)
+            .is_err());
+        assert!(f.r.native_view_busy(&lease.panel_id));
+        f.r.settle_native_view_call(&call);
+        assert!(!f.r.native_view_busy(&lease.panel_id));
+    }
+}
