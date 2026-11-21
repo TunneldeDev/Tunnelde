@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 配置方案渲染器支持显式所有者服务及可捕获的命名／导入预览草稿，保留确认前 revision 及确认后读取当前配置的语义；设置独立窗口仍待完整适配。Settings profiles use explicit owner services and capture-ready naming/import-preview drafts while retaining revision and consent semantics; native settings remain pending.
+
 - 网络设置与连接质量诊断使用限定操作接口，路由操作在所有者当前快照上合并，凭据草稿与普通可捕获视图状态分离；设置独立窗口仍待完整适配。Network settings and connection diagnostics use scoped effects and current-owner route merges; credential drafts are separate from ordinary capturable view state. Native settings windows still await full adaptation.
 
 - 设置的主题、文件图标、主机列表默认值、CSS 和更新控件采用可注入的数据／操作接口，数字及更新源输入可保留未完成草稿；不提前开放尚未完整适配的设置独立窗口。Settings theme, file-icon, host-list, CSS and update controls accept explicit data/effects, with capture-ready numeric and update-source drafts; incomplete native settings windows remain unavailable.

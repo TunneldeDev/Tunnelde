@@ -1554,3 +1554,10 @@ main wrapper retains credential persistence and in-flight background guards.
 Diagnostics can capture drafts/results and ignore results for changed routes;
 this does not yet enable native settings or establish a cross-window secret
 handoff implementation.
+
+Settings-profile rendering also uses document-local services: saved application
+passes only its identity and the revision captured before consent; updating the
+current profile reads portable preferences in the owner after confirmation.
+Naming, management and import-preview drafts accept capture-aware state hooks.
+Import/export choosers, destructive consent and canonical profile persistence
+remain owner effects. This boundary alone does not admit native settings.
