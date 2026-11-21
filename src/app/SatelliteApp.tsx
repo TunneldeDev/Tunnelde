@@ -1,3 +1,4 @@
+import { NativeHostView, useNativeHostTitles } from "@/features/hosts/detail/NativeHostPage";
 import { NativeEditorView, useNativeEditorTitles } from "@/features/editor/NativeEditorPage";
 import { NativeFileView, useNativeFileTitles } from "@/features/sftp/NativeFilePage";
 import { useNativeReadModel, type NativeViewProps } from "@/lib/panels/useNativeReadModel";
@@ -350,6 +351,7 @@ export function SatelliteApp() {
     };
   }, [client, chrome]);
   const terminalTitles = useNativeTerminalTitles((state) => state.titles);
+  const hostTitles = useNativeHostTitles((s) => s.titles);
   const fileTitles = useNativeFileTitles((state) => state.titles);
   const editorTitles = useNativeEditorTitles((state) => state.titles);
   const entries = useWindowViews((s) => s.entries);
@@ -445,14 +447,18 @@ export function SatelliteApp() {
             id: record.panelId,
             title: record.panelId.startsWith("editor-view:")
               ? editorTitles[record.panelId]
-              : record.panelId.startsWith("files:") || record.panelId.startsWith("sftp:")
-                ? fileTitles[record.panelId]
-                : record.panelId.startsWith("terminal:")
-                  ? (terminalTitles[record.panelId] ?? "Terminal")
-                  : undefined,
+              : record.panelId.startsWith("host-view:")
+                ? hostTitles[record.panelId]
+                : record.panelId.startsWith("files:") || record.panelId.startsWith("sftp:")
+                  ? fileTitles[record.panelId]
+                  : record.panelId.startsWith("terminal:")
+                    ? (terminalTitles[record.panelId] ?? "Terminal")
+                    : undefined,
             key: record.key,
             content: record.panelId.startsWith("editor-view:") ? (
               <NativeEditorView client={client} record={record} presented={presented} />
+            ) : record.panelId.startsWith("host-view:") ? (
+              <NativeHostView client={client} record={record} presented={presented} />
             ) : record.panelId.startsWith("files:") || record.panelId.startsWith("sftp:") ? (
               <NativeFileView client={client} record={record} presented={presented} />
             ) : record.panelId.startsWith("terminal:") ? (

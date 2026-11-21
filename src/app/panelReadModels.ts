@@ -1,3 +1,4 @@
+import { startHostDetailPublication } from "@/features/hosts/detail/publication";
 import { startEditorWindowPublication } from "@/features/editor/editorWindowPublication";
 import { startFileWindowPublication } from "@/features/sftp/fileWindowPublication";
 import { startTerminalWindowPublication } from "@/features/terminal/terminalWindowPublication";
@@ -128,6 +129,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
   };
   const preview = startPreviewWindowPublication(client, appearance, failure);
   const terminals = startTerminalWindowPublication(client, appearance, failure);
+  const hostDetails = startHostDetailPublication(client, appearance, failure);
   const files = startFileWindowPublication(client, appearance, failure);
   const editors = startEditorWindowPublication(client, appearance, failure);
   const publish = (
@@ -213,6 +215,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
       preview.refresh();
       terminals.refresh();
       files.refresh();
+      hostDetails.refresh();
       editors.refresh();
       connections();
       tasks();
@@ -253,6 +256,7 @@ export function startPanelReadModels(client: PanelWindowClient, failure: (error:
     preview.dispose();
     terminals.dispose();
     files.dispose();
+    hostDetails.dispose();
     editors.dispose();
     for (const cleanup of cleanups) cleanup();
     i18n.off("languageChanged", both);

@@ -1,5 +1,7 @@
 import type { HostPanelCommand, HostPanelTarget } from "./protocol";
 import { hostPanelSource } from "./source";
+import { useSsh } from "@/store/ssh";
+import { api } from "@/lib/api/ipc";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
@@ -220,6 +222,35 @@ export async function executeHostPanelCommand(
       void runHostMenuCommand(action, host);
       return true;
     }
+    case "duplicate": {
+      // Main owns persistent creation and route lookup; public display metadata
+      // in another document is never accepted as a writable host input.
+      const copy = await store.createHost({
+        name: host.source ? host.name : `${host.name} ${i18n.t("common.duplicate")}`,
+        host: host.host,
+        port: host.port,
+        username: host.username,
+        authMethod: host.authMethod,
+        keyPath: host.keyPath,
+        groupId: host.groupId,
+        color: host.color,
+        tags: host.tags,
+        note: host.note,
+      });
+      if (!copy) return false;
+      if (!host.source) {
+        try {
+          await api.saveConnectionRoute(copy.id, await api.connectionRoute(host.id));
+        } catch (error) {
+          await showMain?.();
+          useWorkspace.getState().openHost(copy);
+          throw error;
+        }
+      }
+      await showMain?.();
+      useWorkspace.getState().openHost(copy);
+      return true;
+    }
     case "saveCopy": {
       if (!host.source) throw new Error("pluginView.hostChanged");
       const copy = await store.createHost(savedHostInput(host));
@@ -269,9 +300,17 @@ export async function executeHostPanelCommand(
       if (useSettings.getState().settings.hostDirectConnect) void connectHostDirectly(host);
       else useDialogs.getState().openConnect(host, "terminal");
       break;
-    case "sftp":
-      useDialogs.getState().openConnect(host, "sftp");
+    case "sftp": {
+      const session = useSsh
+        .getState()
+        .sessions.find(
+          (item) =>
+            item.hostId === host.id && item.purpose !== "forwarding" && item.purpose !== "mounts",
+        );
+      if (session) useWorkspace.getState().openSftp(session);
+      else useDialogs.getState().openConnect(host, "sftp");
       break;
+    }
     case "installKey":
       mutable();
       useDialogs.getState().openConnect(host, "terminal", "installKey");

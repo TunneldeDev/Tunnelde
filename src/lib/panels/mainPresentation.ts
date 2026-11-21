@@ -1,7 +1,7 @@
 import { closeTab } from "@/lib/session/tabActions";
 import {
   canonicalWorkspacePanelId,
-  editorWindowTabId,
+  nativeWorkspaceTabId,
 } from "@/features/editor/editorWindowRegistration";
 import { useWorkspace } from "@/store/workspace";
 import type { SourcePanelMetadata } from "./sourcePresentation";
@@ -21,13 +21,22 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
       .getState()
       .tabs.find(
         (tab) =>
-          (tab.kind === "terminal" || tab.kind === "sftp" || tab.kind === "editor") &&
-          tab.id === (editorWindowTabId(id) ?? id),
+          (tab.kind === "terminal" ||
+            tab.kind === "sftp" ||
+            tab.kind === "editor" ||
+            tab.kind === "host") &&
+          tab.id === nativeWorkspaceTabId(id),
       );
   const workspaceRows = (): SourcePanelMetadata[] => {
     const state = useWorkspace.getState();
     return state.tabs
-      .filter((tab) => tab.kind === "terminal" || tab.kind === "sftp" || tab.kind === "editor")
+      .filter(
+        (tab) =>
+          tab.kind === "terminal" ||
+          tab.kind === "sftp" ||
+          tab.kind === "editor" ||
+          tab.kind === "host",
+      )
       .map((tab) => {
         const pane = state.panes.find((pane) => pane.tabIds.includes(tab.id));
         return {
@@ -67,14 +76,13 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
     set(id, presentation) {
       local(id);
       if (workspaceTab(id)) {
-        if (presentation === "floating")
-          useWorkspace.getState().floatTab(editorWindowTabId(id) ?? id);
+        if (presentation === "floating") useWorkspace.getState().floatTab(nativeWorkspaceTabId(id));
         else if (presentation === "workspace") {
           const pane = useWorkspace
             .getState()
-            .panes.find((pane) => pane.tabIds.includes(editorWindowTabId(id) ?? id));
+            .panes.find((pane) => pane.tabIds.includes(nativeWorkspaceTabId(id)));
           if (pane?.floating) useWorkspace.getState().dockPane(pane.id);
-          useWorkspace.getState().activate(editorWindowTabId(id) ?? id);
+          useWorkspace.getState().activate(nativeWorkspaceTabId(id));
         } else throw new Error("panel.window.unsupportedPresentation");
         return read().find((panel) => panel.id === id)!;
       }
@@ -98,7 +106,7 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
     },
     reveal: (id) => {
       local(id);
-      if (workspaceTab(id)) useWorkspace.getState().activate(editorWindowTabId(id) ?? id);
+      if (workspaceTab(id)) useWorkspace.getState().activate(nativeWorkspaceTabId(id));
       else revealPanel(requirePanel(id));
     },
     subscribe: (changed) => {

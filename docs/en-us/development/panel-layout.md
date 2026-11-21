@@ -1501,3 +1501,27 @@ rejected, there was one SSH authentication across both moves, and isolated
 hosts/sessions/known-host entries were cleaned. Physical pointer/mixed-DPI,
 Windows/Linux and real plugin-formatting/conflict-dialog flows are not covered
 by this native-window acceptance; their contract/component tests are separate.
+
+### Native host-detail pages
+
+Builtin host details share `HostPageView` and explicit effect services. Main
+registers opaque `host-view:<UUID>` identities, including for long discovery IDs;
+registration is independent of prefix recognition and expires on main-document
+replacement. The satellite receives only the selected host's display metadata
+and forwarding rules, groups and session summaries. Host actions revalidate both
+the bound host and its display incarnation; editing, deletion consent, copies,
+credentials and terminal/SFTP navigation stay main-owned. An existing normal SSH
+session is reused for file navigation, never a forwarding/mount-only session.
+Forwarding uses the existing native interaction/effect fences and additionally
+checks canonical rule/group ownership against the bound host.
+
+First-party forwarding forms use the same view-state group on both sides, so
+in-progress rule/group drafts can travel with the page. Legacy host fields,
+host-detail contributors and selected forwarding providers currently keep the
+page in main: they have no complete movable draft contract yet. Enabling one
+while the page is detached freezes its first-party controls without discarding
+the draft and offers return to main. This is an explicit rollout limitation,
+not permission to silently omit a contributor or replay singleton activation.
+Settings and factoryless plugin pages remain separate rollout work. Physical
+pointer/mixed-DPI, Windows/Linux and live SSH/FUSE continuity require separate
+acceptance; this adapter does not claim those checks or a general public API.

@@ -12,6 +12,7 @@ export type HostPanelCommand =
         | "edit"
         | "delete"
         | "favorite"
+        | "duplicate"
         | "saveCopy"
         | "export"
         | "copySsh"

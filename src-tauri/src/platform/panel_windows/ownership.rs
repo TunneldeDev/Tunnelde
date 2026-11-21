@@ -130,6 +130,7 @@ pub(super) struct Ownership {
     pub(super) preview_resources: super::preview::Resources,
     pub(super) terminals: super::terminal::Resources,
     pub(super) file_pages: super::file_pages::Resources,
+    pub(super) host_pages: super::host_pages::Resources,
     pub(super) editor_pages: super::editor_pages::Resources,
 }
 impl Ownership {
@@ -388,6 +389,7 @@ impl Ownership {
         self.retire_terminal(panel_id);
         self.retire_file_page(panel_id);
         self.retire_editor_page(panel_id);
+        self.retire_host_page(panel_id);
         self.transfers
             .retain(|_, pending| pending.lease.panel_id != panel_id);
         self.drags
@@ -575,6 +577,7 @@ impl Ownership {
         }
         self.terminal_move_allowed(&lease.panel_id, target)?;
         self.file_page_move_allowed(&lease.panel_id, target)?;
+        self.host_page_move_allowed(&lease.panel_id, target)?;
         Self::validate_state(&state)?;
         if !self.windows[window].ready || (self.windows[window].closing && target != MAIN) {
             return Err("source unavailable");

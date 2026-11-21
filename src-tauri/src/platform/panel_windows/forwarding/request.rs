@@ -125,6 +125,65 @@ fn bounded(value: &str, max: usize) -> bool {
     !value.is_empty() && value.len() <= max && !value.chars().any(char::is_control)
 }
 impl Request {
+    pub(super) fn authorize_host(
+        &self,
+        app: &tauri::AppHandle,
+        host: &str,
+    ) -> crate::error::AppResult<()> {
+        use crate::{error::AppError, services::forwarding as domain, state::AppState};
+        use tauri::Manager;
+        let same = |candidate: &str| {
+            if candidate == host {
+                Ok(())
+            } else {
+                Err(AppError::validation("forward.changed"))
+            }
+        };
+        let rule = |id: &str| same(&domain::repository::find_entry(app, id)?.rule.host_id);
+        let group = |id: &str| {
+            let groups = app
+                .state::<AppState>()
+                .db
+                .with(|conn| domain::groups::list(conn, None))?;
+            let entry = groups
+                .iter()
+                .find(|g| g.id == id)
+                .ok_or_else(|| AppError::validation("forward.groupMissing"))?;
+            same(&entry.host_id)
+        };
+        match self {
+            Self::Disconnect { host_id, .. } | Self::SaveGroup { host_id, .. } => same(host_id),
+            Self::Save {
+                rule: entry,
+                revision,
+                group_id,
+                ..
+            } => {
+                same(&entry.host_id)?;
+                if revision.is_some() {
+                    rule(&entry.id)?;
+                }
+                if let Some(id) = group_id {
+                    group(id)?;
+                }
+                Ok(())
+            }
+            Self::RemoveGroup { id, .. } => group(id),
+            Self::PrepareStart { id, .. }
+            | Self::InstallKey { id, .. }
+            | Self::Test { id, .. }
+            | Self::Start { id, .. }
+            | Self::Probe { id, .. }
+            | Self::Trust { id, .. }
+            | Self::CredentialStatus { id, .. }
+            | Self::SaveCredential { id, .. }
+            | Self::ForgetCredential { id, .. }
+            | Self::Stop { id, .. }
+            | Self::Remove { id, .. } => rule(id),
+            Self::CopyAddress { .. } | Self::CancelTest { .. } => Ok(()),
+        }
+    }
+
     pub(super) fn interaction(&self) -> Option<&str> {
         match self {
             Self::Save {

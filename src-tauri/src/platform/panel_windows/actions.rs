@@ -29,6 +29,9 @@ pub(crate) enum ViewAction {
     Plugins {
         command: plugins::PluginCommand,
     },
+    HostDetail {
+        command: hosts::HostCommand,
+    },
     Hosts {
         command: hosts::HostCommand,
     },
@@ -332,6 +335,7 @@ impl ViewAction {
             Self::Files { .. } => "files",
             Self::Terminal { .. } => "terminal",
             Self::Plugins { .. } => "plugins",
+            Self::HostDetail { .. } => "hostDetail",
             Self::Hosts { .. } => "hosts",
             Self::Preview { .. } => "filePreview",
             Self::RefreshKnownHosts {} | Self::ForgetKnownHost { .. } => "knownHosts",
@@ -352,6 +356,7 @@ impl ViewAction {
             Self::Files { command } => command.valid(),
             Self::Terminal { command } => command.valid(),
             Self::Plugins { command } => command.valid(),
+            Self::HostDetail { command } => command.valid() && command.detail_host().is_some(),
             Self::Hosts { command } => command.valid(),
             Self::Preview {
                 id,
@@ -495,6 +500,12 @@ impl Ownership {
         self.authorize_action_interaction(window, document, lease, &request)?;
         if if matches!(request, ViewAction::Editor { .. }) {
             !self.editor_page_registered(&lease.panel_id)
+        } else if let ViewAction::HostDetail { ref command } = request {
+            self.host_page_host(&lease.panel_id) != command.detail_host()
+        } else if matches!(request, ViewAction::RefreshForwarding {})
+            && self.host_page_registered(&lease.panel_id)
+        {
+            false
         } else if matches!(request, ViewAction::Files { .. }) {
             !self.file_page_registered(&lease.panel_id)
         } else if matches!(request, ViewAction::Terminal { .. }) {

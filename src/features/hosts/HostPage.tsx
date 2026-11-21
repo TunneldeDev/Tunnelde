@@ -2,20 +2,20 @@ import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
 import { HostFieldsSection } from "./HostFieldsSection";
 import { HostDetailsSections } from "./HostDetailsSections";
 import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
+import { usePanelLeaseAction } from "@/lib/panels/interaction";
+import { executeHostPanelCommand } from "./panel/execute";
+import { toast } from "@/store/toasts";
+import { translateError } from "@/lib/api/errors";
+import type { ReactNode } from "react";
+import { useHostPanel } from "./panel/context";
+import type { HostDetailOperation } from "./detail/protocol";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
 import { formatDateTime, formatRelative, hostSubtitle } from "@/lib/text/format";
 import { AUTH_LABELS } from "@/lib/prefs/labels";
-import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
-import { toast } from "@/store/toasts";
 import type { Host } from "@/lib/api/types";
-import { useDialogs } from "@/store/dialogs";
-import { useHosts } from "@/store/hosts";
-import { useWorkspace } from "@/store/workspace";
-import { useSsh } from "@/store/ssh";
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
@@ -26,54 +26,40 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HostDetails({ host }: { host: Host }) {
+export interface HostPageServices {
+  connect(): void;
+  sftp(): void;
+  favorite(): void;
+  edit(): void;
+  remove(): void;
+  duplicate(): void;
+}
+/** Shared production page: display data and explicitly supplied effects only. */
+export function HostPageView({
+  host,
+  groupName,
+  hostCount,
+  services,
+  children,
+}: {
+  host: Host | null;
+  groupName?: string;
+  hostCount: number;
+  services: HostPageServices;
+  children?: ReactNode;
+}) {
   const { t, i18n } = useTranslation();
-  const groups = useHosts((state) => state.groups);
-  const hosts = useHosts((state) => state.hosts);
-  const openHostDialog = useDialogs((state) => state.openHost);
-  const openConnect = useDialogs((state) => state.openConnect);
-  const openSftp = useWorkspace((state) => state.openSftp);
-  const session = useSsh(
-    (state) =>
-      state.sessions.find(
-        (item) =>
-          item.hostId === host.id && item.purpose !== "forwarding" && item.purpose !== "mounts",
-      ) ?? null,
-  );
-  const confirm = useDialogs((state) => state.confirm);
-  const deleteHost = useHosts((state) => state.deleteHost);
-  const createHost = useHosts((state) => state.createHost);
-  const toggleFavorite = useHosts((state) => state.toggleFavorite);
-  const removeHostTab = useWorkspace((state) => state.removeHost);
-  const openHost = useWorkspace((state) => state.openHost);
   const locale = i18n.resolvedLanguage ?? "en-US";
-
-  const group = groups.find((item) => item.id === host.groupId);
-
-  const duplicate = async () => {
-    const copy = await createHost({
-      name: host.source ? host.name : `${host.name} ${t("common.duplicate")}`,
-      host: host.host,
-      port: host.port,
-      username: host.username,
-      authMethod: host.authMethod,
-      keyPath: host.keyPath,
-      groupId: host.groupId,
-      color: host.color,
-      tags: host.tags,
-      note: host.note,
-    });
-    if (copy) {
-      try {
-        if (!host.source)
-          await api.saveConnectionRoute(copy.id, await api.connectionRoute(host.id));
-      } catch (error) {
-        toast(translateError(error), "error");
-      }
-      openHost(copy);
-    }
-  };
-
+  if (!host)
+    return (
+      <div className="page">
+        <EmptyState
+          icon={<StatusDot tone="warn" />}
+          title={t("host.emptyTitle")}
+          body={t("host.emptyBody")}
+        />
+      </div>
+    );
   return (
     <div className="page host-page">
       <header className="host-head">
@@ -90,7 +76,7 @@ function HostDetails({ host }: { host: Host }) {
             variant="primary"
             size="sm"
             leading={<PlugZap size={13} />}
-            onClick={() => openConnect(host)}
+            onClick={services.connect}
           >
             {t("terminal.connect")}
           </Button>
@@ -98,13 +84,7 @@ function HostDetails({ host }: { host: Host }) {
             variant="secondary"
             size="sm"
             leading={<FolderTree size={13} />}
-            onClick={() => {
-              if (session) {
-                openSftp(session);
-              } else {
-                openConnect(host, "sftp");
-              }
-            }}
+            onClick={services.sftp}
           >
             {t("sftp.title")}
           </Button>
@@ -114,31 +94,14 @@ function HostDetails({ host }: { host: Host }) {
                 label={host.favorite ? t("menu.unfavorite") : t("menu.favorite")}
                 active={host.favorite}
                 size="sm"
-                onClick={() => void toggleFavorite(host)}
+                onClick={services.favorite}
               >
                 <Star size={15} fill={host.favorite ? "currentColor" : "none"} />
               </IconButton>
-              <IconButton label={t("common.edit")} size="sm" onClick={() => openHostDialog(host)}>
+              <IconButton label={t("common.edit")} size="sm" onClick={services.edit}>
                 <Pencil size={15} />
               </IconButton>
-              <IconButton
-                label={t("common.delete")}
-                size="sm"
-                danger
-                onClick={() =>
-                  confirm({
-                    title: t("host.deleteTitle"),
-                    body: t("host.deleteBody", { name: host.name }),
-                    confirmLabel: t("common.delete"),
-                    danger: true,
-                    onConfirm: async () => {
-                      if (await deleteHost(host.id)) {
-                        removeHostTab(host.id);
-                      }
-                    },
-                  })
-                }
-              >
+              <IconButton label={t("common.delete")} size="sm" danger onClick={services.remove}>
                 <Trash2 size={15} />
               </IconButton>
             </>
@@ -153,7 +116,7 @@ function HostDetails({ host }: { host: Host }) {
           <Detail label={t("host.port")} value={String(host.port)} />
           <Detail label={t("host.username")} value={host.username || "—"} />
           <Detail label={t("host.authMethod")} value={t(AUTH_LABELS[host.authMethod])} />
-          <Detail label={t("host.group")} value={group?.name ?? t("common.none")} />
+          <Detail label={t("host.group")} value={groupName ?? t("common.none")} />
           {host.authMethod === "key" ? (
             <Detail label={t("host.keyPath")} value={host.keyPath ?? "—"} />
           ) : null}
@@ -185,34 +148,50 @@ function HostDetails({ host }: { host: Host }) {
         {host.note ? <p className="host-note">{host.note}</p> : null}
       </section>
 
-      <ForwardingSection key={host.id} host={host} />
-      {!host.source && <HostFieldsSection key={`fields:${host.id}`} hostId={host.id} />}
-      {!host.source && <HostDetailsSections key={`details:${host.id}`} hostId={host.id} />}
+      {children}
       <div className="host-page__foot">
-        <Button variant="secondary" onClick={() => void duplicate()}>
+        <Button variant="secondary" onClick={services.duplicate}>
           {t(host.source ? "hostSources.saveCopy" : "common.duplicate")}
         </Button>
-        <span className="host-page__count">{t("status.hosts", { count: hosts.length })}</span>
+        <span className="host-page__count">{t("status.hosts", { count: hostCount })}</span>
       </div>
     </div>
   );
 }
 
+/** Main-only composition retains plugin renderers and singleton dialogs. */
 export function HostPage({ hostId }: { hostId: string | null }) {
-  const { t } = useTranslation();
-  const host = useHosts((state) => state.hosts.find((item) => item.id === hostId) ?? null);
-
-  if (!host) {
-    return (
-      <div className="page">
-        <EmptyState
-          icon={<StatusDot tone="warn" />}
-          title={t("host.emptyTitle")}
-          body={t("host.emptyBody")}
-        />
-      </div>
+  const data = useHostPanel();
+  const host = data.data.hosts.find((item) => item.id === hostId) ?? null;
+  const action = usePanelLeaseAction();
+  const run = (operation: HostDetailOperation) => {
+    if (!host) return;
+    const command = { operation, host: data.hostTarget(host.id) };
+    void (action({ kind: "hostDetail", command }) ?? executeHostPanelCommand(command)).catch(
+      (error) => toast(translateError(error), "error"),
     );
-  }
-
-  return <HostDetails host={host} />;
+  };
+  return (
+    <HostPageView
+      host={host}
+      groupName={data.data.groups.find((group) => group.id === host?.groupId)?.name}
+      hostCount={data.data.hosts.length}
+      services={{
+        connect: () => run("connect"),
+        sftp: () => run("sftp"),
+        favorite: () => run("favorite"),
+        edit: () => run("edit"),
+        remove: () => run("delete"),
+        duplicate: () => run("duplicate"),
+      }}
+    >
+      {host && (
+        <>
+          <ForwardingSection key={host.id} host={host} />
+          {!host.source && <HostFieldsSection key={`fields:${host.id}`} hostId={host.id} />}
+          {!host.source && <HostDetailsSections key={`details:${host.id}`} hostId={host.id} />}
+        </>
+      )}
+    </HostPageView>
+  );
 }
