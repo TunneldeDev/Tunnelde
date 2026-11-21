@@ -5,6 +5,7 @@ use crate::{
     error::{AppError, AppResult},
     platform::panel_windows::native,
     plugins::frontend::native as frontend,
+    state::AppState,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -102,6 +103,41 @@ pub(crate) enum Request {
         runtime_id: String,
         view_id: String,
     },
+    RegisterDeclarativeAdapter {
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+    },
+    DescribeDeclarative {
+        target: Target,
+    },
+    UnregisterDeclarativeAdapter {
+        panel_id: String,
+        runtime_id: String,
+        generation: u64,
+        revision: String,
+    },
+    OpenDeclarative {
+        target: Target,
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+    },
+    RenderDeclarative {
+        target: Target,
+        locale: Option<String>,
+    },
+    RunDeclarative {
+        target: Target,
+        command: String,
+        input: Value,
+    },
+    SnapshotDeclarative {
+        target: Target,
+    },
+    ModelDeclarative {
+        target: Target,
+    },
     Open {
         target: Target,
         plugin_id: String,
@@ -128,6 +164,9 @@ pub(crate) enum Request {
         request_id: String,
     },
     Close {
+        token: String,
+    },
+    CloseDeclarative {
         token: String,
     },
 }
@@ -388,6 +427,122 @@ pub(crate) async fn panel_window_plugin_view(
             }
             Ok(json!(descriptor))
         }
+        Request::DescribeDeclarative { target } => {
+            super::declarative::describe(app, (window.label(), &document), &target)
+        }
+        Request::RegisterDeclarativeAdapter {
+            plugin_id,
+            runtime_id,
+            view_id,
+        } => {
+            // Descriptor creation is a coordinator-only display admission. The
+            // view itself is rendered by the host and has no frontend module.
+            native::lock(&registry)
+                .main(window.label(), &document)
+                .map_err(native::invalid)?;
+            let state = app.state::<AppState>();
+            let info = state
+                .plugins
+                .list()
+                .await
+                .into_iter()
+                .find(|info| info.id == plugin_id)
+                .ok_or_else(|| AppError::validation("plugin.notFound"))?;
+            if info.status != crate::plugins::PluginStatus::Running
+                || info.runtime_id.as_deref() != Some(runtime_id.as_str())
+            {
+                return Err(AppError::validation("plugin.notRunning"));
+            }
+            let contribution = info
+                .views
+                .iter()
+                .find(|view| {
+                    view.id == view_id
+                        && view.kind.as_deref() == Some("blocks")
+                        && view.location.as_deref() == Some("sidebar")
+                        && view.provider.is_none()
+                        && view.allow_floating != Some(false)
+                })
+                .ok_or_else(|| AppError::validation("plugin.frontend.undeclaredContribution"))?;
+            let lease = state.plugins.invocation_lease(&plugin_id, &runtime_id)?;
+            state
+                .plugins
+                .security
+                .with_authorized(&lease, &["ui.trusted"], || Ok(()))?;
+            let (descriptor, changed) = {
+                let mut ownership = native::lock(&registry);
+                ownership
+                    .register_declarative_adapter(
+                        window.label(),
+                        &document,
+                        super::declarative::Admission {
+                            plugin: lease,
+                            runtime_id: runtime_id.clone(),
+                            view_id: view_id.clone(),
+                            title: contribution.title.clone(),
+                            allow_floating: true,
+                        },
+                    )
+                    .map_err(native::invalid)?
+            };
+            if changed {
+                native::changed(app);
+            }
+            Ok(json!(descriptor))
+        }
+        Request::UnregisterDeclarativeAdapter {
+            panel_id,
+            runtime_id,
+            generation,
+            revision,
+        } => {
+            let changed = native::lock(&registry)
+                .unregister_declarative_adapter(
+                    window.label(),
+                    &document,
+                    &panel_id,
+                    &runtime_id,
+                    generation,
+                    &revision,
+                )
+                .map_err(native::invalid)?;
+            if changed {
+                native::changed(app);
+            }
+            Ok(json!(changed))
+        }
+        Request::OpenDeclarative {
+            target,
+            plugin_id,
+            runtime_id,
+            view_id,
+        } => {
+            super::declarative::open(
+                app,
+                (window.label(), &document),
+                &target,
+                &plugin_id,
+                &runtime_id,
+                &view_id,
+            )
+            .await
+        }
+        Request::RenderDeclarative { target, locale } => {
+            super::declarative::render(app, (window.label(), &document), &target, locale).await
+        }
+        Request::RunDeclarative {
+            target,
+            command,
+            input,
+        } => {
+            super::declarative::run(app, (window.label(), &document), &target, command, input).await
+        }
+        Request::SnapshotDeclarative { target } => {
+            super::declarative::snapshot(app, (window.label(), &document), &target).await
+        }
+        Request::ModelDeclarative { target } => {
+            super::declarative::model(app, (window.label(), &document), &target).await
+        }
         Request::Open {
             target,
             plugin_id,
@@ -536,6 +691,9 @@ pub(crate) async fn panel_window_plugin_view(
             }
             Ok(Value::Null)
         }
+        Request::CloseDeclarative { token } => {
+            super::declarative::close(app, (window.label(), &document), &token)
+        }
     }
 }
 pub(crate) fn prune(app: &AppHandle) -> bool {
@@ -544,12 +702,24 @@ pub(crate) fn prune(app: &AppHandle) -> bool {
         let mut ownership = native::lock(&registry);
         let changed =
             ownership.retire_plugin_adapters(|source| source.with_current(app, || Ok(())).is_err());
+        let declarative = ownership.declarative_adapters();
+        let declarative_changed = ownership.retire_declarative_adapters(|plugin, runtime_id| {
+            declarative.iter().any(|adapter| {
+                adapter.plugin_id == plugin.id
+                    && adapter.runtime_id == runtime_id
+                    && app
+                        .state::<AppState>()
+                        .plugins
+                        .invocation_lease(&plugin.id, runtime_id)
+                        .is_err()
+            })
+        });
         let tokens = ownership.prune_native_views(Instant::now(), |token, owner, provider| {
             provider.is_none_or(|binding| binding.check(app).is_ok())
                 && frontend::with_owner(app, token, owner, || Ok(())).is_ok()
         });
         ownership.prune_view_ui(app);
-        let changed = changed || !tokens.is_empty();
+        let changed = changed || declarative_changed || !tokens.is_empty();
         (tokens, changed)
     };
     frontend::close(app, tokens);
@@ -561,6 +731,8 @@ pub(crate) fn retire(app: &AppHandle, plugin: &str, before: u64) {
         let mut ownership = native::lock(&registry);
         let changed = ownership.retire_plugin_adapters(|source| {
             source.lease.id == plugin && source.lease.generation < before
+        }) | ownership.retire_declarative_adapters(|lease, _| {
+            lease.id == plugin && lease.generation < before
         });
         (ownership.retire_native_views(plugin, before), changed)
     };

@@ -8,11 +8,7 @@ use crate::{
 impl PluginsManager {
     /// No await precedes identity capture: an old IPC may never borrow a later
     /// approval, even when the replacement package has identical bytes.
-    pub(in crate::plugins) fn invocation_lease(
-        &self,
-        id: &str,
-        runtime_id: &str,
-    ) -> AppResult<Lease> {
+    pub(crate) fn invocation_lease(&self, id: &str, runtime_id: &str) -> AppResult<Lease> {
         let snapshots = self
             .snapshots
             .read()

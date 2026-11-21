@@ -477,3 +477,34 @@ it("labels checkpoint and move captures so resource adapters cannot suspend on p
   expect(moved.view.fields.intent).toBe("move");
   expect(capture).toHaveBeenLastCalledWith(expect.any(AbortSignal), { intent: "move" });
 });
+
+it("treats factoryless declarative views as an independent renderable descriptor", async () => {
+  const { views } = fixture();
+  const json = {
+    panelId: "plugin:sample:blocks",
+    revision: "json-approval",
+    pluginId: "sample",
+    runtimeId: "runtime",
+    generation: 4,
+    viewId: "blocks",
+    title: "Blocks",
+    allowFloating: true,
+    renderer: "json" as const,
+  };
+  const declarativeSnapshot = {
+    ...snapshot([{ panelId: json.panelId, windowId: "main", generation: 3 }]),
+    declarativeViews: [json],
+  };
+  await views.reconcile(declarativeSnapshot);
+  expect(renderablePanel(json.panelId, declarativeSnapshot)).toBe(true);
+  const record = useWindowViews.getState().entries.get(json.panelId)!;
+  expect(record.declarative).toEqual(json);
+  expect(record.plugin).toBeUndefined();
+  await views.reconcile({
+    ...snapshot([{ panelId: json.panelId, windowId: "main", generation: 4 }]),
+    declarativeViews: [{ ...json, revision: "replacement" }],
+  });
+  expect(useWindowViews.getState().entries.get(json.panelId)!.declarative!.revision).toBe(
+    "replacement",
+  );
+});

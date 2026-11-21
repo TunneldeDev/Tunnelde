@@ -35,6 +35,7 @@ struct View {
 pub(super) struct Views {
     bindings: HashMap<String, View>,
     adapters: HashMap<String, adapters::Adapter>,
+    declarative: HashMap<String, declarative::Adapter>,
     ui: ui::Queue,
     #[cfg(not(windows))]
     pickers: pickers::Pickers,
@@ -322,6 +323,7 @@ impl Ownership {
 }
 
 pub(super) mod adapters;
+pub(super) mod declarative;
 pub(crate) mod gateway;
 mod host_provider;
 pub(crate) mod origin;

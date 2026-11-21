@@ -6,6 +6,25 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.4.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.3.1...v2.4.0) - 2026-11-21
+
+### 更新概览 | Highlights
+
+- **plugins:** admit declarative views in native windows
+
+<details open>
+<summary>详细变更 | Details (1)</summary>
+
+### 新增 | New
+
+- **plugins:** admit declarative views in native windows ([#504](https://github.com/TunneldeDev/Tunnelde/pull/504)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.3.1](https://github.com/TunneldeDev/Tunnelde/compare/v2.3.0...v2.3.1) - 2026-11-21
 
 ### 更新概览 | Highlights

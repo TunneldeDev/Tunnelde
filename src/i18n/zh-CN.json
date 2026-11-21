@@ -1476,7 +1476,8 @@
       "userSelectionRequired": "请在设置中选择界面提供者。插件不能通过设置 API 修改该选择。",
       "viewFactoryUnavailable": "此插件未提供独立视图工厂，请将此视图保留在原窗口。",
       "invalidViewFactory": "插件返回了无效的视图实例，请检查视图工厂和状态方法。",
-      "viewStateUnavailable": "此视图无法保留状态，请将其保留在当前窗口，或重新打开而不恢复状态。"
+      "viewStateUnavailable": "此视图无法保留状态，请将其保留在当前窗口，或重新打开而不恢复状态。",
+      "adapterChanged": "插件视图在挂载期间发生了变化，请从当前窗口重新打开。"
     },
     "fileBrowser": {
       "busy": "文件面板正在加载或暂不可用，请等待完成。",

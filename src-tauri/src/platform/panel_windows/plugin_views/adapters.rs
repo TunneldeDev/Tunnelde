@@ -1,6 +1,6 @@
 //! Explicit main-document factory admission. A `plugin:` prefix is not an
 //! adapter, and metadata is never an activation/module/resource capability.
-use super::Ownership;
+use super::{declarative, Ownership};
 use crate::plugins::frontend::native::{Source, ViewDescriptor};
 use serde::Serialize;
 
@@ -25,6 +25,7 @@ impl Ownership {
             || self.host_page_registered(panel_id)
             || self.settings_page_registered(panel_id)
             || self.native_views.adapters.contains_key(panel_id)
+            || self.native_views.declarative.contains_key(panel_id)
     }
     pub(in crate::platform::panel_windows) fn plugin_adapters(&self) -> Vec<Descriptor> {
         let mut list: Vec<_> = self
@@ -35,6 +36,11 @@ impl Ownership {
             .collect();
         list.sort_by(|a, b| a.panel_id.cmp(&b.panel_id));
         list
+    }
+    pub(in crate::platform::panel_windows) fn declarative_adapters_for_snapshot(
+        &self,
+    ) -> Vec<declarative::Descriptor> {
+        self.declarative_adapters()
     }
     /// Only the coordinator, after it has loaded the module and selected the
     /// factory path, may opt in an ordinary sidebar. Native source review still
@@ -136,18 +142,27 @@ impl Ownership {
         revision: &str,
     ) -> Result<String, &'static str> {
         self.main(window, document)?;
-        if !self
+        if self
             .native_views
             .adapters
             .get(panel_id)
             .is_some_and(|a| a.descriptor.revision == revision)
         {
-            return Err("plugin.frontend.adapterChanged");
+            return self.begin_model(window, document, panel_id);
         }
-        self.begin_model(window, document, panel_id)
+        if self
+            .native_views
+            .declarative
+            .get(panel_id)
+            .is_some_and(|a| a.descriptor.revision == revision)
+        {
+            return self.begin_declarative_model(window, document, panel_id, revision);
+        }
+        Err("plugin.frontend.adapterChanged")
     }
     pub(in crate::platform::panel_windows) fn remove_plugin_adapter(&mut self, panel_id: &str) {
         self.native_views.adapters.remove(panel_id);
+        self.native_views.declarative.remove(panel_id);
     }
 }
 

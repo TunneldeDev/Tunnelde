@@ -271,7 +271,7 @@ impl Ownership {
                 window, document, &panel_id, &host_id, allow_move
             )?)),
             Command::Snapshot {} => Ok(
-                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters(), "terminalViews": self.terminal_descriptors(), "filePages": self.file_page_descriptors(), "editorPages": self.editor_page_descriptors(), "hostPages": self.host_page_descriptors(), "settingsPages": self.settings_page_descriptors()}),
+                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters(), "declarativeViews": self.declarative_adapters_for_snapshot(), "terminalViews": self.terminal_descriptors(), "filePages": self.file_page_descriptors(), "editorPages": self.editor_page_descriptors(), "hostPages": self.host_page_descriptors(), "settingsPages": self.settings_page_descriptors()}),
             ),
             Command::RequestAction { lease, request } => Ok(json!(
                 self.request_action(window, document, &lease, request, now)?
