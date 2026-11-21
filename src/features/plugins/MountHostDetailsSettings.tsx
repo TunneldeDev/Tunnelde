@@ -8,7 +8,7 @@ import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 
-export function MountHostDetailsSettings() {
+export function useMainMountHostDetailsSettings() {
   const plugins = usePlugins((state) => state.items);
   const selection = useSettings((state) => state.settings.mountHostDetailsSelection);
   const [busy, setBusy] = useState(false);
@@ -21,12 +21,12 @@ export function MountHostDetailsSettings() {
     value: JSON.stringify([plugin.id, contribution.id]),
     label: `${plugin.name} · ${contribution.title}`,
   }));
-  const choose = (next: string) => {
+  const choose = async (next: string) => {
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
     const before = JSON.stringify(useSettings.getState().settings.mountHostDetailsSelection);
-    void (async () => {
+    await (async () => {
       try {
         const candidate = contributors.find(
           ({ plugin, contribution }) => JSON.stringify([plugin.id, contribution.id]) === next,
@@ -72,14 +72,9 @@ export function MountHostDetailsSettings() {
       }
     })();
   };
-  return (
-    <MountHostDetailsSettingsView
-      value={value}
-      candidates={candidates}
-      unavailableName={selection?.pluginId ?? ""}
-      busy={busy}
-      choose={choose}
-      useBusyGuard={useBackgroundGuard}
-    />
-  );
+  return { value, candidates, unavailableName: selection?.pluginId ?? "", busy, choose };
+}
+export function MountHostDetailsSettings() {
+  const binding = useMainMountHostDetailsSettings();
+  return <MountHostDetailsSettingsView {...binding} useBusyGuard={useBackgroundGuard} />;
 }

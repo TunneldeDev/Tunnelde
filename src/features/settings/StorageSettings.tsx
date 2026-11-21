@@ -9,7 +9,7 @@ import {
 } from "./components/StorageSettingsView";
 import { changeStorageDraft } from "./data/storageDraft";
 
-const services: StorageSettingsServices = {
+export const mainStorageSettingsServices: StorageSettingsServices = {
   useData() {
     const { status, loading, busy, error, draft } = useStorage();
     return { status, loading, busy, error, draft, nativeAvailable: isTauri() };
@@ -27,5 +27,5 @@ const services: StorageSettingsServices = {
   notify: toast,
 };
 export function StorageSettings() {
-  return <StorageSettingsView services={services} />;
+  return <StorageSettingsView services={mainStorageSettingsServices} />;
 }

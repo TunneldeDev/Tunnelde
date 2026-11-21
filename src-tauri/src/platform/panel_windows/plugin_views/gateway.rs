@@ -53,6 +53,16 @@ pub(crate) enum Request {
         view_id: String,
         selection_revision: u64,
     },
+    DescribePreferencesProvider {
+        target: Target,
+    },
+    OpenPreferencesProvider {
+        target: Target,
+        plugin_id: String,
+        runtime_id: String,
+        view_id: String,
+        selection_revision: u64,
+    },
     DescribeTasksProvider {
         target: Target,
     },
@@ -233,6 +243,27 @@ pub(crate) async fn panel_window_plugin_view(
             selection_revision,
         } => {
             super::host_provider::open(
+                app,
+                (window.label(), &document),
+                target,
+                plugin_id,
+                runtime_id,
+                view_id,
+                selection_revision,
+            )
+            .await
+        }
+        Request::DescribePreferencesProvider { target } => {
+            super::preferences_provider::describe(app, window.label(), &document, target).await
+        }
+        Request::OpenPreferencesProvider {
+            target,
+            plugin_id,
+            runtime_id,
+            view_id,
+            selection_revision,
+        } => {
+            super::preferences_provider::open(
                 app,
                 (window.label(), &document),
                 target,

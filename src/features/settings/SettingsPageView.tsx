@@ -48,20 +48,30 @@ export function SettingsPageView({
   const { update, reset, confirm, selectSection } = services;
   const [query, setQuery] = services.useViewState("settings:query", "");
   const [modifiedOnly, setModifiedOnly] = services.useViewState("settings:modified", false);
+  const [seenSettingsRequest, setSeenSettingsRequest] = services.useViewState(
+    "settings:seenRequest",
+    settingsRequest,
+  );
+  const [seenShortcutRequest, setSeenShortcutRequest] = services.useViewState(
+    "settings:seenShortcutRequest",
+    shortcutRequest,
+  );
   useLayoutEffect(() => {
     // Explicit navigation must reveal its destination, including repeat requests
     // for the current category. Merely switching tabs preserves the search.
-    if (settingsRequest > 0) {
+    if (settingsRequest !== seenSettingsRequest) {
+      setSeenSettingsRequest(settingsRequest);
       setQuery("");
       setModifiedOnly(false);
     }
-  }, [settingsRequest, setQuery, setModifiedOnly]);
+  }, [settingsRequest, seenSettingsRequest, setSeenSettingsRequest, setQuery, setModifiedOnly]);
   useLayoutEffect(() => {
-    if (shortcutRequest > 0) {
+    if (shortcutRequest !== seenShortcutRequest) {
+      setSeenShortcutRequest(shortcutRequest);
       setQuery("");
       setModifiedOnly(false);
     }
-  }, [shortcutRequest, setQuery, setModifiedOnly]);
+  }, [shortcutRequest, seenShortcutRequest, setSeenShortcutRequest, setQuery, setModifiedOnly]);
   const [cssDraft, setCssDraft] = services.useViewState<string | null>("settings:css", null);
   const [resetVersions, setResetVersions] = services.useViewState<Record<string, number>>(
     "settings:resetVersions",

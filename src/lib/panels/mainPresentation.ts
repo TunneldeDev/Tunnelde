@@ -24,7 +24,9 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
           (tab.kind === "terminal" ||
             tab.kind === "sftp" ||
             tab.kind === "editor" ||
-            tab.kind === "host") &&
+            tab.kind === "host" ||
+            tab.kind === "settings" ||
+            tab.kind === "updates") &&
           tab.id === nativeWorkspaceTabId(id),
       );
   const workspaceRows = (): SourcePanelMetadata[] => {
@@ -35,7 +37,9 @@ export function createMainPanelPresentation(): SourcePanelPresentation {
           tab.kind === "terminal" ||
           tab.kind === "sftp" ||
           tab.kind === "editor" ||
-          tab.kind === "host",
+          tab.kind === "host" ||
+          tab.kind === "settings" ||
+          tab.kind === "updates",
       )
       .map((tab) => {
         const pane = state.panes.find((pane) => pane.tabIds.includes(tab.id));

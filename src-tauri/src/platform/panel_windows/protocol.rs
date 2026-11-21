@@ -28,6 +28,20 @@ pub(crate) enum Command {
     ClosePreviewHandle {
         id: String,
     },
+    BindSettingsPage {
+        panel_id: String,
+        allow_move: bool,
+    },
+    WriteSettingsPassword {
+        lease: Lease,
+        value: String,
+    },
+    ReadSettingsPasswordForOwner {
+        lease: Lease,
+    },
+    ReadSettingsPassword {
+        target: super::plugin_views::Target,
+    },
     BindEditorPage {
         panel_id: String,
     },
@@ -218,6 +232,34 @@ impl Ownership {
             Command::BeginPluginModel { panel_id, revision } => Ok(json!(
                 self.begin_plugin_model(window, document, &panel_id, &revision)?
             )),
+            Command::BindSettingsPage {
+                panel_id,
+                allow_move,
+            } => Ok(json!(
+                self.bind_settings_page(window, document, &panel_id, allow_move)?
+            )),
+            Command::WriteSettingsPassword { lease, value } => {
+                self.write_settings_password(window, document, &lease, value)?;
+                Ok(Value::Null)
+            }
+            Command::ReadSettingsPasswordForOwner { lease } => {
+                self.main(window, document)?;
+                let owner_document = self
+                    .document(&lease.window_id)
+                    .ok_or("panel.window.staleOwner")?
+                    .to_owned();
+                Ok(json!(self.read_settings_password(
+                    &lease.window_id,
+                    &owner_document,
+                    &super::plugin_views::Target::Owned {
+                        lease: lease.clone()
+                    },
+                    now
+                )?))
+            }
+            Command::ReadSettingsPassword { target } => Ok(json!(
+                self.read_settings_password(window, document, &target, now)?
+            )),
             Command::BindEditorPage { panel_id } => {
                 Ok(json!(self.bind_editor_page(window, document, &panel_id)?))
             }
@@ -229,7 +271,7 @@ impl Ownership {
                 window, document, &panel_id, &host_id, allow_move
             )?)),
             Command::Snapshot {} => Ok(
-                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters(), "terminalViews": self.terminal_descriptors(), "filePages": self.file_page_descriptors(), "editorPages": self.editor_page_descriptors(), "hostPages": self.host_page_descriptors()}),
+                json!({"windows": self.windows(), "panels": self.leases(), "transfers": self.offers(window, document)?, "interruptions": self.interruptions(), "pluginViews": self.plugin_adapters(), "terminalViews": self.terminal_descriptors(), "filePages": self.file_page_descriptors(), "editorPages": self.editor_page_descriptors(), "hostPages": self.host_page_descriptors(), "settingsPages": self.settings_page_descriptors()}),
             ),
             Command::RequestAction { lease, request } => Ok(json!(
                 self.request_action(window, document, &lease, request, now)?

@@ -10,7 +10,7 @@ import {
   SettingsProfilesView,
   type SettingsProfilesServices,
 } from "./components/SettingsProfilesView";
-const services: SettingsProfilesServices = {
+export const mainSettingsProfilesServices: SettingsProfilesServices = {
   useData() {
     const settings = useSettings((s) => s.settings);
     const snapshot = useMemo(() => portableSettings(settings), [settings]);
@@ -52,5 +52,5 @@ const services: SettingsProfilesServices = {
   notify: toast,
 };
 export function SettingsProfiles(props: { hasDraft: boolean; onApplied(): void }) {
-  return <SettingsProfilesView {...props} services={services} />;
+  return <SettingsProfilesView {...props} services={mainSettingsProfilesServices} />;
 }

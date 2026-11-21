@@ -23,6 +23,7 @@ import { ConfirmDialogHost } from "@/components/ui/overlay/ConfirmDialogHost";
 import { startPresentationRequests } from "@/lib/panels/presentationRequests";
 import { registerTaskPresentation } from "@/features/tasks/presentation";
 import { TransferBackgroundTask } from "@/features/sftp/TransferBackgroundTask";
+import { NativeSettingsView } from "@/features/settings/window/NativeSettingsPage";
 import { KnownHostsList } from "@/features/settings/KnownHostsList";
 import { KnownHostsModelScope } from "@/lib/panels/knownHostsModel";
 import type { PanelViewAction } from "@/lib/panels/windowProtocol";
@@ -445,17 +446,21 @@ export function SatelliteApp() {
           windowId={client.windowId}
           entries={[...entries.values()].map((record) => ({
             id: record.panelId,
-            title: record.panelId.startsWith("editor-view:")
-              ? editorTitles[record.panelId]
-              : record.panelId.startsWith("host-view:")
-                ? hostTitles[record.panelId]
-                : record.panelId.startsWith("files:") || record.panelId.startsWith("sftp:")
-                  ? fileTitles[record.panelId]
-                  : record.panelId.startsWith("terminal:")
-                    ? (terminalTitles[record.panelId] ?? "Terminal")
-                    : undefined,
+            title: record.panelId.startsWith("settings-view:")
+              ? t("settings.title")
+              : record.panelId.startsWith("editor-view:")
+                ? editorTitles[record.panelId]
+                : record.panelId.startsWith("host-view:")
+                  ? hostTitles[record.panelId]
+                  : record.panelId.startsWith("files:") || record.panelId.startsWith("sftp:")
+                    ? fileTitles[record.panelId]
+                    : record.panelId.startsWith("terminal:")
+                      ? (terminalTitles[record.panelId] ?? "Terminal")
+                      : undefined,
             key: record.key,
-            content: record.panelId.startsWith("editor-view:") ? (
+            content: record.panelId.startsWith("settings-view:") ? (
+              <NativeSettingsView client={client} record={record} presented={presented} />
+            ) : record.panelId.startsWith("editor-view:") ? (
               <NativeEditorView client={client} record={record} presented={presented} />
             ) : record.panelId.startsWith("host-view:") ? (
               <NativeHostView client={client} record={record} presented={presented} />

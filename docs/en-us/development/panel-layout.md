@@ -1621,3 +1621,32 @@ provider and its authorization/recovery behavior. A native implementation must
 supply that presentation contract as well, rather than substituting the builtin
 form merely because a provider cannot yet move. Stale/hidden/unmounted frames
 retain their read/mutation fences.
+
+### Settings native document contract
+
+The Settings adapter uses the same complete production renderer in main and
+satellite documents, including profiles, proxy editing/diagnostics, updates,
+storage, shortcuts, sources, plugin configuration/security/runtime and runner
+recovery. One persistent main Settings owner retains the writer, real authentication
+and consent dialogs, installation, file choosers and navigation across moves.
+Closing a Settings origin cancels its pending confirmation; it cannot reopen an
+orphan prompt after asynchronous main-window activation.
+
+Ordinary drafts use one bounded nested capture map, retaining unmounted sections
+and arbitrary plugin IDs without relaxing the aggregate capsule limits. Navigation
+request counters travel with drafts: restoring a view does not clear its search.
+Proxy passwords are excluded from capsules, models, layout, descriptors and action
+jobs. They use a private exact-lease/staged-target channel backed by zeroizing
+native memory. Save jobs carry only the credential action; main retrieves the
+private draft after verifying the originating owner. Removal/reload clears native
+drafts, and failed flush/restore cannot acknowledge a destination.
+
+Preferences providers use genuine scoped factory attachments and the same
+persistent `Fields` contract, never duplicate singleton activation. Selected
+factoryless/legacy or non-floating providers remain in main pending their own
+presentation adapter; they are not silently replaced by builtin controls.
+Preferences schema/snapshot/observe calls are explicitly staging-safe retained
+reads, while updates retain committed origin authority through durable commit.
+The closed Settings operation grammar has a regression parity check against the
+main handlers. Source/test completion does not substitute for isolated production
+native-window and credential/authentication roundtrip acceptance.

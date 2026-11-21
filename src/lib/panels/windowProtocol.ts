@@ -1,3 +1,4 @@
+import type { SettingsWindowCommand } from "@/features/settings/window/protocol";
 import type { EditorWindowCommand } from "@/features/editor/editorWindowModel";
 import type { HostDetailCommand } from "@/features/hosts/detail/protocol";
 import type { FileWindowCommand } from "@/features/sftp/fileWindowModel";
@@ -51,6 +52,7 @@ export interface NativePreviewProviderDescriptor extends NativeForwardingProvide
   sourceKind: "local" | "remote";
 }
 export interface NativePanelSnapshot {
+  settingsPages?: Array<{ panelId: string; allowMove: boolean }>;
   hostPages?: Array<{ panelId: string; allowMove: boolean }>;
   editorPages?: Array<{ panelId: string }>;
   filePages?: Array<{ panelId: string; allowMove: boolean }>;
@@ -63,6 +65,7 @@ export interface NativePanelSnapshot {
   transfers: Array<{ offer: PanelTransferOffer; ready: boolean }>;
 }
 export type PanelViewAction =
+  | { kind: "settings"; command: SettingsWindowCommand }
   | { kind: "hostDetail"; command: HostDetailCommand }
   | { kind: "editor"; command: EditorWindowCommand }
   | { kind: "files"; command: FileWindowCommand }
@@ -132,6 +135,13 @@ export type PanelWindowCommand =
   | { action: "failPanelMove"; id: string }
   | { action: "completeAction"; id: string; result: PanelActionResult }
   | { action: "actionResult" | "cancelAction"; id: string }
+  | { action: "readSettingsPasswordForOwner"; lease: PanelLease }
+  | { action: "bindSettingsPage"; panelId: string; allowMove: boolean }
+  | { action: "writeSettingsPassword"; lease: PanelLease; value: string }
+  | {
+      action: "readSettingsPassword";
+      target: { kind: "owned"; lease: PanelLease } | { kind: "staged"; id: string };
+    }
   | { action: "bindEditorPage"; panelId: string }
   | { action: "bindHostPage"; panelId: string; hostId: string; allowMove: boolean }
   | { action: "snapshot" | "ready" | "beginClose" | "cancelClose" }
