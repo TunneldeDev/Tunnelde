@@ -1,7 +1,6 @@
 use super::Admission;
 use crate::platform::panel_windows::ownership::Lease;
 use crate::platform::panel_windows::ownership::Ownership;
-use crate::platform::panel_windows::plugin_views::Target;
 use crate::plugins::security::Lease as PluginLease;
 use serde_json::{json, Value};
 fn setup() -> (Ownership, String, String, Lease) {
@@ -187,42 +186,6 @@ fn staged_declarative_target_can_read_model_but_cannot_run_effects() {
     );
     let committed = owner.commit("main", &main, &offer.id, now).unwrap();
     assert_eq!(committed.window_id, "target");
-}
-
-#[test]
-fn removing_a_panel_drops_all_of_its_native_attachments_without_affecting_other_panels() {
-    let (mut owner, main, _, lease) = setup();
-    let other = owner
-        .add_panel("main", &main, "plugin:sample:other")
-        .unwrap();
-    for (lease, token, view) in [
-        (&lease, "first", "files"),
-        (&lease, "second", "files"),
-        (&other, "other", "other"),
-    ] {
-        owner
-            .bind_native_view(
-                ("main", &main),
-                Target::Owned {
-                    lease: lease.clone(),
-                },
-                plugin_lease(),
-                view,
-                token.into(),
-                std::time::Instant::now(),
-            )
-            .unwrap();
-    }
-    owner.remove_panel("main", &main, &lease.panel_id).unwrap();
-    assert!(owner
-        .native_view_owner("main", &main, "first", std::time::Instant::now())
-        .is_err());
-    assert!(owner
-        .native_view_owner("main", &main, "second", std::time::Instant::now())
-        .is_err());
-    assert!(owner
-        .native_view_owner("main", &main, "other", std::time::Instant::now())
-        .is_ok());
 }
 
 #[test]

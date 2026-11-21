@@ -251,19 +251,6 @@ impl Ownership {
             .values()
             .any(|call| call.fenced && call.panel_id == panel_id)
     }
-    pub(super) fn close_native_views_for_panel(&mut self, panel_id: &str) -> Vec<String> {
-        let tokens: Vec<_> = self
-            .native_views
-            .bindings
-            .iter()
-            .filter(|(_, view)| view.panel_id == panel_id)
-            .map(|(token, _)| token.clone())
-            .collect();
-        for token in &tokens {
-            self.native_views.bindings.remove(token);
-        }
-        tokens
-    }
     pub(super) fn close_native_view(
         &mut self,
         window: &str,
