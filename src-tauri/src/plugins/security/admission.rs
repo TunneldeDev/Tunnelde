@@ -102,13 +102,13 @@ impl PluginSecurity {
         operation: impl FnOnce(&Connection) -> AppResult<T>,
         publish: impl FnOnce(T) -> AppResult<U>,
     ) -> AppResult<U> {
-        self.database_then(
+        self.with_authorized_fenced_database_then(
             db,
-            |policy| {
-                cancelled()?;
-                Self::authorize_lease(policy, lease, permissions)
-            },
-            |_, conn| operation(conn?),
+            lease,
+            permissions,
+            cancelled,
+            None,
+            operation,
             publish,
         )
     }
@@ -171,9 +171,45 @@ impl PluginSecurity {
         authority: Option<&dyn Authority>,
         operation: impl FnOnce(&Connection) -> AppResult<T>,
     ) -> AppResult<T> {
+        self.with_authorized_fenced_database_then(
+            db,
+            lease,
+            permissions,
+            cancelled,
+            authority,
+            operation,
+            Ok,
+        )
+    }
+
+    /// Publish after releasing DB but before releasing original origin/policy.
+    /// Each unsuccessful DB attempt releases every preceding guard. A settings
+    /// writer retains its independent serialization through commit/publication.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "explicit commit and publication phases share one authority boundary"
+    )]
+    pub(in crate::plugins) fn with_authorized_fenced_database_then<T, U>(
+        &self,
+        db: &Database,
+        lease: &Lease,
+        permissions: &[&str],
+        cancelled: impl Fn() -> AppResult<()>,
+        authority: Option<&dyn Authority>,
+        operation: impl FnOnce(&Connection) -> AppResult<T>,
+        publish: impl FnOnce(T) -> AppResult<U>,
+    ) -> AppResult<U> {
         let mut operation = Some(operation);
+        let mut publish = Some(publish);
         self.with_authorized_fenced_attempt(lease, permissions, cancelled, authority, || {
-            db.try_with(|conn| operation.take().expect("database operation admitted once")(conn))
+            match db.try_with(|conn| {
+                operation.take().expect("database operation admitted once")(conn)
+            })? {
+                Some(result) => Ok(Some(publish.take().expect("publication admitted once")(
+                    result,
+                )?)),
+                None => Ok(None),
+            }
         })
     }
 
