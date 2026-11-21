@@ -187,3 +187,5 @@ fn admitted_domain_failure_is_not_retried_and_non_native_callers_keep_existing_a
         42
     );
 }
+
+mod publication;

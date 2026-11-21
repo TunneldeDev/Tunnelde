@@ -1707,3 +1707,16 @@ cleanup scheduling and one invalidation execute. Failures neither publish nor
 replay; cancellation after admission stops delivery, not accepted cleanup. This
 adds no new CAS semantics to existing full-replacement updates and admits no
 import, credential or SSH-creation APIs.
+
+### Durable native preference commit and publication
+
+`preferences.update` no longer wraps a blocking DB wait in an origin lock.
+Each nonblocking attempt admits original origin -> policy -> DB, releasing all
+preceding guards on contention so retirement, revocation or cancellation can
+reject the final commit waiter before DB unlock. After durable success, DB is
+released before memory/revision publication under the same origin/policy boundary.
+The ordered settings writer spans preparation, commit and publication, so the
+next writer cannot read stale memory. Cancellation after admission cannot split
+publication; domain/publication failures are never replayed. Window work,
+credential cleanup and notifications still finish outside these guards. Frozen
+preference contracts, revision checks and the staging write prohibition remain.

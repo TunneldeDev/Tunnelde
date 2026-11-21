@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 修复原生插件偏好更新在数据库繁忙时长时间持有窗口所有权锁的问题；排队期间释放来源与权限锁，持久提交至内存发布仍保留同一授权边界。Fix native plugin preference updates retaining window ownership while the database is busy; queued attempts release origin and policy locks while durable commit and in-memory publication keep one authorization boundary.
+
 - 已提交的原生插件视图可增删改主机与分组、更新使用时间和排序；复用原业务校验、审计与凭据清理，排队期间取消、撤权或来源失效不会迟到写入。Committed native plugin views can manage hosts/groups, last-used times and ordering through the original validation, audit and credential-cleanup services, rejecting cancelled, revoked or retired callers before queued writes.
 
 - 原生插件独立窗口可保存主机路由和自身扩展字段；提交时复核原窗口、文档、权限、包指纹和 revision，等待数据库期间不占用窗口所有权锁，过期操作不会延迟落盘。Native plugin windows can save host routes and their own metadata fields, with original document/permission/package/revision checks at commit and no ownership lock held across database admission waits.
