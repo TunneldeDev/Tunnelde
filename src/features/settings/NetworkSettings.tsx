@@ -27,7 +27,10 @@ export function NetworkSettingsSection() {
         setDefaultProxy: (value) => mutate({ kind: "default", value }),
         setFeatureProxy: (feature, value) => mutate({ kind: "feature", feature, value }),
         removeProfile: (id) => mutate({ kind: "remove", id }),
-        saveProfile: (edit) => useSettings.getState().saveProxyProfile(edit),
+        saveProfile: async (edit) => {
+          const { credentialError } = await useSettings.getState().saveProxyProfile(edit);
+          return { credentialError };
+        },
         renderConnectionTest: (network) => <NetworkConnectionTest settings={network} />,
       }}
     />
