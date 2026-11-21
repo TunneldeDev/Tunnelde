@@ -8,8 +8,9 @@ use crate::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 use tauri::{AppHandle, Manager};
+use zeroize::Zeroizing;
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +36,7 @@ pub(super) struct Adapter {
     pub(super) lease: PluginLease,
     pub(super) runtime_id: String,
     pub(super) descriptor: Descriptor,
+    secrets: HashMap<String, Zeroizing<String>>,
 }
 impl Ownership {
     pub(super) fn declarative_adapters(&self) -> Vec<Descriptor> {
@@ -90,6 +92,7 @@ impl Ownership {
                 lease: admission.plugin,
                 runtime_id: admission.runtime_id,
                 descriptor: descriptor.clone(),
+                secrets: HashMap::new(),
             },
         );
         Ok((descriptor, true))
@@ -114,6 +117,7 @@ impl Ownership {
             return Err("plugin.frontend.adapterChanged");
         }
         self.native_views.declarative.remove(panel_id);
+        self.clear_declarative_secret_panel(panel_id);
         self.reset_plugin_panel(panel_id);
         Ok(true)
     }
@@ -130,6 +134,7 @@ impl Ownership {
             .collect();
         for id in &ids {
             self.native_views.declarative.remove(id);
+            self.clear_declarative_secret_panel(id);
             self.reset_plugin_panel(id);
         }
         !ids.is_empty()
@@ -159,6 +164,65 @@ impl Ownership {
             .get(&panel_id)
             .ok_or("plugin.frontend.undeclaredContribution")?;
         Ok((panel_id, adapter.lease.clone()))
+    }
+    pub(in crate::platform::panel_windows) fn clear_declarative_secrets(&mut self) {
+        for adapter in self.native_views.declarative.values_mut() {
+            adapter.secrets.clear();
+        }
+    }
+    pub(in crate::platform::panel_windows) fn clear_declarative_secret_panel(
+        &mut self,
+        panel_id: &str,
+    ) {
+        if let Some(adapter) = self.native_views.declarative.get_mut(panel_id) {
+            adapter.secrets.clear();
+        }
+    }
+    pub(super) fn read_declarative_secret(
+        &self,
+        window: &str,
+        document: &str,
+        target: &super::Target,
+        key: &str,
+        now: Instant,
+    ) -> Result<String, &'static str> {
+        let (panel_id, _) = self.declarative_target(window, document, target, now)?;
+        let adapter = self
+            .native_views
+            .declarative
+            .get(&panel_id)
+            .ok_or("plugin.frontend.undeclaredContribution")?;
+        Ok(adapter
+            .secrets
+            .get(key)
+            .map_or_else(String::new, |value| value.to_string()))
+    }
+    pub(super) fn write_declarative_secret(
+        &mut self,
+        window: &str,
+        document: &str,
+        target: &super::Target,
+        key: &str,
+        value: String,
+    ) -> Result<(), &'static str> {
+        let super::Target::Owned { lease } = target else {
+            return Err("plugin.frontend.viewNotCommitted");
+        };
+        if key.is_empty() || key.len() > 128 || key.contains('\0') || value.len() > 8192 {
+            return Err("invalid declarative secret");
+        }
+        self.resource_action(window, document, lease)?;
+        let adapter = self
+            .native_views
+            .declarative
+            .get_mut(&lease.panel_id)
+            .ok_or("plugin.frontend.undeclaredContribution")?;
+        if value.is_empty() {
+            adapter.secrets.remove(key);
+        } else {
+            adapter.secrets.insert(key.into(), Zeroizing::new(value));
+        }
+        Ok(())
     }
     pub(super) fn begin_declarative_model(
         &mut self,

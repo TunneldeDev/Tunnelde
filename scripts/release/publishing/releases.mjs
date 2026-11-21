@@ -7,6 +7,7 @@ import {
 } from "../metadata/channels.mjs";
 import { VERSION_PATHS, assertVersionContents } from "../metadata/version-files.mjs";
 import { releaseSection } from "../metadata/notes.mjs";
+import { assertAcceptedBeta } from "./acceptance.mjs";
 
 export async function ensureRelease({
   github,
@@ -38,8 +39,11 @@ export async function ensureRelease({
     const release = matching[0];
     if (release.target_commitish !== sha || release.prerelease !== prerelease)
       throw new Error("Release source/channel mismatch");
-    return release.draft ? tag : "";
+    if (!release.draft) return "";
   }
+  if (releaseChannel(tag) === "stable")
+    await assertAcceptedBeta({ github, repo, stableSha: sha, version: tag.slice(1) });
+  if (matching.length) return tag;
   await github.rest.repos.createRelease({
     ...repo,
     tag_name: tag,
@@ -104,7 +108,15 @@ export async function publishRelease({ github, context, tag }) {
       throw new Error("Invalid prepared release parent");
     // A tagged snapshot remains valid when dev advances during the build.
     await assertAncestor(github, repo, source || sha, "dev");
-  } else await assertAncestor(github, repo, sha, "main");
+  } else {
+    await assertAncestor(github, repo, sha, "main");
+    await assertAcceptedBeta({
+      github,
+      repo,
+      stableSha: sha,
+      version: tag.slice(1),
+    });
+  }
   const newerStable = releases.some((item) => {
     if (item.draft || item.prerelease) return false;
     try {

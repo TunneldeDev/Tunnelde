@@ -98,6 +98,7 @@ export async function runPluginWorkspaceRequest(
       const query = params.query ?? ">";
       if (typeof query !== "string" || query.length > 512 || query.includes("\0"))
         throw new Error("invalid:query");
+      await authorizeRequest();
       useQuickAccess.getState().show(query);
       break;
     }
@@ -106,6 +107,7 @@ export async function runPluginWorkspaceRequest(
       if (typeof params.locked !== "boolean") throw new Error("invalid:locked");
       const pane = workspace.panes.find((item) => item.id === paneId);
       if (!pane) throw new Error("pane.notFound");
+      await authorizeRequest();
       if (!!pane.locked !== params.locked) workspace.togglePaneLock(paneId);
       break;
     }
@@ -128,6 +130,7 @@ export async function runPluginWorkspaceRequest(
         if (typeof ratio !== "number" || !Number.isFinite(ratio) || ratio < 0.1 || ratio > 0.9)
           throw new Error("invalid:ratio");
       }
+      await authorizeRequest();
       workspace.resizeSplits(Object.fromEntries(entries));
       break;
     }
@@ -140,6 +143,7 @@ export async function runPluginWorkspaceRequest(
         layout.kind === "split" &&
         (layout.id === splitId || contains(layout.first) || contains(layout.second));
       if (!contains(workspace.layout)) throw new Error("split.notFound");
+      await authorizeRequest();
       workspace.resizeSplit(splitId, ratio);
       break;
     }
@@ -147,6 +151,7 @@ export async function runPluginWorkspaceRequest(
       const kind = text(params, "kind");
       const page = PAGES.find((item) => item === kind);
       if (!page) throw new Error("invalid:kind");
+      await authorizeRequest();
       workspace.openPage(page, { preview: false });
       break;
     }
@@ -158,6 +163,7 @@ export async function runPluginWorkspaceRequest(
         const hosts = sourceHosts(discovered);
         const host = hosts.find((item) => item.id === hostId);
         if (!host) throw new Error("plugin.hostSources.unavailable");
+        await authorizeRequest();
         useHosts.getState().setSourceHosts(hosts);
         useWorkspace.getState().openHost(host, { preview: false });
         break;
@@ -166,6 +172,7 @@ export async function runPluginWorkspaceRequest(
       await authorizeRequest();
       const host = snapshot.hosts.find((item) => item.id === hostId);
       if (!host) throw new Error("host.notFound");
+      await authorizeRequest();
       useHosts.setState((state) => ({
         groups: snapshot.groups,
         hosts: [...snapshot.hosts, ...state.hosts.filter((item) => item.source)],
@@ -183,20 +190,28 @@ export async function runPluginWorkspaceRequest(
       if (!session) throw new Error("ssh.sessionMissing");
       if (method === "workspace.openTerminal" && session.terminal === false)
         throw new Error("ssh.terminalUnavailable");
+      await authorizeRequest();
       useSsh.setState({ sessions });
       if (method === "workspace.openTerminal") useWorkspace.getState().openTerminal(session);
       else useWorkspace.getState().openSftp(session);
       break;
     }
-    case "workspace.openSidebar":
-      workspace.openSidebar(sidebar(params));
+    case "workspace.openSidebar": {
+      const view = sidebar(params);
+      await authorizeRequest();
+      workspace.openSidebar(view);
       break;
-    case "workspace.returnSidebar":
-      workspace.returnSidebar(sidebar(params));
+    }
+    case "workspace.returnSidebar": {
+      const view = sidebar(params);
+      await authorizeRequest();
+      workspace.returnSidebar(view);
       break;
+    }
     case "workspace.activate": {
       const tabId = text(params, "tabId");
       if (!workspace.tabs.some((tab) => tab.id === tabId)) throw new Error("tab.notFound");
+      await authorizeRequest();
       workspace.activate(tabId);
       break;
     }
@@ -206,6 +221,7 @@ export async function runPluginWorkspaceRequest(
       if (!tab) throw new Error("tab.notFound");
       const dirty = tab.kind === "editor" && useEditors.getState().isDirty(tabId);
       if (dirty && useDialogs.getState().dialog.kind !== "none") throw new Error("dialog.busy");
+      await authorizeRequest();
       closeTab(tab);
       const remaining = useWorkspace.getState().tabs.find((item) => item.id === tabId);
       return {
@@ -223,6 +239,7 @@ export async function runPluginWorkspaceRequest(
       if (!workspace.tabs.some((tab) => tab.id === tabId)) throw new Error("tab.notFound");
       if (target && target !== "root" && !workspace.panes.some((pane) => pane.id === target))
         throw new Error("pane.notFound");
+      await authorizeRequest();
       workspace.splitTab(tabId, direction, position, target);
       break;
     }
@@ -233,6 +250,7 @@ export async function runPluginWorkspaceRequest(
       if (!workspace.tabs.some((tab) => tab.id === tabId)) throw new Error("tab.notFound");
       const pane = workspace.panes.find((item) => item.id === paneId);
       if (!pane || (before && !pane.tabIds.includes(before))) throw new Error("pane.notFound");
+      await authorizeRequest();
       workspace.moveTab(tabId, paneId, before);
       break;
     }

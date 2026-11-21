@@ -12,3 +12,4 @@ export { nextVersion, planDevelopment, maintainReleasePr } from "./planning/prom
 export { ensureRelease, prepareTaggedRelease, publishRelease } from "./publishing/releases.mjs";
 export { prepareBeta } from "./publishing/snapshots.mjs";
 export { prepareStable } from "./publishing/stable.mjs";
+export { acceptBeta, assertAcceptedBeta } from "./publishing/acceptance.mjs";

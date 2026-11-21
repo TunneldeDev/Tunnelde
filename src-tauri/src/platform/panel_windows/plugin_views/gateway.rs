@@ -138,6 +138,15 @@ pub(crate) enum Request {
     ModelDeclarative {
         target: Target,
     },
+    ReadDeclarativeSecret {
+        target: Target,
+        key: String,
+    },
+    WriteDeclarativeSecret {
+        target: Target,
+        key: String,
+        value: String,
+    },
     Open {
         target: Target,
         plugin_id: String,
@@ -543,6 +552,15 @@ pub(crate) async fn panel_window_plugin_view(
         Request::ModelDeclarative { target } => {
             super::declarative::model(app, (window.label(), &document), &target).await
         }
+        Request::ReadDeclarativeSecret { target, key } => Ok(json!(native::lock(&registry)
+            .read_declarative_secret(window.label(), &document, &target, &key, Instant::now(),)
+            .map_err(native::invalid)?)),
+        Request::WriteDeclarativeSecret { target, key, value } => {
+            native::lock(&registry)
+                .write_declarative_secret(window.label(), &document, &target, &key, value)
+                .map_err(native::invalid)?;
+            Ok(Value::Null)
+        }
         Request::Open {
             target,
             plugin_id,
@@ -623,7 +641,7 @@ pub(crate) async fn panel_window_plugin_view(
         } => {
             let policy = frontend::call_policy(&method)
                 .ok_or_else(|| AppError::validation("plugin.frontend.nativeMethodUnavailable"))?;
-            let (call, id, owner) = {
+            let (mut call, id, owner) = {
                 let mut ownership = native::lock(&registry);
                 let owner = current(app, &ownership, window.label(), &document, &token)?;
                 let call = frontend::claim(app, &token, &owner, &request_id, policy)?;
@@ -660,7 +678,8 @@ pub(crate) async fn panel_window_plugin_view(
                             token.clone(),
                             owner,
                         );
-                        let result = origin::scope(origin, call.run(&app, &method, params)).await?;
+                        call.bind_origin(origin);
+                        let result = call.run(&app, &method, params).await?;
                         current(
                             &app,
                             &native::lock(&app.state::<native::Registry>()),

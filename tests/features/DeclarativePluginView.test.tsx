@@ -33,6 +33,21 @@ function fixture() {
   const domain = vi.fn((block: Model["blocks"][number]) => <span>{`Domain: ${block.type}`}</span>);
   const services: DeclarativeViewServices = {
     run,
+    useSecretState<T>(
+      key: string,
+      initial: T | (() => T),
+      _validate: (value: unknown) => value is T,
+    ) {
+      const [value, update] = useState<T>(() =>
+        drafts.has(key)
+          ? (drafts.get(key) as T)
+          : typeof initial === "function"
+            ? (initial as () => T)()
+            : initial,
+      );
+      drafts.set(key, value);
+      return [value, update];
+    },
     useBusyGuard: busy,
     useViewState<T>(key: string, initial: T | (() => T)) {
       const [value, update] = useState<T>(() =>
