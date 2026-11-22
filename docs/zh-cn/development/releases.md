@@ -7,10 +7,10 @@
 `dev` 是默认分支和贡献目标，`main` 是稳定分支。两者均要求通过 PR、解决审查讨论，并通过前端、Rust、Windows/macOS 应用、仓库及策略检查。`dev` 要求线性历史；普通工作可 squash 合并，也可 rebase 合并以保留有意义的独立提交。只有自动生成的发布推进 PR 指向 `main`，且只能使用 **Create a merge commit**。
 
 1. 推送 `dev` 会运行 CI 和 **Development**。自动化读取实际的 `dev`、`main` 引用，并根据 `main` 上 `.github/release-source.json` 记录的上次推进的 `dev` 提交收集后续变更。`dev` 不需要包含 `main` 的发布提交。
-2. 自动创建或刷新唯一的 `release/dev-to-main` PR。其文件树基于 `dev`，另有同步后的版本、源码标记和新的 CHANGELOG 章节。最终准备提交以当前 `main` 和 `dev` 为两个父提交，既保留原始 `dev` 提交及 SHA，也满足严格的分支保护。生成分支可通过强制更新重建，但不会强制更新 `dev`、`main` 或已有标签。
+2. 自动创建唯一的 `release/dev-to-main` 草稿 PR；后续刷新不会为每次 `dev` 推送消耗整套 PR CI。其文件树基于 `dev`，另有同步后的版本、源码标记和新的 CHANGELOG 章节。最终准备提交以当前 `main` 和 `dev` 为两个父提交，既保留原始 `dev` 提交及 SHA，也满足严格的分支保护。生成分支可通过强制更新重建，但不会强制更新 `dev`、`main` 或已有标签。若已有发布 PR 已转为 Ready，自动化会先将其转回 Draft，再替换 head。只有维护者准备合并时，才将最终审查过的 head 标为 **Ready for review**，该操作会启动准确 head 的 PR CI。开发批次尚未完成时，不要提前转为 Ready。
 3. 推送 `dev` 不会发布安装包。通过 **Prepare Beta → Run workflow** 选择当前 `dev` 快照，在隔离提交中同步六处桌面版本和 CHANGELOG，再创建下一个不可变的 `vX.Y.Z-beta.N` 标签。Beta 是明确选择的测试里程碑。
 4. **Publish version** 监听 `push.tags: ["v*"]`。稳定标签发布稳定版，Beta 标签发布预发布版。直接推送标签前，版本清单和发布说明必须一致，源码也必须属于正确的分支历史；支持轻量及附注标签。`GITHUB_TOKEN` 创建的标签不会触发 push 工作流，因此自动化会使用准确标签显式调度同一发布器。已经公开的标签不会重复构建。
-5. 在发布 PR 中审查版本及 CHANGELOG，然后使用 **Create a merge commit** 合并到 `main`。**Stable release** 验证已审查的父提交和文件树，为准确的合并提交打标签；**Publish version** 构建 Windows、Linux、Apple Silicon 和 Intel macOS 安装包。
+5. 开发批次完成后，将生成的发布 PR 标为 **Ready for review**。审查版本及 CHANGELOG，等待其准确 head 的完整 CI 通过，然后使用 **Create a merge commit** 合并到 `main`。**Stable release** 验证已审查的父提交和文件树，为准确的合并提交打标签；**Publish version** 构建 Windows、Linux、Apple Silicon 和 Intel macOS 安装包。
 6. 所有构建先共享一个暂存草稿。全部桌面资源、签名及 `latest.json` 验证成功后才公开。标题使用完整版本标签，例如 `v0.28.0-beta.3` 或 `v0.27.1`。Beta 固定使用 `prerelease: true` 和 `make_latest: false`；稳定版使用 `/releases/latest/`，恢复较旧稳定版本不能将该指针倒退。历史 Release 和不可变标签保留。
 7. 准备稳定标签后，刷新开发自动化以处理推进后累积的工作；没有新变更时不会创建重复发布 PR。
 
@@ -63,7 +63,7 @@ Release 正文包含维护者验收标记 `<!-- tunnelde:beta-accepted -->`。�
 
 使用短期仓库 `GITHUB_TOKEN`，并在 **Settings → Actions → General → Workflow permissions** 中启用 **Allow GitHub Actions to create and approve pull requests**。不需要 PAT、App 密钥、组织级访问或规则集绕过；各工作流分别声明所需权限。自动化可以创建 PR，但不会批准或合并 PR。
 
-自动化将 PR 策略状态写到实际 head。GitHub 可能将机器人创建的 PR 的 `pull_request` CI 标为等待运行审批（`action_required`）。维护者审查生成的差异和准确 head SHA 后，从 PR 的 **Checks** 或对应 Actions 页面批准该次运行，等待该 PR 运行的必需检查通过再合并。批准工作流运行表示允许其代码执行，与批准或合并 PR 是不同的操作。
+自动化将 PR 策略状态写到实际 head。生成的发布 PR 保持 Draft；草稿 head 不运行应用 CI 矩阵。维护者将最终审查过的 head 标为 **Ready for review** 后，`ready_for_review` 会启动该准确 SHA 的 PR CI。GitHub 可能将机器人创建的 PR 的该次运行标为等待审批（`action_required`）。维护者审查生成的差异和准确 head SHA 后，从 PR 的 **Checks** 或对应 Actions 页面批准该次运行，等待该 PR 运行的必需检查通过再合并。批准工作流运行表示允许其代码执行，与批准或合并 PR 是不同的操作。
 
 Development 会在工作流提示中给出 PR 编号和准备好的 SHA。它不会批准自己的 PR 运行，也不会额外调度整组 CI。单独手动运行 CI 不能解除 PR 运行的审批等待。如果 dev 更新后发布 head 已替换，应重新审查并批准新 head 对应的运行，旧提交的成功结果不够。高权限策略工作流只执行受信任目标分支的策略代码，不检出贡献代码；必需检查仍绑定到 Actions。
 
@@ -71,7 +71,7 @@ Development 会在工作流提示中给出 PR 编号和准备好的 SHA。它不
 
 PR 策略按 Conventional Commits 验证标题和每个提交标题。两种贡献合并方式均受此约束，切换到 rebase 也不能引入绕过语义版本规则的消息。策略按当前 PR head 检查完整提交列表，并拒绝不完整历史，包括超过 GitHub 250 个提交列表限制的 PR。引用更新后，策略对不一致的 API 快照采用有限退避重试；重试耗尽仍不完整时拒绝。生成 PR 的检查必须对应准确准备好的 head，即使 PR 已存在，恢复流程也会重新检查策略，但不会重复调度 CI。不可变源文件读取遇到 GitHub 临时服务器错误（500、502、503、504）时最多尝试四次，间隔 1、2、4 秒；永久权限或校验错误立即失败。
 
-生成的发布 PR 保留所有开发提交和一个准备提交。策略根据记录的 `main`/`dev` 引用检查准备提交的两个父提交，拒绝发布元数据以外的改动。即使源码标记未变化，旧的单父准备提交也会重新生成。稳定发布会拒绝对保留历史的准备提交执行 squash/rebase，也会拒绝与已审查文件树不一致的合并结果。高权限策略只读取提交元数据和可信基础分支代码，不执行贡献代码。
+生成的发布 PR 在源码仍在变化时保持 Draft，并保留所有开发提交和一个准备提交。策略根据记录的 `main`/`dev` 引用检查准备提交的两个父提交，拒绝发布元数据以外的改动。即使源码标记未变化，旧的单父准备提交也会重新生成。稳定发布会拒绝对保留历史的准备提交执行 squash/rebase，也会拒绝与已审查文件树不一致的合并结果。高权限策略只读取提交元数据和可信基础分支代码，不执行贡献代码。
 
 无论采用哪种合并方式，发布汇总都读取实际保留的提交消息，并按整个批次中的最高语义升级幅度确定版本。rebase 后的提交即使 SHA 不等于 PR 最终合并 SHA，也会关联到已合并 PR。CHANGELOG 保留独立标题、PR/提交链接、原提交作者、PR 作者及识别到的共同作者标记。
 

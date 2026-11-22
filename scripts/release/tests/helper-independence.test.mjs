@@ -36,3 +36,19 @@ test("branch protection requires the remaining application checks without remove
       assert(checks.includes(name), `${path}: missing ${name}`);
   }
 });
+
+test("pull-request CI runs only for a non-draft reviewable head", () => {
+  const ci = read(".github/workflows/ci.yml");
+  assert.match(
+    ci,
+    /pull_request:\n\s+branches: \[main, dev\]\n\s+types: \[[^\]]*ready_for_review[^\]]*\]/,
+  );
+  assert.equal(
+    [
+      ...ci.matchAll(
+        /^\s{4}if: github\.event_name != 'pull_request' \|\| !github\.event\.pull_request\.draft$/gm,
+      ),
+    ].length,
+    5,
+  );
+});
