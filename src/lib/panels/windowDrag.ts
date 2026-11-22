@@ -35,8 +35,9 @@ export function installPanelWindowDrag(
   const cancel = (current: Gesture) => {
     current.ended = true;
     stopRenewal(current);
-    if (current.token)
-      void client.control({ action: "cancelDrag", token: current.token }).catch(() => {});
+    const token = current.token;
+    current.token = undefined;
+    if (token) void client.control({ action: "cancelDrag", token }).catch(() => {});
   };
   const start = (event: DragEvent) => {
     if (!event.dataTransfer || disposed) return;
@@ -69,15 +70,18 @@ export function installPanelWindowDrag(
           // token while the source document still owns this gesture.
           current.renewal = window.setInterval(() => {
             if (current.ended || disposed || !current.token) return;
-            void client
-              .control({ action: "renewDrag", token: current.token })
-              .catch(() => cancel(current));
+            void client.control({ action: "renewDrag", token: current.token }).catch((error) => {
+              cancel(current);
+              if (!disposed) failure(error);
+            });
           }, DRAG_RENEWAL_MS);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         // A local drag is still valid while native movement is blocked. Do not
-        // interrupt it with a toast; no native grant means no cross-window move.
+        // interrupt it with a toast, but preserve the native failure for
+        // diagnostics: otherwise a cross-window drag appears to fail silently.
+        if (!disposed) failure(error);
       });
   };
   const finish = (event: Event) => {

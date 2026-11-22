@@ -81,6 +81,40 @@ it("leaves a release inside the same native window to the local workspace", asyn
   await flush();
   expect(f.move).not.toHaveBeenCalled();
 });
+it("reports native grant failures without interrupting the local drag", async () => {
+  const f = fixture();
+  f.control.mockImplementation((request) =>
+    request.action === "issueDrag"
+      ? Promise.reject<string>(new Error("native grant unavailable"))
+      : Promise.resolve(null),
+  );
+  f.start();
+  await flush();
+  expect(f.failure).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ message: "native grant unavailable" }),
+  );
+  f.finish();
+  expect(f.releaseDrag).not.toHaveBeenCalled();
+});
+it("reports renewal failures and retires the stale grant", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture();
+    f.start();
+    f.resolveGrant("token");
+    await flush();
+    f.control.mockRejectedValueOnce(new Error("renewal expired"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.control).toHaveBeenCalledWith({ action: "cancelDrag", token: "token" });
+    expect(f.failure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ message: "renewal expired" }),
+    );
+    f.finish();
+    expect(f.releaseDrag).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("renews a held native grant without replacing its single-use token", async () => {
   vi.useFakeTimers();
   try {
