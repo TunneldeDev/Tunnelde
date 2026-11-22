@@ -124,6 +124,7 @@ async fn host_field_wait_rechecks_package_before_db_unlock_without_late_write() 
                 params,
                 cancel,
                 None,
+                None,
             )
         })
         .await
@@ -181,6 +182,7 @@ async fn host_field_wait_rechecks_revocation_and_preserves_original_cas() {
                 params,
                 cancel,
                 None,
+                None,
             )
         })
         .await
@@ -229,6 +231,7 @@ async fn host_field_wait_rechecks_revocation_and_preserves_original_cas() {
             "hosts.setFields",
             fixture.params.clone(),
             &cancel,
+            None,
             None
         )
         .unwrap()
@@ -245,6 +248,7 @@ async fn host_field_wait_rechecks_revocation_and_preserves_original_cas() {
             "hosts.setFields",
             fixture.params.clone(),
             &cancel,
+            None,
             None
         )
         .err()
@@ -272,6 +276,7 @@ fn retired_native_fields_origin_cannot_commit_a_valid_original_revision() {
         fixture.params.clone(),
         &cancel,
         Some(&RetiredOrigin),
+        None,
     )
     .err()
     .unwrap();
@@ -284,6 +289,7 @@ fn retired_native_fields_origin_cannot_commit_a_valid_original_revision() {
         "hosts.getFields",
         json!({"hostId":"target"}),
         &cancel,
+        None,
         None,
     )
     .unwrap();
@@ -328,6 +334,7 @@ async fn native_fields_origin_can_retire_while_database_is_occupied() {
                 params,
                 cancel,
                 Some(native.as_ref()),
+                None,
             )
         })
         .await
@@ -357,6 +364,7 @@ async fn native_fields_origin_can_retire_while_database_is_occupied() {
         json!({"hostId":"target"}),
         &cancel,
         None,
+        None,
     )
     .unwrap();
     assert_eq!(snapshot.document.revision, 0);
@@ -374,6 +382,7 @@ fn native_fields_writes_preserve_plugin_schema_and_original_cas() {
         fixture.params.clone(),
         &cancel,
         Some(&origin),
+        None,
     )
     .unwrap();
     assert_eq!(snapshot.document.revision, 1);
@@ -387,6 +396,7 @@ fn native_fields_writes_preserve_plugin_schema_and_original_cas() {
         fixture.params.clone(),
         &cancel,
         Some(&origin),
+        None,
     )
     .err()
     .unwrap();
@@ -423,6 +433,7 @@ fn native_origin_does_not_supply_a_missing_host_write_grant() {
         fixture.params.clone(),
         &cancel,
         Some(&origin),
+        None,
     )
     .err()
     .unwrap();
@@ -436,6 +447,7 @@ fn native_origin_does_not_supply_a_missing_host_write_grant() {
             "hosts.getFields",
             json!({"hostId":"target"}),
             &cancel,
+            None,
             None
         )
         .unwrap()

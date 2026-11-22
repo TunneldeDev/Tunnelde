@@ -21,7 +21,12 @@ pub(super) async fn dispatch(
             let worker = context.clone();
             encode(
                 read::observe(&context.app, request, move || match &origin {
-                    Some(origin) => origin.with_current(|| authorize(&worker, &["settings.read"])),
+                    Some(origin) => origin.with_current(|| {
+                        authorize(&worker, &["settings.read"])?;
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::StagedData,
+                        )
+                    }),
                     None => authorize(&worker, &["settings.read"]),
                 })
                 .await?,
@@ -32,12 +37,21 @@ pub(super) async fn dispatch(
                 return Err(AppError::validation("plugin.api.invalid:params"));
             }
             if method == "preferences.schema" {
-                return encode(preferences::describe());
+                let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+                crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+                let value = encode(preferences::describe());
+                crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+                return value;
             }
             let worker = context.clone();
             encode(
                 read::snapshot(&context.app, move || match &origin {
-                    Some(origin) => origin.with_current(|| authorize(&worker, &["settings.read"])),
+                    Some(origin) => origin.with_current(|| {
+                        authorize(&worker, &["settings.read"])?;
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::StagedData,
+                        )
+                    }),
                     None => authorize(&worker, &["settings.read"]),
                 })
                 .await?,

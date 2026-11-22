@@ -22,6 +22,15 @@ SDK 的 `sdk/runtime/resources/client.mjs` 提供严格签名，不允许动态�
 
 实现按领域和职责分类：`plugins/runtime/ownership/` 管预留所有权；`runtime/lifecycle/contracts/` 管传输 DTO；`adapters/` 分领域桥接；`projection.rs`、`admission.rs`、`rpc.rs` 分别负责分页、并发预算和传输协调。各领域的生命周期辅助代码保留在真实注册表旁。公开 TypeScript 契约放在 `contracts/runtime/lifecycle/`，SDK 数据类型、方法目录、客户端契约及实现分开，并在同步中检查。原协议版本及 stable API 不变。
 
+原生视图调用在资源 RPC 的受限 worker 中保留准确发起文档和 lease。`identify` 可供
+staging 恢复使用；`release` 只能在提交后执行，并在实际清理前重验原始来源。延迟结果或
+清理不能被替代视图接受。受作用域工具调用与普通非原生传输继续保留原有客户端／请求及授权检查。
+
+同一规则适用于封闭的读取目录：每个标记为 staging-safe 的方法都必须在实际的内存、数据库、
+文件系统或长轮询读取前后重验原始来源。协调器回复不能把 staging 读取升级为提交效果，也不能
+把延迟快照交给替代视图。自有传输的状态查询和取消只按运行实例所有权判断，不应额外要求无关的
+SFTP 权限。策略表与实际检查由 Rust 测试覆盖；新增方法必须同时提供两者。
+
 ## 显式识别资源
 
 `resources.identify({kind, id})` 返回当前运行拥有的一项已提交资源，结构仍为

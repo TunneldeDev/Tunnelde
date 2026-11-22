@@ -14,12 +14,19 @@ pub(super) fn dispatch(context: &HostContext, method: &str, params: Value) -> Ap
             .plugins
             .security
             .with_authorized(&lease, &["forwards.read"], || {
-                state.db.with(|conn| {
+                crate::platform::panel_windows::plugin_views::origin::check(
+                    crate::plugins::frontend::native::CallPolicy::StagedData,
+                )?;
+                let value = state.db.with(|conn| {
                     encode(groups::list(
                         conn,
                         optional::<String>(&params, "hostId")?.as_deref(),
                     )?)
-                })
+                })?;
+                crate::platform::panel_windows::plugin_views::origin::check(
+                    crate::plugins::frontend::native::CallPolicy::StagedData,
+                )?;
+                Ok(value)
             });
     }
     let origin = crate::platform::panel_windows::plugin_views::origin::current();

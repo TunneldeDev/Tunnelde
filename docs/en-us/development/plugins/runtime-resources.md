@@ -29,6 +29,14 @@ disposal. A delayed result or cleanup cannot be accepted by a replacement view.
 Scoped tool calls and ordinary non-native transports retain their existing
 client/request and grant checks.
 
+The same boundary rule applies to the closed read catalogue: every method marked
+staging-safe rechecks its original origin before and after the actual in-memory,
+database, filesystem or long-poll read. A coordinator reply cannot convert a staged
+read into a committed effect or deliver a delayed snapshot to a replacement view.
+Owned transfer status/cancellation remains ownership-scoped and does not require an
+unrelated SFTP permission. The policy table and the actual checks are covered by
+Rust tests; adding a method requires both.
+
 ## Identify a resource explicitly
 
 `resources.identify({kind, id})` returns the same `{handle, kind, state}` item for one

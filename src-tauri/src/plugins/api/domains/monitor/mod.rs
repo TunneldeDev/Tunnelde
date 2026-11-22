@@ -14,33 +14,37 @@ pub(in crate::plugins::api) async fn dispatch(
 ) -> AppResult<Value> {
     let app = &context.app;
     let state = app.state::<AppState>();
-    let check = || {
-        if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
-            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
-        }
-        Ok::<(), AppError>(())
-    };
+    let check = |policy| crate::platform::panel_windows::plugin_views::origin::check(policy);
     match method {
-        "monitor.system" => encode(commands::system_stats(state)),
+        "monitor.system" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            check(staged)?;
+            let value = encode(commands::system_stats(state));
+            check(staged)?;
+            value
+        }
         "monitor.stats" => {
-            check()?;
+            let owned = crate::plugins::frontend::native::CallPolicy::OwnedData;
+            check(owned)?;
             let value =
                 encode(commands::remote_stats(app.clone(), field(&params, "sessionId")?).await?);
-            check()?;
+            check(owned)?;
             value
         }
         "monitor.processes" => {
-            check()?;
+            let owned = crate::plugins::frontend::native::CallPolicy::OwnedData;
+            check(owned)?;
             let value = encode(
                 commands::remote_processes(app.clone(), field(&params, "sessionId")?).await?,
             );
-            check()?;
+            check(owned)?;
             value
         }
         "monitor.kill" => {
             // Monitor reads and the process mutation all retain the original
             // native origin through their actual SSH dispatch.
-            check()?;
+            let owned = crate::plugins::frontend::native::CallPolicy::OwnedData;
+            check(owned)?;
             commands::remote_kill(
                 app.clone(),
                 field(&params, "sessionId")?,
@@ -48,7 +52,7 @@ pub(in crate::plugins::api) async fn dispatch(
                 None,
             )
             .await?;
-            check()?;
+            check(owned)?;
             Ok(Value::Null)
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),

@@ -36,7 +36,10 @@ pub(super) async fn dispatch(
             let state = worker.app.state::<AppState>();
             let check = || {
                 ticket.check()?;
-                authorize(&worker, &["settings.read"])
+                authorize(&worker, &["settings.read"])?;
+                crate::platform::panel_windows::plugin_views::origin::check(
+                    crate::plugins::frontend::native::CallPolicy::StagedData,
+                )
             };
             (match request {
                 Some(request) => content::read(&state.db, request, check).and_then(encode),
@@ -65,7 +68,10 @@ pub(super) async fn dispatch(
     let worker = context.clone();
     encode(
         observation::checked(&context.app, request, move || {
-            authorize(&worker, &["settings.read"])
+            authorize(&worker, &["settings.read"])?;
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )
         })
         .await?,
     )

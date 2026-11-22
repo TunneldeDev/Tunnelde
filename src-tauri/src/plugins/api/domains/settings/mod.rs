@@ -24,7 +24,13 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
-        "settings.get" => encode(crate::services::settings::read(&state)),
+        "settings.get" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            let value = encode(crate::services::settings::read(&state));
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            value
+        }
         "settings.update" => {
             let patch: Value = field(&params, "patch")?;
             if !patch.is_object() {

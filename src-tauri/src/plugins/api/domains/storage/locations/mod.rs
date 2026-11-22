@@ -38,9 +38,9 @@ pub(super) async fn dispatch(
     let operation = Operation::admit()?;
     let paths = context.app.state::<AppState>().storage.clone();
     let origin = crate::platform::panel_windows::plugin_views::origin::current();
-    let check_origin = move || {
+    let check_origin = move |policy| {
         if let Some(origin) = &origin {
-            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+            origin.authorize_call(policy)?;
         }
         Ok::<(), AppError>(())
     };
@@ -51,7 +51,8 @@ pub(super) async fn dispatch(
         return tauri::async_runtime::spawn_blocking(move || {
             public::observe(&paths, request, || {
                 ticket.check()?;
-                authorize(&context, READ)
+                authorize(&context, READ)?;
+                check_origin(crate::plugins::frontend::native::CallPolicy::StagedData)
             })
             .and_then(encode)
             .map_err(redacted)
@@ -149,7 +150,7 @@ pub(super) async fn dispatch(
             generation: worker.generation,
         };
         let persist = |save: &dyn Fn() -> AppResult<()>| {
-            check_origin()?;
+            check_origin(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
             state.plugins.security.with_authorized(&lease, WRITE, save)
         };
         match schedule {
@@ -159,7 +160,7 @@ pub(super) async fn dispatch(
                 || {
                     ticket.check()?;
                     authorize(&worker, WRITE)?;
-                    check_origin()?;
+                    check_origin(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
                     Ok(())
                 },
                 || ticket.commit(),
@@ -171,7 +172,7 @@ pub(super) async fn dispatch(
                 || {
                     ticket.check()?;
                     authorize(&worker, WRITE)?;
-                    check_origin()?;
+                    check_origin(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
                     Ok(())
                 },
                 || ticket.commit(),

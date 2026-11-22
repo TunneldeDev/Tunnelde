@@ -109,6 +109,7 @@ fn policy(method: &str) -> Option<CallPolicy> {
         | "sessions.list"
         | "files.local.home"
         | "files.transferStatus"
+        | "monitor.system"
         | "resources.snapshot"
         | "workspace.snapshot"
         | "workspace.panels.list"
@@ -196,7 +197,6 @@ fn policy(method: &str) -> Option<CallPolicy> {
         "app.openExternal"
         | "clipboard.readText"
         | "clipboard.writeText"
-        | "monitor.system"
         | "monitor.stats"
         | "monitor.processes"
         | "history.record"
@@ -281,6 +281,7 @@ mod workspace_and_file_tests {
             "sessions.list",
             "files.local.home",
             "files.transferStatus",
+            "monitor.system",
             "resources.snapshot",
             "workspace.snapshot",
             "workspace.panels.list",
@@ -379,7 +380,6 @@ mod workspace_and_file_tests {
             "app.openExternal",
             "clipboard.readText",
             "clipboard.writeText",
-            "monitor.system",
             "monitor.stats",
             "monitor.processes",
             "history.record",
@@ -429,6 +429,64 @@ mod workspace_and_file_tests {
 #[cfg(test)]
 mod catalogue_coverage_tests {
     use super::*;
+    #[test]
+    fn staged_reads_and_effect_boundaries_are_cross_checked_by_catalogue() {
+        // The native policy is the admission class. These representative methods
+        // must also have actual domain-boundary checks, not merely a green
+        // catalogue entry: transfer status is a staged snapshot, cancellation is
+        // an owned effect without a synthetic SFTP permission, and monitor.system
+        // is a staged local snapshot.
+        assert_eq!(
+            call_policy("files.transferStatus"),
+            Some(CallPolicy::StagedData)
+        );
+        assert_eq!(
+            call_policy("files.cancelTransfer"),
+            Some(CallPolicy::OwnedData)
+        );
+        assert_eq!(call_policy("monitor.system"), Some(CallPolicy::StagedData));
+        for method in [
+            "history.list",
+            "sessions.list",
+            "forwards.list",
+            "forwards.groups.list",
+            "forwards.automation.list",
+            "settings.get",
+            "preferences.snapshot",
+            "preferences.observe",
+            "profiles.catalogue",
+            "profiles.read",
+            "hosts.snapshot",
+            "hosts.sourcesSnapshot",
+            "hosts.transfer.export",
+            "hosts.transfer.preview",
+            "hosts.routes.get",
+            "hosts.routes.observe",
+            "hosts.getFields",
+            "storage.locations.observe",
+            "storage.recovery.observe",
+            "workspace.snapshot",
+            "workspace.panels.list",
+            "workspace.panels.observe",
+            "workspace.windows.list",
+            "workspace.windows.observe",
+            "mounts.list",
+            "mounts.connections.list",
+            "mounts.connections.get",
+            "mounts.operations.list",
+            "mounts.operations.get",
+            "runners.list",
+            "resources.identify",
+            "files.content.observe",
+        ] {
+            assert_eq!(
+                call_policy(method),
+                Some(CallPolicy::StagedData),
+                "{method}"
+            );
+        }
+    }
+
     #[test]
     fn every_public_rpc_has_an_exact_native_policy() {
         for method in crate::plugins::api::METHODS.iter() {

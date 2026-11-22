@@ -71,6 +71,30 @@ fn host_id(context: &HostContext, session: &str) -> AppResult<String> {
 
 pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
     let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    if method == "runners.list" {
+        let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+        let worker = context.clone();
+        let origin = origin.clone();
+        return tauri::async_runtime::spawn_blocking(move || {
+            let check = || {
+                authorize(&worker, &["ssh.exec"])?;
+                if let Some(origin) = &origin {
+                    origin.authorize_call(staged)?;
+                }
+                Ok::<(), AppError>(())
+            };
+            check()?;
+            let value = json!(repository::read(&worker)?
+                .iter()
+                .filter(|record| record.deployment_ready())
+                .map(contracts::Snapshot::from)
+                .collect::<Vec<_>>());
+            check()?;
+            Ok(value)
+        })
+        .await
+        .map_err(|_| AppError::internal("plugin.runners.unavailable"))?;
+    }
     let check = || {
         authorize(context, &["ssh.exec"])?;
         if let Some(origin) = &origin {
@@ -80,11 +104,6 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
     };
     check()?;
     let result = match method {
-        "runners.list" => Ok(json!(repository::read(context)?
-            .iter()
-            .filter(|record| record.deployment_ready())
-            .map(contracts::Snapshot::from)
-            .collect::<Vec<_>>())),
         "runners.deploy" => deployment::deploy_with_origin(context, params, origin.clone()).await,
         "runners.start" => {
             operations::start_with_origin(context, params, false, origin.clone()).await

@@ -144,17 +144,26 @@ pub(crate) fn snapshot(app: &AppHandle) -> Value {
     snapshot
 }
 
-pub(crate) async fn observe(app: &AppHandle, revision: Option<String>) -> Value {
+pub(crate) async fn observe(
+    app: &AppHandle,
+    revision: Option<String>,
+    authorize: impl Fn() -> AppResult<()>,
+) -> AppResult<Value> {
     let registry = app.state::<native::Registry>();
     let mut changes = registry.public.changed.subscribe();
+    authorize()?;
     let current = snapshot(app);
+    authorize()?;
     if current["revision"].as_str() != revision.as_deref() {
-        return current;
+        return Ok(current);
     }
     // Subscription precedes inspection. Native teardown/reload and long-poll
     // cancellation drop the receiver; no detached per-plugin polling worker.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(10), changes.changed()).await;
-    snapshot(app)
+    authorize()?;
+    let current = snapshot(app);
+    authorize()?;
+    Ok(current)
 }
 
 fn authorized(app: &AppHandle, owner: &PluginLease) -> AppResult<()> {
