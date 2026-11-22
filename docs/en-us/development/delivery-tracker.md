@@ -25,17 +25,18 @@ issue comment history.
 | Beta containing #523 and #524                         | done    | [`v2.8.0-beta.2`](https://github.com/TunneldeDev/Tunnelde/releases/tag/v2.8.0-beta.2) published from `7e226069`; run `45011603981` passed all platforms and final verification; 13 non-empty assets. |
 | Release PR lifecycle: draft by default                | done    | PR #525; exact-head CI `45013626939` passed; release PR #520 is draft and refresh automation preserves that state.                                                                                   |
 | CI SSH-agent flake containment                        | done    | PR #526; exact-head CI `45016889062` passed; the dedicated close-ack job runs only the four vendored regressions.                                                                                    |
+| Long-held drag grant renewal                          | done    | PR #528; exact-head CI `45023678289` passed; the original single-use token renews every 10s while held instead of expiring after 30s.                                                                |
 | Issue #468 remaining rollout                          | pending | See the acceptance checklist below and the issue itself.                                                                                                                                             |
 
 ## Issue #468 remaining acceptance
 
-| Workstream                                          | State       | Completion condition                                                                                                                                      |
-| --------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Genuine factoryless/legacy plugin view presentation | pending     | Present legacy views without fake factories or activation replay; require explicit state-loss consent where state cannot be restored.                     |
-| Physical pointer and cross-window drag              | pending     | Verify capture/release, outside-window detach and cross-window drops on Windows/Linux, including negative coordinates, multiple displays and mixed DPI.   |
-| SSH/FUSE continuity                                 | pending     | Exercise real SSH and FUSE recovery, cleanup, reconnect and retained state; test seams alone do not satisfy this item.                                    |
-| Intermittent detached-panel error                   | in progress | Reproduce with the structured `panel.window.*` diagnostics shipped in #523, identify the pointer grant/release race, fix it and retain a regression test. |
-| Final rollout acceptance                            | pending     | Complete the required items above, publish an accepted Beta and only then prepare the stable release.                                                     |
+| Workstream                                          | State       | Completion condition                                                                                                                                    |
+| --------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Genuine factoryless/legacy plugin view presentation | pending     | Present legacy views without fake factories or activation replay; require explicit state-loss consent where state cannot be restored.                   |
+| Physical pointer and cross-window drag              | pending     | Verify capture/release, outside-window detach and cross-window drops on Windows/Linux, including negative coordinates, multiple displays and mixed DPI. |
+| SSH/FUSE continuity                                 | pending     | Exercise real SSH and FUSE recovery, cleanup, reconnect and retained state; test seams alone do not satisfy this item.                                  |
+| Intermittent detached-panel error                   | in progress | PR #528 fixes the deterministic 30s grant-expiry path. Verify the installed Beta scenario and use structured diagnostics for any remaining path.        |
+| Final rollout acceptance                            | pending     | Complete the required items above, publish an accepted Beta and only then prepare the stable release.                                                   |
 
 ## Release nodes
 
