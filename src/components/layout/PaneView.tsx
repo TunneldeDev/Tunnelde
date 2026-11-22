@@ -174,6 +174,7 @@ function TabStrip({
     !sidebarOpen &&
     topCornerPane(layout, "left") === pane.id;
   const [before, setBefore] = useState<string | null>(null);
+  const [dropActive, setDropActive] = useState(false);
   const strip = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -290,7 +291,7 @@ function TabStrip({
       ) : null}
       <div
         ref={strip}
-        className="pane__tabs"
+        className={cn("pane__tabs", dropActive && before === null && "is-drop-end")}
         role="tablist"
         onDragOver={(event) => {
           if (!isWorkspaceDrag(event.dataTransfer)) {
@@ -298,17 +299,22 @@ function TabStrip({
           }
           event.preventDefault();
           event.dataTransfer.dropEffect = "move";
+          setDropActive(true);
           const rect = event.currentTarget.getBoundingClientRect();
           if (event.clientX < rect.left + 36) event.currentTarget.scrollLeft -= 18;
           if (event.clientX > rect.right - 36) event.currentTarget.scrollLeft += 18;
           setBefore(dropIndex(event));
         }}
         onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBefore(null);
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setBefore(null);
+            setDropActive(false);
+          }
         }}
         onDrop={(event) => {
           const target = dropIndex(event);
           setBefore(null);
+          setDropActive(false);
           const dropped = readWorkspaceDrop(event.dataTransfer);
           if (!dropped) {
             return;

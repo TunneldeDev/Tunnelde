@@ -542,6 +542,8 @@ describe("AppShell workspace drag routing", () => {
     expect(over.event.defaultPrevented).toBe(true);
     expect(over.transfer.dropEffect).toBe("move");
     expect(first.classList.contains("is-drop-before")).toBe(true);
+    const strip = first.closest(".pane__tabs")!;
+    expect(strip.classList.contains("is-drop-end")).toBe(false);
     drag(label, "drop", 120, 65);
     expect(useWorkspace.getState().panes).toHaveLength(2);
     expect(useWorkspace.getState().panes[0]?.tabIds).toEqual(["terminal:b", "terminal:a"]);
@@ -549,6 +551,18 @@ describe("AppShell workspace drag routing", () => {
       id: "initial-split",
       direction: "row",
     });
+  });
+
+  it("shows an end-of-strip insertion line when the pointer is past the last tab", () => {
+    const { workspace } = renderWorkspace();
+    const firstStrip = workspace.querySelector(".pane__tabs")!;
+    const tabs = [...firstStrip.querySelectorAll<HTMLElement>("[data-tab-id]")];
+    const last = tabs.at(-1)!;
+    vi.spyOn(last, "getBoundingClientRect").mockReturnValue(rectangle(220, 50, 120, 34));
+    const over = drag(last, "dragover", 390, 65);
+    expect(over.event.defaultPrevented).toBe(true);
+    expect(firstStrip.classList.contains("is-drop-end")).toBe(true);
+    expect(firstStrip.querySelector(".td-tab.is-drop-before")).toBeNull();
   });
 
   it("captures a workspace edge drop to split the entire layout", () => {
