@@ -96,6 +96,7 @@ function Group({
   const body = useRef<HTMLDivElement>(null);
   const [hint, setHint] = useState<PanelDropZone | "merge" | null>(null);
   const [before, setBefore] = useState<string | null>(null);
+  const [dropActive, setDropActive] = useState(false);
   useEffect(() => {
     const clear = () => {
       setBefore(null);
@@ -157,7 +158,7 @@ function Group({
     <section className="panel-workspace__group" data-local-group={id}>
       <div className="pane__header">
         <div
-          className="pane__tabs"
+          className={`pane__tabs${dropActive && before === null ? " is-drop-end" : ""}`}
           role="tablist"
           ref={strip}
           onDragOver={(event) => {
@@ -165,6 +166,7 @@ function Group({
             event.preventDefault();
             event.stopPropagation();
             event.dataTransfer.dropEffect = "move";
+            setDropActive(true);
             const tabs = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-local-tab]")];
             setBefore(
               tabs.find(
@@ -178,7 +180,10 @@ function Group({
             if (event.clientX > bounds.right - 36) event.currentTarget.scrollLeft += 18;
           }}
           onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBefore(null);
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setBefore(null);
+              setDropActive(false);
+            }
           }}
           onDrop={(event) => {
             const panel = readLocalPanelDrag(workspace, event.dataTransfer);
@@ -188,6 +193,7 @@ function Group({
             // Dropping before itself is a no-op, not an implicit move to end.
             if (panel !== before) workspace.dock(panel, group.id, before ?? undefined);
             setBefore(null);
+            setDropActive(false);
             endLocalPanelDrag();
           }}
         >
@@ -201,6 +207,7 @@ function Group({
               onDragStart={(event) => startLocalPanelDrag(workspace, panel, event.dataTransfer)}
               onDragEnd={() => {
                 setBefore(null);
+                setDropActive(false);
                 setHint(null);
                 endLocalPanelDrag();
               }}
