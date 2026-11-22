@@ -70,19 +70,35 @@ fn host_id(context: &HostContext, session: &str) -> AppResult<String> {
 }
 
 pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
-    authorize(context, &["ssh.exec"])?;
-    match method {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check = || {
+        authorize(context, &["ssh.exec"])?;
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::RunnerEffect)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check()?;
+    let result = match method {
         "runners.list" => Ok(json!(repository::read(context)?
             .iter()
             .filter(|record| record.deployment_ready())
             .map(contracts::Snapshot::from)
             .collect::<Vec<_>>())),
-        "runners.deploy" => deployment::deploy(context, params).await,
-        "runners.start" => operations::start(context, params, false).await,
-        "runners.startInitialized" => operations::start(context, params, true).await,
+        "runners.deploy" => deployment::deploy_with_origin(context, params, origin.clone()).await,
+        "runners.start" => {
+            operations::start_with_origin(context, params, false, origin.clone()).await
+        }
+        "runners.startInitialized" => {
+            operations::start_with_origin(context, params, true, origin.clone()).await
+        }
         "runners.review" => review::dispatch(context, params).await,
         _ => operations::action(context, method, params).await,
+    };
+    if result.is_ok() {
+        check()?;
     }
+    result
 }
 
 #[cfg(test)]

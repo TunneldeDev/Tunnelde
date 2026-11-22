@@ -33,6 +33,12 @@ pub(crate) enum CallPolicy {
     MountForceUnmount,
     /// Fenced through receipt publication; the host owns subsequent steps.
     MountSubmission,
+    /// Owned durable runner launch/control; current-record checks span channel IO.
+    RunnerEffect,
+    /// Owned process spawn or stdin/stop control; the runtime owns the process.
+    TaskEffect,
+    /// Pure plugin-scoped storage metadata and the plugin's own log stream.
+    PluginStorageData,
 }
 impl CallPolicy {
     pub(crate) fn staged(self) -> bool {
@@ -71,6 +77,8 @@ fn policy(method: &str) -> Option<CallPolicy> {
         // No default writes, migrations, credentials, SSH or OS prompts.
         "app.info"
         | "settings.get"
+        | "resources.identify"
+        | "runners.list"
         | "history.list"
         | "forwards.list"
         | "forwards.groups.list"
@@ -115,6 +123,14 @@ fn policy(method: &str) -> Option<CallPolicy> {
         | "fileBrowser.read"
         | "filePreview.observe"
         | "filePreview.providers" => Some(CallPolicy::StagedData),
+        "files.content.prepare"
+        | "files.content.open"
+        | "files.content.read"
+        | "files.content.close" => Some(CallPolicy::OwnedData),
+        "files.content.observe" => Some(CallPolicy::StagedData),
+        // Remote process termination is a committed network mutation. It stays
+        // unavailable to scoped tools until its own target contract exists.
+        "monitor.kill" => Some(CallPolicy::OwnedData),
         // Mutations await actual I/O; even keyring reads can prompt/perform OS
         // work, so they are NOT admitted during staging.
         "hosts.routes.save"
@@ -209,15 +225,50 @@ fn policy(method: &str) -> Option<CallPolicy> {
         | "hosts.transfer.apply"
         | "settings.update"
         | "preferences.update"
-        | "storage.set"
+        | "events.publish"
+        | "log"
+        | "logs.read"
+        | "storage.locations.schedule"
+        | "storage.locations.cancel"
+        | "storage.recovery.request"
+        | "profiles.drafts.prepare"
+        | "profiles.drafts.append"
+        | "profiles.drafts.discard"
+        | "profiles.save"
+        | "profiles.rename"
+        | "profiles.delete"
+        | "profiles.activate"
+        | "forwards.start"
+        | "forwards.startManaged"
+        | "forwards.startMany"
+        | "forwards.startManyManaged"
+        | "forwards.stop"
+        | "tools.invoke"
+        | "tools.cancel"
+        | "tools.revokeClient"
+        | "resources.release" => Some(CallPolicy::OwnedData),
+        // Only plugin-scoped persistent storage is separated from other owned
+        // effects. The classification is still committed and retained.
+        "storage.set"
         | "storage.delete"
         | "configuration.update"
         | "configuration.migrate"
         | "configuration.restore"
-        | "configuration.deleteBackup"
-        | "secrets.get"
-        | "secrets.set"
-        | "secrets.delete" => Some(CallPolicy::OwnedData),
+        | "configuration.deleteBackup" => Some(CallPolicy::PluginStorageData),
+        // Keyring reads may prompt or perform OS work, and writes/deletes have
+        // durable effects. None of these are staging-safe.
+        "secrets.get" | "secrets.set" | "secrets.delete" => Some(CallPolicy::OwnedData),
+        "runners.deploy"
+        | "runners.start"
+        | "runners.startInitialized"
+        | "runners.review"
+        | "runners.send"
+        | "runners.poll"
+        | "runners.status"
+        | "runners.stop" => Some(CallPolicy::RunnerEffect),
+        "tasks.start" | "tasks.write" | "tasks.closeInput" | "tasks.cancel" => {
+            Some(CallPolicy::TaskEffect)
+        }
         _ => mounts::policy(method),
     }
 }
@@ -260,6 +311,7 @@ mod workspace_and_file_tests {
             "hosts.transfer.preview",
             "storage.locations.observe",
             "storage.recovery.observe",
+            "files.content.observe",
         ] {
             assert!(
                 crate::plugins::api::method_info(method).is_some(),
@@ -275,6 +327,10 @@ mod workspace_and_file_tests {
             "files.sftp.list",
             "files.sftp.resolveDirectory",
             "files.sftp.readText",
+            "files.content.prepare",
+            "files.content.open",
+            "files.content.read",
+            "files.content.close",
             "files.local.writeText",
             "files.local.createFile",
             "files.local.mkdir",
@@ -361,16 +417,81 @@ mod workspace_and_file_tests {
             assert!(!policy.staged() && policy.retained() && policy.blocks_move());
         }
         for method in [
-            "files.content.open",
-            "files.content.read",
-            "files.content.close",
-            "files.content.observe",
+            "files.content.unknown",
             "workspace.windows.unknown",
             "sessions.connect.extra",
-            "monitor.kill",
         ] {
             assert!(call_policy(method).is_none(), "{method}");
         }
+    }
+}
+
+#[cfg(test)]
+mod catalogue_coverage_tests {
+    use super::*;
+    #[test]
+    fn every_public_rpc_has_an_exact_native_policy() {
+        for method in crate::plugins::api::METHODS.iter() {
+            assert!(call_policy(method.name).is_some(), "{}", method.name);
+        }
+    }
+
+    #[test]
+    fn resource_and_execution_effects_are_committed_and_retained() {
+        for method in [
+            "runners.deploy",
+            "runners.start",
+            "runners.startInitialized",
+            "runners.review",
+            "runners.send",
+            "runners.poll",
+            "runners.status",
+            "runners.stop",
+            "tasks.start",
+            "tasks.write",
+            "tasks.closeInput",
+            "tasks.cancel",
+            "forwards.start",
+            "forwards.startManaged",
+            "forwards.startMany",
+            "forwards.startManyManaged",
+            "forwards.stop",
+            "tools.invoke",
+            "tools.cancel",
+            "tools.revokeClient",
+            "resources.release",
+            "storage.locations.cancel",
+            "profiles.drafts.prepare",
+            "profiles.drafts.append",
+            "profiles.drafts.discard",
+            "profiles.save",
+            "profiles.rename",
+            "profiles.delete",
+            "profiles.activate",
+        ] {
+            let policy = call_policy(method).unwrap();
+            assert!(!policy.staged(), "{method}");
+            assert!(policy.retained() && policy.blocks_move(), "{method}");
+        }
+        assert_eq!(call_policy("events.publish"), Some(CallPolicy::OwnedData));
+        assert_eq!(call_policy("log"), Some(CallPolicy::OwnedData));
+        assert_eq!(call_policy("logs.read"), Some(CallPolicy::OwnedData));
+        assert_eq!(
+            call_policy("resources.identify"),
+            Some(CallPolicy::StagedData)
+        );
+        assert_eq!(
+            call_policy("storage.recovery.request"),
+            Some(CallPolicy::OwnedData)
+        );
+        assert_eq!(
+            call_policy("storage.locations.schedule"),
+            Some(CallPolicy::OwnedData)
+        );
+        assert_eq!(
+            call_policy("files.content.observe"),
+            Some(CallPolicy::StagedData)
+        );
     }
 }
 
@@ -455,6 +576,11 @@ mod owned_data_tests {
                 policy,
                 if snapshot {
                     CallPolicy::StagedData
+                } else if method.starts_with("configuration.")
+                    || method == "storage.set"
+                    || method == "storage.delete"
+                {
+                    CallPolicy::PluginStorageData
                 } else {
                     CallPolicy::OwnedData
                 }
@@ -466,8 +592,6 @@ mod owned_data_tests {
         // Consent/migration control and future APIs require separate audits;
         // no prefix, permission, or get/observe heuristic widens admission.
         for method in [
-            "storage.locations.schedule",
-            "storage.recovery.request",
             "storage.get.extra",
             "configuration.observe",
             "configuration.update.extra",

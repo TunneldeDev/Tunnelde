@@ -569,6 +569,14 @@ impl Drop for PendingGuard {
 }
 
 pub async fn invoke(context: &HostContext, params: Value) -> AppResult<Value> {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check_origin = || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check_origin()?;
     let request_id = params
         .get("requestId")
         .and_then(Value::as_str)
@@ -605,12 +613,21 @@ pub async fn invoke(context: &HostContext, params: Value) -> AppResult<Value> {
         result = invoke_inner(&request_context, params) => result,
     };
     if result.is_ok() {
+        check_origin()?;
         accept_pending(&key, registration)?;
         connections.accept();
     }
     result
 }
 pub async fn cancel(context: &HostContext, method: &str, params: &Value) -> AppResult<Value> {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check_origin = || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check_origin()?;
     let target: String = field(
         params,
         if method == "tools.cancel" {
@@ -641,6 +658,7 @@ pub async fn cancel(context: &HostContext, method: &str, params: &Value) -> AppR
             }
         }
     }
+    check_origin()?;
     Ok(json!({"cancelled":count}))
 }
 

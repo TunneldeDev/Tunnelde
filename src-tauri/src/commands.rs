@@ -583,6 +583,15 @@ pub async fn sftp_list(
     sftp::remote_list(&app, &session_id, path).await
 }
 
+pub(crate) async fn sftp_list_checked(
+    app: AppHandle,
+    session_id: String,
+    path: Option<String>,
+    check: &impl Fn() -> crate::error::AppResult<()>,
+) -> AppResult<Listing> {
+    sftp::remote_list_checked(&app, &session_id, path, check).await
+}
+
 #[tauri::command]
 pub async fn local_list(path: Option<String>) -> AppResult<Listing> {
     crate::services::files::local::list(path).await

@@ -55,6 +55,17 @@ pub(super) async fn dispatch(
                     authorize(&worker, &["settings.write"])?;
                 }
                 let prepared = writer.prepare_preferences(request)?;
+                let ticket = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0));
+                let check_ticket = {
+                    let ticket = ticket.clone();
+                    move || {
+                        if ticket.load(std::sync::atomic::Ordering::Acquire) == 2 {
+                            Err(AppError::validation("plugin.api.cancelled"))
+                        } else {
+                            Ok(())
+                        }
+                    }
+                };
                 let lease = crate::plugins::security::Lease {
                     id: worker.id.clone(),
                     fingerprint: worker.fingerprint.clone(),
@@ -70,12 +81,19 @@ pub(super) async fn dispatch(
                         &state.db,
                         &lease,
                         &["settings.write"],
-                        || cancellation.check(),
+                        || {
+                            check_ticket()?;
+                            cancellation.check()
+                        },
                         origin
                             .as_ref()
                             .map(|origin| origin as &dyn crate::services::operations::Authority),
-                        |conn| prepared.borrow().persist_on(conn),
+                        |conn| {
+                            check_ticket()?;
+                            prepared.borrow().persist_on(conn)
+                        },
                         |revision| {
+                            ticket.store(1, std::sync::atomic::Ordering::Release);
                             prepared.borrow_mut().committed_revision(revision);
                             Ok(())
                         },

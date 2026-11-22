@@ -13,7 +13,9 @@ use tauri::Manager;
 
 mod observation;
 mod repository;
+#[cfg(test)]
 pub(in crate::plugins::api) use repository::storage_at;
+pub(in crate::plugins::api) use repository::storage_at_with_origin;
 mod secrets;
 pub(in crate::plugins::api) use secrets::dispatch as secret;
 pub(in crate::plugins::api) const MAX_STORAGE: usize = 256 * 1024;
@@ -56,9 +58,21 @@ pub(in crate::plugins::api) async fn dispatch(
         .storage
         .dir(crate::storage::layout::Category::PluginData)
         .to_path_buf();
-    storage_at(&root, &context.id, method, params, || {
-        authorize(context, &[])
-    })
+    storage_at_with_origin(
+        &root,
+        &context.id,
+        method,
+        params,
+        || authorize(context, &[]),
+        || {
+            if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+                origin.authorize_call(
+                    crate::plugins::frontend::native::CallPolicy::PluginStorageData,
+                )?;
+            }
+            Ok(())
+        },
+    )
     .await
 }
 

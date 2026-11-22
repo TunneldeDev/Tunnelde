@@ -13,11 +13,41 @@ fn parse<T: serde::de::DeserializeOwned>(params: Value) -> AppResult<T> {
 pub(crate) async fn call(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
     let context = context.clone();
     let method = method.to_owned();
-    tauri::async_runtime::spawn_blocking(move || dispatch(&context, &method, params))
-        .await
-        .map_err(|_| AppError::internal("configuration.workerFailed"))?
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let policy = if matches!(
+        method.as_str(),
+        "configuration.update"
+            | "configuration.migrate"
+            | "configuration.restore"
+            | "configuration.deleteBackup"
+    ) {
+        crate::plugins::frontend::native::CallPolicy::PluginStorageData
+    } else {
+        crate::plugins::frontend::native::CallPolicy::StagedData
+    };
+    let check_origin = move || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(policy)?;
+        }
+        Ok(())
+    };
+    check_origin()?;
+    let check_worker = check_origin.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let value = dispatch(&context, &method, params, check_worker)?;
+        check_origin()?;
+        Ok::<_, AppError>(value)
+    })
+    .await
+    .map_err(|_| AppError::internal("configuration.workerFailed"))??;
+    Ok(result)
 }
-fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
+fn dispatch(
+    context: &HostContext,
+    method: &str,
+    params: Value,
+    check_origin: impl Fn() -> AppResult<()> + Clone,
+) -> AppResult<Value> {
     let state = context.app.state::<AppState>();
     let repo = Repository::at(
         state
@@ -31,9 +61,11 @@ fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Val
         generation: context.generation,
     };
     let (result, changed) = state.plugins.security.with_authorized(&lease, &[], || {
+        check_origin()?;
         state
             .plugins
             .with_configuration(&context.id, &context.fingerprint, |schema| {
+                let inner_check = check_origin.clone();
                 let result = match method {
                     "configuration.schema" | "configuration.snapshot" | "configuration.backups" => {
                         if params.as_object().is_none_or(|p| !p.is_empty()) {
@@ -66,6 +98,7 @@ fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Val
                     }
                     _ => return Err(AppError::validation("plugin.api.unknownMethod")),
                 };
+                inner_check()?;
                 let response = serde_json::to_value(&result)?;
                 Ok((
                     response,

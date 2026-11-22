@@ -37,6 +37,13 @@ pub(super) async fn dispatch(
 ) -> AppResult<Value> {
     let operation = Operation::admit()?;
     let paths = context.app.state::<AppState>().storage.clone();
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check_origin = move || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
     if method == "storage.locations.observe" {
         let request = parse(params)?;
         let context = context.clone();
@@ -142,6 +149,7 @@ pub(super) async fn dispatch(
             generation: worker.generation,
         };
         let persist = |save: &dyn Fn() -> AppResult<()>| {
+            check_origin()?;
             state.plugins.security.with_authorized(&lease, WRITE, save)
         };
         match schedule {
@@ -150,7 +158,9 @@ pub(super) async fn dispatch(
                 request,
                 || {
                     ticket.check()?;
-                    authorize(&worker, WRITE)
+                    authorize(&worker, WRITE)?;
+                    check_origin()?;
+                    Ok(())
                 },
                 || ticket.commit(),
                 persist,
@@ -160,7 +170,9 @@ pub(super) async fn dispatch(
                 cancel.ok_or_else(|| AppError::validation("plugin.api.invalid:params"))?,
                 || {
                     ticket.check()?;
-                    authorize(&worker, WRITE)
+                    authorize(&worker, WRITE)?;
+                    check_origin()?;
+                    Ok(())
                 },
                 || ticket.commit(),
                 persist,

@@ -1720,3 +1720,32 @@ next writer cannot read stale memory. Cancellation after admission cannot split
 publication; domain/publication failures are never replayed. Window work,
 credential cleanup and notifications still finish outside these guards. Frozen
 preference contracts, revision checks and the staging write prohibition remain.
+
+### Native resource RPC admission
+
+Committed native views now share one closed call catalogue with the native
+frontend gateway. `CallPolicy` still decides staging admission and whether a
+request is retained through settlement; each domain adapter now rechecks the
+original document/token/lease at the actual effect boundary as well. The
+expanded retained classes cover file content handles, local and SFTP reads and
+writes, transfers, sessions and terminal I/O, forwarding start/stop and batches,
+runner/task process control, tools, secrets/configuration/storage, settings and
+profile commits, contribution registries, logs/events, monitoring, and resource
+release. `files.content.observe` remains a staging-safe read; `monitor.kill` is
+committed-only.
+
+Remote SFTP list/resolve/read helpers and transfer workers accept an explicit
+check callback rather than trusting an earlier admission. File-content prepare,
+open/read/close, secret keyring work, runner launch, task input/cancel and tool
+invocation all retain the originating native authority through their worker or
+platform operation. Forwarding uses the captured origin through preparation and
+commit, while settings/profile writes recheck it inside the ordered writer and
+fenced database admission. Configuration and plugin storage repeat origin checks
+before and after their bounded workers. Registry-style contributions recheck
+after publication rather than emitting a result from a retired view.
+
+These changes preserve frozen public v1 request/response shapes and the
+existing permissions. They do not admit raw arbitrary invoke, do not make
+factoryless/legacy plugin presentation movable, and do not replace the remaining
+physical pointer, Windows/Linux, mixed-DPI, real SSH/FUSE or final acceptance
+work tracked by the rollout issue.

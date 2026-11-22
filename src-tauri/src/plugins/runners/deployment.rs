@@ -15,8 +15,19 @@ pub(super) mod journal;
 mod package;
 mod upload;
 
-pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Value> {
-    authorize(context, &["fs.read", "sftp.write"])?;
+pub(super) async fn deploy_with_origin(
+    context: &HostContext,
+    params: Value,
+    origin: Option<crate::platform::panel_windows::plugin_views::origin::Origin>,
+) -> AppResult<Value> {
+    let check = || {
+        authorize(context, &["fs.read", "sftp.write"])?;
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::RunnerEffect)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check()?;
     let session: String = field(&params, "sessionId")?;
     let host = host_id(context, &session)?;
     let destination = super::identity::capture(&context.app, &session)?;
@@ -97,7 +108,7 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
         Ok(_) => {
             return Err(AppError::validation(
                 "plugin.runners.freshDirectoryRequired",
-            ))
+            ));
         }
         Err(russh_sftp::client::error::Error::Status(status))
             if status.status_code == russh_sftp::protocol::StatusCode::NoSuchFile => {}
@@ -122,6 +133,7 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
         fingerprint: context.fingerprint.clone(),
         identity: Some(destination.clone()),
     };
+    check()?;
     let reserved = journal::reserve(context, deployment)?;
     // A lost MKDIR response stays Creating: existence alone cannot prove that
     // our request finished, or that an existing directory belongs to it.
@@ -137,5 +149,6 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
         return Err(AppError::validation("plugin.runners.destinationChanged"));
     }
     journal::advance(context, &uploading, journal::State::Ready)?;
+    check()?;
     Ok(json!({"deployed":true,"directory":directory}))
 }

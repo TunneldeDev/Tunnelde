@@ -27,6 +27,12 @@ pub(in crate::plugins::api) async fn dispatch(
         return Err(invalid());
     }
     let state = context.app.state::<AppState>();
+    let check = || {
+        if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
     let lease = Lease {
         id: context.id.clone(),
         fingerprint: context.fingerprint.clone(),
@@ -43,11 +49,13 @@ pub(in crate::plugins::api) async fn dispatch(
                 .plugins
                 .security
                 .with_authorized(&lease, &[permission], || {
+                    check()?;
                     state.plugins.file_content.prepare(lease.clone(), request)
                 })?;
             encode(result)
         }
         "files.content.open" => {
+            check()?;
             let request: Reference = parse(params)?;
             let entry = state.plugins.file_content.get(
                 &context.id,
@@ -74,10 +82,14 @@ pub(in crate::plugins::api) async fn dispatch(
             let result = state
                 .plugins
                 .security
-                .with_authorized(&lease, &[permission], || opening.finish(source, size))?;
+                .with_authorized(&lease, &[permission], || {
+                    check()?;
+                    opening.finish(source, size)
+                })?;
             encode(result)
         }
         "files.content.read" => {
+            check()?;
             let request: Read = parse(params)?;
             request.validate()?;
             let entry = state.plugins.file_content.get(
@@ -101,12 +113,17 @@ pub(in crate::plugins::api) async fn dispatch(
             let chunk = state
                 .plugins
                 .security
-                .with_authorized(&lease, &[permission], || reading.finish(bytes))?;
+                .with_authorized(&lease, &[permission], || {
+                    check()?;
+                    reading.finish(bytes)
+                })?;
             encode(chunk)
         }
         "files.content.close" => {
+            check()?;
             let request: Reference = parse(params)?;
             state.plugins.security.with_authorized(&lease, &[], || {
+                check()?;
                 state.plugins.file_content.close(
                     &context.id,
                     context.generation,
@@ -116,6 +133,7 @@ pub(in crate::plugins::api) async fn dispatch(
             Ok(json!({"version":1,"closed":true}))
         }
         "files.content.observe" => {
+            check()?;
             let request: Reference = parse(params)?;
             id(&request.content_id)?;
             let observed = state.plugins.security.with_authorized(&lease, &[], || {

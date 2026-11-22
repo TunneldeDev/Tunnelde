@@ -87,11 +87,16 @@ pub(super) async fn dispatch(
         return Err(AppError::validation("plugin.api.invalidResponse"));
     }
     let worker = context.clone();
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
     let ticket = operation.ticket();
     tauri::async_runtime::spawn_blocking(move || {
         let check = || {
             ticket.check()?;
-            authorize(&worker, WRITE)
+            authorize(&worker, WRITE)?;
+            if let Some(origin) = &origin {
+                origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+            }
+            Ok(())
         };
         let snapshot = if confirmed == Value::Bool(false) {
             recovery::observe(&paths, Observe::default(), check)?

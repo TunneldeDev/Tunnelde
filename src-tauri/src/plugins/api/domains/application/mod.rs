@@ -19,11 +19,22 @@ pub(in crate::plugins::api) async fn dispatch(
         "app.openExternal" => {
             let url = field(&params, "url")?;
             let worker = context.clone();
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let check_origin_origin = origin.clone();
+            let check_origin = || {
+                if let Some(origin) = &check_origin_origin {
+                    origin
+                        .authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+                }
+                Ok::<(), AppError>(())
+            };
+            check_origin()?;
             let effect = || {
                 authorize(&worker, &["app.openExternal"])?;
+                check_origin()?;
                 commands::open_external(app.clone(), url)
             };
-            match crate::platform::panel_windows::plugin_views::origin::current() {
+            match origin {
                 Some(origin) => origin.with_current(effect)?,
                 None => effect()?,
             }

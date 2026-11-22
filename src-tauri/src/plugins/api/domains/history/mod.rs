@@ -31,6 +31,7 @@ pub(in crate::plugins::api) async fn dispatch(
             let worker = context.clone();
             let event_host = host_id.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let origin_after = origin.clone();
             state.plugins.security.with_authorized_fenced_database_then(
                 &state.db,
                 &lease,
@@ -44,6 +45,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     crate::db::history::record(conn, &host_id, &command)
                 },
                 move |entry| {
+                    if let Some(origin) = &origin_after {
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::OwnedData,
+                        )?;
+                    }
                     if entry.is_some() {
                         crate::services::history::changed(&worker.app, &event_host);
                     }
@@ -55,6 +61,7 @@ pub(in crate::plugins::api) async fn dispatch(
             let id = field::<i64>(&params, "id")?;
             let worker = context.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let origin_after = origin.clone();
             state.plugins.security.with_authorized_fenced_database_then(
                 &state.db,
                 &lease,
@@ -77,6 +84,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     Ok(host_id)
                 },
                 move |host_id| {
+                    if let Some(origin) = &origin_after {
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::OwnedData,
+                        )?;
+                    }
                     if let Some(host_id) = host_id {
                         crate::services::history::changed(&worker.app, &host_id);
                     }
@@ -89,6 +101,7 @@ pub(in crate::plugins::api) async fn dispatch(
             let worker = context.clone();
             let event_host = host_id.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let origin_after = origin.clone();
             state.plugins.security.with_authorized_fenced_database_then(
                 &state.db,
                 &lease,
@@ -109,6 +122,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     Ok(changed)
                 },
                 move |changed| {
+                    if let Some(origin) = &origin_after {
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::OwnedData,
+                        )?;
+                    }
                     if changed {
                         crate::services::history::changed(&worker.app, &event_host);
                     }
