@@ -624,7 +624,7 @@ test("PR policy rejects truncated, changed and duplicate commit history", async 
     });
     await assert.rejects(
       checkPullRequest({ ...f, number: 15, wait: async () => {} }),
-      /Incomplete or changed/,
+      count > 250 ? /more than 250 commits/ : /commit history is still changing/,
     );
     assert.equal(f.calls.at(-1).status.state, "failure");
   }
@@ -669,9 +669,9 @@ test("consistent but stale snapshots never approve a different generated head", 
       expectedHead: generated,
       wait: async (ms) => delays.push(ms),
     }),
-    /Incomplete or changed/,
+    /commit history is still changing/,
   );
-  assert.deepEqual(delays, [1000, 2000, 4000]);
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000]);
   assert.equal(f.calls.at(-1).status.state, "failure");
 });
 
