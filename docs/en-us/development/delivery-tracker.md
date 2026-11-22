@@ -23,7 +23,7 @@ the latest Issue comments. Do not treat an old snapshot in the issue body as a n
 
 | Item                      | State     | Evidence                                                                                 |
 | ------------------------- | --------- | ---------------------------------------------------------------------------------------- |
-| Development branch        | current   | `dev` at `c8c621e7`; PR #532 exact-head CI `45039243367` passed all checks.              |
+| Development branch        | current   | `dev` at `b35daa5a`; PR #534 exact-head CI `45046829812` passed all checks.              |
 | Stable channel            | published | `v2.7.1` remains the latest stable release.                                              |
 | Beta channel              | published | `v2.8.0-beta.3`, immutable tag `5a57f60e`; publish run `45026361923` verified 13 assets. |
 | Release promotion PR      | draft     | PR #520 at `fa84061e`; keep Draft until final review and merge.                          |
@@ -44,14 +44,15 @@ Issue comment as soon as evidence changes.
 
 ## Release nodes
 
-| Node                 | State     | Evidence                                                                                             |
-| -------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
-| Stable `v2.7.1`      | published | Latest stable baseline.                                                                              |
-| Beta `v2.8.0-beta.1` | published | #519 and #521.                                                                                       |
-| Beta `v2.8.0-beta.2` | published | #523 and #524; immutable tag `7e226069`; run `45011603981` verified 13 assets.                       |
-| Beta `v2.8.0-beta.3` | published | #528 and the draft-release/CI fixes; immutable tag `5a57f60e`; run `45026361923` verified 13 assets. |
-| Next Beta            | pending   | Allocate after the next one to three coherent features and exact-head CI.                            |
-| Stable `v2.8.0`      | blocked   | Requires an accepted `v2.8.0-beta.*` and a reviewed release PR from the same product source.         |
+| Node                 | State     | Evidence                                                                                                      |
+| -------------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| Stable `v2.7.1`      | published | Latest stable baseline.                                                                                       |
+| Beta `v2.8.0-beta.1` | published | #519 and #521.                                                                                                |
+| Beta `v2.8.0-beta.2` | published | #523 and #524; immutable tag `7e226069`; run `45011603981` verified 13 assets.                                |
+| Beta `v2.8.0-beta.3` | published | #528 and the draft-release/CI fixes; immutable tag `5a57f60e`; run `45026361923` verified 13 assets.          |
+| Beta `v2.8.0-beta.4` | published | #531–#534; immutable tag `564fc6f6`; publish run `45048560338` verified 13 assets and nine updater platforms. |
+| Next Beta            | pending   | Allocate after the next one to three coherent features and exact-head CI.                                     |
+| Stable `v2.8.0`      | blocked   | Requires an accepted `v2.8.0-beta.*` and a reviewed release PR from the same product source.                  |
 
 ## Release PR lifecycle
 
