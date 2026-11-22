@@ -6,6 +6,7 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -21,6 +22,7 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,6 +71,7 @@ jobs:
   rust:
     name: Rust
     runs-on: ubuntu-22.04
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -414,6 +417,7 @@ jobs:
   macos-app-check:
     name: macOS application check
     runs-on: macos-15-intel
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -509,6 +513,7 @@ jobs:
   windows-app-check:
     name: Windows application check
     runs-on: windows-latest
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     defaults:
       run:
         shell: bash
@@ -607,6 +612,7 @@ jobs:
   hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     steps:
       - name: Checkout
         uses: actions/checkout@v4
