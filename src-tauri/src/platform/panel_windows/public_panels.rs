@@ -70,12 +70,15 @@ pub(crate) async fn snapshot(
     app: &AppHandle,
     revision: Option<String>,
     observe: bool,
+    authorize: impl Fn() -> AppResult<()>,
 ) -> AppResult<Value> {
     let registry = app.state::<native::Registry>();
     let mut changes = registry.public_panels.changed.subscribe();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(if observe { 10 } else { 2 });
     loop {
+        authorize()?;
         let current = refresh(app);
+        authorize()?;
         if let Some(ref value) = current {
             if !observe || value["revision"].as_str() != revision.as_deref() {
                 return Ok(value.clone());

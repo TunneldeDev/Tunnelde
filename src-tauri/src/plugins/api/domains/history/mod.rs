@@ -1,4 +1,4 @@
-use crate::plugins::api::{encode, field, optional, HostContext};
+use crate::plugins::api::{authorize, encode, field, optional, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -21,10 +21,28 @@ pub(in crate::plugins::api) async fn dispatch(
         generation: context.generation,
     };
     match method {
-        "history.list" => encode(crate::services::history::service(app, &state).list(
-            &field::<String>(&params, "hostId")?,
-            optional(&params, "limit")?,
-        )?),
+        "history.list" => {
+            let host_id: String = field(&params, "hostId")?;
+            let limit: Option<i64> = optional(&params, "limit")?;
+            let worker = context.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let check = || {
+                    authorize(&worker, &["history.read"])?;
+                    crate::platform::panel_windows::plugin_views::origin::check(
+                        crate::plugins::frontend::native::CallPolicy::StagedData,
+                    )
+                };
+                check()?;
+                let value = encode(
+                    crate::services::history::service(&worker.app, &worker.app.state::<AppState>())
+                        .list(&host_id, limit)?,
+                )?;
+                check()?;
+                Ok(value)
+            })
+            .await
+            .map_err(|_| AppError::internal("history.list.unavailable"))?
+        }
         "history.record" => {
             let host_id = field::<String>(&params, "hostId")?;
             let command = field::<String>(&params, "command")?;

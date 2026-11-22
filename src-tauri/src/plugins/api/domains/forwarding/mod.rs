@@ -37,7 +37,16 @@ pub(in crate::plugins::api) async fn dispatch(
             Ok(Value::Null)
         }
         "forwards.startManyManaged" => batch::start_managed(context, params).await,
-        "forwards.automation.list" => encode(crate::services::forwarding::automation::list(app)?),
+        "forwards.automation.list" => {
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            let value = encode(crate::services::forwarding::automation::list(app)?);
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            value
+        }
         "forwards.automation.save" => {
             let id: String = field(&params, "id")?;
             let revision: String = field(&params, "expectedRevision")?;
@@ -69,7 +78,16 @@ pub(in crate::plugins::api) async fn dispatch(
                 None => mutation(),
             }
         }
-        "forwards.list" => encode(crate::services::forwarding::list(app)?),
+        "forwards.list" => {
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            let value = encode(crate::services::forwarding::list(app)?);
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            value
+        }
         "forwards.save" => {
             let rule = field(&params, "rule")?;
             let lease = Lease {

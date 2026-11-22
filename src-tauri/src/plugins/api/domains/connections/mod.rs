@@ -1,5 +1,5 @@
 mod execution;
-use crate::plugins::api::{encode, field, HostContext};
+use crate::plugins::api::{authorize, encode, field, HostContext};
 use crate::{
     commands,
     error::{AppError, AppResult},
@@ -43,7 +43,7 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     let app = &context.app;
-    let state = app.state::<AppState>();
+    let _state = app.state::<AppState>();
     let check = || {
         if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
             origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
@@ -51,12 +51,32 @@ pub(in crate::plugins::api) async fn dispatch(
         Ok::<(), AppError>(())
     };
     match method {
-        "sessions.list" => encode(
-            commands::ssh_sessions(state)
-                .into_iter()
-                .map(PluginSession::from)
-                .collect::<Vec<_>>(),
-        ),
+        "sessions.list" => {
+            let worker = context.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let check = || {
+                    authorize(&worker, &["sessions.read"])?;
+                    crate::platform::panel_windows::plugin_views::origin::check(
+                        crate::plugins::frontend::native::CallPolicy::StagedData,
+                    )
+                };
+                check()?;
+                let value = encode(
+                    worker
+                        .app
+                        .state::<AppState>()
+                        .ssh
+                        .list()
+                        .into_iter()
+                        .map(PluginSession::from)
+                        .collect::<Vec<_>>(),
+                )?;
+                check()?;
+                Ok(value)
+            })
+            .await
+            .map_err(|_| AppError::internal("sessions.list.unavailable"))?
+        }
         "sessions.connect" => {
             check()?;
             let value = encode(PluginSession::from(

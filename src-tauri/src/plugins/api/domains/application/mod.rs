@@ -15,7 +15,13 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
-        "app.info" => encode(commands::app_info(app.clone(), state)),
+        "app.info" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            let value = encode(commands::app_info(app.clone(), state));
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            value
+        }
         "app.openExternal" => {
             let url = field(&params, "url")?;
             let worker = context.clone();

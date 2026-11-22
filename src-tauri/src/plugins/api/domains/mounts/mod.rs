@@ -71,31 +71,38 @@ async fn configured(context: &HostContext, method: &str, params: Value) -> AppRe
             let state = context.app.state::<AppState>();
             let lease = lease(&context);
             let mut params = Some(params);
-            state.plugins.security.with_authorized_attempt(
-                &lease,
-                if write {
-                    &["mounts.write"]
-                } else {
-                    &["mounts.read"]
-                },
-                || cancel.check(),
-                || {
-                    state.db.try_with(|conn| {
-                        cancel.check()?;
-                        if write {
-                            cancel.commit()?;
-                        }
-                        let params = params.take().expect("one admitted configuration request");
-                        if write {
-                            crate::db::atomic(conn, |conn| {
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let mut run = || {
+                state.plugins.security.with_authorized_attempt(
+                    &lease,
+                    if write {
+                        &["mounts.write"]
+                    } else {
+                        &["mounts.read"]
+                    },
+                    || cancel.check(),
+                    || {
+                        state.db.try_with(|conn| {
+                            cancel.check()?;
+                            if write {
+                                cancel.commit()?;
+                            }
+                            let params = params.take().expect("one admitted configuration request");
+                            if write {
+                                crate::db::atomic(conn, |conn| {
+                                    configuration::call(&state.mount_runtime, conn, &method, params)
+                                })
+                            } else {
                                 configuration::call(&state.mount_runtime, conn, &method, params)
-                            })
-                        } else {
-                            configuration::call(&state.mount_runtime, conn, &method, params)
-                        }
-                    })
-                },
-            )
+                            }
+                        })
+                    },
+                )
+            };
+            match &origin {
+                Some(origin) => origin.with_current(run),
+                None => run(),
+            }
         })
         .await?;
     Ok(result)
@@ -133,7 +140,13 @@ pub(in crate::plugins::api) async fn dispatch(
         // Legacy public aliases use the ORIGINAL admitted lease, not a newly
         // discovered main-document plugin. No cleanup or fingerprint scan is
         // a hidden side effect of listing; OS effects retain their own workers.
-        "list" => encode(state.mounts.list(Some(&context.id)).await),
+        "list" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            let value = encode(state.mounts.list(Some(&context.id)).await);
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            value
+        }
         "browse" => remote_paths::browse(context, params).await,
         "mount" => encode(
             crate::mounts::startup::mount_plugin(
@@ -216,19 +229,27 @@ pub(in crate::plugins::api) async fn dispatch(
             }
         }
         "operations.list" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
             let offset: usize = optional(&params, "offset")?.unwrap_or(0);
             let mut items = state.mount_runtime.operations.list();
             items.sort_by(|a, b| a.id.cmp(&b.id));
-            Ok(
-                json!({"total":items.len(),"items":items.into_iter().skip(offset).take(16).collect::<Vec<_>>()}),
-            )
+            let value = json!({"total":items.len(),"items":items.into_iter().skip(offset).take(16).collect::<Vec<_>>()});
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            Ok(value)
         }
-        "operations.get" => encode(
-            state
-                .mount_runtime
-                .operations
-                .get(&field::<String>(&params, "id")?)?,
-        ),
+        "operations.get" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            let value = encode(
+                state
+                    .mount_runtime
+                    .operations
+                    .get(&field::<String>(&params, "id")?)?,
+            );
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            value
+        }
         "operations.observe" => {
             let id: String = field(&params, "id")?;
             let prior: Option<String> = optional(&params, "revision")?;

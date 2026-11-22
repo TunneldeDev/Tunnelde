@@ -6,12 +6,13 @@ use crate::{
 use serde_json::Value;
 use tauri::Manager;
 
-fn check(context: &HostContext, permission: &str) -> AppResult<()> {
-    authorize(context, &[permission])?;
-    if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
-        origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
-    }
-    Ok(())
+fn check(
+    context: &HostContext,
+    permission: Option<&str>,
+    policy: crate::plugins::frontend::native::CallPolicy,
+) -> AppResult<()> {
+    authorize(context, permission.as_slice())?;
+    crate::platform::panel_windows::plugin_views::origin::check(policy)
 }
 
 pub(in crate::plugins::api) async fn dispatch(
@@ -50,11 +51,12 @@ pub(in crate::plugins::api) async fn dispatch(
                 &|| {
                     check(
                         context,
-                        if method == "files.sftp.copy" {
+                        Some(if method == "files.sftp.copy" {
                             "sftp.write"
                         } else {
                             "fs.write"
-                        },
+                        }),
+                        crate::plugins::frontend::native::CallPolicy::OwnedData,
                     )
                 },
             )?;
@@ -97,7 +99,13 @@ pub(in crate::plugins::api) async fn dispatch(
                     permissions: context.permissions.clone(),
                     generation: context.generation,
                 },
-                &|| check(context, "sftp.write"),
+                &|| {
+                    check(
+                        context,
+                        Some("sftp.write"),
+                        crate::plugins::frontend::native::CallPolicy::OwnedData,
+                    )
+                },
             )?;
             if !crate::plugins::tools::register_resource(context, &transfer_id, true) {
                 state
@@ -108,25 +116,70 @@ pub(in crate::plugins::api) async fn dispatch(
             encode(transfer_id)
         }
         "files.cancelTransfer" => {
-            check(context, "sftp.write")?;
+            check(
+                context,
+                None,
+                crate::plugins::frontend::native::CallPolicy::OwnedData,
+            )?;
             let value = encode(state.transfers.cancel_owned(
                 &field::<String>(&params, "transferId")?,
                 &context.id,
                 context.generation,
             ));
-            check(context, "sftp.write")?;
+            check(
+                context,
+                None,
+                crate::plugins::frontend::native::CallPolicy::OwnedData,
+            )?;
             value
         }
         "files.transferStatus" => {
-            check(context, "sftp.read")?;
+            check(
+                context,
+                None,
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
             let value = encode(state.transfers.status_owned(
                 &field::<String>(&params, "transferId")?,
                 &context.id,
                 context.generation,
             ));
-            check(context, "sftp.read")?;
+            check(
+                context,
+                None,
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
             value
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::plugins::frontend::native::CallPolicy;
+
+    #[test]
+    fn owned_transfer_status_and_cancel_use_their_catalogue_policies_without_sftp_permissions() {
+        assert_eq!(
+            crate::plugins::api::method_info("files.transferStatus")
+                .unwrap()
+                .permissions,
+            &[] as &[&str]
+        );
+        assert_eq!(
+            crate::plugins::api::method_info("files.cancelTransfer")
+                .unwrap()
+                .permissions,
+            &[] as &[&str]
+        );
+        assert_eq!(
+            crate::plugins::frontend::native::call_policy("files.transferStatus"),
+            Some(CallPolicy::StagedData)
+        );
+        assert_eq!(
+            crate::plugins::frontend::native::call_policy("files.cancelTransfer"),
+            Some(CallPolicy::OwnedData)
+        );
     }
 }

@@ -27,12 +27,7 @@ pub(in crate::plugins::api) async fn dispatch(
         return Err(invalid());
     }
     let state = context.app.state::<AppState>();
-    let check = || {
-        if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
-            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
-        }
-        Ok::<(), AppError>(())
-    };
+    let check = |policy| crate::platform::panel_windows::plugin_views::origin::check(policy);
     let lease = Lease {
         id: context.id.clone(),
         fingerprint: context.fingerprint.clone(),
@@ -49,13 +44,13 @@ pub(in crate::plugins::api) async fn dispatch(
                 .plugins
                 .security
                 .with_authorized(&lease, &[permission], || {
-                    check()?;
+                    check(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
                     state.plugins.file_content.prepare(lease.clone(), request)
                 })?;
             encode(result)
         }
         "files.content.open" => {
-            check()?;
+            check(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
             let request: Reference = parse(params)?;
             let entry = state.plugins.file_content.get(
                 &context.id,
@@ -83,13 +78,13 @@ pub(in crate::plugins::api) async fn dispatch(
                 .plugins
                 .security
                 .with_authorized(&lease, &[permission], || {
-                    check()?;
+                    check(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
                     opening.finish(source, size)
                 })?;
             encode(result)
         }
         "files.content.read" => {
-            check()?;
+            check(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
             let request: Read = parse(params)?;
             request.validate()?;
             let entry = state.plugins.file_content.get(
@@ -114,16 +109,16 @@ pub(in crate::plugins::api) async fn dispatch(
                 .plugins
                 .security
                 .with_authorized(&lease, &[permission], || {
-                    check()?;
+                    check(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
                     reading.finish(bytes)
                 })?;
             encode(chunk)
         }
         "files.content.close" => {
-            check()?;
+            check(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
             let request: Reference = parse(params)?;
             state.plugins.security.with_authorized(&lease, &[], || {
-                check()?;
+                check(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
                 state.plugins.file_content.close(
                     &context.id,
                     context.generation,
@@ -133,7 +128,8 @@ pub(in crate::plugins::api) async fn dispatch(
             Ok(json!({"version":1,"closed":true}))
         }
         "files.content.observe" => {
-            check()?;
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            check(staged)?;
             let request: Reference = parse(params)?;
             id(&request.content_id)?;
             let observed = state.plugins.security.with_authorized(&lease, &[], || {
@@ -151,6 +147,7 @@ pub(in crate::plugins::api) async fn dispatch(
                         lease_ms: 0,
                     }))
             })?;
+            check(staged)?;
             encode(observed)
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
