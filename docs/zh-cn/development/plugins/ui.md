@@ -331,6 +331,15 @@ Bus 副作用保留执行屏障；`bus.receive` 是可取消的被动等待，�
 revision／字段 schema 校验；通用 CRUD 沿用原完整替换契约，不声称增加 CAS。
 导入、凭据和创建连接不因这些方法获准而自动开放。
 
+已提交的原生视图还可使用经过审查的工作区导航与布局方法：
+`workspace.openPage/openHost/openTerminal/openFiles/openSidebar`、
+`workspace.activate/close/split/move/returnSidebar`、`workspace.showQuickAccess`、
+`workspace.setPaneLocked` 和 `workspace.resizeSplit/resizeSplits`。这些仍是普通的
+`workspace.write` 操作，通过协调窗口的当前 store 执行，而不是重放过期的原生快照；
+准入与回复时都会重新授权，并在已接受的源界面效果完成前保留发起面板的执行屏障。
+暂存目标不能调用它们。打开主机、终端或文件页面不会建立 SSH 会话，也不会授予其领域
+权限，只会在常规检查下导航到已有会话或已保存主机。
+
 内部网关还逐项开放了插件自有数据方法：`storage.get/set/delete/observe`、七个
 `configuration.*` 模式/CAS/备份方法，以及 `secrets.get/set/delete`。写入与所有钥匙串调用
 仍要求已取得面板所有权；`storage.get/observe`、`configuration.schema/snapshot/backups`

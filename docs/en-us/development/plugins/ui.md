@@ -385,6 +385,17 @@ Bus ownership stays with the approved plugin runtime. There is still only one
 outstanding receiver per runtime, so background subscriptions should normally stay
 in `activate`, not be duplicated by each view.
 
+Committed native views may also use the reviewed workspace navigation and layout
+methods: `workspace.openPage/openHost/openTerminal/openFiles/openSidebar`,
+`workspace.activate/close/split/move/returnSidebar`, `workspace.showQuickAccess`,
+`workspace.setPaneLocked` and `workspace.resizeSplit/resizeSplits`. These remain
+ordinary `workspace.write` operations. They route through the coordinator's
+current stores rather than replaying a stale native snapshot, reauthorize at
+admission and reply, and keep the originating panel fence through the accepted
+source UI effect. Staged destinations cannot call them. Opening a host, terminal
+or file page never creates an SSH session or grants its domain permissions; it
+only navigates to an existing session or saved host under the normal checks.
+
 The internal gateway also admits explicitly reviewed owned-data methods:
 `storage.get/set/delete/observe`, all seven `configuration.*` schema/CAS/backup
 methods, and `secrets.get/set/delete`. Mutations and all keyring calls remain
