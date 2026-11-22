@@ -36,9 +36,11 @@ export async function checkPullRequest({ github, context, number, expectedHead, 
         commits.every((commit) => SHA.test(commit.sha))
       )
         break;
-      if (attempt === 3 || pr.commits > 250)
+      if (pr.commits > 250)
+        throw new Error("PR has more than 250 commits; split it before merging");
+      if (attempt === 5)
         throw new Error(
-          "Incomplete or changed PR commit history; refresh checks or split PRs over 250 commits",
+          "PR commit history is still changing; wait for the ref update to settle and refresh checks",
         );
       await wait(1000 * 2 ** attempt);
       ({ data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number }));
