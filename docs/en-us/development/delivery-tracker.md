@@ -40,13 +40,14 @@ issue comment history.
 
 ## Release nodes
 
-| Node                 | State     | Evidence                                                                                              |
-| -------------------- | --------- | ----------------------------------------------------------------------------------------------------- |
-| Stable `v2.7.1`      | published | Latest stable baseline.                                                                               |
-| Beta `v2.8.0-beta.1` | published | #519 and #521.                                                                                        |
-| Beta `v2.8.0-beta.2` | published | #523 and #524; immutable tag `7e226069`; release run `45011603981` succeeded with 13 verified assets. |
-| Next Beta            | pending   | Allocate after the next one to three completed features and verified exact-head CI.                   |
-| Stable `v2.8.0`      | blocked   | Requires accepted `v2.8.0-beta.*` and a reviewed release PR from the same product source.             |
+| Node                 | State     | Evidence                                                                                                                    |
+| -------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Stable `v2.7.1`      | published | Latest stable baseline.                                                                                                     |
+| Beta `v2.8.0-beta.1` | published | #519 and #521.                                                                                                              |
+| Beta `v2.8.0-beta.2` | published | #523 and #524; immutable tag `7e226069`; release run `45011603981` succeeded with 13 verified assets.                       |
+| Beta `v2.8.0-beta.3` | published | #528 and the draft-release/CI fixes; immutable tag `5a57f60e`; release run `45026361923` succeeded with 13 verified assets. |
+| Next Beta            | pending   | Allocate after the next one to three completed features and verified exact-head CI.                                         |
+| Stable `v2.8.0`      | blocked   | Requires accepted `v2.8.0-beta.*` and a reviewed release PR from the same product source.                                   |
 
 ## Update procedure
 
