@@ -445,63 +445,173 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Test macOS platform behavior
+        timeout-minutes: 25
         run: |
+          echo "::group::01-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::
+          echo "::endgroup::"
+          echo "::group::02-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::
+          echo "::endgroup::"
+          echo "::group::03-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::storage::secrets::
+          echo "::endgroup::"
+          echo "::group::04-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
+          echo "::endgroup::"
+          echo "::group::05-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::security::
+          echo "::endgroup::"
+          echo "::group::06-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::host_fields::
+          echo "::endgroup::"
+          echo "::group::07-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::hosts::read::
+          echo "::endgroup::"
+          echo "::group::08-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
+          echo "::endgroup::"
+          echo "::group::09-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::preparation
+          echo "::endgroup::"
+          echo "::group::10-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::remote
+          echo "::endgroup::"
+          echo "::group::11-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::connections::execution
+          echo "::endgroup::"
+          echo "::group::12-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::network::
+          echo "::endgroup::"
+          echo "::group::13-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib update::
+          echo "::endgroup::"
+          echo "::group::14-test"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
+          echo "::endgroup::"
+          echo "::group::15-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
+          echo "::endgroup::"
+          echo "::group::16-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::keys::
+          echo "::endgroup::"
+          echo "::group::17-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
+          echo "::endgroup::"
+          echo "::group::18-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
+          echo "::endgroup::"
+          echo "::group::19-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
+          echo "::endgroup::"
+          echo "::group::20-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::groups
+          echo "::endgroup::"
+          echo "::group::21-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::connections
+          echo "::endgroup::"
+          echo "::group::22-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::hosts::transfer
+          echo "::endgroup::"
+          echo "::group::23-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
+          echo "::endgroup::"
+          echo "::group::24-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::application_actions
+          echo "::endgroup::"
+          echo "::group::25-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
+          echo "::endgroup::"
+          echo "::group::26-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::runners::transport::channel
+          echo "::endgroup::"
+          echo "::group::27-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib mounts::negotiation
+          echo "::endgroup::"
+          echo "::group::28-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          echo "::endgroup::"
+          echo "::group::29-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::monitor
+          echo "::endgroup::"
+          echo "::group::30-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
+          echo "::endgroup::"
+          echo "::group::31-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
+          echo "::endgroup::"
+          echo "::group::32-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
+          echo "::endgroup::"
+          echo "::group::33-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
+          echo "::endgroup::"
+          echo "::group::34-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
+          echo "::endgroup::"
+          echo "::group::35-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
+          echo "::endgroup::"
+          echo "::group::36-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::logging
+          echo "::endgroup::"
+          echo "::group::37-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::hosts
+          echo "::endgroup::"
+          echo "::group::38-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::forwarding
+          echo "::endgroup::"
+          echo "::group::39-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib automation::runtime
+          echo "::endgroup::"
+          echo "::group::40-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
+          echo "::endgroup::"
+          echo "::group::41-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::preferences
+          echo "::endgroup::"
+          echo "::group::42-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
+          echo "::endgroup::"
+          echo "::group::43-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
+          echo "::endgroup::"
+          echo "::group::44-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
+          echo "::endgroup::"
+          echo "::group::45-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
+          echo "::endgroup::"
+          echo "::group::46-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
+          echo "::endgroup::"
+          echo "::group::47-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification
+          echo "::endgroup::"
+          echo "::group::48-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib backup_cleanup_preserves
+          echo "::endgroup::"
+          echo "::group::49-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_transfer_commit_preserves
+          echo "::endgroup::"
+          echo "::group::50-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib transfer_artifact_
+          echo "::endgroup::"
+          echo "::group::51-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
+          echo "::endgroup::"
+          echo "::group::52-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::files::native_save
+          echo "::endgroup::"
+          echo "::group::53-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests
+          echo "::endgroup::"
+          echo "::group::54-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::
+          echo "::endgroup::"
+          echo "::group::55-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib db::startup_tests
-
+          echo "::endgroup::"
       - name: Test immutable credential bindings in isolated macOS keychain
         timeout-minutes: 3
         run: TUNNELDE_TEST_APP_KEYRING=1 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::native::tests::system::immutable_bindings_survive_restart_and_cleanup_preserves_other_services -- --ignored --exact
