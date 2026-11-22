@@ -37,6 +37,9 @@ pub(in crate::plugins::api) async fn execute(
         Duration::from_millis(timeout),
         || {
             authorize(context, &["ssh.exec"])?;
+            if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+                origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+            }
             if state.ssh.identity(&session_id)? != identity {
                 return Err(AppError::validation("ssh.sessionMissing"));
             }

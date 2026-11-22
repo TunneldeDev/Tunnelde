@@ -1,10 +1,18 @@
-use crate::plugins::api::{encode, field, optional, HostContext};
+use crate::plugins::api::{authorize, encode, field, optional, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
 };
 use serde_json::Value;
 use tauri::Manager;
+
+fn check(context: &HostContext, permission: &str) -> AppResult<()> {
+    authorize(context, &[permission])?;
+    if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+        origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+    }
+    Ok(())
+}
 
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
@@ -22,7 +30,7 @@ pub(in crate::plugins::api) async fn dispatch(
             } else {
                 None
             };
-            let task = crate::ssh::files::start_copy(
+            let task = crate::ssh::files::start_copy_checked(
                 app.clone(),
                 crate::ssh::files::Endpoint {
                     session: session.clone(),
@@ -39,6 +47,16 @@ pub(in crate::plugins::api) async fn dispatch(
                     permissions: context.permissions.clone(),
                     generation: context.generation,
                 }),
+                &|| {
+                    check(
+                        context,
+                        if method == "files.sftp.copy" {
+                            "sftp.write"
+                        } else {
+                            "fs.write"
+                        },
+                    )
+                },
             )?;
             let id = task.id.clone();
             if !crate::plugins::tools::register_resource(context, &id, true) {
@@ -68,7 +86,7 @@ pub(in crate::plugins::api) async fn dispatch(
             } else {
                 (remote, local)
             };
-            let transfer_id = crate::ssh::files::spawn_plugin_transfer(
+            let transfer_id = crate::ssh::files::spawn_plugin_transfer_checked(
                 app.clone(),
                 from,
                 to,
@@ -79,6 +97,7 @@ pub(in crate::plugins::api) async fn dispatch(
                     permissions: context.permissions.clone(),
                     generation: context.generation,
                 },
+                &|| check(context, "sftp.write"),
             )?;
             if !crate::plugins::tools::register_resource(context, &transfer_id, true) {
                 state
@@ -88,16 +107,26 @@ pub(in crate::plugins::api) async fn dispatch(
             }
             encode(transfer_id)
         }
-        "files.cancelTransfer" => encode(state.transfers.cancel_owned(
-            &field::<String>(&params, "transferId")?,
-            &context.id,
-            context.generation,
-        )),
-        "files.transferStatus" => encode(state.transfers.status_owned(
-            &field::<String>(&params, "transferId")?,
-            &context.id,
-            context.generation,
-        )),
+        "files.cancelTransfer" => {
+            check(context, "sftp.write")?;
+            let value = encode(state.transfers.cancel_owned(
+                &field::<String>(&params, "transferId")?,
+                &context.id,
+                context.generation,
+            ));
+            check(context, "sftp.write")?;
+            value
+        }
+        "files.transferStatus" => {
+            check(context, "sftp.read")?;
+            let value = encode(state.transfers.status_owned(
+                &field::<String>(&params, "transferId")?,
+                &context.id,
+                context.generation,
+            ));
+            check(context, "sftp.read")?;
+            value
+        }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }
 }

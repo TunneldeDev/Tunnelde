@@ -1,10 +1,12 @@
-use crate::plugins::api::{authorize, encode, field, HostContext};
+use crate::plugins::api::{authorize, encode, field, transport::operation::Operation, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
 };
 use serde_json::Value;
+use std::sync::{Arc, OnceLock};
 use tauri::Manager;
+use tokio::sync::Semaphore;
 mod preferences;
 mod profiles;
 
@@ -40,8 +42,13 @@ pub(in crate::plugins::api) async fn dispatch(
             }
             let worker = context.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            static CAPACITY: OnceLock<Arc<Semaphore>> = OnceLock::new();
+            let operation =
+                Operation::admit(CAPACITY.get_or_init(|| Arc::new(Semaphore::new(4))).clone())?;
+            let ticket = operation.ticket();
             crate::services::settings::write(app, move |writer| {
                 let state = worker.app.state::<AppState>();
+                ticket.check()?;
                 authorize(&worker, &["settings.write"])?;
                 let prepared = writer.prepare_update(patch)?;
                 let lease = crate::plugins::security::Lease {
@@ -63,10 +70,17 @@ pub(in crate::plugins::api) async fn dispatch(
                         &state.db,
                         &lease,
                         &["settings.write"],
-                        || cancellation.check(),
+                        || {
+                            ticket.check()?;
+                            cancellation.check()
+                        },
                         authority,
-                        |conn| prepared.borrow().persist_on(conn),
+                        |conn| {
+                            ticket.check()?;
+                            prepared.borrow().persist_on(conn)
+                        },
                         |revision| {
+                            ticket.commit()?;
                             prepared.borrow_mut().committed_revision(revision);
                             Ok(())
                         },

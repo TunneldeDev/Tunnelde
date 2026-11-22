@@ -189,6 +189,9 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
         Some(origin) => origin.with_current(mutate)?,
         None => mutate()?,
     };
+    if let Some(origin) = &origin {
+        origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+    }
     emit(&context.app);
     Ok(result)
 }

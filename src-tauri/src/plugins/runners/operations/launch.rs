@@ -18,11 +18,19 @@ impl Drop for RecoverOnDrop {
     }
 }
 
-pub(in crate::plugins::runners) async fn start(
+pub(in crate::plugins::runners) async fn start_with_origin(
     context: &HostContext,
     params: Value,
     initialized: bool,
+    origin: Option<crate::platform::panel_windows::plugin_views::origin::Origin>,
 ) -> AppResult<Value> {
+    let check = || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::RunnerEffect)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check()?;
     let (session, directory, config, initial) = if initialized {
         let request = bootstrap::Request::parse(params)?;
         let initial = request.envelope()?;
@@ -71,6 +79,7 @@ pub(in crate::plugins::runners) async fn start(
     // above is read-only and never creates a task directory.
     let reserved = repository::transaction(context, |records| {
         authorize(context, &["ssh.exec"])?;
+        check()?;
         let selected = selected(records)?;
         if negotiated
             .as_ref()
@@ -105,6 +114,7 @@ pub(in crate::plugins::runners) async fn start(
         records.push(record.clone());
         Ok(record)
     })?;
+    check()?;
     if reserved.admission.is_some() {
         let receipt =
             admission::request(context, &session, &reserved, admission::Operation::Reserve).await?;

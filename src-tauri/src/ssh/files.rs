@@ -507,16 +507,20 @@ fn requested_directory(home: &str, input: Option<&str>) -> AppResult<String> {
     }
 }
 
-pub async fn remote_resolve_directory(
+pub(crate) async fn remote_resolve_directory_checked(
     app: &AppHandle,
     session_id: &str,
     path: Option<String>,
+    check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<serde_json::Value> {
     let sftp = session(app, session_id).await?;
+    check()?;
     let result = async {
         let home = sftp.canonicalize(".").await.map_err(map_sftp)?;
+        check()?;
         let requested = requested_directory(&home, path.as_deref())?;
         let path = sftp.canonicalize(requested).await.map_err(map_sftp)?;
+        check()?;
         if !sftp.metadata(&path).await.map_err(map_sftp)?.is_dir() {
             return Err(AppError::validation("plugin.tools.invalidPath"));
         }
@@ -532,7 +536,17 @@ pub async fn remote_list(
     session_id: &str,
     path: Option<String>,
 ) -> AppResult<Listing> {
+    remote_list_checked(app, session_id, path, &|| Ok(())).await
+}
+
+pub(crate) async fn remote_list_checked(
+    app: &AppHandle,
+    session_id: &str,
+    path: Option<String>,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<Listing> {
     let sftp = session(app, session_id).await?;
+    check()?;
     let requested = path
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| ".".to_string());
@@ -540,6 +554,7 @@ pub async fn remote_list(
         .canonicalize(requested.clone())
         .await
         .unwrap_or(requested);
+    check()?;
 
     let directory = sftp.read_dir(resolved.clone()).await.map_err(map_sftp)?;
     let mut entries: Vec<FileEntry> = directory
@@ -881,16 +896,21 @@ pub fn spawn_transfer(
     spawn_transfer_inner(app, from, to, remove_source, overwrite, None, None).map(|task| task.id)
 }
 
-pub(crate) fn spawn_plugin_transfer(
+pub(crate) fn spawn_plugin_transfer_checked(
     app: AppHandle,
     from: Endpoint,
     to: Endpoint,
     overwrite: bool,
     owner: crate::plugins::security::Lease,
+    check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<String> {
+    check()?;
     // Plugin transfers copy only; deleting the source requires a separate,
     // explicitly permitted file operation.
-    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner), None).map(|task| task.id)
+    let id = spawn_transfer_inner(app, from, to, false, overwrite, Some(owner), None)
+        .map(|task| task.id)?;
+    check()?;
+    Ok(id)
 }
 
 /// Compatibility copy commands wait for the same journaled worker used by
@@ -933,7 +953,21 @@ pub(crate) fn start_copy(
     overwrite: bool,
     owner: Option<crate::plugins::security::Lease>,
 ) -> AppResult<TransferTask> {
-    spawn_transfer_inner(app, from, to, false, overwrite, owner, None)
+    start_copy_checked(app, from, to, overwrite, owner, &|| Ok(()))
+}
+
+pub(crate) fn start_copy_checked(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    overwrite: bool,
+    owner: Option<crate::plugins::security::Lease>,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<TransferTask> {
+    check()?;
+    let task = spawn_transfer_inner(app, from, to, false, overwrite, owner, None)?;
+    check()?;
+    Ok(task)
 }
 
 /// Only the UI's confirmed local rename fallback uses this copy-based move.
@@ -3311,13 +3345,18 @@ pub async fn read_text(
 
 /// Strict UTF-8 read for the public plugin file API. Unlike editor reads, a
 /// UTF-8 BOM remains part of the returned content and legacy bytes are rejected.
-pub(crate) async fn read_plugin_text(
+pub(crate) async fn read_plugin_text_checked(
     app: &AppHandle,
     session_id: &str,
     path: &str,
+    check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<TextFile> {
     let sftp = session(app, session_id).await?;
+    check()?;
     let result = read_remote_text(&sftp, path, TextSaveMode::utf8()).await;
+    if result.is_ok() {
+        check()?;
+    }
     let _ = sftp.close().await;
     result
 }

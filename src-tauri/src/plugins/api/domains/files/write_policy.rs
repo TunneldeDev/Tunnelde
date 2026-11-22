@@ -14,6 +14,7 @@ use tauri::Manager;
 pub(super) struct Authorization {
     pub context: HostContext,
     permission: &'static str,
+    origin: Option<crate::platform::panel_windows::plugin_views::origin::Origin>,
 }
 
 impl Authorization {
@@ -21,11 +22,15 @@ impl Authorization {
         Self {
             context: context.clone(),
             permission,
+            origin: crate::platform::panel_windows::plugin_views::origin::current(),
         }
     }
 
     pub fn check(&self) -> AppResult<()> {
         authorize(&self.context, &[self.permission])?;
+        if let Some(origin) = &self.origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
         tools::with_request_authorized(
             &self.context.id,
             self.context.generation,

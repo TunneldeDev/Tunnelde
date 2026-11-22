@@ -14,23 +14,33 @@ pub(in crate::plugins::api) async fn dispatch(
 ) -> AppResult<Value> {
     let app = &context.app;
     let state = app.state::<AppState>();
+    let check = || {
+        if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
     match method {
         "monitor.system" => encode(commands::system_stats(state)),
         "monitor.stats" => {
-            encode(commands::remote_stats(app.clone(), field(&params, "sessionId")?).await?)
+            check()?;
+            let value =
+                encode(commands::remote_stats(app.clone(), field(&params, "sessionId")?).await?);
+            check()?;
+            value
         }
         "monitor.processes" => {
-            encode(commands::remote_processes(app.clone(), field(&params, "sessionId")?).await?)
+            check()?;
+            let value = encode(
+                commands::remote_processes(app.clone(), field(&params, "sessionId")?).await?,
+            );
+            check()?;
+            value
         }
         "monitor.kill" => {
-            // Native-view calls are refused before this adapter because the SSH
-            // effect cannot be fenced at its actual dispatch boundary yet.
-            // Ordinary non-native transports retain their existing authority.
-            if crate::platform::panel_windows::plugin_views::origin::current().is_some() {
-                return Err(AppError::validation(
-                    "plugin.frontend.nativeMethodUnavailable",
-                ));
-            }
+            // Monitor reads and the process mutation all retain the original
+            // native origin through their actual SSH dispatch.
+            check()?;
             commands::remote_kill(
                 app.clone(),
                 field(&params, "sessionId")?,
@@ -38,6 +48,7 @@ pub(in crate::plugins::api) async fn dispatch(
                 None,
             )
             .await?;
+            check()?;
             Ok(Value::Null)
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),

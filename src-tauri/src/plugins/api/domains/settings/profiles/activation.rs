@@ -23,11 +23,21 @@ pub(super) async fn activate(
     ticket: Ticket,
 ) -> AppResult<Value> {
     let request: Activate = super::parse(params)?;
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check_origin =
+        |origin: &Option<crate::platform::panel_windows::plugin_views::origin::Origin>| {
+            if let Some(origin) = origin {
+                origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+            }
+            Ok::<(), AppError>(())
+        };
+    check_origin(&origin)?;
     let pref = &request.preferences_revision;
     if pref.is_empty() || pref.len() > 128 || pref.chars().any(char::is_control) {
         return Err(AppError::validation("profiles.mutation.invalidRequest"));
     }
     let worker = context.clone();
+    let worker_origin = origin.clone();
     let captured_request = Activate {
         id: request.id.clone(),
         revision: request.revision.clone(),
@@ -40,7 +50,8 @@ pub(super) async fn activate(
             &captured_request,
             || {
                 worker_ticket.check()?;
-                authorize(&worker, WRITE)
+                authorize(&worker, WRITE)?;
+                check_origin(&worker_origin)
             },
         )
     })
@@ -66,6 +77,7 @@ pub(super) async fn activate(
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>()
     };
+    check_origin(&origin)?;
     let confirmed = frontend_request(
         context,
         "profiles.activate",
@@ -79,10 +91,12 @@ pub(super) async fn activate(
         return Err(AppError::validation("plugin.api.invalidResponse"));
     }
     let worker = context.clone();
+    let write_origin = origin.clone();
     crate::services::settings::write(&context.app, move |writer| {
         let state = worker.app.state::<AppState>();
         ticket.check()?;
         authorize(&worker, WRITE)?;
+        check_origin(&write_origin)?;
         let prepared =
             writer.prepare_profile(&request.preferences_revision, selected.values.clone())?;
         let cancellation = prepared.cancellation();
@@ -93,9 +107,11 @@ pub(super) async fn activate(
             WRITE,
             || {
                 ticket.check()?;
-                cancellation.check()
+                cancellation.check()?;
+                check_origin(&write_origin)
             },
             |conn| {
+                check_origin(&write_origin)?;
                 prepared.borrow().persist_guarded_on(
                     conn,
                     Some(&request.preferences_revision),

@@ -44,6 +44,12 @@ pub(in crate::plugins::api) async fn dispatch(
 ) -> AppResult<Value> {
     let app = &context.app;
     let state = app.state::<AppState>();
+    let check = || {
+        if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
     match method {
         "sessions.list" => encode(
             commands::ssh_sessions(state)
@@ -51,17 +57,29 @@ pub(in crate::plugins::api) async fn dispatch(
                 .map(PluginSession::from)
                 .collect::<Vec<_>>(),
         ),
-        "sessions.connect" => encode(PluginSession::from(
-            crate::plugins::sessions::connect(context, field(&params, "request")?).await?,
-        )),
+        "sessions.connect" => {
+            check()?;
+            let value = encode(PluginSession::from(
+                crate::plugins::sessions::connect(context, field(&params, "request")?).await?,
+            ));
+            check()?;
+            value
+        }
         "sessions.disconnect" => {
+            check()?;
             commands::ssh_disconnect(app.clone(), field(&params, "sessionId")?).await?;
+            check()?;
             Ok(Value::Null)
         }
-        "sessions.requestHandoff" => encode(
-            crate::plugins::sessions::request_handoff(context, field(&params, "sessionId")?)
-                .await?,
-        ),
+        "sessions.requestHandoff" => {
+            check()?;
+            let value = encode(
+                crate::plugins::sessions::request_handoff(context, field(&params, "sessionId")?)
+                    .await?,
+            );
+            check()?;
+            value
+        }
         "sessions.exec" => execution::execute(context, &params).await,
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }
