@@ -12,22 +12,37 @@ import { panelSnapshot, requirePanel } from "./snapshot";
 import { subscribePanels } from "./observation";
 import { closePanel, revealPanel, setPanelLocation } from "./controller";
 import type { SourcePanelPresentation } from "./sourcePresentation";
+import { retainDetachedWorkspaceTabs, workspaceTabReturnedToMain } from "./detachedWorkspaceTabs";
 
 /** Restore only workspace pages whose live native owner returned to main.
  * Sidebar tabs have independent hide semantics and are deliberately excluded. */
 export function revealReturnedWorkspaceTabs(snapshot: NativePanelSnapshot) {
-  const owned = new Set(
-    snapshot.panels.filter((panel) => panel.windowId === "main").map((panel) => panel.panelId),
+  const owned = new Map(
+    snapshot.panels
+      .filter((panel) => panel.windowId === "main")
+      .map((panel) => [panel.panelId, panel.generation]),
   );
   const workspace = useWorkspace.getState();
   for (const tab of workspace.tabs) {
     if (
-      tab.hidden &&
-      ["terminal", "sftp", "editor", "host", "settings", "updates"].includes(tab.kind) &&
-      owned.has(canonicalWorkspacePanelId(tab.id))
+      !tab.hidden ||
+      !["terminal", "sftp", "editor", "host", "settings", "updates"].includes(tab.kind)
     )
-      workspace.activate(tab.id);
+      continue;
+    const panelId = canonicalWorkspacePanelId(tab.id);
+    const generation = owned.get(panelId);
+    if (generation === undefined) continue;
+    // Only a newer main-window lease proves the panel actually returned. A
+    // stale snapshot with the original generation must not re-open the source.
+    if (workspaceTabReturnedToMain(panelId, generation)) workspace.activate(tab.id);
   }
+}
+
+/** A tab can be closed while its panel is detached. Do not retain stale native
+ * bookkeeping for an identity that can never return to this workspace. A tab
+ * reopened under the same stable ID remains returnable and keeps its generation. */
+export function retainReturnableWorkspaceTabs(tabs: readonly { id: string }[]) {
+  retainDetachedWorkspaceTabs(new Set(tabs.map((tab) => tab.id)));
 }
 
 /** Main-document adapter. Never use this to read or mutate a satellite's slot;
