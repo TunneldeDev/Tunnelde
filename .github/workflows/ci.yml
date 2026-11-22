@@ -448,8 +448,9 @@ jobs:
         timeout-minutes: 25
         run: |
           run_group() {
-            echo "::group::$1"
+            local label="$1"
             shift
+            echo "::group::$label"
             "$@"
             echo "::endgroup::"
           }
