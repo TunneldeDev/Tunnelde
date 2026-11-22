@@ -36,9 +36,7 @@ it("keeps browser-only views working and avoids recursive failures", async () =>
   Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
   invoke.mockRejectedValue(new Error("Disk unavailable"));
   reportError("events", "ssh:data", new Error("Subscriber failed"));
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(invoke).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
   expect(invoke).toHaveBeenCalledWith("logs_write", {
     entry: expect.objectContaining({
       message: "Subscriber failed",
@@ -56,13 +54,14 @@ it("does not copy arbitrary IPC details into log error fields", async () => {
     message: "Failed",
     details: { password: "secret" },
   });
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalled());
   expect(invoke).toHaveBeenCalledWith("logs_write", {
     entry: {
       domain: "events",
       operation: "plugin:__event",
       level: "error",
       message: "Failed",
-      fields: { code: "ssh" },
+      fields: { code: "ssh", detailCount: 1 },
     },
   });
 });

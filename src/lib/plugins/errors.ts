@@ -1,4 +1,7 @@
 import i18n from "@/i18n/i18n";
+
+type Translate = (key: string) => string;
+const translateKey = i18n.t.bind(i18n) as unknown as Translate;
 import { translateError } from "@/lib/api/errors";
 import { isIpcError } from "@/lib/api/types";
 
@@ -17,8 +20,14 @@ export function pluginFailure(error: unknown): string {
 }
 
 function formatFailure(error: unknown): string {
-  let message = isIpcError(error) ? error.message : error instanceof Error ? error.message : "";
+  const rawMessage = isIpcError(error)
+    ? error.message
+    : error instanceof Error
+      ? error.message
+      : "";
+  let message = rawMessage;
   if (message.startsWith("plugin.error: ")) message = message.slice("plugin.error: ".length);
+  if (message.startsWith("plugin.error:")) message = message.slice("plugin.error:".length).trim();
   if (message.startsWith("plugin.api.frontend:"))
     message = message.slice("plugin.api.frontend:".length);
   if (message === "plugin exited" || message === "plugin.exited")
@@ -32,6 +41,12 @@ function formatFailure(error: unknown): string {
   if (message === "plugin.engine.unsupported" || message === "plugin.frontend.sdkUnsupported")
     return translateError(isIpcError(error) ? error : { code: "validation", message });
   // Recreate the structured error for localization keys delivered through status events.
+  // A bare plugin runtime message is already the most specific user-facing
+  // diagnosis; do not prefix the generic field-validation category.
+  if (rawMessage.startsWith("plugin.error:")) {
+    translateError(error);
+    return i18n.exists(message) ? translateKey(message) : message;
+  }
   const translated = translateError(
     isIpcError(error) ? { ...error, message } : { code: "validation", message },
   );

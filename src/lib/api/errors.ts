@@ -1,5 +1,25 @@
 import i18n from "@/i18n/i18n";
 import { isIpcError } from "@/lib/api/types";
+import { diagnosticLevel, reportError, type LogLevel } from "@/lib/diagnostics";
+import { rememberErrorDetails } from "./errorDetails";
+
+/** Stable application-facing failure contract shared by logs, UI state and
+ * notifications. Raw details stay structured and are never flattened into the
+ * localized title. */
+export interface AppFailure {
+  code: string;
+  message: string;
+  userMessage: string;
+  severity: LogLevel;
+  details: Record<string, unknown> | null;
+  stack: string | null;
+}
+
+export interface ErrorContext {
+  domain?: string;
+  operation?: string;
+  requestId?: string;
+}
 
 const CODE_KEYS: Record<string, string> = {
   validation: "error.validation",
@@ -21,7 +41,95 @@ function translateKey(key: string): string | null {
   return null;
 }
 
+export function normalizeError(error: unknown): AppFailure {
+  const code = isIpcError(error) ? error.code : error instanceof Error ? "runtime" : "unknown";
+  const message = isIpcError(error)
+    ? error.message
+    : error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : translate("error.generic");
+  const translated = translateErrorDetailed(error);
+  const generic = code in CODE_KEYS ? translate(CODE_KEYS[code]!) : null;
+  const userMessage =
+    generic && translated === generic && message && message !== generic && !i18n.exists(message)
+      ? `${generic} · ${message}`
+      : translated;
+  return {
+    code,
+    message,
+    userMessage,
+    severity: diagnosticLevel(error),
+    details:
+      isIpcError(error) && error.details && typeof error.details === "object"
+        ? error.details
+        : null,
+    stack: error instanceof Error && error.stack ? error.stack : null,
+  };
+}
+
+/** Translate for presentation while retaining the original failure in the
+ * structured diagnostic log and the matching toast's Details disclosure. */
 export function translateError(error: unknown): string {
+  return translateErrorWithContext(error);
+}
+
+/** Presentation translation with an explicit domain/operation. Existing call
+ * sites can migrate incrementally while new code should use `notifyError`. */
+export function translateErrorWithContext(error: unknown, context: ErrorContext = {}): string {
+  const failure = normalizeError(error);
+  reportError(
+    context.domain ?? "ui",
+    context.operation ?? "translateError",
+    error,
+    failure.severity,
+  );
+  // Inline callers get the same normalized failure without importing the UI
+  // store. A later toast with this exact title claims the structured original.
+  rememberErrorDetails(failure.userMessage, error);
+  return failure.userMessage;
+}
+
+/** Human-readable, bounded representation used by notification details.
+ * The full structured object remains available to diagnostics; this view only
+ * avoids hiding the original code/message from the user. */
+export function formatErrorDetails(error: unknown): string {
+  const failure = normalizeError(error);
+  return JSON.stringify(
+    {
+      code: failure.code,
+      message: failure.message,
+      ...(failure.details ? { details: failure.details } : {}),
+      ...(failure.stack ? { stack: failure.stack } : {}),
+    },
+    null,
+    2,
+  );
+}
+
+/** Normalize and log once. Presentation surfaces can then choose toast,
+ * inline error, dialog or a custom renderer without duplicating diagnostics. */
+export function captureError(error: unknown, context: ErrorContext = {}): AppFailure {
+  const failure = normalizeError(error);
+  reportError(context.domain ?? "ui", context.operation ?? "operation", error, failure.severity);
+  rememberErrorDetails(failure.userMessage, error);
+  return failure;
+}
+
+/** Default toast presentation of the unified failure contract. */
+export async function notifyError(
+  error: unknown,
+  context: ErrorContext = {},
+  options: { action?: { label: string; onClick: () => void | Promise<void> } } = {},
+): Promise<AppFailure> {
+  const failure = captureError(error, context);
+  const { toast } = await import("@/store/toasts");
+  toast(failure.userMessage, "error", options.action);
+  return failure;
+}
+
+function translateErrorDetailed(error: unknown): string {
   if (isIpcError(error)) {
     const details = error.details;
     if (error.message === "plugin.activation.missingDependency" && typeof details?.id === "string")
@@ -76,7 +184,7 @@ export function translateError(error: unknown): string {
                 reason: serverMessage,
               })
             : String(details.reason).startsWith("sftp.")
-              ? translateError({ code: "ssh", message: String(details.reason) })
+              ? translateErrorDetailed({ code: "ssh", message: String(details.reason) })
               : String(details.reason);
         return translate("sftp.renameFailed", { from: details.from, to: details.to, reason });
       }
@@ -100,6 +208,9 @@ export function translateError(error: unknown): string {
     if (error.message.startsWith("ssh.error:")) {
       return error.message.slice("ssh.error:".length).trim();
     }
+    if (error.message.startsWith("plugin.error:")) {
+      return error.message.slice("plugin.error:".length).trim() || translate("error.generic");
+    }
     if (error.message.startsWith("plugin.runners.commandFailed:")) {
       return translate("plugin.runners.commandFailed", {
         reason:
@@ -122,7 +233,10 @@ export function translateError(error: unknown): string {
     }
     const codeKey = CODE_KEYS[error.code];
     if (codeKey) {
-      return translate(codeKey);
+      const generic = translate(codeKey);
+      // An unrecognized backend key is actionable detail; append it rather
+      // than reducing every validation failure to the generic field prompt.
+      return error.message && error.message !== generic ? `${generic} · ${error.message}` : generic;
     }
     return error.message;
   }

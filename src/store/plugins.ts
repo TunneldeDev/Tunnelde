@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { translateError } from "@/lib/api/errors";
+import { captureError, notifyError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { PluginInfo, MarketEntry } from "@/lib/api/types";
 import { pluginFailure } from "@/lib/plugins/errors";
@@ -29,7 +29,7 @@ function notifyPluginFailure(id: string, error: unknown) {
       try {
         await api.openLatestLog();
       } catch (cause) {
-        toast(translateError(cause), "error");
+        notifyError(cause, { domain: "plugins", operation: "openLog" });
       }
     },
   });
@@ -123,7 +123,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
         };
       });
     } catch (error) {
-      if (requestId === listRequest) toast(translateError(error), "error");
+      if (requestId === listRequest) notifyError(error, { domain: "plugins", operation: "list" });
     }
   };
 
@@ -188,7 +188,11 @@ export const usePlugins = create<PluginsStore>((set, get) => {
             reportPluginExecutionFailure(error);
           }
           if (starting) notifyPluginFailure(id, error);
-          else toast(translateError(error), "error");
+          else
+            notifyError(error, {
+              domain: "plugins",
+              operation: starting ? "start" : "stop",
+            });
         }
       },
       starting ? "start" : "stop",
@@ -279,7 +283,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
             await readList(api.pluginsList);
             return true;
           } catch (error) {
-            toast(translateError(error), "error");
+            notifyError(error, { domain: "plugins", operation: "install" });
             return false;
           }
         })
@@ -380,7 +384,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
             "message" in error &&
             error.message === "market.cancelled"
           ))
-            toast(translateError(error), "error");
+            notifyError(error, { domain: "plugins", operation: "installMarket" });
         }
       });
       return success;
@@ -398,7 +402,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
             ),
           }));
         } catch (error) {
-          toast(translateError(error), "error");
+          notifyError(error, { domain: "plugins", operation: "uninstall" });
         }
       }),
 
@@ -483,7 +487,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
               text:
                 error instanceof Error && error.message === "resultTooLarge"
                   ? i18n.t("pluginView.resultTooLarge")
-                  : translateError(error),
+                  : captureError(error, { domain: "plugins", operation: "execute" }).userMessage,
               error: true,
             };
             set((state) => ({ outputs: { ...state.outputs, [id]: output } }));

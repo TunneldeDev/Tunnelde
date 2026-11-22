@@ -167,7 +167,8 @@
     "noResults": "No matches",
     "helpFor": "Help: {{label}}",
     "showPassword": "Show password",
-    "hidePassword": "Hide password"
+    "hidePassword": "Hide password",
+    "details": "Details"
   },
   "nav": {
     "welcome": "Welcome",
