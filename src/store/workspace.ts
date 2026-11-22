@@ -100,6 +100,9 @@ interface WorkspaceStore {
   openPage: (kind: PageKind, options?: OpenTabOptions) => void;
   openSidebar: (view: SidebarView) => void;
   toggleDockedSidebar: (view: SidebarView) => void;
+  /** Hide a page tab after its live native owner moved to another window.
+   * The tab record is retained so returning the panel can restore its slot. */
+  hideTab: (id: string) => void;
   returnSidebar: (view: SidebarView) => void;
   forgetSidebar: (view: SidebarView) => void;
   openHost: (host: Host, options?: OpenTabOptions) => void;
@@ -524,6 +527,18 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         return {
           tabs,
           ...settle(dropTab(state.panes, id), state.activePaneId, state.split, state.layout, tabs),
+        };
+      });
+    },
+
+    hideTab: (id) => {
+      set((state) => {
+        const tab = state.tabs.find((item) => item.id === id);
+        if (!tab || tab.hidden) return state;
+        const tabs = state.tabs.map((item) => (item.id === id ? { ...item, hidden: true } : item));
+        return {
+          tabs,
+          ...settle(state.panes, state.activePaneId, state.split, state.layout, tabs),
         };
       });
     },

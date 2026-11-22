@@ -41,7 +41,10 @@ import { pluginSidebars } from "@/lib/plugins/sidebars";
 import { reportError } from "@/lib/diagnostics";
 
 import { createWindowViews, installWindowViews } from "@/lib/panels/windowViews";
-import { createMainPanelPresentation } from "@/lib/panels/mainPresentation";
+import {
+  createMainPanelPresentation,
+  revealReturnedWorkspaceTabs,
+} from "@/lib/panels/mainPresentation";
 import {
   installSourcePanelPresentation,
   startSourcePanelFocus,
@@ -104,6 +107,7 @@ export async function startPanelWindows(signal: AbortSignal) {
                 ? bindFileWindow(current, id)
                 : current.control({ action: "addPanel", panelId: id }),
     synchronize: async (snapshot) => {
+      revealReturnedWorkspaceTabs(snapshot);
       await synchronizeFileWindows(current);
       await synchronizeHostDetails(current, snapshot);
       await synchronizeSettingsWindows(current, snapshot);

@@ -3,7 +3,10 @@ import { useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import { afterEach, expect, it, vi } from "vitest";
 vi.mock("@/lib/api/ipc", () => ({ api: {} }));
-import { createMainPanelPresentation } from "@/lib/panels/mainPresentation";
+import {
+  createMainPanelPresentation,
+  revealReturnedWorkspaceTabs,
+} from "@/lib/panels/mainPresentation";
 import { useWorkspace } from "@/store/workspace";
 import { usePanelWindows } from "@/store/panelWindows";
 afterEach(() => {
@@ -97,4 +100,50 @@ it("maps an editor's opaque native ID back to its workspace tab and retains pend
   useDialogs.getState().close();
   expect(host.read().find((row) => row.id === panelId)?.visible).toBe(true);
   useEditors.getState().discard(tabId);
+});
+
+it("restores only hidden workspace tabs whose exact live owner returned to main", () => {
+  const settings = {
+    id: "page:settings",
+    kind: "settings" as const,
+    title: "Settings",
+    hostId: null,
+    pinned: false,
+    hidden: true,
+  };
+  const sidebar = {
+    id: "sidebar:hosts",
+    kind: "sidebar" as const,
+    title: "Hosts",
+    hostId: null,
+    pinned: false,
+    hidden: true,
+  };
+  useWorkspace.setState({
+    tabs: [settings, sidebar],
+    panes: [{ id: "pane", tabIds: [settings.id, sidebar.id], activeId: sidebar.id }],
+    activePaneId: "pane",
+    activeId: sidebar.id,
+    layout: { kind: "pane", paneId: "pane" },
+  });
+  revealReturnedWorkspaceTabs({
+    windows: [],
+    transfers: [],
+    panels: [
+      { panelId: "page:settings", windowId: "main", generation: 1 },
+      { panelId: "hosts", windowId: "main", generation: 1 },
+    ],
+  });
+  expect(useWorkspace.getState().tabs.find((tab) => tab.id === settings.id)?.hidden).toBeFalsy();
+  expect(useWorkspace.getState().tabs.find((tab) => tab.id === sidebar.id)?.hidden).toBe(true);
+
+  useWorkspace.setState((state) => ({
+    tabs: state.tabs.map((tab) => (tab.id === settings.id ? { ...tab, hidden: true } : tab)),
+  }));
+  revealReturnedWorkspaceTabs({
+    windows: [],
+    transfers: [],
+    panels: [{ panelId: "page:settings", windowId: "satellite", generation: 1 }],
+  });
+  expect(useWorkspace.getState().tabs.find((tab) => tab.id === settings.id)?.hidden).toBe(true);
 });
