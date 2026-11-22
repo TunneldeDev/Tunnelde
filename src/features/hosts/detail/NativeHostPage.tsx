@@ -17,8 +17,7 @@ import { ForwardingSurfaceBody } from "@/features/forwarding/components/Forwardi
 import { ForwardingReadScope } from "@/features/forwarding/data/readScope";
 import { Button } from "@/components/ui/form/Button";
 import { isTauri } from "@/lib/api/ipc";
-import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { notifyError } from "@/lib/api/errors";
 import { movePanelToWindow } from "@/lib/panels/windowMoves";
 export const useNativeHostTitles = create<{ titles: Record<string, string> }>(() => ({
   titles: {},
@@ -53,7 +52,7 @@ function Content({ client, record, model }: NativeViewProps & { model: HostDetai
       return;
     void client
       .action(current.lease, { kind: "hostDetail", command: { operation, host: detail.target } })
-      .catch((error) => toast(translateError(error), "error"));
+      .catch((error) => notifyError(error, { domain: "hosts.detail", operation }));
   };
   const services: HostPageServices = {
     connect: () => run("connect"),
@@ -70,8 +69,8 @@ function Content({ client, record, model }: NativeViewProps & { model: HostDetai
           {t("plugin.frontend.viewUnavailable")}
           <Button
             onClick={() =>
-              void movePanelToWindow(record.panelId, "main").catch((e) =>
-                toast(translateError(e), "error"),
+              void movePanelToWindow(record.panelId, "main").catch((error) =>
+                notifyError(error, { domain: "panels", operation: "returnToMain" }),
               )
             }
           >

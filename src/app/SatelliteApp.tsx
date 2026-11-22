@@ -65,9 +65,8 @@ import type {
 } from "./panelReadModels";
 import { TaskModelScope, type ClearTasksResult } from "@/lib/panels/taskModel";
 import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
-import { toast } from "@/store/toasts";
 import { ToastHost } from "@/components/ui/overlay/Toast";
-import { translateError } from "@/lib/api/errors";
+import { notifyError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
 import { loadStartupFonts } from "./startupFonts";
 import { panelIcon } from "@/lib/panels/panelIcons";
@@ -142,7 +141,7 @@ function ConnectionView(props: NativeViewProps) {
               try {
                 await client.action(record.lease, { kind: "disconnect", sessionId: id });
               } catch (error) {
-                toast(translateError(error), "error");
+                notifyError(error, { domain: "connections", operation: "disconnectMany" });
                 throw error;
               } finally {
                 setPending((items) => items.filter((item) => item !== id));
@@ -155,7 +154,7 @@ function ConnectionView(props: NativeViewProps) {
             try {
               await client.action(record.lease, { kind: "disconnect", sessionId: id });
             } catch (error) {
-              toast(translateError(error), "error");
+              notifyError(error, { domain: "connections", operation: "disconnect" });
             } finally {
               setPending((items) => items.filter((item) => item !== id));
             }
@@ -381,10 +380,9 @@ export function SatelliteApp() {
           receive: (snapshot) =>
             usePanelWindows.setState({ windowId: current.windowId, available: true, snapshot }),
           failure: (error) => {
-            reportError("panels.windows", "satellite.session", error);
             if (!disposed) {
               setFailed(true);
-              toast(translateError(error), "error");
+              notifyError(error, { domain: "panels.windows", operation: "satellite.session" });
             }
           },
         });
@@ -402,7 +400,7 @@ export function SatelliteApp() {
           reportError("panels.windows", "pluginUi", error),
         );
         const stopDrag = installPanelWindowDrag(current, (error) =>
-          toast(translateError(error), "error"),
+          notifyError(error, { domain: "panels.windows", operation: "satelliteDrag" }),
         );
         cleanup = () => {
           stopUi();

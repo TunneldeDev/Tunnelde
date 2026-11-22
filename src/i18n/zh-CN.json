@@ -167,7 +167,8 @@
     "noResults": "没有匹配结果",
     "helpFor": "帮助：{{label}}",
     "showPassword": "显示密码",
-    "hidePassword": "隐藏密码"
+    "hidePassword": "隐藏密码",
+    "details": "详情"
   },
   "nav": {
     "welcome": "欢迎",

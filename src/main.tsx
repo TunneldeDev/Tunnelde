@@ -21,6 +21,9 @@ import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@/i18n/i18n";
+import { installGlobalErrorDiagnostics } from "@/lib/diagnostics";
+
+installGlobalErrorDiagnostics();
 
 const container = document.getElementById("root");
 if (!container) {

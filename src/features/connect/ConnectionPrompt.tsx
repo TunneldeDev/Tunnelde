@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/ui/overlay/ConfirmDialog";
 import { ConnectionQuality } from "./ConnectionQuality";
 import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { cn } from "@/lib/text/format";
-import { translateError } from "@/lib/api/errors";
+import { normalizeError, notifyError } from "@/lib/api/errors";
 import {
   isIpcError,
   type HostKeyInfo,
@@ -74,6 +74,7 @@ export function ConnectionPrompt({
   const [reviewChanged, setReviewChanged] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const reportError = useCallback((cause: unknown) => {
+    notifyError(cause, { domain: "connect", operation: "prompt" });
     const message = isIpcError(cause) || cause instanceof Error ? cause.message : null;
     if (message === "ssh.connectionChanged" || message === "forward.changed") {
       setReviewChanged(true);
@@ -84,7 +85,7 @@ export function ConnectionPrompt({
       setJumpCredentials({});
       setError(i18n.t("connect.reviewChanged"));
     } else {
-      setError(translateError(cause));
+      setError(normalizeError(cause).userMessage);
     }
   }, []);
   const alive = useRef(true);
@@ -248,7 +249,8 @@ export function ConnectionPrompt({
               setProbe(info);
               setTrusted(info.status === "known" && (!info.hostId || info.hostId === host.id));
             }
-          } catch {
+          } catch (cause) {
+            notifyError(cause, { domain: "connect", operation: "hostKeyRefresh" });
             // Keep the old fingerprint untrusted until the dialog is reopened.
             if (alive.current) setTrusted(false);
           }
@@ -300,7 +302,7 @@ export function ConnectionPrompt({
       try {
         await services.credential(host.id, password);
       } catch (cause) {
-        toast(translateError(cause), "error");
+        notifyError(cause, { domain: "connect", operation: "saveCredential" });
       }
     }
     if (!pinned && rememberJumps) {
@@ -309,7 +311,7 @@ export function ConnectionPrompt({
           try {
             await services.credential(id, credentials.password);
           } catch (cause) {
-            toast(translateError(cause), "error");
+            notifyError(cause, { domain: "connect", operation: "saveJumpCredential" });
           }
         }
       }
