@@ -12,11 +12,16 @@ generated release promotion targets `main`, where **Create a merge commit** is t
 1. A `dev` push runs CI and **Development**. Automation resolves the actual `dev` and `main`
    refs and collects changes after the last promoted dev commit recorded on main in
    `.github/release-source.json`. Dev does not need to contain main's release commits.
-2. One generated `release/dev-to-main` PR is created or refreshed. Its tree is dev's content
+2. One generated `release/dev-to-main` PR is created as a draft and refreshed without spending
+   PR CI on every dev push. Its tree is dev's content
    plus synchronized versions, the source marker, and the new changelog section. The final
    preparation commit has current main and dev as its two parents. This retains every original
    dev commit and SHA while remaining up to date with strict branch protection. The branch can be
-   rebuilt with a forced update; dev, main and existing tags are never force updated.
+   rebuilt with a forced update; dev, main and existing tags are never force updated. If an
+   existing generated PR is ready, automation converts it back to draft before replacing its
+   head. Only the maintainer marks the final reviewed head **Ready for review**; that transition
+   starts the exact-head PR CI matrix. Do not mark a draft ready while dev is still producing
+   release-bound changes.
 3. Dev pushes do not publish installers. Use **Prepare Beta → Run workflow** to select the
    current dev snapshot, synchronize its six desktop version files and changelog in an isolated commit,
    and create the next immutable `vX.Y.Z-beta.N` tag. Beta is an explicit testing milestone.
@@ -25,7 +30,8 @@ generated release promotion targets `main`, where **Create a merge commit** is t
    release notes and belong to the correct branch history. Lightweight and annotated tags work.
    Tags created by `GITHUB_TOKEN` do not trigger push workflows, so automation explicitly dispatches
    this same publisher with the exact tag. Repeating an already public tag skips rebuilding it.
-5. Review the version and changelog in the release PR, then **Create a merge commit** into main.
+5. When the development batch is complete, mark the generated release PR **Ready for review**.
+   Review the version and changelog, wait for its exact-head full CI, then **Create a merge commit** into main.
    **Stable release** verifies the reviewed parents and tree and tags the exact merged commit;
    **Publish version** builds Windows, Linux, Apple Silicon and Intel macOS packages.
 6. Every build first shares one staging draft. Only after all desktop artifacts, signatures and
@@ -127,11 +133,13 @@ permissions → Allow GitHub Actions to create and approve pull requests**. No P
 organization-wide access or Ruleset bypass is needed. Each workflow declares its permissions.
 Automation creates PRs but does not approve them or merge them.
 
-Automation writes the PR policy status to the actual head. GitHub may hold a bot-created
-PR's `pull_request` CI run for approval (`action_required`). After reviewing the generated
-diff and exact head SHA, a maintainer approves that run from the PR's **Checks** tab or its
-Actions page. Wait for that PR run's required checks before merging. Approving a workflow
-run authorizes its code to execute; it is separate from approving or merging the PR.
+Automation writes the PR policy status to the actual head. Generated release PRs stay in draft;
+draft heads do not run the application CI matrix. Marking the final reviewed head **Ready for
+review** triggers `ready_for_review`, and the PR CI checks that exact SHA. GitHub may still hold
+a bot-created PR's run for approval (`action_required`). After reviewing the generated diff and
+exact head SHA, a maintainer approves that run from the PR's **Checks** tab or its Actions page.
+Wait for that PR run's required checks before merging. Approving a workflow run authorizes its
+code to execute; it is separate from approving or merging the PR.
 
 Development reports the PR number and prepared SHA in its workflow notice. It does not
 approve its own PR run or dispatch another full CI matrix. A separate manual CI run does
@@ -158,7 +166,7 @@ match the exact prepared head; recovery rechecks policy without duplicating CI, 
 the PR already exists.
 Immutable source-file reads also retry transient GitHub server errors (500/502/503/504), with
 at most four attempts and 1/2/4-second backoff. Permanent permission or validation errors fail immediately.
-The generated release PR retains all development commits and one preparation commit. Policy checks
+The generated release PR remains draft while its source is moving and retains all development commits and one preparation commit. Policy checks
 both preparation parents against the recorded main/dev refs and rejects changes outside release
 metadata. Legacy single-parent preparations are regenerated even if their source marker is current.
 Stable publication rejects squash/rebase of a history-preserving preparation and any merged tree

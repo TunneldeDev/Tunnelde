@@ -41,6 +41,7 @@
 - [Terminal provider (experimental)](plugins/terminal.md)
 - [Interface providers](plugins/ui-providers.md)
 - [Trusted frontend plugins](plugins/ui.md)
+- [Delivery tracker](delivery-tracker.md)
 - [Release operations](releases.md)
 - [Version and release policy](versioning.md)
 
