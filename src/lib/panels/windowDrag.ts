@@ -14,7 +14,9 @@ import {
 interface Gesture {
   token?: string;
   ended: boolean;
+  renewal?: number;
 }
+const DRAG_RENEWAL_MS = 10_000;
 /** Optional native endpoint for the common pointer drag driver. Local drops
  * remain synchronous; cross-WebView moves use the existing staged handoff.
  * No browser-supplied destination, screen coordinates, or transferable authority.
@@ -26,8 +28,13 @@ export function installPanelWindowDrag(
 ) {
   let disposed = false;
   let gesture: Gesture | undefined;
+  const stopRenewal = (current: Gesture) => {
+    if (current.renewal !== undefined) clearInterval(current.renewal);
+    current.renewal = undefined;
+  };
   const cancel = (current: Gesture) => {
     current.ended = true;
+    stopRenewal(current);
     if (current.token)
       void client.control({ action: "cancelDrag", token: current.token }).catch(() => {});
   };
@@ -56,7 +63,17 @@ export function installPanelWindowDrag(
         current.token = token;
         // Even a reply arriving after release/disposal must retire its grant.
         if (disposed || current.ended) cancel(current);
-        else transfer.setData(NATIVE_PANEL_DRAG_READY, "true");
+        else {
+          transfer.setData(NATIVE_PANEL_DRAG_READY, "true");
+          // Native grants stay short-lived. Renew only the exact outstanding
+          // token while the source document still owns this gesture.
+          current.renewal = window.setInterval(() => {
+            if (current.ended || disposed || !current.token) return;
+            void client
+              .control({ action: "renewDrag", token: current.token })
+              .catch(() => cancel(current));
+          }, DRAG_RENEWAL_MS);
+        }
       })
       .catch(() => {
         // A local drag is still valid while native movement is blocked. Do not
@@ -72,6 +89,7 @@ export function installPanelWindowDrag(
       cancel(current);
       return;
     }
+    stopRenewal(current);
     current.ended = true;
     // Start native hit testing immediately on release, not after awaiting a
     // grant/snapshot. An exceptionally fast gesture without a grant is cancelled.

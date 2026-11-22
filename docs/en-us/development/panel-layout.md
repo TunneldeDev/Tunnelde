@@ -222,6 +222,10 @@ style on release, Escape, cancellation, blur and teardown.
 
 The common pointer driver reports a genuine release separately from Escape,
 lost capture, blur and teardown. An accepted local drop cancels its native grant.
+While the pointer remains held, the source renews only that already-issued,
+single-use grant at a bounded interval; renewal never mints a new token or
+samples a later cursor. A source that loses ownership or fails renewal cancels
+the grant. Release still rechecks the exact document and lease before hit testing.
 For an unaccepted release, a host-issued, short-lived, single-use grant must be
 ready already: do not wait for a delayed grant and then sample a later cursor.
 The exact originating document and interactive lease are checked again at native

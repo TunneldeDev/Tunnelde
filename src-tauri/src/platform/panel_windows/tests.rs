@@ -585,6 +585,40 @@ fn pointer_drag_release_and_cancel_require_the_exact_source_and_are_single_use()
         .is_err());
 }
 #[test]
+fn drag_renewal_extends_only_the_exact_live_source_grant() {
+    let mut f = Fixture::new();
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    assert!(f
+        .registry
+        .renew_drag("panel-one", &f.satellite, &id, f.now)
+        .is_err());
+    assert!(f.registry.renew_drag(MAIN, &f.other, &id, f.now).is_err());
+    f.registry
+        .renew_drag(MAIN, &f.main, &id, f.now + Duration::from_secs(25))
+        .unwrap();
+    assert_eq!(
+        f.registry
+            .release_drag(MAIN, &f.main, &id, f.now + Duration::from_secs(50))
+            .unwrap(),
+        f.lease
+    );
+    assert!(f
+        .registry
+        .renew_drag(MAIN, &f.main, &id, f.now + Duration::from_secs(50))
+        .is_err());
+    let id = f
+        .registry
+        .issue_drag(MAIN, &f.main, &f.lease, f.now)
+        .unwrap();
+    assert!(f
+        .registry
+        .renew_drag(MAIN, &f.main, &id, f.now + Duration::from_secs(31))
+        .is_err());
+}
+#[test]
 fn drag_release_rechecks_blocking_actions_reload_and_transfer_incarnations() {
     let mut f = Fixture::new();
     let id = f

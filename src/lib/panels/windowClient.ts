@@ -338,6 +338,14 @@ export function createPanelWindowClient(identity: NativePanelIdentity) {
       check();
       return result;
     },
+    async renewDrag(token: string) {
+      check();
+      await invoke("panel_window_control", {
+        document: identity.document,
+        request: { action: "renewDrag", token },
+      });
+      check();
+    },
     async dropTarget() {
       check();
       const target = await invoke<string | null>("panel_window_drop_target", {
