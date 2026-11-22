@@ -18,13 +18,13 @@ issue comment history.
 
 ## Current milestone
 
-| Item                                                  | State       | Evidence / next action                                                                                          |
-| ----------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------- |
-| Unified structured error and diagnostics architecture | done        | PR #523; exact-head CI `45008474774` passed; documented in [errors-and-diagnostics](errors-and-diagnostics.md). |
-| Tab drag insertion-line affordance                    | done        | PR #524; exact-head CI `45010017998` passed after rebasing onto #523.                                           |
-| Beta containing #523 and #524                         | in progress | `v2.8.0-beta.2` prepared; verify all four platform builds, signatures, assets and updater metadata.             |
-| Release PR lifecycle: draft by default                | in progress | Automation, CI gating, tests and release docs updated in this branch; merge after exact-head CI.                |
-| Issue #468 remaining rollout                          | pending     | See the acceptance checklist below and the issue itself.                                                        |
+| Item                                                  | State       | Evidence / next action                                                                                                                                                                               |
+| ----------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unified structured error and diagnostics architecture | done        | PR #523; exact-head CI `45008474774` passed; documented in [errors-and-diagnostics](errors-and-diagnostics.md).                                                                                      |
+| Tab drag insertion-line affordance                    | done        | PR #524; exact-head CI `45010017998` passed after rebasing onto #523.                                                                                                                                |
+| Beta containing #523 and #524                         | done        | [`v2.8.0-beta.2`](https://github.com/TunneldeDev/Tunnelde/releases/tag/v2.8.0-beta.2) published from `7e226069`; run `45011603981` passed all platforms and final verification; 13 non-empty assets. |
+| Release PR lifecycle: draft by default                | in progress | Automation, CI gating, tests and release docs updated in this branch; merge after exact-head CI.                                                                                                     |
+| Issue #468 remaining rollout                          | pending     | See the acceptance checklist below and the issue itself.                                                                                                                                             |
 
 ## Issue #468 remaining acceptance
 
@@ -38,13 +38,13 @@ issue comment history.
 
 ## Release nodes
 
-| Node                 | State       | Evidence                                                                                  |
-| -------------------- | ----------- | ----------------------------------------------------------------------------------------- |
-| Stable `v2.7.1`      | published   | Latest stable baseline.                                                                   |
-| Beta `v2.8.0-beta.1` | published   | #519 and #521.                                                                            |
-| Beta `v2.8.0-beta.2` | in progress | #523 and #524; release run `45011603981`.                                                 |
-| Next Beta            | pending     | Allocate after the next one to three completed features and verified exact-head CI.       |
-| Stable `v2.8.0`      | blocked     | Requires accepted `v2.8.0-beta.*` and a reviewed release PR from the same product source. |
+| Node                 | State     | Evidence                                                                                              |
+| -------------------- | --------- | ----------------------------------------------------------------------------------------------------- |
+| Stable `v2.7.1`      | published | Latest stable baseline.                                                                               |
+| Beta `v2.8.0-beta.1` | published | #519 and #521.                                                                                        |
+| Beta `v2.8.0-beta.2` | published | #523 and #524; immutable tag `7e226069`; release run `45011603981` succeeded with 13 verified assets. |
+| Next Beta            | pending   | Allocate after the next one to three completed features and verified exact-head CI.                   |
+| Stable `v2.8.0`      | blocked   | Requires accepted `v2.8.0-beta.*` and a reviewed release PR from the same product source.             |
 
 ## Update procedure
 
