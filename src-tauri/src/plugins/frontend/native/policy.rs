@@ -158,6 +158,20 @@ fn policy(method: &str) -> Option<CallPolicy> {
         | "fileBrowser.action"
         | "filePreview.action"
         | "filePreview.open"
+        | "workspace.openPage"
+        | "workspace.openHost"
+        | "workspace.openTerminal"
+        | "workspace.openFiles"
+        | "workspace.openSidebar"
+        | "workspace.activate"
+        | "workspace.close"
+        | "workspace.split"
+        | "workspace.move"
+        | "workspace.showQuickAccess"
+        | "workspace.setPaneLocked"
+        | "workspace.resizeSplits"
+        | "workspace.resizeSplit"
+        | "workspace.returnSidebar"
         | "workspace.panels.setPresentation"
         | "workspace.panels.close"
         | "workspace.panels.moveToWindow"
@@ -287,6 +301,20 @@ mod workspace_and_file_tests {
             "fileBrowser.action",
             "filePreview.action",
             "filePreview.open",
+            "workspace.openPage",
+            "workspace.openHost",
+            "workspace.openTerminal",
+            "workspace.openFiles",
+            "workspace.openSidebar",
+            "workspace.activate",
+            "workspace.close",
+            "workspace.split",
+            "workspace.move",
+            "workspace.showQuickAccess",
+            "workspace.setPaneLocked",
+            "workspace.resizeSplits",
+            "workspace.resizeSplit",
+            "workspace.returnSidebar",
             "workspace.panels.setPresentation",
             "workspace.panels.close",
             "workspace.panels.moveToWindow",
@@ -337,7 +365,6 @@ mod workspace_and_file_tests {
             "files.content.read",
             "files.content.close",
             "files.content.observe",
-            "workspace.openPage",
             "workspace.windows.unknown",
             "sessions.connect.extra",
             "monitor.kill",

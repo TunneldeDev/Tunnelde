@@ -6,6 +6,25 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.7.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.6.0...v2.7.0) - 2026-11-22
+
+### 更新概览 | Highlights
+
+- **plugins:** admit reviewed native workspace actions
+
+<details open>
+<summary>详细变更 | Details (1)</summary>
+
+### 新增 | New
+
+- **plugins:** admit reviewed native workspace actions ([#515](https://github.com/TunneldeDev/Tunnelde/pull/515)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.6.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.5.0...v2.6.0) - 2026-11-21
 
 ### 更新概览 | Highlights
