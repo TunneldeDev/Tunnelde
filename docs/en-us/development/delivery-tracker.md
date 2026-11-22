@@ -23,7 +23,7 @@ the latest Issue comments. Do not treat an old snapshot in the issue body as a n
 
 | Item                      | State     | Evidence                                                                                 |
 | ------------------------- | --------- | ---------------------------------------------------------------------------------------- |
-| Development branch        | current   | `dev` at `5265ac57`; exact-head CI `45029585100` passed.                                 |
+| Development branch        | current   | `dev` at `c8c621e7`; PR #532 exact-head CI `45039243367` passed all checks.              |
 | Stable channel            | published | `v2.7.1` remains the latest stable release.                                              |
 | Beta channel              | published | `v2.8.0-beta.3`, immutable tag `5a57f60e`; publish run `45026361923` verified 13 assets. |
 | Release promotion PR      | draft     | PR #520 at `fa84061e`; keep Draft until final review and merge.                          |
