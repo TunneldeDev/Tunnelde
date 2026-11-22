@@ -1,4 +1,8 @@
-import { canonicalWorkspacePanelId } from "@/features/editor/editorWindowRegistration";
+import {
+  canonicalWorkspacePanelId,
+  nativeWorkspaceTabId,
+} from "@/features/editor/editorWindowRegistration";
+import { useWorkspace } from "@/store/workspace";
 import type { PanelLease } from "./windowProtocol";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
 import type { TFunction } from "i18next";
@@ -78,6 +82,13 @@ export async function movePanelToWindow(
         )
       ) {
         committed = true;
+        const tabId = nativeWorkspaceTabId(panelId);
+        if (target === "main") {
+          if (useWorkspace.getState().tabs.some((tab) => tab.id === tabId))
+            useWorkspace.getState().activate(tabId);
+        } else {
+          useWorkspace.getState().hideTab(tabId);
+        }
         return;
       }
       if (signal?.aborted) {

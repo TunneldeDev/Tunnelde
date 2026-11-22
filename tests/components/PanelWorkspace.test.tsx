@@ -182,6 +182,23 @@ it("retains hidden portal trees, drafts and split slots through the source prese
   expect(sourcePanelPresentation()).toBeNull();
 });
 
+it("renders explicit tab icons supplied by ordinary native pages", () => {
+  render(
+    <PanelWorkspace
+      entries={[
+        {
+          id: "settings-view:test",
+          title: "Settings",
+          icon: <span data-testid="settings-tab-icon" />,
+          key: "lease:1",
+          content: <Content id="settings" />,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByTestId("settings-tab-icon")).toBeTruthy();
+});
+
 it("accepts ordinary page IDs and explicit titles without treating them as sidebar views", () => {
   const view = render(
     <PanelWorkspace

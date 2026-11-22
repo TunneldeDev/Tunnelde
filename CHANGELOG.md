@@ -6,6 +6,25 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.7.1](https://github.com/TunneldeDev/Tunnelde/compare/v2.7.0...v2.7.1) - 2026-11-22
+
+### 更新概览 | Highlights
+
+- **panels:** retire detached source tabs and restore icons
+
+<details open>
+<summary>详细变更 | Details (1)</summary>
+
+### 修复 | Fix
+
+- **panels:** retire detached source tabs and restore icons ([#517](https://github.com/TunneldeDev/Tunnelde/pull/517)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.7.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.6.0...v2.7.0) - 2026-11-22
 
 ### 更新概览 | Highlights
