@@ -445,63 +445,69 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Test macOS platform behavior
+        timeout-minutes: 25
         run: |
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::storage::secrets::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::security::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::host_fields::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::hosts::read::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::preparation
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::remote
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::connections::execution
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::network::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib update::
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
-          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
-          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::keys::
-          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
-          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
-          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
-          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::groups
-          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::connections
-          cargo test --manifest-path src-tauri/Cargo.toml --lib services::hosts::transfer
-          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
-          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::application_actions
-          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::runners::transport::channel
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib mounts::negotiation
-          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::monitor
-          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
-          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
-          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
-          cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
-          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
-          cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
-          cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::logging
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::hosts
-          cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::forwarding
-          cargo test --manifest-path src-tauri/Cargo.toml --lib automation::runtime
-          cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::preferences
-          cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
-          cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
-          cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
-          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
-          cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
-          cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification
-          cargo test --manifest-path src-tauri/Cargo.toml --lib backup_cleanup_preserves
-          cargo test --manifest-path src-tauri/Cargo.toml --lib local_transfer_commit_preserves
-          cargo test --manifest-path src-tauri/Cargo.toml --lib transfer_artifact_
-          cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
-          cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::files::native_save
-          cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests
-          cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::
-          cargo test --manifest-path src-tauri/Cargo.toml --lib db::startup_tests
-
+          run_group() {
+            echo "::group::$1"
+            shift
+            "$@"
+            echo "::endgroup::"
+          }
+          run_group 01-lib vault:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::
+          run_group 02-lib services::credentials:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::
+          run_group 03-lib plugins::api::domains::storage::secrets:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::storage::secrets::
+          run_group 04-lib services::operations:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::operations::
+          run_group 05-lib plugins::security:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::security::
+          run_group 06-lib plugins::host_fields:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::host_fields::
+          run_group 07-lib services::hosts::read:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::hosts::read::
+          run_group 08-lib network:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib network::
+          run_group 09-lib plugins::tasks::preparation cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::preparation
+          run_group 10-lib plugins::tasks::remote cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::tasks::remote
+          run_group 11-lib plugins::api::domains::connections::execution cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::connections::execution
+          run_group 12-lib plugins::network:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::network::
+          run_group 13-lib update:: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib update::
+          run_group 14-test automation_cli cargo test --locked --manifest-path src-tauri/Cargo.toml --test automation_cli
+          run_group 15-lib ssh::session cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
+          run_group 16-lib ssh::keys:: cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::keys::
+          run_group 17-lib ssh::diagnostics cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
+          run_group 18-lib ssh::forward cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
+          run_group 19-lib services::forwarding::start cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
+          run_group 20-lib services::forwarding::groups cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::groups
+          run_group 21-lib services::forwarding::connections cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::connections
+          run_group 22-lib services::hosts::transfer cargo test --manifest-path src-tauri/Cargo.toml --lib services::hosts::transfer
+          run_group 23-lib platform::window::close cargo test --manifest-path src-tauri/Cargo.toml --lib platform::window::close
+          run_group 24-lib platform::application_actions cargo test --manifest-path src-tauri/Cargo.toml --lib platform::application_actions
+          run_group 25-lib plugins::runners::management::browser cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::runners::management::browser
+          run_group 26-lib plugins::runners::transport::channel cargo test --locked --manifest-path src-tauri/Cargo.toml --lib plugins::runners::transport::channel
+          run_group 27-lib mounts::negotiation cargo test --locked --manifest-path src-tauri/Cargo.toml --lib mounts::negotiation
+          run_group 28-lib services::files::read cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          run_group 29-lib ssh::monitor cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::monitor
+          run_group 30-lib services::files::local cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
+          run_group 31-lib plugins::files::content cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
+          run_group 32-lib platform::regular_file cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
+          run_group 33-lib preview:: cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
+          run_group 34-lib plugins::api::domains::files::text cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
+          run_group 35-lib logs::read cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
+          run_group 36-lib automation::domains::logging cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::logging
+          run_group 37-lib automation::domains::hosts cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::hosts
+          run_group 38-lib automation::domains::forwarding cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::forwarding
+          run_group 39-lib automation::runtime cargo test --manifest-path src-tauri/Cargo.toml --lib automation::runtime
+          run_group 40-lib services::settings cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
+          run_group 41-lib automation::domains::preferences cargo test --locked --manifest-path src-tauri/Cargo.toml --lib automation::domains::preferences
+          run_group 42-lib settings_profiles cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
+          run_group 43-lib local_editor cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
+          run_group 44-lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
+          run_group 45-lib platform::file_ops cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
+          run_group 46-lib local_move cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
+          run_group 47-lib move_verification cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification
+          run_group 48-lib backup_cleanup_preserves cargo test --manifest-path src-tauri/Cargo.toml --lib backup_cleanup_preserves
+          run_group 49-lib local_transfer_commit_preserves cargo test --manifest-path src-tauri/Cargo.toml --lib local_transfer_commit_preserves
+          run_group 50-lib transfer_artifact_ cargo test --manifest-path src-tauri/Cargo.toml --lib transfer_artifact_
+          run_group 51-lib interrupted_move cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
+          run_group 52-lib ssh::files::native_save cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::files::native_save
+          run_group 53-lib storage::tests cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests
+          run_group 54-lib storage::ownership:: cargo test --manifest-path src-tauri/Cargo.toml --lib storage::ownership::
+          run_group 55-lib db::startup_tests cargo test --manifest-path src-tauri/Cargo.toml --lib db::startup_tests
       - name: Test immutable credential bindings in isolated macOS keychain
         timeout-minutes: 3
         run: TUNNELDE_TEST_APP_KEYRING=1 cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::credentials::native::tests::system::immutable_bindings_survive_restart_and_cleanup_preserves_other_services -- --ignored --exact
