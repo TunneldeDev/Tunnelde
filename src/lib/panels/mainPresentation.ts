@@ -5,12 +5,30 @@ import {
 } from "@/features/editor/editorWindowRegistration";
 import { useWorkspace } from "@/store/workspace";
 import type { SourcePanelMetadata } from "./sourcePresentation";
+import type { NativePanelSnapshot } from "./windowProtocol";
 import { usePanelWindows } from "@/store/panelWindows";
 import { useFilePreview } from "@/store/filePreview";
 import { panelSnapshot, requirePanel } from "./snapshot";
 import { subscribePanels } from "./observation";
 import { closePanel, revealPanel, setPanelLocation } from "./controller";
 import type { SourcePanelPresentation } from "./sourcePresentation";
+
+/** Restore only workspace pages whose live native owner returned to main.
+ * Sidebar tabs have independent hide semantics and are deliberately excluded. */
+export function revealReturnedWorkspaceTabs(snapshot: NativePanelSnapshot) {
+  const owned = new Set(
+    snapshot.panels.filter((panel) => panel.windowId === "main").map((panel) => panel.panelId),
+  );
+  const workspace = useWorkspace.getState();
+  for (const tab of workspace.tabs) {
+    if (
+      tab.hidden &&
+      ["terminal", "sftp", "editor", "host", "settings", "updates"].includes(tab.kind) &&
+      owned.has(canonicalWorkspacePanelId(tab.id))
+    )
+      workspace.activate(tab.id);
+  }
+}
 
 /** Main-document adapter. Never use this to read or mutate a satellite's slot;
  * the native source router must select the exact current document first. */

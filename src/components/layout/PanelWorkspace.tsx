@@ -34,6 +34,7 @@ import "./tabBar.css";
 export interface PanelWorkspaceEntry {
   id: string;
   title?: string;
+  icon?: ReactNode;
   key: string;
   content: ReactNode;
 }
@@ -80,11 +81,13 @@ function Group({
   workspace,
   slots,
   titles,
+  icons,
 }: {
   id: string;
   workspace: LocalPanelWorkspace;
   slots: ReadonlyMap<string, Slot>;
   titles: ReadonlyMap<string, string>;
+  icons: ReadonlyMap<string, ReactNode>;
 }) {
   const { t } = useTranslation();
   const source = useStore(workspace.store);
@@ -228,6 +231,7 @@ function Group({
                 }
               }}
             >
+              {icons.get(panel) ?? null}
               <span className="td-tab__label">
                 {titles.get(panel) ?? sidebarLabel(panel as SidebarView, t)}
               </span>
@@ -297,6 +301,9 @@ export function PanelWorkspace({
   const titles = new Map(
     entries.filter((entry) => entry.title !== undefined).map((entry) => [entry.id, entry.title!]),
   );
+  const icons = new Map(
+    entries.filter((entry) => entry.icon !== undefined).map((entry) => [entry.id, entry.icon!]),
+  );
   useLayoutEffect(() => {
     for (const id of ids) if (!slots.has(id)) slots.set(id, createSlot(id));
     for (const [id, slot] of slots)
@@ -322,7 +329,7 @@ export function PanelWorkspace({
           <PanelLayout
             layout={shown.layout}
             renderPane={(id) => (
-              <Group id={id} workspace={workspace} slots={slots} titles={titles} />
+              <Group id={id} workspace={workspace} slots={slots} titles={titles} icons={icons} />
             )}
             onResize={(id, ratio) => workspace.resize({ [id]: ratio })}
             onResizeMany={workspace.resize}

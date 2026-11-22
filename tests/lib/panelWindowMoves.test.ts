@@ -1,13 +1,14 @@
 import { expect, it, vi } from "vitest";
 import type { WindowViews } from "@/lib/panels/windowViews";
 import { movePanelToWindow } from "@/lib/panels/windowMoves";
+import { useWorkspace } from "@/store/workspace";
 const mock = vi.hoisted(() => ({ views: undefined as unknown as WindowViews }));
 vi.mock("@/lib/panels/windowViews", () => ({
   windowViews: () => mock.views,
   transferablePanel: () => true,
 }));
-function fixture(fail = false) {
-  const lease = { panelId: "connections", windowId: "main", generation: 1 };
+function fixture(fail = false, panelId = "connections") {
+  const lease = { panelId, windowId: "main", generation: 1 };
   const snapshot = vi
     .fn()
     .mockResolvedValueOnce({ panels: [lease], windows: [], transfers: [] })
@@ -176,4 +177,39 @@ it("a commit already observed wins a racing cancellation and keeps the retired s
   await movePanelToWindow("connections", "target", undefined, undefined, abort.signal);
   expect(mock.views.setMoving).toHaveBeenCalledTimes(1);
   expect(mock.views.client.control).not.toHaveBeenCalledWith({ action: "cancel", id: "offer" });
+});
+
+it("retires the source tab after commit and restores it when the live owner returns to main", async () => {
+  const tab = {
+    id: "terminal:qa",
+    kind: "terminal" as const,
+    title: "QA terminal",
+    hostId: null,
+    pinned: false,
+  };
+  useWorkspace.setState({
+    tabs: [tab],
+    panes: [{ id: "pane", tabIds: [tab.id], activeId: tab.id }],
+    activePaneId: "pane",
+    activeId: tab.id,
+    layout: { kind: "pane", paneId: "pane" },
+  });
+  fixture(false, tab.id);
+  await movePanelToWindow(tab.id, "target");
+  expect(useWorkspace.getState().tabs[0]?.hidden).toBe(true);
+
+  const lease = { panelId: tab.id, windowId: "target", generation: 2 };
+  vi.mocked(mock.views.client.snapshot)
+    .mockReset()
+    .mockResolvedValueOnce({ panels: [lease], windows: [], transfers: [] })
+    .mockResolvedValue({
+      panels: [{ ...lease, windowId: "main", generation: 3 }],
+      windows: [],
+      transfers: [],
+    });
+  mock.views.client.windowId = "target";
+  vi.mocked(mock.views.client.control).mockResolvedValue({ id: "return" });
+  await movePanelToWindow(tab.id, "main");
+  expect(useWorkspace.getState().tabs[0]?.hidden).toBeFalsy();
+  expect(useWorkspace.getState().activeId).toBe(tab.id);
 });
