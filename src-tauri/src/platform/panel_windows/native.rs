@@ -130,6 +130,7 @@ pub(crate) fn panel_window_control(
             | Command::IssueDrag { .. }
             | Command::AcceptDrag { .. }
             | Command::CancelDrag { .. }
+            | Command::RenewDrag { .. }
             | Command::OpenPreviewHandle { .. }
             | Command::ClosePreviewHandle { .. }
     );

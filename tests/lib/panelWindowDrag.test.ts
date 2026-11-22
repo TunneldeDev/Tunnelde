@@ -47,7 +47,17 @@ function fixture(targetWindow: string | null = "satellite") {
     document.dispatchEvent(
       new CustomEvent(INTERNAL_DRAG_FINISH, { detail: { transfer, released, accepted } }),
     );
-  return { control, releaseDrag, move, failure, resolveGrant, start, finish, transfer, stop };
+  return {
+    control,
+    releaseDrag,
+    move,
+    failure,
+    resolveGrant,
+    start,
+    finish,
+    transfer,
+    stop,
+  };
 }
 it.each(["satellite", null])(
   "uses only the native release target %s and exact lease for a handoff",
@@ -70,6 +80,28 @@ it("leaves a release inside the same native window to the local workspace", asyn
   f.finish();
   await flush();
   expect(f.move).not.toHaveBeenCalled();
+});
+it("renews a held native grant without replacing its single-use token", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture();
+    f.start();
+    f.resolveGrant("token");
+    await flush();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.control).toHaveBeenCalledWith({ action: "renewDrag", token: "token" });
+    f.finish();
+    await flush();
+    expect(f.releaseDrag).toHaveBeenCalledExactlyOnceWith("token");
+    const callsAfterRelease = f.control.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(f.control.mock.calls.filter(([request]) => request.action === "renewDrag")).toHaveLength(
+      1,
+    );
+    expect(f.control.mock.calls.length).toBe(callsAfterRelease);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it.each([
   [false, false],
