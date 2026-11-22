@@ -39,19 +39,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WindowTitleBar } from "@/components/layout/WindowTitleBar";
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Activity,
-  Blocks,
-  Download,
-  FileText,
-  FolderTree,
-  History,
-  Info,
-  Server,
-  Settings as SettingsIcon,
-  ShieldCheck,
-  Terminal,
-} from "lucide-react";
 import { brandMark } from "@/lib/brand";
 import { initializePanelWindow, type PanelWindowClient } from "@/lib/panels/windowClient";
 import {
@@ -83,31 +70,8 @@ import { ToastHost } from "@/components/ui/overlay/Toast";
 import { translateError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
 import { loadStartupFonts } from "./startupFonts";
+import { panelIcon } from "@/lib/panels/panelIcons";
 import "./satellite.css";
-
-function panelIcon(panelId: string) {
-  if (panelId.startsWith("settings-view:")) return <SettingsIcon size={13} />;
-  if (panelId.startsWith("editor-view:")) return <FileText size={13} />;
-  if (panelId.startsWith("host-view:")) return <Server size={13} />;
-  if (panelId.startsWith("files:") || panelId.startsWith("sftp:")) return <FolderTree size={13} />;
-  if (panelId.startsWith("terminal:")) return <Terminal size={13} />;
-  switch (panelId) {
-    case "plugins":
-      return <Blocks size={13} />;
-    case "hosts":
-      return <Server size={13} />;
-    case "knownHosts":
-      return <ShieldCheck size={13} />;
-    case "tasks":
-      return <Activity size={13} />;
-    case "forwarding":
-      return <Download size={13} />;
-    case "connections":
-      return <History size={13} />;
-    default:
-      return panelId.startsWith("plugin:") ? <Blocks size={13} /> : <Info size={13} />;
-  }
-}
 
 function PluginView(props: NativeViewProps) {
   const model = useNativeReadModel<WindowModelAppearance>(props);

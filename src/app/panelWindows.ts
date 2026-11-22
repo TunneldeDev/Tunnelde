@@ -44,6 +44,7 @@ import { createWindowViews, installWindowViews } from "@/lib/panels/windowViews"
 import {
   createMainPanelPresentation,
   revealReturnedWorkspaceTabs,
+  retainReturnableWorkspaceTabs,
 } from "@/lib/panels/mainPresentation";
 import {
   installSourcePanelPresentation,
@@ -155,7 +156,10 @@ export async function startPanelWindows(signal: AbortSignal) {
     usePlugins.subscribe(coordinator.refresh),
     frontendRuntime.subscribe(coordinator.refresh),
     useFilePreview.subscribe(coordinator.refresh),
-    useWorkspace.subscribe(coordinator.refresh),
+    useWorkspace.subscribe((state) => {
+      retainReturnableWorkspaceTabs(state.tabs);
+      coordinator.refresh();
+    }),
     useHosts.subscribe(coordinator.refresh),
     useSsh.subscribe(coordinator.refresh),
     useSettings.subscribe(coordinator.refresh),

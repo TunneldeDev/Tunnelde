@@ -3,6 +3,7 @@ import {
   nativeWorkspaceTabId,
 } from "@/features/editor/editorWindowRegistration";
 import { useWorkspace } from "@/store/workspace";
+import { rememberDetachedWorkspaceTab } from "./detachedWorkspaceTabs";
 import type { PanelLease } from "./windowProtocol";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
 import type { TFunction } from "i18next";
@@ -87,6 +88,10 @@ export async function movePanelToWindow(
           if (useWorkspace.getState().tabs.some((tab) => tab.id === tabId))
             useWorkspace.getState().activate(tabId);
         } else {
+          // Record the committed source generation before hiding. A coordinator
+          // may still hold the pre-transfer snapshot briefly; it must not make
+          // this source tab visible again.
+          rememberDetachedWorkspaceTab(panelId, tabId, lease.generation);
           useWorkspace.getState().hideTab(tabId);
         }
         return;
