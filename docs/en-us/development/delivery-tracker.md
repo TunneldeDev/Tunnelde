@@ -18,13 +18,14 @@ issue comment history.
 
 ## Current milestone
 
-| Item                                                  | State       | Evidence / next action                                                                                                                                                                               |
-| ----------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unified structured error and diagnostics architecture | done        | PR #523; exact-head CI `45008474774` passed; documented in [errors-and-diagnostics](errors-and-diagnostics.md).                                                                                      |
-| Tab drag insertion-line affordance                    | done        | PR #524; exact-head CI `45010017998` passed after rebasing onto #523.                                                                                                                                |
-| Beta containing #523 and #524                         | done        | [`v2.8.0-beta.2`](https://github.com/TunneldeDev/Tunnelde/releases/tag/v2.8.0-beta.2) published from `7e226069`; run `45011603981` passed all platforms and final verification; 13 non-empty assets. |
-| Release PR lifecycle: draft by default                | in progress | Automation, CI gating, tests and release docs updated in this branch; merge after exact-head CI.                                                                                                     |
-| Issue #468 remaining rollout                          | pending     | See the acceptance checklist below and the issue itself.                                                                                                                                             |
+| Item                                                  | State   | Evidence / next action                                                                                                                                                                               |
+| ----------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unified structured error and diagnostics architecture | done    | PR #523; exact-head CI `45008474774` passed; documented in [errors-and-diagnostics](errors-and-diagnostics.md).                                                                                      |
+| Tab drag insertion-line affordance                    | done    | PR #524; exact-head CI `45010017998` passed after rebasing onto #523.                                                                                                                                |
+| Beta containing #523 and #524                         | done    | [`v2.8.0-beta.2`](https://github.com/TunneldeDev/Tunnelde/releases/tag/v2.8.0-beta.2) published from `7e226069`; run `45011603981` passed all platforms and final verification; 13 non-empty assets. |
+| Release PR lifecycle: draft by default                | done    | PR #525; exact-head CI `45013626939` passed; release PR #520 is draft and refresh automation preserves that state.                                                                                   |
+| CI SSH-agent flake containment                        | done    | PR #526; exact-head CI `45016889062` passed; the dedicated close-ack job runs only the four vendored regressions.                                                                                    |
+| Issue #468 remaining rollout                          | pending | See the acceptance checklist below and the issue itself.                                                                                                                                             |
 
 ## Issue #468 remaining acceptance
 

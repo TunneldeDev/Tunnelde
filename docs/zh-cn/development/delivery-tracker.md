@@ -20,7 +20,8 @@
 | 统一结构化错误与诊断架构  | 已完成 | PR #523；精确 head CI `45008474774` 全绿；见[错误与诊断](errors-and-diagnostics.md)。                                                                                  |
 | 标签拖拽插入白线提示      | 已完成 | PR #524；更新到 #523 基线后，精确 head CI `45010017998` 全绿。                                                                                                         |
 | 包含 #523 与 #524 的 Beta | 已完成 | [`v2.8.0-beta.2`](https://github.com/TunneldeDev/Tunnelde/releases/tag/v2.8.0-beta.2) 已从 `7e226069` 发布；运行 `45011603981` 通过全部平台和最终验证；13 个非空资产。 |
-| 发布 PR 默认 Draft        | 进行中 | 当前分支更新了自动化、CI 门控、测试和发布文档；精确 head CI 通过后合入。                                                                                               |
+| 发布 PR 默认 Draft        | 已完成 | PR #525；精确 head CI `45013626939` 全绿；发布 PR #520 保持 Draft，刷新自动化维持该状态。                                                                              |
+| CI SSH agent 偶发失败隔离 | 已完成 | PR #526；精确 head CI `45016889062` 全绿；专用 close-ack 任务只运行四个 vendored 回归测试。                                                                            |
 | Issue #468 后续 rollout   | 待开始 | 见下方验收清单及 Issue 本身。                                                                                                                                          |
 
 ## Issue #468 待验收事项
