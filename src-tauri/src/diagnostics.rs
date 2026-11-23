@@ -1,5 +1,7 @@
 //! Shared, bounded logging for native features, the frontend and plugin runtimes.
 //! Identity comes from the caller's trusted adapter, never from payload fields.
+pub(crate) mod failure;
+
 use serde::Deserialize;
 use serde_json::{Map, Value};
 

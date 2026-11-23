@@ -24,6 +24,7 @@ fn allowed(label: &str, command: &str, registered: bool) -> bool {
                     | "panel_window_terminal_attach"
                     | "panel_window_focus"
                     | "panel_window_plugin_view"
+                    | "diagnostics_report"
             ))
 }
 
@@ -70,6 +71,8 @@ mod tests {
             "plugin_frontend_call",
             "settings_update",
             "main_window_suspend",
+            "logs_write",
+            "logs_output_read",
         ] {
             assert!(allowed("main", command, false));
             assert!(!allowed("panel-one", command, true));
@@ -90,6 +93,7 @@ mod tests {
             "panel_window_terminal_attach",
             "panel_window_focus",
             "panel_window_plugin_view",
+            "diagnostics_report",
         ] {
             assert!(allowed("panel-one", command, true));
             assert!(!allowed("panel-one", command, false));
