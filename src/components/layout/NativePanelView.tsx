@@ -1,3 +1,5 @@
+import { DiagnosticNotice } from "@/components/ui/overlay/DiagnosticNotice";
+import { createDiagnosticSampler, reportError } from "@/lib/diagnostics";
 import { PanelViewBoundary } from "@/lib/panels/viewBoundary";
 import { PanelInteractionScope } from "@/lib/panels/interaction";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
@@ -64,11 +66,17 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
       element.getBoundingClientRect();
       views.rendered(record.key);
     };
-    if (record.controller.hasReadiness())
-      void record.controller.waitReady(lifetime.signal).then(rendered, (error) => {
-        if (!lifetime.signal.aborted) views.renderFailed(record.key, error);
-      });
-    else rendered();
+    const failed = (error: unknown) => {
+      if (!lifetime.signal.aborted) {
+        reportError("panels", "waitForView", error);
+        views.renderFailed(record.key, error);
+      }
+    };
+    if (record.controller.hasReadiness()) {
+      void record.controller.waitReady(lifetime.signal).then(rendered).catch(failed);
+    } else {
+      rendered();
+    }
     return () => {
       lifetime.abort();
       if (focusWhenReady.current === focus) focusWhenReady.current = null;
@@ -92,12 +100,13 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
       views = windowViews();
     if (!element || !views || frozen || !record.lease) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const diagnostics = createDiagnosticSampler("panels", "checkpoint");
     const checkpoint = () => {
       record.controller.invalidate();
       if (element.getBoundingClientRect().width) lastDom.current = capturePanelDomState(element);
       clearTimeout(timer);
       timer = setTimeout(() => {
-        void views.checkpoint(record.panelId).catch(() => {});
+        void views.checkpoint(record.panelId).then(diagnostics.recovered, diagnostics.failed);
       }, 100);
     };
     const events = ["scroll", "input", "change", "toggle", "focusin", "keyup"];
@@ -125,7 +134,9 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
         aria-busy={frozen || undefined}
       >
         <PanelViewBoundary
-          fallback={<p role="alert">{t("common.error")}</p>}
+          domain="panels"
+          operation="render"
+          fallback={(event) => <DiagnosticNotice event={event} />}
           failed={(error) => windowViews()?.renderFailed(record.key, error)}
         >
           <PanelViewStateScope controller={record.controller}>

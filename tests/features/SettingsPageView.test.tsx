@@ -167,3 +167,23 @@ describe("document-local production settings renderer boundary", () => {
     expect(owner.selectSection).toHaveBeenCalledWith("network");
   });
 });
+
+it("recovers a failed search result without unmounting the search input", async () => {
+  const owner = fixture();
+  const renderFields = owner.services.renderPreferenceSurface;
+  let fail = true;
+  owner.services.renderPreferenceSurface = (props) => {
+    if (fail && props.query) throw new Error("panel.viewState.duplicateKey");
+    return renderFields(props);
+  };
+  render(<SettingsPageView services={owner.services} />, { onCaughtError: () => {} });
+  const search = screen.getByRole<HTMLInputElement>("textbox", { name: "Search settings" });
+  fireEvent.change(search, { target: { value: "@section:editor" } });
+  expect(screen.getByRole("alert").textContent).toMatch(/Error reference [\w-]+/);
+  expect(search.value).toBe("@section:editor");
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Search settings" })).toBe(search);
+  expect(search.value).toBe("@section:editor");
+});

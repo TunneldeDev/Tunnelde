@@ -17,11 +17,17 @@ import "@/styles/settings.css";
 import "@/styles/colors.css";
 import "@/styles/corners.css";
 
-import { lazy, StrictMode, Suspense } from "react";
+import { lazy, StrictMode, Suspense, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@/i18n/i18n";
-import { installGlobalErrorDiagnostics } from "@/lib/diagnostics";
+import { DiagnosticNotice } from "@/components/ui/overlay/DiagnosticNotice";
+import { PanelViewBoundary } from "@/lib/panels/viewBoundary";
+import {
+  installGlobalErrorDiagnostics,
+  reportError,
+  type DiagnosticEvent,
+} from "@/lib/diagnostics";
 
 installGlobalErrorDiagnostics();
 
@@ -31,15 +37,48 @@ if (!container) {
 }
 
 // Do not even evaluate the main bootstrap module in a satellite document.
+const satellite = new URLSearchParams(window.location.search).get("panelWindow") === "1";
 const Entry = lazy(() =>
-  new URLSearchParams(window.location.search).get("panelWindow") === "1"
+  satellite
     ? import("@/app/SatelliteApp").then(({ SatelliteApp }) => ({ default: SatelliteApp }))
     : import("@/App").then(({ App }) => ({ default: App })),
 );
-createRoot(container).render(
+function RootFailure({ event }: { event: DiagnosticEvent | null }) {
+  useEffect(() => {
+    if (!event || satellite || !("__TAURI_INTERNALS__" in window)) return;
+    // Bootstrap never reached the normally responsible layout effect. Let the
+    // existing main-only readiness command expose this recovery screen.
+    void import("@/lib/api/ipc")
+      .then(({ api }) => api.mainWindowReady())
+      .catch((error) => reportError("startup", "presentFailure", error));
+  }, [event]);
+  return <DiagnosticNotice event={event} retry={() => window.location.reload()} />;
+}
+
+createRoot(container, {
+  onCaughtError: (error, info) => {
+    // Product boundaries report after commit and attach the resulting event ID.
+    if (!(info.errorBoundary instanceof PanelViewBoundary)) {
+      reportError("runtime", "react.caught", error, "error", {
+        componentStack: info.componentStack ?? undefined,
+      });
+    }
+  },
+  onUncaughtError: (error, info) => {
+    reportError("runtime", "react.uncaught", error, "error", {
+      componentStack: info.componentStack ?? undefined,
+    });
+  },
+}).render(
   <StrictMode>
-    <Suspense fallback={<div className="splash" role="status" />}>
-      <Entry />
-    </Suspense>
+    <PanelViewBoundary
+      domain="runtime"
+      operation="renderRoot"
+      fallback={(event) => <RootFailure event={event} />}
+    >
+      <Suspense fallback={<div className="splash" role="status" />}>
+        <Entry />
+      </Suspense>
+    </PanelViewBoundary>
   </StrictMode>,
 );

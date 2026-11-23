@@ -602,7 +602,12 @@ it("rejects capture/readiness when the real factory setup fails without stopping
   const View = f.runtime.view("custom", "main")!;
   const failed = vi.fn();
   const ui = render(
-    <PanelViewBoundary fallback={<span>isolated failure</span>} failed={failed}>
+    <PanelViewBoundary
+      domain="test"
+      operation="render"
+      fallback={() => <span>isolated failure</span>}
+      failed={failed}
+    >
       <PanelViewStateScope controller={state}>
         <View pluginId="custom" viewId="main" visible />
       </PanelViewStateScope>
@@ -641,7 +646,12 @@ it("rejects capsule owner/schema mismatch before acquiring a factory view", asyn
     const state = createPanelViewState({ version: 1, fields: { "plugin.factory": invalid } });
     const failed = vi.fn();
     const ui = render(
-      <PanelViewBoundary fallback={<span>invalid capsule</span>} failed={failed}>
+      <PanelViewBoundary
+        domain="test"
+        operation="render"
+        fallback={() => <span>invalid capsule</span>}
+        failed={failed}
+      >
         <PanelViewStateScope controller={state}>
           <View pluginId="custom" viewId="main" visible />
         </PanelViewStateScope>

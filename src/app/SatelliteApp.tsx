@@ -67,7 +67,8 @@ import { TaskModelScope, type ClearTasksResult } from "@/lib/panels/taskModel";
 import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
 import { ToastHost } from "@/components/ui/overlay/Toast";
 import { notifyError } from "@/lib/api/errors";
-import { reportError } from "@/lib/diagnostics";
+import { reportError, type DiagnosticEvent } from "@/lib/diagnostics";
+import { DiagnosticNotice } from "@/components/ui/overlay/DiagnosticNotice";
 import { loadStartupFonts } from "./startupFonts";
 import { panelIcon } from "@/lib/panels/panelIcons";
 import "./satellite.css";
@@ -329,7 +330,7 @@ export function SatelliteApp() {
   useInternalDrag();
   const { t } = useTranslation();
   const [client, setClient] = useState<PanelWindowClient | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<DiagnosticEvent | null>(null);
   const [chrome, setChrome] = useState<{
     style: ConnectionWindowModel["appearance"]["titleBarStyle"];
     os: string;
@@ -353,8 +354,7 @@ export function SatelliteApp() {
           });
       })
       .catch((error) => {
-        reportError("panels.windows", "satellite.initialize", error);
-        if (!disposed) setFailed(true);
+        if (!disposed) setFailed(reportError("panels.windows", "satellite.initialize", error));
       });
     return () => {
       disposed = true;
@@ -381,8 +381,8 @@ export function SatelliteApp() {
             usePanelWindows.setState({ windowId: current.windowId, available: true, snapshot }),
           failure: (error) => {
             if (!disposed) {
-              setFailed(true);
-              notifyError(error, { domain: "panels.windows", operation: "satellite.session" });
+              setFailed(reportError("panels.windows", "satellite.session", error));
+              void notifyError(error, { domain: "panels.windows", operation: "satellite.session" });
             }
           },
         });
@@ -417,8 +417,7 @@ export function SatelliteApp() {
         await session.ready;
       })
       .catch((error) => {
-        reportError("panels.windows", "satellite.initialize", error);
-        if (!disposed) setFailed(true);
+        if (!disposed) setFailed(reportError("panels.windows", "satellite.initialize", error));
       });
     return () => {
       disposed = true;
@@ -435,20 +434,23 @@ export function SatelliteApp() {
             if (event.button === 0 && event.detail < 2)
               void getCurrentWindow()
                 .startDragging()
-                .catch(() => {});
+                .catch((error) => reportError("panels.windows", "startNativeDrag", error));
           }}
           onDoubleClick={() => {
             void getCurrentWindow()
               .toggleMaximize()
-              .catch(() => {});
+              .catch((error) => reportError("panels.windows", "toggleMaximize", error));
           }}
         />
       ) : null}
       {!client || !entries.size ? (
-        <div className="splash" role={failed ? "alert" : "status"}>
-          <img src={brandMark} width={56} height={56} alt="Tunnelde" />
-          {failed ? <span>{t("panels.windowInitializationFailed")}</span> : null}
-        </div>
+        failed ? (
+          <DiagnosticNotice event={failed} retry={() => window.location.reload()} />
+        ) : (
+          <div className="splash" role="status">
+            <img src={brandMark} width={56} height={56} alt="Tunnelde" />
+          </div>
+        )
       ) : (
         <PanelWorkspace
           windowId={client.windowId}
