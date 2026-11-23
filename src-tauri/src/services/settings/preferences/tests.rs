@@ -3,48 +3,6 @@ use crate::settings::Settings;
 use serde_json::{json, Value};
 
 #[test]
-fn font_choices_roundtrip_as_references_and_legacy_mono_changes_preserve_other_targets() {
-    let choices = json!({
-        "ui": {"source":"system","family":"Example UI"},
-        "mono": {"source":"imported","id":"a".repeat(64)},
-        "editorCjk": {"source":"system","family":"Example CJK"}
-    });
-    let selected = update::apply(
-        &Settings::default(),
-        json!({"appearance":{"fontSelections":choices}}),
-    )
-    .unwrap();
-    assert_eq!(
-        projection::values(&selected).unwrap()["appearance"]["fontSelections"],
-        choices
-    );
-    let builtin = update::apply(&selected, json!({"appearance":{"monoFont":"system"}})).unwrap();
-    let resulting = projection::values(&builtin).unwrap();
-    assert!(resulting["appearance"]["fontSelections"]["mono"].is_null());
-    assert_eq!(
-        resulting["appearance"]["fontSelections"]["ui"],
-        choices["ui"]
-    );
-    assert_eq!(
-        resulting["appearance"]["fontSelections"]["editorCjk"],
-        choices["editorCjk"]
-    );
-    for invalid in [
-        json!({"source":"system","family":"\n"}),
-        json!({"source":"imported","id":"../outside"}),
-        json!({"source":"imported","id":"A".repeat(64)}),
-    ] {
-        let mut malformed = choices.clone();
-        malformed["mono"] = invalid;
-        assert!(update::apply(
-            &selected,
-            json!({"appearance":{"fontSelections":malformed}})
-        )
-        .is_err());
-    }
-}
-
-#[test]
 fn updates_reject_unbounded_or_malformed_revisions_before_domain_work() {
     for revision in [
         json!(null),
@@ -122,6 +80,8 @@ fn independent_schema_covers_exactly_the_public_projection() {
         "editorDraftRecovery",
         // Available through settings.get/update; frozen preferences v1 omits it.
         "disconnectOnPanelClose",
+        // Native font references stay outside the frozen preferences v1.
+        "fontSelections",
     ];
     let covered: std::collections::HashSet<_> = mapped
         .iter()
@@ -136,7 +96,7 @@ fn independent_schema_covers_exactly_the_public_projection() {
     for key in excluded {
         assert!(!covered.contains(key));
     }
-    assert_eq!(66, mapped.len());
+    assert_eq!(65, mapped.len());
 }
 
 #[test]
@@ -262,4 +222,21 @@ fn full_profile_requires_every_group_and_field_and_preserves_partial_rpc_bound()
         apply_profile_values(&native, full).unwrap().user_css.len(),
         180_000
     );
+}
+
+#[test]
+fn preference_updates_and_public_profile_saves_preserve_native_font_references() {
+    let mut native = Settings::default();
+    native.font_selections.mono =
+        Some(crate::fonts::FontReference::Imported { id: "a".repeat(64) });
+    let mut profile = profile_values(&native).unwrap();
+    assert!(profile["appearance"].get("fontSelections").is_none());
+    profile["appearance"]["theme"] = json!("dark");
+    let updated = apply_profile_values(&native, profile).unwrap();
+    assert_eq!(updated.font_selections, native.font_selections);
+    assert!(update::apply(
+        &native,
+        json!({"appearance": {"fontSelections": {"ui": null, "mono": null, "editorCjk": null}}}),
+    )
+    .is_err());
 }

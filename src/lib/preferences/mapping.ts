@@ -12,7 +12,6 @@ export const preferencePaths = {
   "uiFontSize": "appearance.fontSize",
   "monoFontSize": "appearance.monoFontSize",
   "monoFont": "appearance.monoFont",
-  "fontSelections": "appearance.fontSelections",
   "motion": "appearance.motion",
   "userCss": "appearance.userCss",
   "titleBarStyle": "appearance.titleBarStyle",

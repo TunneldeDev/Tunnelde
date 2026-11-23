@@ -178,11 +178,13 @@ paths or font bytes. Installed fonts are scanned on demand and cached; the nativ
 settings UI can refresh the cache. Permissions and frontend lifetime are rechecked
 after the scan.
 
-`appearance.fontSelections` contains `ui`, `mono` and `editorCjk`, each either `null`,
-`{source:"system",family:string}` or `{source:"imported",id:string}`. Imported IDs are
-lowercase SHA-256 content hashes. Null uses the existing UI default, `monoFont`, or
-automatic system CJK fallback respectively. Use `preferences.update` with its normal
-revision and `settings.write` permission. Updating `monoFont` without an explicit
-`fontSelections` value clears its custom monospace override. Missing references are
-retained and rendered using fallbacks. Profile exports contain references, not files.
-Font-file import and deletion require the native settings UI.
+`settings.get` returns the configured native `fontSelections` object. Its
+`ui`, `mono` and `editorCjk` targets are either `null`, a reference to a system
+font by family, or a reference to an import by lowercase SHA-256 content ID.
+Plugins with `settings.write` can replace the object through `settings.update`.
+A native settings patch that updates `monoFont` without including
+`fontSelections` clears its custom monospace override.
+
+The frozen v1 `preferences.*` contract and public profile content do not include
+native font references. Desktop settings profile exports include references,
+not font files. Font-file import and deletion require the native settings UI.

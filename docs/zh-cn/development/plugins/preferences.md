@@ -130,4 +130,6 @@ const after = await host.call("preferences.update", {
 
 实验性 `fonts.catalogue({})` 需要 `settings.read`，返回 `{version:1,items}`。条目包含 `reference`、`name`、`monospaced`，导入字体另有 `format` 和 `bytes`；不暴露文件路径或字体内容。系统字体按需扫描并缓存，原生设置界面可以刷新；扫描结束后重新校验权限及前端生命周期。
 
-`appearance.fontSelections` 包含 `ui`、`mono`、`editorCjk`，各项为 `null`、`{source:"system",family:string}` 或 `{source:"imported",id:string}`。导入字体 ID 是小写 SHA-256 内容哈希。空值分别使用现有界面默认、`monoFont` 或自动系统 CJK 后备。通过 `preferences.update`、正常修订令牌及 `settings.write` 修改。单独更新 `monoFont` 时清除自定义等宽覆盖；缺失字体的引用会保留并使用后备显示。设置方案只包含引用，不携带字体文件。字体文件的导入、删除需要原生设置界面。
+`settings.get` 返回原生设置中的 `fontSelections`：`ui`、`mono`、`editorCjk` 各项可为 `null`、按字体族名引用的系统字体，或按小写 SHA-256 内容 ID 引用的导入字体。持有 `settings.write` 的插件可以通过 `settings.update` 替换该对象。原生设置更新只指定 `monoFont`、未指定 `fontSelections` 时，会清除自定义等宽覆盖。
+
+冻结的 v1 `preferences.*` 契约和公开的方案内容不包含原生字体引用。桌面界面导出的设置方案包含引用，不携带字体文件。字体文件的导入、删除需要原生设置界面。

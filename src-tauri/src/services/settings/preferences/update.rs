@@ -27,12 +27,6 @@ fn apply_fields(previous: &Settings, changes: Value) -> AppResult<Settings> {
     let fields = changes.as_object().ok_or_else(|| invalid("changes"))?;
     let mut internal = serde_json::to_value(previous)?;
     let mut expected = projection::values(previous)?;
-    if changes.get("appearance").is_some_and(|value| {
-        value.get("monoFont").is_some() && value.get("fontSelections").is_none()
-    }) {
-        internal["fontSelections"]["mono"] = Value::Null;
-        expected["appearance"]["fontSelections"]["mono"] = Value::Null;
-    }
     for (id, changes) in fields {
         let group = GROUPS
             .iter()
