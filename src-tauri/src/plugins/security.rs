@@ -69,6 +69,9 @@ pub const PERMISSIONS: &[&str] = &[
     "mounts.hostDetails",
     "forwards.read",
     "forwards.write",
+    "proxy.read",
+    "proxy.write",
+    "proxy.tun",
 ];
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

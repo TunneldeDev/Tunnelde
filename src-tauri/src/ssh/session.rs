@@ -508,6 +508,16 @@ impl SshManager {
         host: &str,
         session_id: &str,
     ) -> AppResult<DetachedSession> {
+        self.take_forwarding_purpose(host, session_id, "forwarding")
+    }
+
+    /// Exact published background transport for an owning subsystem.
+    pub(crate) fn take_forwarding_purpose(
+        &self,
+        host: &str,
+        session_id: &str,
+        purpose: &str,
+    ) -> AppResult<DetachedSession> {
         let mut sessions = self
             .sessions
             .lock()
@@ -518,7 +528,7 @@ impl SshManager {
         if !session.published
             || session.info.host_id != host
             || session.info.terminal
-            || session.info.purpose.as_deref() != Some("forwarding")
+            || session.info.purpose.as_deref() != Some(purpose)
         {
             return Err(AppError::validation("ssh.sessionMissing"));
         }
@@ -916,8 +926,10 @@ async fn connect_captured(
         connected_at: now_ms(),
         terminal: !request.background,
         purpose: if request.background
-            && matches!(request.purpose.as_deref(), Some("forwarding" | "mounts"))
-        {
+            && matches!(
+                request.purpose.as_deref(),
+                Some("forwarding" | "mounts" | "proxy")
+            ) {
             request.purpose.clone()
         } else {
             None
@@ -965,6 +977,10 @@ async fn connect_captured(
 
                     let removed = if let Some(state) = task_app.try_state::<AppState>() {
                         state.forwards.stop_session(&task_session);
+                        crate::services::proxy::runtime::stop_session_reconnectable(
+                            &task_app,
+                            &task_session,
+                        );
                         state.monitor.forget(&task_session);
                         let removed = state.ssh.remove(&task_session);
                         state.plugins.forget_connection(&task_session);
@@ -1039,6 +1055,7 @@ pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
 pub(crate) fn begin_disconnect(app: &AppHandle, session_id: &str) -> Option<SessionDisposal> {
     let state = app.state::<AppState>();
     state.forwards.stop_session(session_id);
+    crate::services::proxy::runtime::stop_session(app, session_id);
     let cleanup_app = app.clone();
     let cleanup_session = session_id.to_owned();
     let work = crate::services::operations::WorkLifetime::current();

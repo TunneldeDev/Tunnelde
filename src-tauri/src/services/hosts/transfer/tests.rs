@@ -17,6 +17,9 @@ pub(super) fn fixture(conn: &Connection) -> (Host, Host) {
         let group=forwarding::groups::save_at(conn,None,&target.id,"Database",None)?;
         let rule=serde_json::from_value(serde_json::json!({"id":"f1","hostId":target.id,"name":"postgres","mode":"local","bindHost":"127.0.0.1","bindPort":5433,"targetHost":"127.0.0.1","targetPort":5432})).unwrap();
         forwarding::repository::import_at(conn,&rule,forwarding::automation::Options{auto_start:true,auto_retry:true},Some(&group.id))?;
+        let proxy_group=crate::services::proxy::contract::ProxyGroup{id:"proxy-group".into(),host_id:target.id.clone(),name:"SOCKS".into(),listen_host:"127.0.0.1".into(),listen_port:1080,auth_mode:"none".into(),auth_username:String::new(),auth_password:None,auth_salt:None,auth_verifier:None,miss_policy:crate::services::proxy::contract::MissPolicy::Direct,auto_start:false,auto_retry:false};
+        crate::services::proxy::repository::save_group_conn(conn,proxy_group,None)?;
+        crate::services::proxy::repository::save_route_conn(conn,crate::services::proxy::contract::ProxyRoute{id:"proxy-route".into(),group_id:"proxy-group".into(),name:"GitLab".into(),mode:crate::services::proxy::contract::RouteMode::Group,match_host:"gitlab.example".into(),match_port:None,target_host:"gitlab.example".into(),target_port:8080,bind_host:None,bind_port:None},None)?;
         let group=mounts::contract::Group{id:"mountgroup".into(),host_id:target.id.clone(),name:"Files".into(),auto_reconnect:true};
         mounts::repository::save(conn,mounts::contract::Save{value:group.clone(),expected_revision:None})?;
         let mount_point=if cfg!(windows){"Z:\\"}else{"/tmp/tunnelde-test-mount"};
@@ -43,6 +46,11 @@ fn one_host_round_trip_includes_dependencies_and_remaps_all_relationships_withou
     assert_eq!(document.proxies.len(), 1);
     assert_eq!(document.folders.len(), 2);
     assert!(document.hosts.iter().all(|h| h.route.proxy == "proxy1"));
+    assert_eq!(document.version, 2);
+    assert_eq!(document.proxy_groups.len(), 1);
+    assert_eq!(document.proxy_routes.len(), 1);
+    assert_eq!(document.version, 2);
+    assert!(document.proxy_groups[0].auth_verifier.is_none());
     let raw = serde_json::to_string(&document).unwrap();
     for forbidden in [
         "keyPath",
@@ -51,7 +59,8 @@ fn one_host_round_trip_includes_dependencies_and_remaps_all_relationships_withou
         "passphrase",
         "sessionId",
         "runtimeId",
-        "revision",
+        "authSalt",
+        "authVerifier",
     ] {
         assert!(!raw.contains(forbidden), "{forbidden}");
     }
@@ -78,6 +87,13 @@ fn one_host_round_trip_includes_dependencies_and_remaps_all_relationships_withou
             assert_ne!(f.rule.id, "f1");
             let group = forwarding::groups::list(conn, Some(&target.id))?.remove(0);
             assert_eq!(f.group_id.as_deref(), Some(group.id.as_str()));
+            let proxy_groups = crate::services::proxy::repository::list_groups_conn(conn)?;
+            let proxy_routes = crate::services::proxy::repository::list_routes_conn(conn)?;
+            assert_eq!(proxy_groups.len(), 1);
+            assert_eq!(proxy_groups[0].group.host_id, target.id);
+            assert_ne!(proxy_groups[0].group.id, "proxy-group");
+            assert_eq!(proxy_routes.len(), 1);
+            assert_eq!(proxy_routes[0].route.group_id, proxy_groups[0].group.id);
             assert_eq!(
                 forwarding::automation::settings::read(conn, &f.rule.id, &f.revision)?,
                 forwarding::automation::Options {
@@ -182,6 +198,86 @@ fn batch_export_includes_only_selected_hosts_and_their_dependency_closure() {
         Ok(())
     })
     .unwrap();
+}
+
+#[test]
+fn plain_export_omits_proxy_verifiers_and_encrypted_export_retains_them() {
+    let db = Database::in_memory().unwrap();
+    db.with(|conn| {
+        let (target, _) = fixture(conn);
+        let group = crate::services::proxy::repository::list_groups_conn(conn)?
+            .into_iter()
+            .find(|entry| entry.group.host_id == target.id)
+            .unwrap();
+        let mut secured = group.group;
+        secured.auth_mode = "password".into();
+        secured.auth_username = "proxy-user".into();
+        secured.auth_salt = Some("salt".into());
+        secured.auth_verifier = Some(crate::services::proxy::repository::password_verifier(
+            "proxy-user",
+            "secret",
+            "salt",
+        ));
+        crate::services::proxy::repository::save_group_conn(conn, secured, Some(&group.revision))?;
+
+        let plain = export_at(conn, std::slice::from_ref(&target.id))?;
+        assert!(plain.proxy_groups[0].auth_salt.is_none());
+        assert!(plain.proxy_groups[0].auth_verifier.is_none());
+        let raw = serde_json::to_string(&plain)?;
+        assert!(!raw.contains("authSalt"));
+        assert!(!raw.contains("authVerifier"));
+
+        let encrypted = export_at_with_proxy_verifiers(conn, &[target.id], true)?;
+        assert_eq!(encrypted.proxy_groups[0].auth_salt.as_deref(), Some("salt"));
+        assert!(encrypted.proxy_groups[0]
+            .auth_verifier
+            .as_deref()
+            .is_some_and(|value| value.len() == 64));
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn plain_password_group_round_trips_as_pending_configuration() {
+    let source = Database::in_memory().unwrap();
+    let destination = Database::in_memory().unwrap();
+    let document = source
+        .with(|conn| {
+            let (target, _) = fixture(conn);
+            let group = crate::services::proxy::repository::list_groups_conn(conn)?
+                .into_iter()
+                .find(|entry| entry.group.host_id == target.id)
+                .unwrap();
+            let mut secured = group.group;
+            secured.auth_mode = "password".into();
+            secured.auth_username = "proxy-user".into();
+            secured.auth_salt = Some("salt".into());
+            secured.auth_verifier = Some(crate::services::proxy::repository::password_verifier(
+                "proxy-user",
+                "secret",
+                "salt",
+            ));
+            crate::services::proxy::repository::save_group_conn(
+                conn,
+                secured,
+                Some(&group.revision),
+            )?;
+            export_at(conn, &[target.id])
+        })
+        .unwrap();
+    destination
+        .with(|conn| {
+            apply_at(conn, request(conn, document, false))?;
+            let groups = crate::services::proxy::repository::list_groups_conn(conn)?;
+            assert_eq!(groups.len(), 1);
+            assert_eq!(groups[0].group.auth_mode, "password");
+            assert!(groups[0].group.auth_salt.is_none());
+            assert!(groups[0].group.auth_verifier.is_none());
+            assert!(crate::services::proxy::contract::validate_group(&groups[0].group).is_err());
+            Ok(())
+        })
+        .unwrap();
 }
 
 #[test]

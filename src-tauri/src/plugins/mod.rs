@@ -68,6 +68,17 @@ pub enum PluginStatus {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PluginTrafficAdapter {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub platforms: Vec<String>,
+    pub helper: String,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
     /// Immutable installed metadata for internal planning. Never crosses IPC.
     #[serde(skip)]
@@ -99,6 +110,7 @@ pub struct PluginInfo {
     pub file_icon_themes: Vec<file_icons::FileIconTheme>,
     pub file_previews: Vec<crate::preview::providers::Provider>,
     pub mounted_file_reveal: bool,
+    pub traffic_adapters: Vec<PluginTrafficAdapter>,
     pub fingerprint: String,
     pub runtime_id: Option<String>,
     pub frontend: Option<frontend::FrontendManifest>,
@@ -198,6 +210,19 @@ impl Instance {
             file_icon_themes: self.manifest.file_icon_themes.clone(),
             file_previews: self.manifest.file_previews.clone(),
             mounted_file_reveal: self.manifest.mounted_file_reveal,
+            traffic_adapters: self
+                .manifest
+                .traffic_adapters
+                .iter()
+                .map(|adapter| PluginTrafficAdapter {
+                    id: adapter.id.clone(),
+                    name: adapter.name.clone(),
+                    kind: adapter.kind.clone(),
+                    platforms: adapter.platforms.clone(),
+                    helper: adapter.helper.clone(),
+                    capabilities: adapter.capabilities.clone(),
+                })
+                .collect(),
             tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
             runtime_id: (self.status == PluginStatus::Running)

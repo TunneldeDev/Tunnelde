@@ -602,6 +602,14 @@ export interface PluginInfo {
   fileIconThemes?: PluginFileIconTheme[];
   filePreviews?: PluginFilePreview[];
   mountedFileReveal?: boolean;
+  trafficAdapters?: Array<{
+    id: string;
+    name: string;
+    kind: "tun";
+    platforms: string[];
+    helper: string;
+    capabilities: string[];
+  }>;
   author?: string | null;
   readme?: string | null;
   engines?: Record<string, string>;

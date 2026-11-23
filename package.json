@@ -29,7 +29,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "build:local": "node scripts/build-local.mjs"
+    "build:local": "node scripts/build-local.mjs",
+    "docs:check": "node scripts/ci/check-docs.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.0",

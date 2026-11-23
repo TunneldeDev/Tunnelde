@@ -1,15 +1,27 @@
 import type { FsSource } from "@/lib/api/types";
 
 export const DRAG_MIME = "application/x-tunnelde-file";
-let activeDragSource: FsSource | null = null;
+let activeDragPayload: DragPayload | null = null;
 
-/** The browser hides drag data during dragover; keep only the source in memory. */
+/** WebKit can omit custom MIME types from a synthetic DataTransfer. Keep the
+ * exact payload in memory for same-document drops; never use it for OS drops. */
 export function currentDragSource(): FsSource | null {
-  return activeDragSource;
+  return activeDragPayload?.source ?? null;
 }
 
 export function clearDragSource(): void {
-  activeDragSource = null;
+  activeDragPayload = null;
+}
+
+export function hasDragPayload(data: DataTransfer): boolean {
+  try {
+    if (data.types.includes(DRAG_MIME)) return true;
+    // Never mistake an external OS drag for a stale same-document payload.
+    if (data.types.length > 0) return false;
+  } catch {
+    /* Safari can throw while enumerating a synthetic transfer. */
+  }
+  return activeDragPayload !== null;
 }
 
 export interface DragItem {
@@ -167,16 +179,23 @@ function parsedItems(value: unknown): DragItem[] | null {
 }
 
 export function setDragPayload(data: DataTransfer, payload: DragPayload): void {
-  activeDragSource = payload.source;
-  data.setData(DRAG_MIME, JSON.stringify(payload));
-  data.effectAllowed = "copyMove";
+  activeDragPayload = payload;
+  try {
+    data.setData(DRAG_MIME, JSON.stringify(payload));
+    data.effectAllowed = "copyMove";
+  } catch {
+    /* The in-memory payload still supports an internal drop. */
+  }
 }
 
 export function readDragPayload(data: DataTransfer): DragPayload | null {
-  const raw = data.getData(DRAG_MIME);
-  if (!raw) {
-    return null;
+  let raw = "";
+  try {
+    raw = data.getData(DRAG_MIME);
+  } catch {
+    /* Fall through to the same-document payload. */
   }
+  if (!raw) return activeDragPayload;
   try {
     const parsed = JSON.parse(raw) as { source?: unknown; items?: unknown; paneId?: unknown };
     const source = parsedSource(parsed.source);

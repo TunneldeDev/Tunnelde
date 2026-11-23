@@ -43,3 +43,7 @@ Automation preferences are persistent host configuration, retained when the plug
 permission. Auto-start takes effect on the next application launch; saving does not connect immediately.
 
 `forwards.startMany({sessionId, items:[{id, expectedRevision}]})` requires `forwards.write`. Pass up to 16 distinct rules with revisions from `forwards.automation.list` and an existing authenticated session for the rules' host. Results are returned in input order as `{id, status:"started"}`, `{id, status:"failed", error}`, or `{id, status:"notStarted"}` for rules not attempted within the 90-second batch budget. Listener setup or revision errors affect only their own rule. Cancellation does not undo committed starts; plugin retirement or permission revocation still disposes its listeners. This API never creates an SSH session or switches a rule to a different host.
+
+SOCKS5 domain routes use the separate experimental `proxy.*` domain. See
+[SOCKS5 domain routes and TUN adapters](../socks-tun.md) for listener policy,
+route priority, TUN attachment and migration rules.

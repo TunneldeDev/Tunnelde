@@ -1,5 +1,6 @@
 pub(crate) mod connection_review;
 pub mod forwarding;
+pub mod proxy;
 
 use serde::Serialize;
 use serde_json::Value;

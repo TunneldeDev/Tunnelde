@@ -56,6 +56,25 @@ impl HostRecord {
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ProxyGroupRecord {
+    id: String,
+    host_id: String,
+    name: String,
+    listen_host: String,
+    listen_port: u16,
+    auth_mode: String,
+    auth_username: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth_salt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth_verifier: Option<String>,
+    miss_policy: crate::services::proxy::contract::MissPolicy,
+    auto_start: bool,
+    auto_retry: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct Folder {
     id: String,
     name: String,
@@ -89,6 +108,10 @@ pub(crate) struct Document {
     forwards: Vec<Forward>,
     mount_groups: Vec<mounts::contract::Group>,
     mount_rules: Vec<mounts::contract::Rule>,
+    #[serde(default)]
+    proxy_groups: Vec<ProxyGroupRecord>,
+    #[serde(default)]
+    proxy_routes: Vec<crate::services::proxy::contract::RevisionedRoute>,
 }
 fn invalid() -> AppError {
     AppError::validation("hostTransfer.invalid")
@@ -131,7 +154,9 @@ fn dependencies(document: &Document, ids: &[String]) -> AppResult<HashSet<String
 }
 fn validate(document: &Document) -> AppResult<()> {
     if document.format != "tunnelde-hosts"
-        || document.version != 1
+        || !matches!(document.version, 1 | 2)
+        || (document.version == 1
+            && (!document.proxy_groups.is_empty() || !document.proxy_routes.is_empty()))
         || document.hosts.is_empty()
         || document.hosts.len() > 500
         || document.roots.is_empty()
@@ -141,6 +166,8 @@ fn validate(document: &Document) -> AppResult<()> {
         || document.forward_groups.len() > 512
         || document.mount_groups.len() > 512
         || document.mount_rules.len() > 2048
+        || document.proxy_groups.len() > 512
+        || document.proxy_routes.len() > 4096
         || !matches!(document.platform.as_str(), "macos" | "windows" | "linux")
         || serde_json::to_vec(document)?.len() > MAX_BYTES
     {
@@ -234,6 +261,61 @@ fn validate(document: &Document) -> AppResult<()> {
             return Err(invalid());
         }
     }
+    let proxy_groups = unique(document.proxy_groups.iter().map(|entry| entry.id.as_str()))?;
+    unique(
+        document
+            .proxy_routes
+            .iter()
+            .map(|entry| entry.route.id.as_str()),
+    )?;
+    for entry in &document.proxy_groups {
+        let group = crate::services::proxy::contract::ProxyGroup {
+            id: entry.id.clone(),
+            host_id: entry.host_id.clone(),
+            name: entry.name.clone(),
+            listen_host: entry.listen_host.clone(),
+            listen_port: entry.listen_port,
+            auth_mode: entry.auth_mode.clone(),
+            auth_username: entry.auth_username.clone(),
+            auth_password: None,
+            auth_salt: entry.auth_salt.clone(),
+            auth_verifier: entry.auth_verifier.clone(),
+            miss_policy: entry.miss_policy,
+            auto_start: entry.auto_start,
+            auto_retry: entry.auto_retry,
+        };
+        crate::services::proxy::contract::validate_group_definition(&group)?;
+        if !hosts.contains(entry.host_id.as_str()) {
+            return Err(invalid());
+        }
+    }
+    for entry in &document.proxy_routes {
+        crate::services::proxy::contract::validate_route(&entry.route)?;
+        let group = document
+            .proxy_groups
+            .iter()
+            .find(|group| group.id == entry.route.group_id)
+            .ok_or_else(invalid)?;
+        let proxy_group = crate::services::proxy::contract::ProxyGroup {
+            id: group.id.clone(),
+            host_id: group.host_id.clone(),
+            name: group.name.clone(),
+            listen_host: group.listen_host.clone(),
+            listen_port: group.listen_port,
+            auth_mode: group.auth_mode.clone(),
+            auth_username: group.auth_username.clone(),
+            auth_password: None,
+            auth_salt: group.auth_salt.clone(),
+            auth_verifier: group.auth_verifier.clone(),
+            miss_policy: group.miss_policy,
+            auto_start: group.auto_start,
+            auto_retry: group.auto_retry,
+        };
+        crate::services::proxy::contract::validate_route_for_group(&entry.route, &proxy_group)?;
+        if !proxy_groups.contains(entry.route.group_id.as_str()) || entry.revision.is_empty() {
+            return Err(invalid());
+        }
+    }
     for group in &document.mount_groups {
         mounts::contract::validate_group(group)?;
         if !hosts.contains(group.host_id.as_str()) {
@@ -266,7 +348,29 @@ fn validate(document: &Document) -> AppResult<()> {
     }
     Ok(())
 }
+
+fn validate_plain(document: &Document) -> AppResult<()> {
+    validate(document)?;
+    if document
+        .proxy_groups
+        .iter()
+        .any(|group| group.auth_salt.is_some() || group.auth_verifier.is_some())
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
 pub(crate) fn export_at(conn: &Connection, ids: &[String]) -> AppResult<Document> {
+    export_at_with_proxy_verifiers(conn, ids, false)
+}
+
+/// Encrypted transfers are the only file format allowed to retain proxy auth
+/// verifier material. Plain exports use `export_at` and omit it.
+pub(crate) fn export_at_with_proxy_verifiers(
+    conn: &Connection,
+    ids: &[String],
+    include_proxy_verifiers: bool,
+) -> AppResult<Document> {
     if ids.is_empty() || ids.len() > 500 {
         return Err(invalid());
     }
@@ -285,6 +389,8 @@ pub(crate) fn export_at(conn: &Connection, ids: &[String]) -> AppResult<Document
         forwards: Vec::new(),
         mount_groups: Vec::new(),
         mount_rules: Vec::new(),
+        proxy_groups: Vec::new(),
+        proxy_routes: Vec::new(),
     };
     for host in hosts {
         let mut route = crate::network::route_at(conn, &host.id)?;
@@ -373,6 +479,35 @@ pub(crate) fn export_at(conn: &Connection, ids: &[String]) -> AppResult<Document
         .map(|r| r.value)
         .filter(|r| selected.contains(&r.host_id))
         .collect();
+    let (proxy_groups, proxy_routes) =
+        crate::services::proxy::repository::export_at(conn, &selected)?;
+    document.proxy_groups = proxy_groups
+        .into_iter()
+        .map(|entry| ProxyGroupRecord {
+            id: entry.group.id,
+            host_id: entry.group.host_id,
+            name: entry.group.name,
+            listen_host: entry.group.listen_host,
+            listen_port: entry.group.listen_port,
+            auth_mode: entry.group.auth_mode,
+            auth_username: entry.group.auth_username,
+            auth_salt: include_proxy_verifiers
+                .then_some(entry.group.auth_salt)
+                .flatten(),
+            auth_verifier: include_proxy_verifiers
+                .then_some(entry.group.auth_verifier)
+                .flatten(),
+            miss_policy: entry.group.miss_policy,
+            auto_start: entry.group.auto_start,
+            auto_retry: entry.group.auto_retry,
+        })
+        .collect();
+    document.proxy_routes = proxy_routes;
+    if document.proxy_groups.is_empty() && document.proxy_routes.is_empty() {
+        document.version = 1;
+    } else {
+        document.version = 2;
+    }
     validate(&document)?;
     Ok(document)
 }

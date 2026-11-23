@@ -218,9 +218,8 @@ capabilities can remain explicitly experimental, with discovery and fallback beh
 The release review also requires current Windows/macOS/Linux evidence for core user
 flows, safe data migrations and recovery, actual update installation/restart with
 settings/hosts/plugins preserved, and resolved blocking security or data-loss issues.
-A green CI run or a method count alone does not establish these requirements. Maintain
-the current evidence and outstanding gaps in the active implementation checklist;
-do not treat `apiVersion: 1`, UI SDK `0.1.0` or a completed RPC directory as a 1.0 claim.
+A green CI run or a method count alone does not establish these requirements.
+Do not treat `apiVersion: 1`, UI SDK `0.1.0` or a completed RPC directory as a 1.0 claim.
 
 ## Approval and runtime boundaries
 

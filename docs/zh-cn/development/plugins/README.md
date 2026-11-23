@@ -2,6 +2,8 @@
 
 主机迁移、转发分组及专用连接：[API](forwarding-groups.md)。
 
+SOCKS5 域名转发与可选 TUN 插件：[技术契约](../socks-tun.md)。
+
 可交互主机详情板块与挂载贡献者选择，详见[主机详情扩展](host-details.md)。
 
 现有文件浏览器的发现、分页和宿主操作：[实时浏览器数据](file-browser-data.md)。
