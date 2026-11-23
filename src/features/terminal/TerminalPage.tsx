@@ -726,7 +726,9 @@ export function TerminalPageView({
                 ]
               : MONO_FONT_OPTIONS
           }
-          onChange={(value) => void services.updateFont(value as MonoFont)}
+          onChange={(value) => {
+            if (value !== "custom") void services.updateFont(value as MonoFont);
+          }}
         />
         <IconButton
           label={t("history.title")}

@@ -6,6 +6,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
+import { reportError } from "@/lib/diagnostics";
 import { AUTO_CJK_SOURCE, FONT_READY_EVENT, fontGeneration } from "@/lib/fonts/runtime";
 
 const FAMILY = "Tunnelde Editor CJK";
@@ -127,11 +128,12 @@ async function alignCjkFont(view: EditorView): Promise<void> {
   let available = true;
   try {
     await loading.load();
-  } catch {
+  } catch (error) {
     available = false;
     if (face !== loading || !connected()) return;
     document.fonts.delete(loading);
     if (source !== AUTO_CJK_SOURCE && !usingFallback) {
+      reportError("fonts", "loadEditorCjk", error, "warn");
       usingFallback = true;
       // Keep the requested choice in preferences, but use the automatic local
       // fallback while its file/family is unavailable on this machine.
@@ -191,8 +193,11 @@ export function observeEditorFont(view: EditorView): () => void {
     queueMicrotask(() => {
       queued = false;
       if (disposed) return;
-      void alignCjkFont(view).catch(() => {
-        if (!disposed) view.requestMeasure();
+      void alignCjkFont(view).catch((error) => {
+        if (!disposed) {
+          reportError("fonts", "measureEditorCjk", error, "warn");
+          view.requestMeasure();
+        }
       });
     });
   };

@@ -1,4 +1,4 @@
-import { ensureFont, FONT_READY_EVENT } from "@/lib/fonts/runtime";
+import { ensureFont, firstFontFamily, FONT_READY_EVENT } from "@/lib/fonts/runtime";
 import { sameFont } from "@/lib/fonts/types";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
@@ -29,7 +29,7 @@ export const localTerminalSettings: TerminalSettingsSource = {
 /** Wait for glyph metrics before opening or resizing the terminal. */
 export async function waitForFont(family: string, size: number): Promise<void> {
   if (!document.fonts) return;
-  const name = family.trim().match(/^("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,]+)/)?.[0];
+  const name = firstFontFamily(family);
   if (!name) return;
   let timeout: number | undefined;
   try {

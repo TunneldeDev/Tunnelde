@@ -54,6 +54,7 @@ import type { ConfirmOptions } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
 import { presentError } from "@/lib/api/errors";
 const Context = createContext<SettingsProjection | null>(null);
+const LiveSettings = createContext(false);
 const useData = () => {
   const data = useContext(Context);
   if (!data) throw new Error("panel.window.staleOwner");
@@ -151,6 +152,7 @@ function composition(
     return (
       <FontSettingsView
         settings={useData().page.settings}
+        live={useContext(LiveSettings)}
         services={{
           catalogue: method("fonts_catalogue"),
           importFile: method("fonts_import"),
@@ -523,7 +525,11 @@ export function SettingsWindowContent({
   useLayoutEffect(() => adapter.publish(model), [adapter, model]);
   return (
     <Context.Provider value={model}>
-      <SettingsPageView visible={visible} services={services} />
+      <LiveSettings.Provider
+        value={!record.staged && !record.moving && !record.failed && !!record.lease}
+      >
+        <SettingsPageView visible={visible} services={services} />
+      </LiveSettings.Provider>
     </Context.Provider>
   );
 }

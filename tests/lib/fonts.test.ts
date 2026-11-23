@@ -5,10 +5,12 @@ const imported: FontReference = { source: "imported", id: "b".repeat(64) };
 const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
 let fonts: Set<unknown>;
 let fail = false;
+let throwInConstructor = false;
 const constructed: Array<{ family: string; source: string }> = [];
 beforeEach(() => {
   vi.resetModules();
   fail = false;
+  throwInConstructor = false;
   fonts = new Set();
   constructed.length = 0;
   Object.defineProperty(document, "fonts", { configurable: true, value: fonts });
@@ -19,6 +21,7 @@ beforeEach(() => {
         public family: string,
         public source: string,
       ) {
+        if (throwInConstructor) throw new TypeError("invalid font");
         constructed.push(this);
       }
       async load() {
@@ -59,4 +62,16 @@ it("probes installed font names with escaped local sources and retries failed im
   fail = false;
   expect(await ensureFont(imported)).toBe(true);
   expect(fonts.size).toBe(1);
+});
+
+it("records a synchronous FontFace failure and allows fallback", async () => {
+  const { ensureFont } = await import("@/lib/fonts/runtime");
+  const { getLocalDiagnostics } = await import("@/lib/diagnostics");
+  throwInConstructor = true;
+  await expect(ensureFont(imported)).resolves.toBe(false);
+  expect(getLocalDiagnostics()).toEqual([
+    expect.objectContaining({
+      event: expect.objectContaining({ domain: "fonts", operation: "loadSelected", level: "warn" }),
+    }),
+  ]);
 });

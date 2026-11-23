@@ -8,7 +8,7 @@ import {
 import { useLocalControlState } from "@/features/settings/components/controlState";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
 import type { FontInfo } from "@/lib/fonts/types";
-import { previewFont } from "@/lib/fonts/runtime";
+import { FONT_READY_EVENT, previewFont } from "@/lib/fonts/runtime";
 import type * as FontsRuntime from "@/lib/fonts/runtime";
 
 vi.mock("@/lib/fonts/runtime", async (original) => ({
@@ -116,4 +116,26 @@ it("retains unavailable references with a fallback disclosure", async () => {
   );
   expect(await screen.findByText(/This font is unavailable/)).toBeTruthy();
   expect(services.select).not.toHaveBeenCalled();
+});
+
+it("loads the catalogue only after the Settings window owns a live lease", async () => {
+  const services = makeServices();
+  const { rerender } = render(
+    <FontSettingsView settings={defaults} services={services} live={false} />,
+  );
+  fireEvent(window, new Event(FONT_READY_EVENT));
+  expect(services.catalogue).not.toHaveBeenCalled();
+  rerender(<FontSettingsView settings={defaults} services={services} live />);
+  await screen.findByText(/User Font · WOFF2/);
+  expect(services.catalogue).toHaveBeenCalledOnce();
+});
+
+it("clears a catalogue error on recovery", async () => {
+  const services = makeServices();
+  vi.mocked(services.catalogue).mockRejectedValueOnce(new Error("initial failure"));
+  render(<FontSettingsView settings={defaults} services={services} />);
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh system fonts" }));
+  await screen.findByText(/User Font · WOFF2/);
+  expect(screen.queryByRole("alert")).toBeNull();
 });

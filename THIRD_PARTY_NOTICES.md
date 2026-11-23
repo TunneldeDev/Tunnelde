@@ -25,7 +25,7 @@ their notices are reproduced or referenced as required.
 | CodeMirror 6 (@codemirror/state, view, commands, language, search, autocomplete) | MIT                                                    |
 | arboard (native clipboard)                                                       | MIT OR Apache-2.0                                      |
 | base64                                                                           | MIT OR Apache-2.0                                      |
-| fontdb / ttf-parser | MIT / MIT OR Apache-2.0 |
+| fontdb / ttf-parser                                                              | MIT / MIT OR Apache-2.0                                |
 | keyring                                                                          | MIT OR Apache-2.0                                      |
 | Tokio                                                                            | MIT                                                    |
 | Serde, serde_json                                                                | MIT OR Apache-2.0                                      |

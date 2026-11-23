@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { reportError } from "@/lib/diagnostics";
 import { DEFAULT_FONT_SELECTIONS, fontKey, type FontReference, type FontSelections } from "./types";
 
 export const FONT_READY_EVENT = "td-fonts-ready";
@@ -17,7 +18,18 @@ export const AUTO_CJK_SOURCE = [
   .map((name) => `local(${JSON.stringify(name)})`)
   .join(",");
 
-const faces = new Map<string, { face: FontFace; ready: Promise<boolean> }>();
+type PendingFace = { face?: FontFace; ready: Promise<boolean> };
+const faces = new Map<string, PendingFace>();
+
+/** Preserve commas and escapes in quoted, user-supplied font names. */
+export function firstFontFamily(stack: string): string {
+  return (
+    stack
+      .trim()
+      .match(/^("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,]+)/)?.[0]
+      ?.trim() ?? ""
+  );
+}
 let selected: FontSelections = DEFAULT_FONT_SELECTIONS;
 let selectedKey = "";
 let ready: Promise<unknown> = Promise.resolve();
@@ -57,21 +69,26 @@ export function ensureFont(reference: FontReference | null): Promise<boolean> {
   if (existing) return existing.ready;
   // A local probe resolves the actual installed font rather than relying on
   // document.fonts.check(), which also succeeds for missing font families.
-  const face = new FontFace(
-    reference.source === "system" ? `Tunnelde Probe ${key}` : fontFamily(reference),
-    fontSource(reference),
-  );
-  const entry = { face, ready: Promise.resolve(false) };
-  entry.ready = face
-    .load()
-    .then(() => {
-      if (reference.source === "imported" && faces.get(key) === entry) document.fonts.add(face);
-      return true;
-    })
-    .catch(() => {
-      if (faces.get(key) === entry) faces.delete(key);
-      return false;
-    });
+  const entry: PendingFace = {
+    ready: Promise.resolve().then(async () => {
+      try {
+        const face = new FontFace(
+          reference.source === "system" ? "Tunnelde System Font Probe" : fontFamily(reference),
+          fontSource(reference),
+        );
+        entry.face = face;
+        await face.load();
+        if (reference.source === "imported" && faces.get(key) === entry) document.fonts.add(face);
+        return true;
+      } catch (error) {
+        if (faces.get(key) === entry) {
+          faces.delete(key);
+          reportError("fonts", "loadSelected", error, "warn");
+        }
+        return false;
+      }
+    }),
+  };
   faces.set(key, entry);
   return entry.ready;
 }
@@ -83,23 +100,24 @@ export function activateFonts(
   selected = selections;
   const key = JSON.stringify(selections);
   if (key !== selectedKey || force) {
-    generation++;
+    const revision = ++generation;
     selectedKey = key;
     const keep = new Set(Object.values(selections).map(fontKey));
     for (const [id, entry] of faces) {
       if (!keep.has(id) || force) {
-        document.fonts?.delete?.(entry.face);
+        if (entry.face) document.fonts?.delete?.(entry.face);
         faces.delete(id);
       }
     }
     ready = Promise.all(Object.values(selections).map(ensureFont)).then(() => {
-      if (selectedKey === key) window.dispatchEvent(new Event(FONT_READY_EVENT));
+      if (generation === revision) window.dispatchEvent(new Event(FONT_READY_EVENT));
     });
   }
   if (!listening && typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     listening = true;
-    void listen("fonts://changed", () => activateFonts(selected, true)).catch(() => {
+    void listen("fonts://changed", () => activateFonts(selected, true)).catch((error) => {
       listening = false;
+      reportError("fonts", "subscribeChanges", error, "warn");
     });
   }
 }

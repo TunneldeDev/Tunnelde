@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/fonts/types";
 import type { Settings } from "@/lib/api/types";
 import { monoStack } from "@/lib/prefs/appearance";
+import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
 import type { ConfirmOptions } from "@/store/dialogs";
 import type { SettingsControlState } from "./controlState";
@@ -33,9 +34,11 @@ const TARGETS = ["ui", "mono", "editorCjk"] as const;
 export function FontSettingsView({
   settings,
   services,
+  live = true,
 }: {
   settings: Settings;
   services: FontSettingsServices;
+  live?: boolean;
 }) {
   const { t } = useTranslation();
   const [items, setItems] = useState<FontInfo[]>([]);
@@ -50,32 +53,46 @@ export function FontSettingsView({
     monospaced: boolean;
   } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const mounted = useRef(true);
+  const [catalogueError, setCatalogueError] = useState("");
+  const mounted = useRef(false);
+  const catalogueRequest = useRef(0);
   const operation = useRef(false);
   const selections = settings.fontSelections ?? DEFAULT_FONT_SELECTIONS;
   const catalogue = services.catalogue;
 
+  const refresh = useCallback(
+    async (force = false) => {
+      const request = ++catalogueRequest.current;
+      try {
+        const result = await catalogue(force);
+        if (mounted.current && request === catalogueRequest.current) {
+          setItems(result.items);
+          setCatalogueError("");
+        }
+      } catch (cause) {
+        if (mounted.current && request === catalogueRequest.current) {
+          reportError("fonts", "loadCatalogue", cause);
+          setCatalogueError(translateError(cause));
+        }
+      }
+    },
+    [catalogue],
+  );
+
   useEffect(() => {
     mounted.current = true;
-    let order = 0;
-    const load = () => {
-      const current = ++order;
-      void catalogue()
-        .then((result) => {
-          if (mounted.current && order === current) setItems(result.items);
-        })
-        .catch((cause) => {
-          if (mounted.current && order === current) setError(translateError(cause));
-        });
-    };
-    load();
-    window.addEventListener(FONT_READY_EVENT, load);
+    // A staged or moving Settings tree cannot call the live window owner.
+    const load = () => void refresh();
+    if (live) {
+      load();
+      window.addEventListener(FONT_READY_EVENT, load);
+    }
     return () => {
       mounted.current = false;
-      order++;
+      catalogueRequest.current++;
       window.removeEventListener(FONT_READY_EVENT, load);
     };
-  }, [catalogue]);
+  }, [live, refresh]);
 
   const candidate = items.find((font) => fontKey(font.reference) === previewKey);
   const preview = candidate && previewState?.key === previewKey ? previewState : null;
@@ -93,8 +110,9 @@ export function FontSettingsView({
           setPreviewError(null);
           setPreview({ key: previewKey, family: loaded.family, monospaced: loaded.monospaced });
         })
-        .catch(() => {
+        .catch((cause) => {
           if (!disposed) {
+            reportError("fonts", "preview", cause, "warn");
             setPreview(null);
             setPreviewError(previewKey);
           }
@@ -107,22 +125,19 @@ export function FontSettingsView({
   }, [candidate, previewKey]);
 
   const run = async (action: () => Promise<unknown>) => {
-    if (operation.current) return;
+    if (!live || operation.current) return;
     operation.current = true;
     setPending(true);
     setError("");
     try {
       await action();
     } catch (cause) {
+      reportError("fonts", "update", cause);
       if (mounted.current) setError(translateError(cause));
     } finally {
       operation.current = false;
       if (mounted.current) setPending(false);
     }
-  };
-  const refresh = async (force = false) => {
-    const result = await services.catalogue(force);
-    if (mounted.current) setItems(result.items);
   };
   const choose = async (target: keyof FontSelections, key: string) => {
     const reference = items.find((font) => fontKey(font.reference) === key)?.reference ?? null;
@@ -321,7 +336,7 @@ export function FontSettingsView({
         ))}
       <p className="settings-row__hint">{t("fonts.importHint")}</p>
       {pending ? <p role="status">{t("common.loading")}</p> : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error || catalogueError ? <p role="alert">{error || catalogueError}</p> : null}
     </div>
   );
 }

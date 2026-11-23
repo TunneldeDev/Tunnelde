@@ -1,5 +1,6 @@
 import { api, isTauri } from "@/lib/api/ipc";
 import { activateFonts, previewFont } from "@/lib/fonts/runtime";
+import { reportError } from "@/lib/diagnostics";
 import { useSettings } from "@/store/settings";
 import { useDialogs } from "@/store/dialogs";
 import { useLocalControlState } from "./components/controlState";
@@ -23,7 +24,11 @@ export const mainFontServices: FontSettingsServices = {
         preview.dispose();
       }
     } finally {
-      if (!committed) await api.fontsFinishImport(staged.token, false).catch(() => undefined);
+      if (!committed) {
+        await api.fontsFinishImport(staged.token, false).catch((error) => {
+          reportError("fonts", "cancelImport", error, "warn");
+        });
+      }
     }
   },
   async remove(id) {
