@@ -43,19 +43,19 @@ importers:
         version: 2.12.4
       '@xterm/addon-fit':
         specifier: 0.12.0-beta.333
-        version: 0.12.0-beta.333(@xterm/xterm@6.1.0-beta.337)
+        version: 0.12.0-beta.333(@xterm/xterm@6.1.0-beta.338)
       '@xterm/addon-serialize':
         specifier: 0.15.0-beta.331
-        version: 0.15.0-beta.331(@xterm/xterm@6.1.0-beta.337)
+        version: 0.15.0-beta.331(@xterm/xterm@6.1.0-beta.338)
       '@xterm/addon-unicode-graphemes':
         specifier: 0.5.0-beta.331
-        version: 0.5.0-beta.331(@xterm/xterm@6.1.0-beta.337)
+        version: 0.5.0-beta.331(@xterm/xterm@6.1.0-beta.338)
       '@xterm/addon-webgl':
         specifier: 0.20.0-beta.330
-        version: 0.20.0-beta.330(@xterm/xterm@6.1.0-beta.337)
+        version: 0.20.0-beta.330(@xterm/xterm@6.1.0-beta.338)
       '@xterm/xterm':
-        specifier: 6.1.0-beta.337
-        version: 6.1.0-beta.337
+        specifier: 6.1.0-beta.338
+        version: 6.1.0-beta.338
       clsx:
         specifier: 2.1.1
         version: 2.1.1
@@ -1040,8 +1040,8 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.337
 
-  '@xterm/xterm@6.1.0-beta.337':
-    resolution: {integrity: sha512-zstczNBAT/FaaWzCCoLx3DavRcAW0ndK7g/Y0893nPvZwWmjMU8WeuqJYqMRVommGwv1KRoxdlOOt0KukxHadA==}
+  '@xterm/xterm@6.1.0-beta.338':
+    resolution: {integrity: sha512-VBygvapFKV5gsqvVFsk6gYpArn4AXnUtZvt3tfN2LXI284i0mivC6Kus84GMJo0GJPLRFziWcSPVz95nViPuWw==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -2955,23 +2955,23 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
-  '@xterm/addon-fit@0.12.0-beta.333(@xterm/xterm@6.1.0-beta.337)':
+  '@xterm/addon-fit@0.12.0-beta.333(@xterm/xterm@6.1.0-beta.338)':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.337
+      '@xterm/xterm': 6.1.0-beta.338
 
-  '@xterm/addon-serialize@0.15.0-beta.331(@xterm/xterm@6.1.0-beta.337)':
+  '@xterm/addon-serialize@0.15.0-beta.331(@xterm/xterm@6.1.0-beta.338)':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.337
+      '@xterm/xterm': 6.1.0-beta.338
 
-  '@xterm/addon-unicode-graphemes@0.5.0-beta.331(@xterm/xterm@6.1.0-beta.337)':
+  '@xterm/addon-unicode-graphemes@0.5.0-beta.331(@xterm/xterm@6.1.0-beta.338)':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.337
+      '@xterm/xterm': 6.1.0-beta.338
 
-  '@xterm/addon-webgl@0.20.0-beta.330(@xterm/xterm@6.1.0-beta.337)':
+  '@xterm/addon-webgl@0.20.0-beta.330(@xterm/xterm@6.1.0-beta.338)':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.337
+      '@xterm/xterm': 6.1.0-beta.338
 
-  '@xterm/xterm@6.1.0-beta.337': {}
+  '@xterm/xterm@6.1.0-beta.338': {}
 
   acorn-jsx@5.3.2(acorn@8.19.0):
     dependencies:
