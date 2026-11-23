@@ -302,12 +302,12 @@ mod tests {
         );
         assert!(safe_frame("src/lib/panels/viewState.tsx:12:3"));
         assert_eq!(
-            source_location("/Users/private/project/src/logs.rs", 12, 3).as_deref(),
+            source_location("/home/example-user/project/src/logs.rs", 12, 3).as_deref(),
             Some("src/logs.rs:12:3")
         );
         assert!(safe_frame("assets/main-aaa.js:1:643"));
         for bad in [
-            "/Users/me/src/Foo.ts:1:2",
+            "/home/example-user/src/Foo.ts:1:2",
             "src/../secret.ts:12:1",
             "src/Foo.ts?credential=123:12:1",
         ] {

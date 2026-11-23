@@ -57,7 +57,7 @@ it("does not copy arbitrary IPC details into log error fields", async () => {
     stack:
       "Error: secret.example src/secret.ts:1:1\n    at run (http://localhost/src/App.tsx?token=secret:42:1)\n" +
       "    at remote (https://private.example/src/file.ts:19:2)\n" +
-      "    at local (/Users/private/src/secret.ts:19:2)",
+      "    at local (/home/example-user/src/secret.ts:19:2)",
   });
   const event = reportError("events", "plugin://event", failure, "error", { requestId: "req-123" });
   await vi.waitFor(() => expect(invoke).toHaveBeenCalled());
