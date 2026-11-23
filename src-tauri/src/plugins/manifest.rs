@@ -145,6 +145,18 @@ fn hex_color(value: &str) -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TrafficAdapter {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub platforms: Vec<String>,
+    pub helper: String,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginManifest {
     pub id: String,
@@ -191,6 +203,8 @@ pub struct PluginManifest {
     pub file_previews: Vec<crate::preview::providers::Provider>,
     #[serde(default)]
     pub mounted_file_reveal: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub traffic_adapters: Vec<TrafficAdapter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frontend: Option<super::frontend::FrontendManifest>,
 }
@@ -236,6 +250,29 @@ impl PluginManifest {
             return Err(AppError::validation("plugin.activation.declarationVersion"));
         }
         super::runtime::activation::validate_dependencies(&self.id, &self.dependencies)?;
+        if self.traffic_adapters.len() > 8
+            || self.traffic_adapters.iter().any(|adapter| {
+                !valid_id(&adapter.id)
+                    || adapter.name.trim().is_empty()
+                    || adapter.name.len() > 120
+                    || adapter.kind != "tun"
+                    || adapter.platforms.is_empty()
+                    || adapter.platforms.len() > 3
+                    || adapter
+                        .platforms
+                        .iter()
+                        .any(|platform| !matches!(platform.as_str(), "macos" | "windows" | "linux"))
+                    || adapter.helper.is_empty()
+                    || adapter.helper.len() > 512
+                    || adapter.capabilities.len() > 16
+                    || adapter
+                        .capabilities
+                        .iter()
+                        .any(|capability| capability.is_empty() || capability.len() > 64)
+            })
+        {
+            return Err(AppError::validation("plugin.trafficAdapter.invalid"));
+        }
         super::host_details::validate(self)?;
         if let Some(configuration) = &self.configuration {
             configuration.validate()?;

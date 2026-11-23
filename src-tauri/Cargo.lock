@@ -7670,6 +7670,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "hyper-util",
+ "ipnet",
  "keyring",
  "objc2-app-kit",
  "objc2-core-foundation",

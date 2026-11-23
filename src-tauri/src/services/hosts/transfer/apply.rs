@@ -186,6 +186,61 @@ pub(super) fn apply_mapped(
                 group.map(String::as_str),
             )?;
         }
+        let proxy_groups = document
+            .proxy_groups
+            .iter()
+            .filter(|entry| selected.contains(&entry.host_id))
+            .map(|entry| {
+                let host_id = mapped_hosts
+                    .get(&entry.host_id)
+                    .cloned()
+                    .ok_or_else(invalid)?;
+                Ok(crate::services::proxy::contract::RevisionedGroup {
+                    revision: uuid::Uuid::new_v4().to_string(),
+                    group: crate::services::proxy::contract::ProxyGroup {
+                        id: entry.id.clone(),
+                        host_id,
+                        name: entry.name.clone(),
+                        listen_host: entry.listen_host.clone(),
+                        listen_port: entry.listen_port,
+                        auth_mode: entry.auth_mode.clone(),
+                        auth_username: entry.auth_username.clone(),
+                        auth_password: None,
+                        auth_salt: entry.auth_salt.clone(),
+                        auth_verifier: entry.auth_verifier.clone(),
+                        miss_policy: entry.miss_policy,
+                        auto_start: entry.auto_start,
+                        auto_retry: entry.auto_retry,
+                    },
+                })
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+        let mut proxy_group_ids = HashMap::new();
+        for entry in &proxy_groups {
+            let mut group = entry.group.clone();
+            let old = group.id.clone();
+            group.id = uuid::Uuid::new_v4().to_string();
+            if group.auth_mode == "none"
+                || group.auth_verifier.is_some()
+                || group.auth_salt.is_none()
+            {
+                let saved =
+                    crate::services::proxy::repository::save_group_conn_import(conn, group, None)?;
+                proxy_group_ids.insert(old, saved.group.id);
+            }
+        }
+        for entry in &document.proxy_routes {
+            if !proxy_group_ids.contains_key(&entry.route.group_id) {
+                continue;
+            }
+            let mut route = entry.route.clone();
+            route.id = uuid::Uuid::new_v4().to_string();
+            route.group_id = proxy_group_ids
+                .get(&route.group_id)
+                .cloned()
+                .ok_or_else(invalid)?;
+            crate::services::proxy::repository::save_route_conn(conn, route, None)?;
+        }
         let mut mapped_mounts = HashMap::new();
         for group in document
             .mount_groups

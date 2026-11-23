@@ -63,7 +63,14 @@ impl Portable {
         }
     }
     pub fn has_credentials(&self) -> bool {
-        !self.hosts.is_empty() || !self.proxies.is_empty() || !self.keys.is_empty()
+        !self.hosts.is_empty()
+            || !self.proxies.is_empty()
+            || !self.keys.is_empty()
+            || self
+                .document
+                .proxy_groups
+                .iter()
+                .any(|group| group.auth_salt.is_some() || group.auth_verifier.is_some())
     }
     pub fn validate(&self) -> AppResult<()> {
         validate(&self.document)?;

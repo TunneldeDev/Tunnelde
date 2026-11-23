@@ -67,6 +67,14 @@ mod tests {
         assert_eq!(catalogue["version"], 1);
         assert_eq!(catalogue["layers"].as_array().unwrap().len(), 6);
         assert_eq!(
+            catalogue["trafficAdapters"]["kinds"],
+            serde_json::json!(["tun"])
+        );
+        assert_eq!(
+            catalogue["trafficAdapters"]["discoveryGrantsExecution"],
+            false
+        );
+        assert_eq!(
             catalogue["frontend"]["sdkVersion"],
             super::super::frontend::UI_SDK_VERSION
         );

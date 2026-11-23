@@ -460,6 +460,7 @@ async fn read_loop(
             .state::<crate::state::AppState>()
             .forwards
             .stop_generation(&context.id, context.generation);
+        crate::services::proxy::runtime::stop_owned(&context.app, &context.id, context.generation);
         context
             .app
             .state::<crate::state::AppState>()

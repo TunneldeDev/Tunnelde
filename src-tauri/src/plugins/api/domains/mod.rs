@@ -9,6 +9,7 @@ pub(super) mod hosts;
 pub(super) mod logging;
 pub(super) mod monitor;
 pub(super) mod mounts;
+pub(super) mod proxy;
 pub(super) mod settings;
 pub(super) mod storage;
 pub(super) mod terminal;

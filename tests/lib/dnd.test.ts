@@ -78,6 +78,14 @@ describe("drag payloads", () => {
     expect(currentDragSource()).toBeNull();
   });
 
+  it("uses the in-memory payload when WebKit omits a custom MIME type", () => {
+    const store = fakeTransfer();
+    setDragPayload(store, { source: SERVER_A, items: [file] });
+    expect(readDragPayload(fakeTransfer())).toEqual({ source: SERVER_A, items: [file] });
+    clearDragSource();
+    expect(readDragPayload(fakeTransfer())).toBeNull();
+  });
+
   it("rejects unknown shapes", () => {
     expect(readDragPayload(fakeTransfer())).toBeNull();
     expect(readDragPayload(fakeTransfer({ [DRAG_MIME]: "{" }))).toBeNull();

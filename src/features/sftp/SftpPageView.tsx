@@ -42,7 +42,7 @@ import {
   canPaste,
   clearDragSource,
   currentDragSource,
-  DRAG_MIME,
+  hasDragPayload,
   joinPath,
   parentOf,
   planPaste,
@@ -71,6 +71,7 @@ import { fileViewPreferenceKey } from "@/lib/files/preferences";
 import { cn, formatBytes } from "@/lib/text/format";
 import { useContextMenu } from "@/store/contextMenu";
 import { toast } from "@/store/toasts";
+import { runBackgroundTask } from "@/lib/tasks/background";
 import { type FilePaneOptions } from "@/store/workspace";
 import { SearchField } from "@/components/ui/form/SearchField";
 import {
@@ -1046,11 +1047,25 @@ export function SftpPageView({
     ops: Array<{ from: string; to: string }>,
     overwrite = false,
     onDone?: (path: string) => void,
+    taskTitle = t("sftp.moveItems", { count: ops.length }),
   ) => {
-    try {
-      for (const op of ops) {
+    const execute = async (report?: (completed: number) => void) => {
+      for (const [index, op] of ops.entries()) {
         await run(source, op.from, op.to, overwrite);
         onDone?.(op.from);
+        report?.(index + 1);
+      }
+    };
+    try {
+      if (source.kind === "remote") {
+        await runBackgroundTask({ title: taskTitle, cancellable: false }, async ({ report }) => {
+          report({ progress: { completed: 0, total: ops.length, unit: "items" } });
+          await execute((completed) =>
+            report({ progress: { completed, total: ops.length, unit: "items" } }),
+          );
+        });
+      } else {
+        await execute();
       }
     } catch (error) {
       toast(
@@ -1087,7 +1102,16 @@ export function SftpPageView({
     if (action.kind === "noop") return;
     void approveTargets(target.source, directory, action.ops, (overwrite) => {
       if (action.kind === "copy" || action.kind === "move") {
-        void runBatch(other(id), directory, fs.copy, action.source, action.ops, overwrite);
+        void runBatch(
+          other(id),
+          directory,
+          fs.copy,
+          action.source,
+          action.ops,
+          overwrite,
+          undefined,
+          t("sftp.copyItems", { count: action.ops.length }),
+        );
       } else
         for (const op of action.ops)
           void startTransfer(source, op.from, target.source, op.to, false, undefined, overwrite);
@@ -1141,6 +1165,9 @@ export function SftpPageView({
           action.ops,
           overwrite,
           done,
+          t(action.kind === "move" ? "sftp.moveItems" : "sftp.copyItems", {
+            count: action.ops.length,
+          }),
         );
       } else
         for (const op of action.ops)
@@ -1174,6 +1201,10 @@ export function SftpPageView({
           action.source,
           action.ops,
           overwrite,
+          undefined,
+          t(action.kind === "move" ? "sftp.moveItems" : "sftp.copyItems", {
+            count: action.ops.length,
+          }),
         );
       } else
         for (const op of action.ops)
@@ -1984,7 +2015,7 @@ export function SftpPageView({
             setDropTarget(null);
           }}
           onDragOver={(event) => {
-            if (state.busy || !entry.isDir || !event.dataTransfer.types.includes(DRAG_MIME)) {
+            if (state.busy || !entry.isDir || !hasDragPayload(event.dataTransfer)) {
               return;
             }
             event.preventDefault();
@@ -1995,7 +2026,7 @@ export function SftpPageView({
             setDropTarget({ pane: id, path: entry.path });
           }}
           onDrop={(event) => {
-            if (state.busy || !entry.isDir || !event.dataTransfer.types.includes(DRAG_MIME)) {
+            if (state.busy || !entry.isDir || !hasDragPayload(event.dataTransfer)) {
               return;
             }
             event.preventDefault();
@@ -2462,7 +2493,7 @@ export function SftpPageView({
                         openEntryMenu(event, id, null);
                       }}
                       onDragOver={(event) => {
-                        if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
+                        if (state.busy || !hasDragPayload(event.dataTransfer)) return;
                         event.preventDefault();
                         event.stopPropagation();
                         setDropTarget({ pane: id, path: listing.path });
@@ -2471,7 +2502,7 @@ export function SftpPageView({
                           dragged && sameFilesystem(dragged, source) ? "move" : "copy";
                       }}
                       onDrop={(event) => {
-                        if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
+                        if (state.busy || !hasDragPayload(event.dataTransfer)) return;
                         event.preventDefault();
                         event.stopPropagation();
                         const payload = readDragPayload(event.dataTransfer);
@@ -2682,7 +2713,7 @@ export function SftpPageView({
                   }
                 }}
                 onDragOver={(event) => {
-                  if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) {
+                  if (state.busy || !hasDragPayload(event.dataTransfer)) {
                     return;
                   }
                   event.preventDefault();
@@ -2699,7 +2730,7 @@ export function SftpPageView({
                     setDropTarget(null);
                 }}
                 onDrop={(event) => {
-                  if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
+                  if (state.busy || !hasDragPayload(event.dataTransfer)) return;
                   event.preventDefault();
                   event.stopPropagation();
                   const payload = readDragPayload(event.dataTransfer);

@@ -115,7 +115,7 @@ pub(crate) async fn hosts_file_import(app: AppHandle) -> AppResult<Option<FilePr
             let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes);
             // A plain document uses the original strict, credential-free schema.
             let entry = if let Ok(document) = serde_json::from_slice::<Document>(bytes) {
-                validate(&document)?;
+                validate_plain(&document)?;
                 runtime::Entry::new(None, Some(portable::Portable::configuration(document)))
             } else {
                 runtime::Entry::new(Some(crypto::parse(bytes)?), None)
@@ -318,9 +318,14 @@ pub(crate) async fn hosts_file_export(
             let bytes = credentials::inspect(move || {
                 inspecting.check()?;
                 let state = app.state::<AppState>();
-                let (document, expected_revision) = state
-                    .db
-                    .with(|conn| Ok((export_at(conn, &ids)?, revision(conn)?)))?;
+                let (document, expected_revision) = state.db.with(|conn| {
+                    let document = if encrypt {
+                        export_at_with_proxy_verifiers(conn, &ids, true)?
+                    } else {
+                        export_at(conn, &ids)?
+                    };
+                    Ok((document, revision(conn)?))
+                })?;
                 let payload = if options.include_credentials {
                     portable::collect(&state, document, &expected_revision)?
                 } else {

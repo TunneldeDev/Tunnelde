@@ -83,6 +83,10 @@ fn policy(method: &str) -> Option<CallPolicy> {
         | "forwards.list"
         | "forwards.groups.list"
         | "forwards.automation.list"
+        | "proxy.groups.list"
+        | "proxy.routes.list"
+        | "proxy.runtime.list"
+        | "proxy.connections.list"
         | "tasks.list"
         | "tasks.status"
         | "tasks.readOutput"
@@ -208,6 +212,15 @@ fn policy(method: &str) -> Option<CallPolicy> {
         | "forwards.groups.save"
         | "forwards.groups.remove"
         | "forwards.move"
+        | "proxy.groups.save"
+        | "proxy.groups.remove"
+        | "proxy.routes.save"
+        | "proxy.routes.saveForHost"
+        | "proxy.routes.remove"
+        | "proxy.runtime.start"
+        | "proxy.runtime.stop"
+        | "proxy.connections.close"
+        | "proxy.tun.attach"
         | "statusBar.set"
         | "statusBar.remove"
         | "tabBar.set"
@@ -302,6 +315,10 @@ mod workspace_and_file_tests {
             "forwards.list",
             "forwards.groups.list",
             "forwards.automation.list",
+            "proxy.groups.list",
+            "proxy.routes.list",
+            "proxy.runtime.list",
+            "proxy.connections.list",
             "tasks.list",
             "tasks.status",
             "tasks.readOutput",
@@ -391,6 +408,14 @@ mod workspace_and_file_tests {
             "forwards.groups.save",
             "forwards.groups.remove",
             "forwards.move",
+            "proxy.groups.save",
+            "proxy.groups.remove",
+            "proxy.routes.save",
+            "proxy.routes.remove",
+            "proxy.runtime.start",
+            "proxy.runtime.stop",
+            "proxy.connections.close",
+            "proxy.tun.attach",
             "statusBar.set",
             "statusBar.remove",
             "tabBar.set",
@@ -451,6 +476,10 @@ mod catalogue_coverage_tests {
             "forwards.list",
             "forwards.groups.list",
             "forwards.automation.list",
+            "proxy.groups.list",
+            "proxy.routes.list",
+            "proxy.runtime.list",
+            "proxy.connections.list",
             "settings.get",
             "preferences.snapshot",
             "preferences.observe",

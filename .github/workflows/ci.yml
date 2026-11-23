@@ -52,6 +52,8 @@ jobs:
 
       - name: Check translation catalogues
         run: pnpm i18n:check
+      - name: Check documentation
+        run: pnpm docs:check
 
       - name: Check public preference contracts
         run: node scripts/contracts/preferences/generate.mjs --check
