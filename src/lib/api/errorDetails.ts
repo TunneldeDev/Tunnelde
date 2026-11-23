@@ -1,15 +1,14 @@
-/** Short-lived handoff between the error conversion layer and presentation
- * surfaces. It has no store/UI dependency, so inline errors and non-UI callers
- * can normalize/log failures without requiring a mounted notification host. */
-const pending = new Map<string, unknown[]>();
-const MAX_PER_MESSAGE = 8;
-const MAX_MESSAGES = 64;
+import type { DiagnosticEvent } from "@/lib/diagnostics";
 
-export function rememberErrorDetails(message: string, error: unknown): void {
-  const queue = pending.get(message) ?? [];
-  if (queue.length >= MAX_PER_MESSAGE) queue.shift();
-  queue.push(error);
-  pending.set(message, queue);
+/** Bridge only legacy string-based toasts. Explicit notifications carry the
+ * event directly rather than trying to match a localized title. */
+const pending = new Map<string, { event: DiagnosticEvent; expires: number }>();
+const MAX_MESSAGES = 64;
+const TTL_MS = 3000;
+
+export function rememberErrorDetails(message: string, event: DiagnosticEvent): void {
+  pending.delete(message);
+  pending.set(message, { event, expires: Date.now() + TTL_MS });
   while (pending.size > MAX_MESSAGES) {
     const oldest = pending.keys().next().value;
     if (oldest === undefined) break;
@@ -17,12 +16,10 @@ export function rememberErrorDetails(message: string, error: unknown): void {
   }
 }
 
-export function claimErrorDetails(message: string): unknown | undefined {
-  const queue = pending.get(message);
-  if (!queue?.length) return undefined;
-  const error = queue.shift();
-  if (!queue.length) pending.delete(message);
-  return error;
+export function claimErrorDetails(message: string): DiagnosticEvent | undefined {
+  const entry = pending.get(message);
+  pending.delete(message);
+  return entry && entry.expires >= Date.now() ? entry.event : undefined;
 }
 
 export function clearErrorDetails(): void {

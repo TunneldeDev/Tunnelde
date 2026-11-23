@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from "react";
+import { reportError } from "@/lib/diagnostics";
 import type { PanelWindowClient } from "./windowClient";
 import type { PanelLease, PanelViewAction } from "./windowProtocol";
 
@@ -19,6 +20,8 @@ export function PanelInteractionScope({
 }) {
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
+export const usePanelStaged = () => useContext(Context)?.staged ?? false;
+
 export function usePanelLeaseAction() {
   const scope = useContext(Context);
   return useCallback(
@@ -45,7 +48,8 @@ export function usePanelInteraction() {
     const current = releases.current;
     return () => {
       generation.current = serial + 1;
-      for (const release of current) void release().catch(() => {});
+      for (const release of current)
+        void release().catch((error) => reportError("panels", "releaseInteraction", error));
     };
   }, []);
   return useCallback(async (): Promise<PanelInteractionRelease> => {

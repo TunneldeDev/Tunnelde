@@ -1,5 +1,5 @@
 import { enqueuePluginAction } from "./commands/queue";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { usePlugins } from "@/store/plugins";
 import { useWorkspace } from "@/store/workspace";
 import { useNavigation } from "@/store/navigation";
@@ -51,7 +51,7 @@ export function openPluginAction(
     if (!samePluginAction(current, original, action)) return;
     await invokePluginAction(action, target, original, hostTarget, signal);
   }).catch((error: unknown) => {
-    toast(translateError(error), "error");
+    toast(presentError(error), "error");
   });
 }
 

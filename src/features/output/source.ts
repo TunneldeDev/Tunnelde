@@ -2,13 +2,25 @@ import { createStore } from "zustand/vanilla";
 import { create } from "zustand";
 import { api, isTauri, type OutputCursor } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
-import { boundOutput, snapshotEntries, type OutputEntry } from "./model";
+import { createDiagnosticSampler } from "@/lib/diagnostics";
+import { boundOutput, mergeOutput, snapshotEntries, type OutputEntry } from "./model";
 
 /** One reader per coordinator, independent of where the output view is hosted.
  * Local standalone previews get an isolated reader; satellites never start a reader.
  */
 export function createOutputSource() {
-  const store = createStore(() => ({ entries: [] as OutputEntry[], truncated: false, error: "" }));
+  const store = createStore(() => ({
+    entries: [] as OutputEntry[],
+    truncated: false,
+    error: "",
+    diskUnavailable: false,
+    diagnosticError: false,
+    operationsError: false,
+  }));
+  const diagnosticRead = createDiagnosticSampler("output", "readDiagnostic");
+  const operationsRead = createDiagnosticSampler("output", "readOperations");
+  const transport = createDiagnosticSampler("output", "read");
+  let clearedAt = 0;
   const readers = new Map<symbol, boolean>();
   let cursor: OutputCursor | null = null;
   let sequence = 0,
@@ -40,18 +52,39 @@ export function createOutputSource() {
         const result = await Promise.resolve().then(() => api.logsOutputRead(cursor));
         if (disposed) return;
         cursor = result.cursor;
-        const added = snapshotEntries(result, () => ++sequence);
+        const added = snapshotEntries(result, () => ++sequence).filter(
+          (entry) => !entry.memoryOnly || Date.parse(entry.timestamp) > clearedAt,
+        );
+        transport.recovered();
+        if (result.diagnosticError) diagnosticRead.failed(new Error("logs.diagnosticReadFailed"));
+        else diagnosticRead.recovered();
+        if (result.operationsError) operationsRead.failed(new Error("logs.operationsReadFailed"));
+        else operationsRead.recovered();
         const previous = store.getState();
         if (serial === clearSerial && (added.length || result.truncated)) {
-          const bounded = boundOutput([...previous.entries, ...added]);
+          const bounded = boundOutput(mergeOutput(previous.entries, added));
           store.setState({
             entries: bounded.entries,
             truncated: previous.truncated || bounded.omitted || result.truncated,
           });
         }
-        store.setState({ error: "" });
+        const status = {
+          error: "",
+          diskUnavailable: !!result.diskUnavailable,
+          diagnosticError: !!result.diagnosticError,
+          operationsError: !!result.operationsError,
+        };
+        if (
+          Object.entries(status).some(
+            ([key, value]) => previous[key as keyof typeof status] !== value,
+          )
+        )
+          store.setState(status);
       } catch (error) {
-        if (!disposed) store.setState({ error: translateError(error) });
+        if (!disposed) {
+          transport.failed(error);
+          store.setState({ error: translateError(error) });
+        }
         throw error;
       } finally {
         pending = null;
@@ -85,6 +118,7 @@ export function createOutputSource() {
     refresh: poll,
     clear() {
       clearSerial++;
+      clearedAt = Date.now();
       store.setState({ entries: [], truncated: false });
     },
     dispose() {

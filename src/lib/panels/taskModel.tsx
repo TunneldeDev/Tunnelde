@@ -1,5 +1,5 @@
 import type { WindowProviderOwner } from "./windowProviderSource";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { usePanelWindows } from "@/store/panelWindows";
 import { windowViews } from "./windowViews";
 import { createContext, useContext, type ReactNode } from "react";
@@ -85,7 +85,7 @@ export function useTaskPanelModel(): TaskPanelModel {
         const errors = await clearFinishedBackgroundTasks();
         return {
           count: errors.length,
-          first: errors[0] === undefined ? undefined : translateError(errors[0]),
+          first: errors[0] === undefined ? undefined : presentError(errors[0]),
         };
       },
     }

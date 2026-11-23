@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { DeclarativePluginView } from "./DeclarativePluginView";
 import {
   acquireDeclarativeViewOwner,
@@ -124,7 +124,7 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
         .catch((cause: unknown) => {
           if (isPluginInvocationCancelled(cause)) return;
           reportPluginExecutionFailure(cause);
-          if (current === requestId.current) setError(translateError(cause));
+          if (current === requestId.current) setError(presentError(cause));
         })
         .finally(() => {
           if (current === requestId.current) setLoading(false);

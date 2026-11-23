@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { domainEvents } from "@/lib/events/domain";
 import { nativeEvents } from "@/lib/events/native";

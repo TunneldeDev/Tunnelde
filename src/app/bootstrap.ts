@@ -2,7 +2,7 @@ import { api, events, isTauri } from "@/lib/api/ipc";
 import type { TabRecord } from "@/lib/api/types";
 import { observeSystemAppearance } from "@/lib/prefs/appearance";
 import i18n from "@/i18n/i18n";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
@@ -57,7 +57,7 @@ export function disposeBootstrap(): void {
     try {
       stop();
     } catch (error) {
-      console.error("Failed to release a view resource", error);
+      reportError("startup", "releaseViewResource", error);
     }
   }
   if (pendingRecords) void persistLatest();
@@ -109,7 +109,7 @@ async function start(signal: AbortSignal): Promise<void> {
     }
   } catch (error) {
     if (signal.aborted) return;
-    toast(translateError(error), "error");
+    toast(presentError(error), "error");
   }
   const hostsLoaded = await useHosts.getState().load();
   if (signal.aborted) return;
@@ -117,7 +117,7 @@ async function start(signal: AbortSignal): Promise<void> {
   try {
     cleanups.push(await startDraftRecovery(signal, resumed));
   } catch (error) {
-    if (!signal.aborted) toast(translateError(error), "error");
+    if (!signal.aborted) toast(presentError(error), "error");
   }
   if (signal.aborted) return;
   await useSsh.getState().refresh();
@@ -127,7 +127,7 @@ async function start(signal: AbortSignal): Promise<void> {
   void useEditorCleanup
     .getState()
     .hydrate()
-    .catch((error) => toast(translateError(error), "error"));
+    .catch((error) => toast(presentError(error), "error"));
   useWorkspace.getState().ensureWelcome();
 
   cleanups.push(
@@ -171,7 +171,7 @@ async function persistLatest(): Promise<void> {
       try {
         await api.saveTabs(records);
       } catch (error) {
-        toast(translateError(error), "error");
+        toast(presentError(error), "error");
       }
     }
   } finally {
@@ -260,7 +260,7 @@ async function wireEvents(): Promise<void> {
           void useEditorCleanup
             .getState()
             .hydrate()
-            .catch((error) => toast(translateError(error), "error"));
+            .catch((error) => toast(presentError(error), "error"));
         }, signal),
       recover: () => useEditorCleanup.getState().hydrate(),
     },
@@ -290,7 +290,7 @@ async function wireEvents(): Promise<void> {
     },
   ];
   const listeners = createEventLifecycle(subscriptions, (error) =>
-    toast(translateError(error), "error"),
+    toast(presentError(error), "error"),
   );
   cleanups.push(() => listeners.dispose());
   await listeners.start();

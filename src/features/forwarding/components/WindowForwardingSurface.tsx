@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
 import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
 import { useFactorySelection } from "@/lib/extensions/runtime/views/useFactorySelection";
@@ -81,7 +81,7 @@ function SelectedProvider({
   const scopeOwner = useMemo(() => source && { service, check: source.check }, [source, service]);
   const failed = (error: unknown, retry = selection.refresh) => (
     <div role="alert">
-      <p>{translateError(error)}</p>
+      <p>{presentError(error)}</p>
       <Button size="sm" onClick={retry}>
         {t("common.retry")}
       </Button>

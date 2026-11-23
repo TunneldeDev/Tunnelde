@@ -12,7 +12,7 @@ import { uiProviders } from "@/lib/extensions/providers";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import type { FrontendProviderTarget } from "@/lib/extensions/contracts/frontend/providers";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 
 export function useMainUiProviderSettings() {
   const plugins = usePlugins((state) => state.items);
@@ -58,7 +58,7 @@ export function useMainUiProviderSettings() {
       else delete next[target];
       await useSettings.getState().update({ uiProviders: next });
     } catch (error) {
-      toast(translateError(error), "error");
+      toast(presentError(error), "error");
     } finally {
       lock.current = false;
       setBusy(false);

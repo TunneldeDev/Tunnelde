@@ -19,7 +19,7 @@ import { useNavigation } from "@/store/navigation";
 import { taskPresentation } from "./presentation";
 import { BackgroundTaskRow } from "./BackgroundTaskRow";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { BackgroundTasksSurface } from "./components/BackgroundTasksSurface";
 import "./backgroundTasks.css";
 
@@ -210,7 +210,7 @@ export function DockedBackgroundTasks() {
       if (errors.count)
         toast(t("tasks.clearFailed", { count: errors.count, error: errors.first ?? "" }), "error");
     } catch (error) {
-      toast(translateError(error), "error");
+      toast(presentError(error), "error");
     } finally {
       clearingRef.current = false;
       setClearing(false);

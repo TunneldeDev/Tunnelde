@@ -1,6 +1,6 @@
 import type { RecoveryPageServices } from "../data/services";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type {
   RecoveryAction,
   RecoveryCapabilityObservation,
@@ -73,7 +73,7 @@ export function useRecoveryPageModel(
           return kept;
         });
       } catch (error) {
-        if (current()) setError(translateError(error));
+        if (current()) setError(presentError(error));
       } finally {
         if (current()) {
           lock.current = false;
@@ -113,7 +113,7 @@ export function useRecoveryPageModel(
         }
       })
       .catch((error) => {
-        if (current()) setError(translateError(error));
+        if (current()) setError(presentError(error));
       })
       .finally(() => {
         if (current()) {

@@ -4,7 +4,7 @@ import { useWindowViews, windowViews, type WindowViewRecord } from "@/lib/panels
 import { usePanelWindows } from "@/store/panelWindows";
 import { reportError } from "@/lib/diagnostics";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { ForwardingReadData } from "../data/readModel";
 import { ForwardingReadScope } from "../data/readScope";
 import { createWindowForwardingOwner } from "../runtime/windowOwner";
@@ -70,7 +70,7 @@ export function useWindowForwardingBinding(client: PanelWindowClient, record: Wi
           throw new Error("panel.window.staleOwner");
         void client.action(current.lease, { kind: "refreshForwarding" }).catch((error) => {
           reportError("panels.forwarding", "nativeRefresh", error);
-          toast(translateError(error), "error");
+          toast(presentError(error), "error");
         });
       },
       report: (error) => reportError("panels.forwarding", "nativeActions", error),

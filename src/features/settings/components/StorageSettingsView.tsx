@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Switch } from "@/components/ui/form/Field";
 import { Dialog } from "@/components/ui/overlay/Dialog";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import {
   displayStoragePath,
   sameStoragePath,
@@ -93,7 +93,7 @@ export function StorageSettingsView({ services }: { services: StorageSettingsSer
         services.changeDraft({ kind: "merge", remove: categories, changes });
       }
     } catch (failure) {
-      services.notify(translateError(failure), "error");
+      services.notify(presentError(failure), "error");
     } finally {
       setPicking(false);
     }
@@ -290,7 +290,7 @@ export function StorageSettingsView({ services }: { services: StorageSettingsSer
                   onClick={() =>
                     void services
                       .open(location.category)
-                      .catch((failure) => services.notify(translateError(failure), "error"))
+                      .catch((failure) => services.notify(presentError(failure), "error"))
                   }
                 >
                   <FolderOpen size={14} />

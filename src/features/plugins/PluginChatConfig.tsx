@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, Plus, Trash2 } from "lucide-react";
 import { api, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useSsh } from "@/store/ssh";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Field, Input, Switch } from "@/components/ui/form/Field";
@@ -198,7 +198,7 @@ export function PluginChatConfigDialog({
         : api.pluginPickFolder(label));
       if (value) apply(value);
     } catch (cause) {
-      setPickerError(translateError(cause));
+      setPickerError(presentError(cause));
     } finally {
       setPicking(false);
     }

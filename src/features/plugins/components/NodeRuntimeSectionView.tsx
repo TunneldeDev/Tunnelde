@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { NodeRuntimeInfo } from "@/lib/api/types";
 import type { ConfirmOptions } from "@/store/dialogs";
 export interface NodeRuntimeProgress {
@@ -96,9 +96,7 @@ export function NodeRuntimeSectionView({
         </p>
       ) : null}
       {info?.issue && !error ? (
-        <p className="settings-hint">
-          {translateError({ code: "validation", message: info.issue })}
-        </p>
+        <p className="settings-hint">{presentError({ code: "validation", message: info.issue })}</p>
       ) : null}
       <div className="settings-actions">
         {info?.issue === "node.consentRequired" && info.path ? (

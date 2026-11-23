@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { isTauri } from "@/lib/api/ipc";
 import type {
   ProxyConnection,
@@ -8,12 +8,10 @@ import type {
   ProxyRuntime,
 } from "../model/proxy";
 
-const empty = <T,>(): Promise<T[]> => Promise.resolve([]);
+const empty = <T>(): Promise<T[]> => Promise.resolve([]);
 export const proxyApi = Object.freeze({
   groups: (hostId: string) =>
-    isTauri()
-      ? invoke<ProxyGroup[]>("proxy_groups_list", { hostId })
-      : empty<ProxyGroup>(),
+    isTauri() ? invoke<ProxyGroup[]>("proxy_groups_list", { hostId }) : empty<ProxyGroup>(),
   saveGroup: (group: ProxyGroupInput, expectedRevision?: string) =>
     invoke<ProxyGroup>("proxy_group_save", { group, expectedRevision }),
   removeGroup: (id: string, expectedRevision: string) =>

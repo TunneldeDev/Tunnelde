@@ -6,7 +6,7 @@ import { useMarketplace } from "@/store/marketplace";
 import { usePlugins } from "@/store/plugins";
 import i18n from "@/i18n/i18n";
 import { useEditorCleanup } from "@/store/editorCleanup";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 
 const PHASE_KEYS = {
@@ -53,7 +53,7 @@ export function registerBackgroundTaskSources(): () => void {
                 : `${item.source === "local" ? i18n.t("sftp.local") : item.address} · ${item.directory}`,
             error:
               !item.running && item.error
-                ? translateError({ code: "editorCleanup", message: item.error })
+                ? presentError({ code: "editorCleanup", message: item.error })
                 : undefined,
             actions: [
               ...(item.action === "cancel"

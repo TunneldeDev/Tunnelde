@@ -15,7 +15,7 @@ import { createResourceScope } from "@/lib/extensions/resourceScope";
 import { useFactorySelection } from "@/lib/extensions/runtime/views/useFactorySelection";
 import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
 import { reportError } from "@/lib/diagnostics";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { Button } from "@/components/ui/form/Button";
 import { useTranslation } from "react-i18next";
 
@@ -93,7 +93,7 @@ export function WindowHostProvider({
   useEffect(() => selection.start(), [selection]);
   const failed = (error: unknown) => (
     <div role="alert">
-      <p>{translateError(error)}</p>
+      <p>{presentError(error)}</p>
       <Button size="sm" onClick={selection.revalidate}>
         {t("common.retry")}
       </Button>

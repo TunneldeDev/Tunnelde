@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { PluginSecurityState } from "@/lib/api/types";
 import type { PluginApproval } from "@/lib/plugins/activation/contracts";
 import { api, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { pluginFailure } from "@/lib/plugins/errors";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
@@ -63,7 +63,7 @@ export const usePluginSecurity = create<SecurityStore>((set, get) => {
       await work();
       return true;
     } catch (error) {
-      set({ error: translateError(error) });
+      set({ error: presentError(error) });
       return false;
     } finally {
       mutation = false;
@@ -90,7 +90,7 @@ export const usePluginSecurity = create<SecurityStore>((set, get) => {
           const state = isTauri() ? await api.pluginSecurityState() : INITIAL;
           if (revision === started) get().apply(state);
         } catch (error) {
-          if (revision === started) set({ error: translateError(error) });
+          if (revision === started) set({ error: presentError(error) });
         } finally {
           loading = null;
           set({ loading: false });

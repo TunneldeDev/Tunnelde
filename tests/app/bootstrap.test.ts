@@ -100,7 +100,7 @@ vi.mock("@/store/transfers", () => ({
   useTransfers: { getState: () => ({ apply: vi.fn(), hydrate: mocks.transferHydrate }) },
 }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
-vi.mock("@/lib/api/errors", () => ({ translateError: (error: unknown) => String(error) }));
+vi.mock("@/lib/api/errors", () => ({ presentError: (error: unknown) => String(error) }));
 vi.mock("@/i18n/i18n", () => ({ default: { t: (key: string) => key } }));
 
 const record = (id = "page:about", hostId: string | null = null): TabRecord => ({

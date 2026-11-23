@@ -29,7 +29,7 @@ pub struct LogSnapshot {
     operations: Vec<AuditEntry>,
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputCursor {
     filename: Option<String>,
@@ -44,6 +44,10 @@ pub struct OutputSnapshot {
     operations: Vec<AuditEntry>,
     cursor: OutputCursor,
     truncated: bool,
+    memory: String,
+    disk_unavailable: bool,
+    diagnostic_error: bool,
+    operations_error: bool,
 }
 
 /// Only the current rotated log is read. A cursor never selects a filesystem path.
@@ -112,21 +116,45 @@ pub async fn logs_output_read(
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    })?;
+    });
     let dir = state.log_dir.clone();
+    let diagnostic_cursor = cursor.clone();
+    let read = tauri::async_runtime::spawn_blocking(move || output_tail(&dir, &diagnostic_cursor))
+        .await
+        .map_err(|error| crate::error::AppError::internal(error.to_string()))
+        .and_then(|read| read);
+    Ok(combine_output(cursor, read, operations))
+}
+
+fn combine_output(
+    previous: OutputCursor,
+    read: AppResult<(OutputCursor, String, bool)>,
+    operations: AppResult<Vec<AuditEntry>>,
+) -> OutputSnapshot {
+    let diagnostic_error = read.is_err();
+    let operations_error = operations.is_err();
+    let disk_unavailable = !crate::platform::logging::disk_available();
+    let memory = if disk_unavailable || diagnostic_error {
+        crate::diagnostics::failure::memory_snapshot()
+    } else {
+        String::new()
+    };
     let (mut cursor, diagnostic, truncated) =
-        tauri::async_runtime::spawn_blocking(move || output_tail(&dir, &cursor))
-            .await
-            .map_err(|error| crate::error::AppError::internal(error.to_string()))??;
+        read.unwrap_or_else(|_| (previous, String::new(), false));
+    let operations = operations.unwrap_or_default();
     cursor.operation_id = operations
         .first()
         .map_or(cursor.operation_id, |entry| entry.id);
-    Ok(OutputSnapshot {
+    OutputSnapshot {
         diagnostic,
         operations,
         cursor,
         truncated,
-    })
+        memory,
+        disk_unavailable,
+        diagnostic_error,
+        operations_error,
+    }
 }
 
 // Operation records contain only a fixed action and opaque object identifier.
@@ -139,16 +167,7 @@ pub fn record(db: &Database, action: &'static str, target: Option<&str>) {
         tx.commit()?;
         Ok(())
     }) {
-        let _ = crate::diagnostics::write(
-            crate::diagnostics::LogOrigin::Native,
-            crate::diagnostics::LogEntry {
-                level: crate::diagnostics::LogLevel::Warn,
-                domain: Some("operations".into()),
-                operation: Some(action.into()),
-                message: format!("Could not record operation: {error}"),
-                ..Default::default()
-            },
-        );
+        crate::diagnostics::failure::native("operations", action, &error);
     }
 }
 
@@ -240,6 +259,41 @@ pub async fn logs_read(app: AppHandle) -> AppResult<LogSnapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn independent_output_reads_preserve_the_other_source_and_cursor() {
+        let cursor = || OutputCursor {
+            filename: Some("original.log".into()),
+            offset: 42,
+            operation_id: 2,
+        };
+        let operation = AuditEntry {
+            id: 4,
+            timestamp: 0,
+            action: "test".into(),
+            target: None,
+        };
+        let from_operations = combine_output(
+            cursor(),
+            Err(crate::error::AppError::internal("disk unavailable")),
+            Ok(vec![operation]),
+        );
+        assert!(from_operations.diagnostic_error);
+        assert!(!from_operations.operations_error);
+        assert_eq!(from_operations.cursor.offset, 42);
+        assert_eq!(from_operations.cursor.operation_id, 4);
+        assert_eq!(from_operations.operations.len(), 1);
+
+        let from_disk = combine_output(
+            cursor(),
+            Ok((cursor(), "line".into(), false)),
+            Err(crate::error::AppError::internal("database unavailable")),
+        );
+        assert!(!from_disk.diagnostic_error);
+        assert!(from_disk.operations_error);
+        assert_eq!(from_disk.diagnostic, "line");
+        assert_eq!(from_disk.cursor.operation_id, 2);
+    }
+
     #[test]
     fn output_cursor_reads_only_new_complete_lines_and_handles_rotation_and_truncation() {
         let dir = std::env::temp_dir().join(format!("tunnelde-output-{}", uuid::Uuid::new_v4()));

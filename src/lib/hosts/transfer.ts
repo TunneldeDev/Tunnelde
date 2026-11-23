@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { Host } from "@/lib/api/types";
 import type { ConnectionRoute, ProxyProfile } from "@/lib/api/network";
 import type { ForwardRule, ForwardAutomation } from "@/features/forwarding/model/contract";

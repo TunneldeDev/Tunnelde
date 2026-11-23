@@ -2,7 +2,7 @@ import type { ConfigurationPlugin, ConfigurationServices } from "../data/service
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { ConfigurationBackup } from "@/lib/extensions/contracts/configuration/document";
 
 export function ConfigurationBackupsView({
@@ -40,7 +40,7 @@ export function ConfigurationBackupsView({
         }
       })
       .catch((error) => {
-        if (alive) setError(translateError(error));
+        if (alive) setError(presentError(error));
       });
     return () => {
       alive = false;

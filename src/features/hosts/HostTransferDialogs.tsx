@@ -7,7 +7,7 @@ import { SwitchRow } from "@/components/ui/form/Switch";
 import { copyText } from "@/lib/session/clipboard";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { indexHostPreview, hostTransferApi, useHostTransfer } from "@/lib/hosts/transfer";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useBackgroundGuard } from "@/lib/session/viewState";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
@@ -96,7 +96,7 @@ function ExportHosts({ ids }: { ids?: string[] }) {
                     setShowPassword(true);
                     setAcknowledged(false);
                   })
-                  .catch((cause) => setError(translateError(cause)))
+                  .catch((cause) => setError(presentError(cause)))
                   .finally(() => setBusy(false));
                 return;
               }
@@ -112,7 +112,7 @@ function ExportHosts({ ids }: { ids?: string[] }) {
                     close();
                   }
                 })
-                .catch((cause) => setError(translateError(cause)))
+                .catch((cause) => setError(presentError(cause)))
                 .finally(() => setBusy(false));
             }}
           >
@@ -282,7 +282,7 @@ function ImportHosts() {
         setChosen(new Set(result.document.roots.filter((id) => !next.blocked.has(id))));
       })
       .catch((cause) => {
-        if (active) setError(translateError(cause));
+        if (active) setError(presentError(cause));
       })
       .finally(() => {
         if (active) setBusy(false);
@@ -347,7 +347,7 @@ function ImportHosts() {
               void hostTransferApi
                 .preview(preview)
                 .then((result) => setIndex(indexHostPreview(result)))
-                .catch((cause) => setError(translateError(cause)))
+                .catch((cause) => setError(presentError(cause)))
                 .finally(() => setBusy(false));
             }}
           >
@@ -378,7 +378,7 @@ function ImportHosts() {
                   toast(t("sshImport.imported", { count: hosts.length }), "success");
                   close();
                 })
-                .catch((cause) => setError(translateError(cause)))
+                .catch((cause) => setError(presentError(cause)))
                 .finally(() => setBusy(false));
             }}
           >
@@ -441,7 +441,7 @@ function ImportHosts() {
                     setIndex(next);
                     setChosen(new Set(result.document.roots.filter((id) => !next.blocked.has(id))));
                   })
-                  .catch((cause) => setError(translateError(cause)))
+                  .catch((cause) => setError(presentError(cause)))
                   .finally(() => setBusy(false));
               }}
             >
@@ -468,7 +468,7 @@ function ImportHosts() {
                       close();
                     }
                   })
-                  .catch((cause) => setError(translateError(cause)))
+                  .catch((cause) => setError(presentError(cause)))
                   .finally(() => setBusy(false));
               }}
             >

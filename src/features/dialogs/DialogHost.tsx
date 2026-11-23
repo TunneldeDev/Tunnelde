@@ -14,7 +14,7 @@ import { resolveAccent } from "@/lib/prefs/colors";
 import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { AUTH_LABELS, AUTH_METHODS } from "@/lib/prefs/labels";
 import { api } from "@/lib/api/ipc";
-import { captureError, notifyError, translateError } from "@/lib/api/errors";
+import { captureError, notifyError, presentError } from "@/lib/api/errors";
 import type { AuthMethod, Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
@@ -225,7 +225,7 @@ function HostDialog({
       persistedHost.current = saved;
       if (result.credentialError != null) {
         setCredentialError(
-          t("host.credentialSaveFailed", { error: translateError(result.credentialError) }),
+          t("host.credentialSaveFailed", { error: presentError(result.credentialError) }),
         );
         return;
       }
@@ -436,7 +436,7 @@ function HostDialog({
                             set("keyPath", path);
                           }
                         })
-                        .catch((error: unknown) => toast(translateError(error), "error"));
+                        .catch((error: unknown) => toast(presentError(error), "error"));
                     }}
                   >
                     {t("common.browse")}

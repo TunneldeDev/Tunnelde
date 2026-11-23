@@ -10,7 +10,7 @@ import { endLocalPanelDrag, startLocalPanelDrag } from "@/lib/panels/localPanelD
 import { IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 export function NativeWorkspaceFrame({
   scope,
   title,
@@ -24,7 +24,7 @@ export function NativeWorkspaceFrame({
   const bounds = useStore(scope.floating, (state) => state.bounds);
   const close = () => {
     void movePanelToWindow(scope.panelId, "main").catch((error) =>
-      toast(translateError(error), "error"),
+      toast(presentError(error), "error"),
     );
   };
   return (

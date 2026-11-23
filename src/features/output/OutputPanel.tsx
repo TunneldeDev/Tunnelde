@@ -3,23 +3,32 @@ import { useRemoteOutputModel } from "@/lib/panels/outputModel";
 import { ArrowDownToLine, ListFilter, Trash2 } from "lucide-react";
 import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
 import { matchesSearch, parseSearchQuery } from "@/lib/search/query";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
 import { PanelHeader, useWorkbenchPanel } from "@/components/layout/WorkbenchPanel";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { usePlugins } from "@/store/plugins";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
-import { formatOutput, formatOutputTime, matchesOutput, type OutputEntry } from "./model";
+import { getLocalDiagnostics, subscribeLocalDiagnostics } from "@/lib/diagnostics";
+import {
+  formatOutput,
+  formatOutputTime,
+  localDiagnosticEntry,
+  matchesOutput,
+  mergeOutput,
+  type OutputEntry,
+} from "./model";
 import { useOutput } from "./useOutput";
 import "./output.css";
 
 const OutputLine = memo(function OutputLine({ entry }: { entry: OutputEntry }) {
+  const { t } = useTranslation();
   const time = formatOutputTime(entry.timestamp);
   const message = entry.message.trimEnd();
   return (
@@ -27,6 +36,7 @@ const OutputLine = memo(function OutputLine({ entry }: { entry: OutputEntry }) {
       {time ? <span className="output-panel__time">{time} </span> : null}
       <span className="output-panel__level">[{entry.level}]</span>{" "}
       <span className="output-panel__source">[{entry.plugin ?? entry.domain}]</span>
+      {entry.memoryOnly ? ` [${t("diagnostic.unsaved")}]` : null}
       {message ? (
         <>
           {" "}
@@ -44,6 +54,20 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
   const remote = useRemoteOutputModel();
   const local = useOutput(active && !remote);
   const output = remote ?? local;
+  const [clearedAt, setClearedAt] = useState(0);
+  const localDiagnostics = useSyncExternalStore(subscribeLocalDiagnostics, getLocalDiagnostics);
+  const entries = useMemo(
+    () =>
+      mergeOutput(
+        output.entries,
+        localDiagnostics.flatMap((row, index) =>
+          row.delivery === "memory" && Date.parse(row.event.timestamp) > clearedAt
+            ? [localDiagnosticEntry(row.event, -index - 1)]
+            : [],
+        ),
+      ),
+    [output.entries, localDiagnostics, clearedAt],
+  );
   const [channel, setChannel] = usePanelViewState(
     "output.channel",
     "all",
@@ -77,11 +101,11 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
   const sessions = useSsh((state) => state.sessions);
   const sessionCount = remote?.sessionCount ?? sessions.length;
   const channels = useMemo(() => {
-    const domains = [...new Set(output.entries.map((entry) => entry.domain))].sort();
+    const domains = [...new Set(entries.map((entry) => entry.domain))].sort();
     const pluginIds = [
       ...new Set([
         ...plugins.map((plugin) => plugin.id),
-        ...output.entries.flatMap((entry) => (entry.plugin ? [entry.plugin] : [])),
+        ...entries.flatMap((entry) => (entry.plugin ? [entry.plugin] : [])),
       ]),
     ].sort();
     return [
@@ -98,7 +122,7 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
         label: `${t("output.plugin")}: ${plugins.find((item) => item.id === id)?.name ?? id}`,
       })),
     ];
-  }, [output.entries, plugins, t]);
+  }, [entries, plugins, t]);
   // Preserve a selected channel even after its last displayed entry is cleared.
   const options = channels.some((item) => item.value === channel)
     ? channels
@@ -108,8 +132,8 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
     [query],
   );
   const filtered = useMemo(
-    () => output.entries.filter((entry) => matchesOutput(entry, channel, parsed, minimum)),
-    [output.entries, channel, parsed, minimum],
+    () => entries.filter((entry) => matchesOutput(entry, channel, parsed, minimum)),
+    [entries, channel, parsed, minimum],
   );
   const runtime = [
     `${info?.name ?? "Tunnelde"} ${info?.version ?? ""}`.trim(),
@@ -129,14 +153,22 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
     }),
   );
   const renderedText =
-    channel === "runtime" ? runtime.join("\n") : filtered.map(formatOutput).join("\n");
+    channel === "runtime"
+      ? runtime.join("\n")
+      : filtered
+          .map((entry) =>
+            entry.memoryOnly
+              ? `[${t("diagnostic.unsaved")}] ${formatOutput(entry)}`
+              : formatOutput(entry),
+          )
+          .join("\n");
 
   useEffect(() => {
     if (active && follow && scroll.current)
       scroll.current.scrollTop = channel === "runtime" ? 0 : scroll.current.scrollHeight;
   }, [active, follow, renderedText, wrap, channel]);
   const attempt = (action: () => Promise<unknown>) =>
-    void action().catch((error) => toast(translateError(error), "error"));
+    void action().catch((error) => toast(presentError(error), "error"));
 
   const menuActions: MenuAction[] = [
     { label: t("common.refresh"), onSelect: () => attempt(output.refresh) },
@@ -177,7 +209,12 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
         size="sm"
         label={t("output.clear")}
         disabled={channel === "runtime"}
-        onClick={() => attempt(async () => output.clear())}
+        onClick={() =>
+          attempt(async () => {
+            await output.clear();
+            setClearedAt(Date.now());
+          })
+        }
       >
         <Trash2 size={14} />
       </IconButton>
@@ -201,7 +238,7 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
             value: level,
             label: level,
           })),
-          ...[...new Set(output.entries.map((entry) => entry.domain))].sort().map((domain) => ({
+          ...[...new Set(entries.map((entry) => entry.domain))].sort().map((domain) => ({
             key: "domain",
             value: domain,
             label: `${t("searchUi.domain")}: ${domain}`,
@@ -234,9 +271,18 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
           </>
         }
       />
-      {output.error ? (
+      {output.diskUnavailable ||
+      entries.some((entry) => entry.memoryOnly) ||
+      output.diagnosticError ||
+      output.operationsError ||
+      output.error ? (
         <div className="output-panel__error" role="alert">
-          {output.error}
+          {(output.diskUnavailable || entries.some((entry) => entry.memoryOnly)) && (
+            <div>{t("diagnostic.memoryOnly")}</div>
+          )}
+          {output.diagnosticError && <div>{t("diagnostic.readDiagnostic")}</div>}
+          {output.operationsError && <div>{t("diagnostic.readOperations")}</div>}
+          {output.error && <div>{output.error}</div>}
         </div>
       ) : null}
       <div
@@ -261,7 +307,7 @@ export function OutputPanel({ active }: { active: boolean; docked?: boolean }) {
         ) : (
           <div className="output-panel__empty">
             <ListFilter size={20} />
-            <span>{t(output.entries.length ? "output.noMatches" : "output.empty")}</span>
+            <span>{t(entries.length ? "output.noMatches" : "output.empty")}</span>
           </div>
         )}
       </div>

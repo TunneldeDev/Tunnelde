@@ -1,3 +1,4 @@
+import { reportError } from "@/lib/diagnostics";
 import { brandMark } from "@/lib/brand";
 import { useEffect, useLayoutEffect, useState } from "react";
 
@@ -5,7 +6,7 @@ import { bootstrap } from "@/app/bootstrap";
 import { loadStartupFonts } from "@/app/startupFonts";
 import { AppShell } from "@/components/layout/AppShell";
 import { api, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 import { NodeRuntimeGate } from "@/features/plugins/NodeRuntimeSection";
@@ -23,9 +24,9 @@ export function App() {
     void bootstrap()
       .catch((error: unknown) => {
         if (cancelled) return;
-        console.error("Could not complete startup", error);
+        reportError("startup", "bootstrap", error);
         useWorkspace.getState().ensureWelcome();
-        toast(translateError(error), "error");
+        toast(presentError(error), "error");
       })
       .then(() => {
         if (!cancelled) setStarted(true);
@@ -40,7 +41,7 @@ export function App() {
     let cancelled = false;
     void loadStartupFonts()
       .catch((error: unknown) => {
-        console.warn("Could not prepare startup fonts; using font fallbacks.", error);
+        reportError("startup", "prepareFonts", error, "warn");
       })
       .then(() => {
         if (cancelled) return;
@@ -50,8 +51,8 @@ export function App() {
         return api.mainWindowReady();
       })
       .catch((error: unknown) => {
-        console.error("Could not present the main window", error);
-        toast(translateError(error), "error");
+        reportError("startup", "presentMainWindow", error);
+        toast(presentError(error), "error");
       });
     return () => {
       cancelled = true;

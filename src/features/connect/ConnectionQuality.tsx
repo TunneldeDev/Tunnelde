@@ -9,7 +9,7 @@ import {
   type ConnectionQuality as Quality,
   type SshConnectRequest,
 } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import "./connectionQuality.css";
 
 interface Props {
@@ -98,7 +98,7 @@ function QualityTest({
       if (active.current && request.current === id) setResult(result);
     } catch (cause) {
       if (active.current && request.current === id) {
-        setError(translateError(cause));
+        setError(presentError(cause));
         if (
           (isIpcError(cause) || cause instanceof Error) &&
           ["ssh.hostKeyChanged", "ssh.hostKeyUntrusted", "ssh.connectionChanged"].includes(
@@ -128,7 +128,7 @@ function QualityTest({
       await cancelConnection(id);
     } catch (cause) {
       if (active.current && request.current === id) {
-        setError(translateError(cause));
+        setError(presentError(cause));
         setCancelling(false);
       }
     }
@@ -194,7 +194,7 @@ function QualityTest({
             </ol>
             {result.lastError ? (
               <p className="connect__error">
-                {translateError({ code: "ssh", message: result.lastError })}
+                {presentError({ code: "ssh", message: result.lastError })}
               </p>
             ) : null}
           </details>

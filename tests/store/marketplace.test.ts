@@ -29,7 +29,7 @@ vi.mock("@/store/plugins", () => ({
   usePlugins: { getState: () => ({ items: mock.items, installMarket: mock.install }) },
 }));
 vi.mock("@/lib/api/errors", () => ({
-  translateError: (error: { message: string }) => error.message,
+  presentError: (error: { message: string }) => error.message,
 }));
 vi.mock("@/store/toasts", () => ({ toast: vi.fn() }));
 let useMarketplace: typeof MarketplaceStore;

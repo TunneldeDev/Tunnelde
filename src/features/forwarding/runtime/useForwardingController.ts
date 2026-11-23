@@ -7,7 +7,7 @@ import { useForwardingActions } from "./actionScope";
 import { useForwardingConfirm } from "./confirmationScope";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { isIpcError, type Host, type SshConnectRequest } from "@/lib/api/types";
 import type { ConnectionReview } from "@/lib/api/connections/review";
 import { useForwardingReadModel, useForwardingSessions } from "../data/readScope";
@@ -46,7 +46,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
   useLayoutEffect(() => {
     currentData.current = { snapshot, groupSnapshot, sessions };
   }, [snapshot, groupSnapshot, sessions]);
-  const groupError = groupSnapshot.error ? translateError(groupSnapshot.error) : null;
+  const groupError = groupSnapshot.error ? presentError(groupSnapshot.error) : null;
   const loading =
     (snapshot.entries === null && snapshot.busy) ||
     (groupSnapshot.entries === null && groupSnapshot.busy);
@@ -75,7 +75,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
     try {
       actions.refresh();
     } catch (cause) {
-      setFailure({ target: "list", message: translateError(cause) });
+      setFailure({ target: "list", message: presentError(cause) });
     }
   };
   const confirm = useForwardingConfirm();
@@ -90,7 +90,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
   const failure =
     operationFailure ??
     (groupError ? { target: "list", message: groupError } : null) ??
-    (snapshot.error ? { target: "list", message: translateError(snapshot.error) } : null);
+    (snapshot.error ? { target: "list", message: presentError(snapshot.error) } : null);
   useEffect(() => {
     live.current = true;
     return () => {
@@ -111,7 +111,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
       await operation();
       return true;
     } catch (cause) {
-      if (live.current) setFailure({ target, message: translateError(cause) });
+      if (live.current) setFailure({ target, message: presentError(cause) });
       return false;
     } finally {
       // Also reconcile partial failures; the shared store coalesces native events and completion.
@@ -151,7 +151,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
             setConnectingRules({ rules: targets.slice(index), authority });
             break;
           }
-          failures.push(`${rule.name}: ${translateError(cause)}`);
+          failures.push(`${rule.name}: ${presentError(cause)}`);
         }
       }
       if (failures.length) throw new Error(failures.join("; "));
@@ -192,8 +192,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
                 )
               )
                 setConnectingRules({ rules: [saved], authority: draftAuthority });
-              else if (live.current)
-                setFailure({ target: saved.id, message: translateError(cause) });
+              else if (live.current) setFailure({ target: saved.id, message: presentError(cause) });
             }
           }
         },
@@ -267,7 +266,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
                   await actions.disconnect(targetHostId, item.id, authority, interaction);
                 else await actions.disconnect(targetHostId, item.id, authority);
               } catch (cause) {
-                failures.push(translateError(cause));
+                failures.push(presentError(cause));
               }
             }
             if (failures.length) throw new Error(failures.join("; "));
@@ -337,7 +336,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
         try {
           await startOne(rule, connection.authority, request, review);
         } catch (cause) {
-          failures.push(`${rule.name}: ${translateError(cause)}`);
+          failures.push(`${rule.name}: ${presentError(cause)}`);
         }
       }
       if (failures.length && live.current)
@@ -353,7 +352,7 @@ export function useForwardingController(host: Pick<Host, "id" | "name">) {
           message: result.failed
             .map(
               (item) =>
-                `${connection.rules.find((rule) => rule.id === item.id)?.name ?? item.id}: ${translateError(item.error)}`,
+                `${connection.rules.find((rule) => rule.id === item.id)?.name ?? item.id}: ${presentError(item.error)}`,
             )
             .join("; "),
         });

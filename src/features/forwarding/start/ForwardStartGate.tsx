@@ -1,10 +1,11 @@
+import { createDiagnosticSampler, reportError } from "@/lib/diagnostics";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { isTauri } from "@/lib/api/ipc";
 import { beforeWindowReload } from "@/lib/session/reload";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import {
   forwardStartPending,
@@ -24,12 +25,14 @@ export function ForwardStartGate() {
   useEffect(() => {
     if (!isTauri()) return;
     let active = true;
+    const diagnostics = createDiagnosticSampler("forwarding.startup", "refresh");
     let polling = false;
     const refresh = async () => {
       if (!active || polling) return;
       polling = true;
       try {
         const next = await forwardStartPending(uiId);
+        if (active) diagnostics.recovered();
         if (active)
           setPending((previous) =>
             next?.receipt.requestId === dismissed.current
@@ -39,7 +42,7 @@ export function ForwardStartGate() {
                 : next,
           );
       } catch (error) {
-        if (active) console.warn("Cannot refresh forwarding startup request", error);
+        if (active) diagnostics.failed(error);
       } finally {
         polling = false;
       }
@@ -50,7 +53,7 @@ export function ForwardStartGate() {
     void listening
       .then(() => refresh())
       .catch((error) => {
-        console.warn("Cannot subscribe to forwarding startup; polling remains active", error);
+        reportError("forwarding.startup", "subscribe", error, "warn");
       });
     void refresh();
     const timer = window.setInterval(() => {
@@ -103,7 +106,7 @@ export function ForwardStartGate() {
       onClose={() => {
         const id = pending.receipt.requestId;
         dismissed.current = id;
-        void forwardStartCancel(id).catch((error) => toast(translateError(error), "error"));
+        void forwardStartCancel(id).catch((error) => toast(presentError(error), "error"));
         setPending(null);
       }}
     />
