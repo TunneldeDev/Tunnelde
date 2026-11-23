@@ -315,7 +315,7 @@
     },
     {
       "id": "remote",
-      "namespaces": ["forwards", "mounts", "runners", "tools"]
+      "namespaces": ["forwards", "mounts", "runners", "tools", "proxy"]
     },
     {
       "id": "tasks",
@@ -632,5 +632,18 @@
     },
     "close": "normal-capture-return; coordinator-close-forbidden",
     "state": "metadata-only; no document tokens, drafts, resources or feature contents"
+  },
+  "trafficAdapters": {
+    "stability": "experimental",
+    "manifest": "trafficAdapters[]",
+    "kinds": ["tun"],
+    "platforms": ["macos", "windows", "linux"],
+    "fields": ["id", "name", "kind", "platforms", "helper", "capabilities"],
+    "discoveryGrantsExecution": false,
+    "ownership": "host",
+    "transport": "host-socks5",
+    "dnsModes": ["system", "synthetic", "custom"],
+    "udp": "direct-or-reject-only",
+    "cleanup": "helper-watchdog-and-recovery"
   }
 }

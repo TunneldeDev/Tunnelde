@@ -104,7 +104,7 @@ transaction. Plugin callers can use experimental
 1–32 known IDs and finite 0.1–0.9 ratios are fully validated before one mutation;
 existing workspace size limits still clamp values. Frozen workspace v1 is unchanged.
 
-## Native view handoff (in development)
+## Native view handoff
 
 Native windows are not a second application bootstrap. `panel_windows` registers
 host-issued document identities and generation-fenced panel leases; a move is
@@ -218,7 +218,7 @@ native capture listeners for the opaque document-local token. Exclude the dragge
 floating surface from hit testing for that gesture and restore its original
 style on release, Escape, cancellation, blur and teardown.
 
-### Native drag bridge (in development)
+### Native drag bridge
 
 The common pointer driver reports a genuine release separately from Escape,
 lost capture, blur and teardown. An accepted local drop cancels its native grant.
@@ -1150,26 +1150,6 @@ there is no `nextOffset`, silent first-page truncation or dependency on resolvin
 an unrelated home directory. Oversized/hostile replies fail explicitly. The newer
 `mounts.paths.remote.browse` keeps its existing paged result. The subsequent one-off acquisition integration is described below; browsing alone
 does not imply complete native-window parity.
-
-### Beta delivery and remaining rollout
-
-Beta delivery prioritizes working primary flows. Known P0/P1 failures (crashes,
-data loss, connection/resource leaks or authorization failures) block release;
-non-blocking presentation and edge-case issues can follow in patch releases.
-A staged release does not mark the complete native-workspace plan finished.
-
-The native move allowlist covers connections, tasks, output, known hosts,
-forwarding, hosts, plugin lists, docked file previews and compatible sidebar plugin factories. Forwarding uses the shared
-production renderer, original-window prompts and preserved provider view state;
-its real macOS round-trip coverage also retained the original managed SSH session.
-Unsupported views stay in their original window rather than losing state.
-`viewFactories.nativeWindows` remains false until general plugin parity is ready.
-
-Remaining rollout: ordinary terminal/SFTP/editor/settings and other panel
-adapters; factoryless plugin presentation; remaining resource APIs;
-and physical cross-window dragging across desktop platforms, displays and DPI.
-Continue these as follow-up implementation/acceptance work, without treating them
-as completed or requiring every non-blocking detail before a useful Beta.
 
 ### Forwarding native-window delivery
 

@@ -93,6 +93,7 @@ impl PluginsManager {
         let state = app.state::<AppState>();
         state.transfers.cancel_plugin_before(id, boundary);
         state.forwards.stop_before_generation(id, boundary);
+        crate::services::proxy::runtime::stop_owned(app, id, boundary);
         let context = HostContext {
             app: app.clone(),
             id: id.clone(),

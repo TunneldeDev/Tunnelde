@@ -88,6 +88,8 @@ mod mounts;
 mod preferences;
 #[path = "settings/profiles/methods.rs"]
 mod profiles;
+#[path = "proxy/methods.rs"]
+mod proxy;
 #[path = "runtime/methods.rs"]
 mod runtime;
 #[path = "settings/methods.rs"]
@@ -120,6 +122,7 @@ const DOMAINS: &[&[ApiMethod]] = &[
     settings::METHODS,
     preferences::METHODS,
     profiles::METHODS,
+    proxy::METHODS,
     connections::METHODS,
     terminal::METHODS,
     files::METHODS,

@@ -3,7 +3,7 @@ mod batch;
 mod groups;
 
 use crate::plugins::{
-    api::{authorize, encode, field, HostContext},
+    api::{authorize, encode, field, optional, HostContext},
     security::Lease,
 };
 use crate::{
@@ -21,6 +21,15 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
+        "proxy.routes.saveForHost" => {
+            let input = field(&params, "route")?;
+            let expected = optional::<String>(&params, "expectedRevision")?;
+            encode(super::proxy::route_for_host(
+                app,
+                input,
+                expected.as_deref(),
+            )?)
+        }
         name if name.starts_with("forwards.groups.") || name == "forwards.move" => {
             groups::dispatch(context, name, params)
         }

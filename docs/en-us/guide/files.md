@@ -89,7 +89,8 @@ Dragging outside a drop target or pressing Esc leaves the original panel intact.
 ## Copying files
 
 Copies from the file browser and plugin copy commands use the background task
-engine. Open **Background tasks** to see progress, apply a speed limit or cancel.
+engine. Same-host folder merges and moves also appear there while the server-side
+rename sequence runs. Open **Background tasks** to see progress, apply a speed limit or cancel.
 Existing destination files remain intact while a new file is staged; publication
 happens after the data and file close have completed. Cancelling cleans unpublished
 staging files and retains the source and any files already committed. A directory

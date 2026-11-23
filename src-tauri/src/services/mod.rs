@@ -10,4 +10,5 @@ pub mod hosts;
 pub mod mounts;
 pub(crate) mod operations;
 pub mod plugin_configuration;
+pub mod proxy;
 pub mod settings;

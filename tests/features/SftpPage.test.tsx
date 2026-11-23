@@ -34,6 +34,7 @@ import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useTransfers } from "@/store/transfers";
+import { useBackgroundTasks } from "@/lib/tasks/background";
 import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
 import { useFilePreview } from "@/store/filePreview";
@@ -1714,6 +1715,109 @@ describe("SftpPage asynchronous interactions", () => {
         false,
       ),
     );
+  });
+
+  it("accepts a same-document drag when WebKit omits the custom MIME type", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    const row = (await screen.findByText("notes.txt")).closest(".sftp-row")!;
+    const store: Record<string, string> = {};
+    const sourceTransfer = {
+      types: [] as string[],
+      setData: (key: string, value: string) => (store[key] = value),
+      getData: (key: string) => store[key] ?? "",
+    };
+    fireEvent.dragStart(row, { dataTransfer: sourceTransfer });
+    const remote = screen.getAllByRole("listbox")[1]!;
+    const dropTransfer = { types: [] as string[], getData: () => "" };
+    fireEvent.dragOver(remote, { dataTransfer: dropTransfer });
+    fireEvent.drop(remote, { dataTransfer: dropTransfer });
+    await waitFor(() =>
+      expect(fsMock.transfer).toHaveBeenCalledWith(
+        { kind: "local" },
+        "C:\\work\\notes.txt",
+        { kind: "remote", sessionId: "session-1" },
+        "/srv/app/notes.txt",
+        false,
+        false,
+      ),
+    );
+  });
+
+  it("downloads a remote drag into the local pane when the custom MIME type is omitted", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    const remoteRow = (await screen.findByText("readme.md")).closest(".sftp-row")!;
+    const store: Record<string, string> = {};
+    const sourceTransfer = {
+      types: [] as string[],
+      setData: (key: string, value: string) => (store[key] = value),
+      getData: (key: string) => store[key] ?? "",
+    };
+    fireEvent.dragStart(remoteRow, { dataTransfer: sourceTransfer });
+    const local = screen.getAllByRole("listbox")[0]!;
+    const dropTransfer = { types: [] as string[], getData: () => "" };
+    fireEvent.dragOver(local, { dataTransfer: dropTransfer });
+    fireEvent.drop(local, { dataTransfer: dropTransfer });
+    await waitFor(() =>
+      expect(fsMock.transfer).toHaveBeenCalledWith(
+        { kind: "remote", sessionId: "session-1" },
+        "/srv/app/readme.md",
+        { kind: "local" },
+        "C:\\work\\readme.md",
+        false,
+        false,
+      ),
+    );
+  });
+
+  it("shows a background task for a move within the same remote filesystem", async () => {
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
+      if (source.kind === "remote")
+        return {
+          path: path ?? "/srv/app",
+          entries: [
+            ...remoteListing.entries,
+            {
+              name: "archive",
+              path: "/srv/archive",
+              isDir: true,
+              isHidden: false,
+              size: 0,
+              modified: null,
+              permissions: null,
+            },
+          ],
+        };
+      return localListing;
+    });
+    let release!: () => void;
+    fsMock.rename.mockImplementation(() => new Promise<void>((resolve) => (release = resolve)));
+    render(<SftpPage sessionId="session-1" />);
+    const remoteRow = (await screen.findAllByText("readme.md"))[0]!.closest(
+      ".sftp-row",
+    ) as HTMLElement;
+    fireEvent.click(remoteRow);
+    const store: Record<string, string> = {};
+    const dataTransfer = {
+      types: [DRAG_MIME],
+      setData: (key: string, value: string) => (store[key] = value),
+      getData: (key: string) => store[key] ?? "",
+      effectAllowed: "copyMove",
+      dropEffect: "copy",
+    };
+    fireEvent.dragStart(remoteRow, { dataTransfer });
+    const archiveRow = screen
+      .getAllByText("archive")
+      .find((node) => node.closest(".sftp-row"))!
+      .closest(".sftp-row")!;
+    fireEvent.dragOver(archiveRow, { dataTransfer });
+    fireEvent.drop(archiveRow, { dataTransfer });
+    await waitFor(() => expect(fsMock.rename).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        useBackgroundTasks.getState().items.some((item) => item.title.includes("Moving")),
+      ).toBe(true),
+    );
+    await act(async () => release());
   });
 
   it("retains a cut selection when its move fails", async () => {

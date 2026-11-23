@@ -25,7 +25,10 @@ beforeEach(() => {
   useNavigation.setState({ forwardingTarget: null });
   useHosts.setState({ hosts: [host], loaded: true, loading: false });
   useSsh.setState({ sessions: [] });
-  invoke.mockReset().mockResolvedValue([]);
+  invoke.mockReset().mockImplementation(async (command) => {
+    if (command === "proxy_groups_list" || command === "proxy_runtime_list") return [];
+    return [];
+  });
 });
 afterEach(async () => {
   await act(async () => {});
@@ -69,7 +72,12 @@ it("captures external host selection and incomplete rule fields without saving o
   expect(destination.capture()).toEqual(capsule);
   expect(
     invoke.mock.calls.every(([name]) =>
-      ["forwarding_list", "forwarding_groups_list"].includes(name),
+      [
+        "forwarding_list",
+        "forwarding_groups_list",
+        "proxy_groups_list",
+        "proxy_runtime_list",
+      ].includes(name),
     ),
   ).toBe(true);
   expect(persisted).not.toHaveBeenCalled();

@@ -32,6 +32,19 @@ export type ShortcutConfiguration = Pick<Settings, "keyboardShortcuts" | "shortc
 };
 const COLLECTION = "tunnelde:collect-shortcuts";
 const results = new WeakMap<KeyboardEvent, ShortcutResult>();
+
+/** Only a real modal or an open menu may own the key. A disclosure button's
+ * aria-expanded state is not a popup and must not suppress the page. */
+function shortcutBlocked(event: KeyboardEvent): boolean {
+  if (
+    document.querySelector(
+      "[role='dialog']:not([aria-modal='false']), [role='alertdialog'], .td-palette",
+    )
+  )
+    return true;
+  if (!(event.target instanceof Element)) return false;
+  return !!event.target.closest("[role='menu'], .td-select__popup");
+}
 const shortcutReleases = new WeakMap<Element, Set<string>>();
 const physicalKey = (event: KeyboardEvent) => event.code || event.key.toLowerCase();
 const terminalTarget = (event: KeyboardEvent) =>
@@ -150,11 +163,7 @@ export function dispatchShortcuts(
     event.isComposing ||
     event.keyCode === 229 ||
     event.getModifierState("AltGraph") ||
-    document.querySelector("[role='dialog']:not([aria-modal='false']), .td-palette") ||
-    (event.target instanceof Element &&
-      event.target.closest(
-        ".td-select__popup, [role='menu'], [aria-expanded='true'][aria-controls]",
-      ))
+    shortcutBlocked(event)
   )
     return empty;
   if (event.type === "keydown") {

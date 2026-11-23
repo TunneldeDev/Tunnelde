@@ -13,6 +13,7 @@ import type { Host } from "@/lib/api/types";
 import { ForwardRuleEditor } from "./components/ForwardRuleEditor";
 import { ForwardingSurface } from "./components/ForwardingSurface";
 import { ForwardGroups } from "./components/ForwardGroups";
+import { ProxySection } from "./components/ProxySection";
 import {
   useForwardingController,
   type ConnectionRequest,
@@ -201,6 +202,7 @@ function SavedForwardingSection({
         />
       )}
       {connectingRules && renderConnection(connectingRules, controller)}
+      <ProxySection hostId={host.id} hostName={host.name} onChanged={controller.refresh} />
     </section>
   );
 }

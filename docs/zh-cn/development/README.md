@@ -41,7 +41,6 @@
 - [终端提供者（实验性）](plugins/terminal.md)
 - [界面提供者](plugins/ui-providers.md)
 - [可信前端插件](plugins/ui.md)
-- [交付追踪](delivery-tracker.md)
 - [发布运维](releases.md)
 - [版本与发布规则](versioning.md)
 

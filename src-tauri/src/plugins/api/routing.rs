@@ -41,6 +41,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
             domains::workbench::dispatch(context, method, params).await
         }
         "forwards" => domains::forwarding::dispatch(context, method, params).await,
+        "proxy" => domains::proxy::dispatch(context, method, params).await,
         "mounts" => domains::mounts::dispatch(context, method, params).await,
         "bus" => plugins::bus::dispatch(context, method, params).await,
         "events" if method == "events.publish" => plugins::events::publish(context, params),
@@ -64,6 +65,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
 fn changed_domain(method: &str) -> Option<&'static str> {
     match method {
         "sessions.connect" | "sessions.disconnect" | "sessions.requestHandoff" => Some("sessions"),
+        name if name.starts_with("proxy.") => Some("proxy"),
         name if name.starts_with("files.")
             && !name.starts_with("files.content.")
             && !matches!(

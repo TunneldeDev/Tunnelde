@@ -359,3 +359,143 @@
     justify-self: center;
   }
 }
+
+.proxy-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--td-border);
+}
+.proxy-section__head,
+.proxy-section__tools,
+.proxy-group__head,
+.proxy-group__meta,
+.proxy-route,
+.proxy-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.proxy-section__head,
+.proxy-group__head {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.proxy-section__head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.proxy-section__head p,
+.proxy-section__empty,
+.proxy-group__meta,
+.proxy-group__warning {
+  margin: 0;
+  color: var(--td-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.proxy-section__head p {
+  font-family: var(--td-mono);
+  overflow-wrap: anywhere;
+}
+.proxy-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+}
+.proxy-group__identity,
+.proxy-route__identity {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.proxy-group__identity strong,
+.proxy-route__identity strong {
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.proxy-group__identity code,
+.proxy-route__identity code,
+.proxy-connections code {
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  color: var(--td-muted);
+  overflow-wrap: anywhere;
+}
+.proxy-group__status,
+.proxy-route__mode {
+  color: var(--td-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.proxy-group__status.is-running {
+  color: var(--td-green);
+}
+.proxy-group__warning {
+  color: var(--td-orange);
+}
+.proxy-group__meta {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.proxy-routes,
+.proxy-connections ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.proxy-route {
+  min-width: 0;
+  padding: 7px 0;
+  border-top: 1px solid var(--td-border);
+}
+.proxy-route__identity {
+  flex: 1;
+}
+.proxy-connections summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--td-muted);
+  font-size: 11px;
+}
+.proxy-connections li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 11px;
+}
+.proxy-connections li code {
+  flex: 1;
+}
+.proxy-editor {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--td-border-strong);
+  border-radius: var(--td-radius-sm);
+}
+.proxy-editor h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.proxy-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.proxy-editor__actions {
+  justify-content: flex-end;
+}
+@container (max-width: 420px) {
+  .proxy-editor__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

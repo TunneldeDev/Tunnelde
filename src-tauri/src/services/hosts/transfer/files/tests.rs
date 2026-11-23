@@ -195,3 +195,31 @@ fn secret_exports_cannot_bypass_encryption() {
         );
     }
 }
+
+#[test]
+fn plain_import_rejects_verifier_material_but_encrypted_import_accepts_it() {
+    let mut payload = payload();
+    payload.document.proxy_groups[0].auth_mode = "password".into();
+    payload.document.proxy_groups[0].auth_username = "proxy-user".into();
+    payload.document.proxy_groups[0].auth_salt = Some("salt".into());
+    payload.document.proxy_groups[0].auth_verifier = Some(
+        crate::services::proxy::repository::password_verifier("proxy-user", "secret", "salt"),
+    );
+    let plain = serde_json::to_vec(&payload.document).unwrap();
+    let parsed: Document = serde_json::from_slice(&plain).unwrap();
+    assert!(validate_plain(&parsed).is_err());
+
+    let encrypted = crypto::encrypt(
+        &zeroize::Zeroizing::new(serde_json::to_vec(&payload).unwrap()),
+        "file-password",
+    )
+    .unwrap();
+    let bytes = crypto::decrypt(&crypto::parse(&encrypted).unwrap(), "file-password").unwrap();
+    let restored: portable::Portable = serde_json::from_slice(&bytes).unwrap();
+    restored.validate().unwrap();
+    assert_eq!(
+        restored.document.proxy_groups[0].auth_salt.as_deref(),
+        Some("salt")
+    );
+    assert!(restored.document.proxy_groups[0].auth_verifier.is_some());
+}

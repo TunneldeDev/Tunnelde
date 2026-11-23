@@ -127,6 +127,7 @@ pub fn run() {
             state::init(&handle)?;
             platform::panel_windows::native::start(&handle);
             services::forwarding::automation::start(&handle);
+            services::proxy::start_auto(&handle);
             services::mounts::runtime::launch(&handle);
             automation::transport::start(&handle);
             window::restore_main_geometry(&handle);
@@ -213,6 +214,17 @@ pub fn run() {
             commands::forwarding::forwarding_remove,
             commands::forwarding::forwarding_start,
             commands::forwarding::forwarding_stop,
+            commands::proxy::proxy_groups_list,
+            commands::proxy::proxy_group_save,
+            commands::proxy::proxy_group_remove,
+            commands::proxy::proxy_routes_list,
+            commands::proxy::proxy_route_save,
+            commands::proxy::proxy_route_remove,
+            commands::proxy::proxy_runtime_list,
+            commands::proxy::proxy_runtime_start,
+            commands::proxy::proxy_runtime_stop,
+            commands::proxy::proxy_connections_list,
+            commands::proxy::proxy_connection_close,
             network::connection_route_get,
             network::connection_route_save,
             services::credentials::editor::proxy_profile_save,
@@ -425,6 +437,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<state::AppState>() {
                     services::mounts::runtime::shutdown(&state);
                     state.forwards.stop_all();
+                    services::proxy::runtime::stop_all(app);
                     tauri::async_runtime::block_on(async {
                         let _ = tokio::time::timeout(
                             std::time::Duration::from_secs(5),

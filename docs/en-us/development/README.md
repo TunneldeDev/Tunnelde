@@ -5,6 +5,7 @@
 - [Development and UX conventions](working-agreements.md)
 - [Plugin development and security](plugins/README.md)
 - [Architecture](architecture.md)
+- [SOCKS5 domain routes and TUN adapters](socks-tun.md)
 - [Errors and diagnostics](errors-and-diagnostics.md)
 - [Local API and CLI](local-api.md)
 - [Core contracts for 1.0](core-contracts.md)
@@ -41,7 +42,6 @@
 - [Terminal provider (experimental)](plugins/terminal.md)
 - [Interface providers](plugins/ui-providers.md)
 - [Trusted frontend plugins](plugins/ui.md)
-- [Delivery tracker](delivery-tracker.md)
 - [Release operations](releases.md)
 - [Version and release policy](versioning.md)
 
