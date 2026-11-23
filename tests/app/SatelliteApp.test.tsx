@@ -52,6 +52,6 @@ it("disposes an initialization that finishes after the document unmounts", async
 it("reports a denied native initialization rather than falling back to main bootstrap", async () => {
   mock.initialize.mockRejectedValue(new Error("unregistered window"));
   render(<SatelliteApp />);
-  expect((await screen.findByRole("alert")).textContent).toContain("Could not initialize");
+  expect((await screen.findByRole("alert")).textContent).toContain("Error reference");
   expect(mock.bootstrap).not.toHaveBeenCalled();
 });

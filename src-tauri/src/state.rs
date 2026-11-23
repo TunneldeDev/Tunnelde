@@ -117,7 +117,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     let log_dir = storage
         .dir(crate::storage::layout::Category::Logs)
         .to_owned();
-    let guard = crate::platform::logging::init(&log_dir)?;
+    let guard = crate::platform::logging::init(&log_dir);
 
     let db_path = storage
         .dir(crate::storage::layout::Category::Database)
@@ -184,7 +184,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         data_dir,
         storage,
         log_dir,
-        _log_guard: Mutex::new(Some(guard)),
+        _log_guard: Mutex::new(guard),
         storage_ownership: storage_lease,
     });
 

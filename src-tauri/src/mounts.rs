@@ -816,7 +816,7 @@ impl MountRegistry {
                         .filter(|active| active.info.owner == mount.owner)
                     {
                         active.info.cleanup_error = Some(error.to_string());
-                        tracing::warn!(%error, mount_id = mount.id, "SSHFS cleanup still requires explicit unmount");
+                        crate::diagnostics::failure::native("mounts", "unmountRetry", &error);
                     }
                 }
             }

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { ChatExecution } from "@/lib/plugins/pluginChat";
 
 export function PluginExecutionDialog({
@@ -40,7 +40,7 @@ export function PluginExecutionDialog({
       const value = await api.pluginPickFolder(t("pluginChat.cwd"));
       if (value) setCwd(value);
     } catch (cause) {
-      setPickerError(translateError(cause));
+      setPickerError(presentError(cause));
     } finally {
       setPicking(false);
     }

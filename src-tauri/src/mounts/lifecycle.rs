@@ -181,7 +181,7 @@ pub(super) async fn revoke_failed_unmount(
     else {
         return false;
     };
-    tracing::warn!(%error, mount_id = mount.id, "SSHFS unmount failed; revoking transport before cleanup retry");
+    crate::diagnostics::failure::native("mounts", "unmountBeforeRetry", error);
     active.info.cleanup_error = Some(error.to_string());
     active.bridge.abort();
     settle_process(active).await.is_ok()
@@ -191,7 +191,9 @@ pub(super) async fn revoke_failed_unmount(
 pub(super) async fn settle_process(active: &mut ActiveMount) -> AppResult<()> {
     if let Err(error) = active.child.kill().await {
         active.info.cleanup_error = Some(error.to_string());
-        return Err(error.into());
+        let error = error.into();
+        crate::diagnostics::failure::native("mounts", "killWorker", &error);
+        return Err(error);
     }
     active.bridge.abort();
     // A failed OS cleanup may keep this record for a later retry. Joining an

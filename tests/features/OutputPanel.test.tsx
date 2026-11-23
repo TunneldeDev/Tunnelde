@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { clearLocalDiagnostics } from "@/lib/diagnostics";
 import i18n from "@/i18n/i18n";
 import { OutputPanel } from "@/features/output/OutputPanel";
 import { useTabBarContent } from "@/store/tabBar";
@@ -53,6 +54,7 @@ const snapshot = { diagnostic: diagnostic + "\n", operations: [], cursor, trunca
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  clearLocalDiagnostics();
   await i18n.changeLanguage("en-US");
   Object.defineProperty(document, "hidden", { value: false, configurable: true });
   api.logsOutputRead.mockResolvedValue(snapshot);
@@ -178,7 +180,8 @@ it("surfaces read failures and permits retry; runtime information does not depen
   expect(await screen.findByRole("alert")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
-  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  await screen.findByText(/plugin start failed · reason=/);
+  expect(screen.getByRole("alert").textContent).not.toContain("Read failed");
   fireEvent.click(screen.getByRole("button", { name: "Output channel" }));
   fireEvent.click(screen.getByRole("option", { name: "Runtime information" }));
   expect(screen.getByText(/Tunnelde 1.2.3/)).toBeTruthy();
@@ -321,3 +324,31 @@ it.each([false, true])(
       );
   },
 );
+
+it("shows partial output and replaces a memory copy when the same event reaches disk", async () => {
+  const line = JSON.stringify({
+    level: "ERROR",
+    timestamp: "2026-11-23T10:00:00Z",
+    fields: { message: "A diagnostic", event_id: "test-reference", domain: "frontend.settings" },
+  });
+  api.logsOutputRead.mockResolvedValueOnce({
+    ...snapshot,
+    diagnostic: "",
+    diagnosticError: true,
+    diskUnavailable: true,
+    memory: line,
+    operations: [{ id: 2, timestamp: 1, action: "host.create", target: null }],
+  });
+  const view = render(<OutputPanel active />);
+  await screen.findByText("Could not read the diagnostic log.");
+  expect(screen.getByText("host.create")).toBeTruthy();
+  expect(screen.getAllByText(/A diagnostic/)).toHaveLength(1);
+  expect(view.container.querySelector(".output-panel__lines")?.textContent).toContain("Not saved");
+  api.logsOutputRead.mockResolvedValue({ ...snapshot, diagnostic: line, memory: line });
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
+  await waitFor(() => expect(screen.queryByText("Could not read the diagnostic log.")).toBeNull());
+  const event = screen.getByText(/test-reference/);
+  expect(event.parentElement?.textContent).not.toContain("Not saved");
+  expect(screen.getAllByText(/test-reference/)).toHaveLength(1);
+});

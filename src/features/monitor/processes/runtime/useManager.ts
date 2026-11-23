@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { RemoteProcess } from "@/lib/api/types";
 import type { FrontendProcessSort } from "@/lib/extensions/contracts/monitor/processes/query";
 import { useDialogs } from "@/store/dialogs";
@@ -94,7 +94,7 @@ export function useProcessManager(sessionId: string) {
             setAction({
               sessionId,
               busy: false,
-              error: translateError(
+              error: presentError(
                 cause instanceof Error && cause.message === "plugin.frontend.viewUnavailable"
                   ? new Error("plugin.processes.providerInactive")
                   : cause,

@@ -1,5 +1,5 @@
 import type { HostEdit, HostSaved, ProxyEdit, ProxySaved } from "./credentials";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { SearchQuery } from "@/lib/search/query";
 import type { DraftSnapshot, EditorDraft } from "@/lib/editor/recovery/contracts";
 import type { HostFieldsSnapshot, HostFieldsUpdate } from "@/lib/hosts/fields";
@@ -80,6 +80,10 @@ export interface OutputSnapshot {
   operations: LogSnapshot["operations"];
   cursor: OutputCursor;
   truncated: boolean;
+  memory?: string;
+  diskUnavailable?: boolean;
+  diagnosticError?: boolean;
+  operationsError?: boolean;
 }
 
 export const api = {

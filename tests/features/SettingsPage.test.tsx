@@ -633,3 +633,35 @@ it("offers default-on session cleanup and persists opting out", async () => {
   expect(update).toHaveBeenLastCalledWith({ disconnectOnPanelClose: false });
   expect(toggle.getAttribute("aria-checked")).toBe("false");
 });
+
+it("searches across categories with the actual provider registered in one native panel", async () => {
+  const { createPanelViewState, PanelViewStateScope } = await import("@/lib/panels/viewState");
+  const controller = createPanelViewState();
+  const view = render(
+    <PanelViewStateScope controller={controller}>
+      <SettingsPage />
+    </PanelViewStateScope>,
+  );
+  const search = screen.getByRole<HTMLInputElement>("textbox", { name: "Search settings" });
+  for (const value of ["l", "li", "lin", "line"]) {
+    fireEvent.change(search, { target: { value } });
+    expect(search.value).toBe(value);
+  }
+  expect(row("terminalLineHeight")).toBeTruthy();
+  fireEvent.change(search, { target: { value: "@section:terminal,editor" } });
+  expect(row("editorWordWrap")).toBeTruthy();
+  await expect(controller.captureAsync()).resolves.toMatchObject({
+    fields: {
+      "preferences:terminal": { fields: { "preferences.selection": null } },
+      "preferences:editor": { fields: { "preferences.selection": null } },
+    },
+  });
+  fireEvent.change(search, { target: { value: "字体" } });
+  expect(search.value).toBe("字体");
+  fireEvent.change(search, { target: { value: "zzzzznoresults" } });
+  expect(screen.getByText("No matches")).toBeTruthy();
+  fireEvent.change(search, { target: { value: "" } });
+  expect(screen.getByRole("textbox", { name: "Search settings" })).toBe(search);
+  view.unmount();
+  controller.dispose();
+});

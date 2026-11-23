@@ -5,7 +5,7 @@ import { ForwardingPanelView } from "./components/ForwardingPanelView";
 import { useForwardingSnapshot } from "./data/store";
 import { useHosts } from "@/store/hosts";
 import { useForwardingSessions } from "./data/readScope";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
 import { Button } from "@/components/ui/form/Button";
@@ -26,7 +26,7 @@ export function ForwardingPanel() {
       hostsLoading={hostsLoading}
       sessions={sessions}
       rules={snapshot.entries ?? []}
-      error={snapshot.error ? translateError(snapshot.error) : null}
+      error={snapshot.error ? presentError(snapshot.error) : null}
       target={target}
       renderHost={(host) => <ForwardingSection key={host.id} host={host} embedded />}
       emptyAction={

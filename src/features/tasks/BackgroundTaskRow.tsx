@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pause, Play, RefreshCw, Trash2, X, ExternalLink } from "lucide-react";
 import { IconButton } from "@/components/ui/form/Button";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { formatBytes } from "@/lib/text/format";
 import type { TaskViewProps } from "./presentation";
 
@@ -58,7 +58,7 @@ export function BackgroundTaskRow({ task }: TaskViewProps) {
                   setError(null);
                   void Promise.resolve()
                     .then(() => model.run(task, action.id))
-                    .catch((error) => setError(translateError(error)))
+                    .catch((error) => setError(presentError(error)))
                     .finally(() => setBusy(false));
                 }}
               >

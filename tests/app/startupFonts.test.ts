@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { clearLocalDiagnostics, getLocalDiagnostics } from "@/lib/diagnostics";
 import { loadStartupFonts } from "@/app/startupFonts";
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  clearLocalDiagnostics();
   document.body.style.removeProperty("font-family");
   document.documentElement.style.removeProperty("--td-mono");
   // jsdom has no font loading API; each test supplies its own.
@@ -40,11 +41,14 @@ describe("startup fonts", () => {
   });
 
   it("allows font fallback when a bundled face fails to load", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     document.body.style.fontFamily = '"IBM Plex Sans"';
     const load = vi.fn().mockRejectedValue(new Error("font failed"));
     Object.defineProperty(document, "fonts", { configurable: true, value: { load } });
     await expect(loadStartupFonts()).resolves.toBeUndefined();
-    expect(console.warn).toHaveBeenCalledOnce();
+    expect(getLocalDiagnostics()).toEqual([
+      expect.objectContaining({
+        event: expect.objectContaining({ operation: "loadFonts", level: "warn" }),
+      }),
+    ]);
   });
 });

@@ -2,7 +2,7 @@ import { disconnectConnectionBatch } from "@/lib/session/connectionBatch";
 import { usePanelWindows } from "@/store/panelWindows";
 import { windowViews } from "./windowViews";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { createContext, useContext, type ReactNode } from "react";
 import { useSsh } from "@/store/ssh";
 import { useHosts } from "@/store/hosts";
@@ -77,7 +77,7 @@ export function useConnectionPanelModel() {
             if (!client || !lease) throw new Error("panel.window.staleOwner");
             await client.action(lease, { kind: "disconnect", sessionId: id });
           } catch (error) {
-            toast(translateError(error), "error");
+            toast(presentError(error), "error");
             throw error;
           }
         });
@@ -93,7 +93,7 @@ export function useConnectionPanelModel() {
           if (!client || !lease) throw new Error("panel.window.staleOwner");
           await client.action(lease, { kind: "disconnect", sessionId: id });
         } catch (error) {
-          toast(translateError(error), "error");
+          toast(presentError(error), "error");
         }
       },
     }

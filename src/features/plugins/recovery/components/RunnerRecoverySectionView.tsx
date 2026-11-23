@@ -4,7 +4,7 @@ import { ChevronRight, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { RecoveryOwners } from "@/lib/runners/recovery/contracts";
 import { useRecoveryPageModel } from "../runtime/useRecoveryPageModel";
 import { RecoveryRecord } from "./RecoveryRecord";
@@ -26,7 +26,7 @@ function RecoveryError({
         size="sm"
         variant="ghost"
         onClick={() => {
-          void services.openLog().catch((error) => setLogError(translateError(error)));
+          void services.openLog().catch((error) => setLogError(presentError(error)));
         }}
       >
         {t("runnerRecovery.openLog")}
@@ -135,7 +135,7 @@ function RecoveryBrowser({ services }: { services: RunnerRecoveryServices }) {
         }
       })
       .catch((error) => {
-        if (active) setError(translateError(error));
+        if (active) setError(presentError(error));
       });
     return () => {
       active = false;

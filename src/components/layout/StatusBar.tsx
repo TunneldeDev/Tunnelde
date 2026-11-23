@@ -1,3 +1,4 @@
+import { reportError } from "@/lib/diagnostics";
 import { useEffect, type ReactNode } from "react";
 import { RefreshCw, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -36,7 +37,7 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
     if (!isTauri()) return;
     const controller = new AbortController();
     void wireStatusBarContributions(controller.signal).catch((error: unknown) =>
-      console.error("Status bar subscription failed", error),
+      reportError("plugins.statusBar", "subscribe", error),
     );
     return () => controller.abort();
   }, []);

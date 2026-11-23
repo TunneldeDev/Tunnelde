@@ -6,7 +6,7 @@ import { PluginMarkdown } from "@/features/plugins/PluginMarkdown";
 const mock = vi.hoisted(() => ({ open: vi.fn(), toast: vi.fn() }));
 vi.mock("@/lib/api/ipc", () => ({ api: { openExternal: mock.open } }));
 vi.mock("@/store/toasts", () => ({ toast: mock.toast }));
-vi.mock("@/lib/api/errors", () => ({ translateError: (error: Error) => error.message }));
+vi.mock("@/lib/api/errors", () => ({ presentError: (error: Error) => error.message }));
 beforeEach(() => {
   vi.resetAllMocks();
   mock.open.mockResolvedValue(undefined);

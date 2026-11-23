@@ -24,7 +24,7 @@ import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { defaultHostListPreferences } from "@/lib/hosts/columns";
 import { changeNetworkRoute } from "../data/networkMutations";
 import { defaultNetwork } from "@/lib/api/network";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { SettingsHandlers, SettingsWindowCommand } from "./protocol";
 import type { SettingsProjection } from "./model";
 import { create } from "zustand";
@@ -85,7 +85,7 @@ export async function executeSettingsCommand(
       ...(command.args as never[]),
     );
   } catch (error) {
-    throw new Error(translateError(error));
+    throw new Error(presentError(error));
   }
 }
 /** Stays in main across every presentation move. Authentication and real effect
@@ -270,7 +270,7 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
       network_saveProfile: async (edit) => {
         const { credentialError } = await useSettings.getState().saveProxyProfile(edit);
         return {
-          credentialError: credentialError == null ? null : translateError(credentialError),
+          credentialError: credentialError == null ? null : presentError(credentialError),
         };
       },
       network_test: (proxy, host, port) => api.testProxyQuality(proxy, host, port),

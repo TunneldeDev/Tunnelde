@@ -14,13 +14,31 @@ The `log.file` build-worker source path identifies the dependency used to build 
 not refer to a directory required on the user's computer. Keep these source locations as useful
 diagnostic metadata; open the local application log to investigate the actual failure.
 
+## Find an error by reference
+
+1. In an error notice, open **Details** and use **Copy details**. The details include an error
+   reference, the operation that failed, and any available application source locations.
+2. Open **Output**, select **Application** or **All**, and paste the reference into its search
+   box. Clear other filters if needed. If the event is from a previous day, search for its
+   `event_id` in the rotated files instead.
+3. If Output shows **Not saved** or reports that the log cannot be written, copy the details
+   before restarting. The application keeps up to 100 recent structured failures in the host
+   process and up to 100 per WebView; these buffers are not retained across restarts. Output
+   reads diagnostic logs and operation history independently, so one remains usable if the
+   other cannot be read. It displays at most 2,000 recent rows, subject to a size limit.
+
+The error details are local and omit arbitrary exception text, raw payloads and arguments.
+Review any other log entries before sharing them: explicit plugin and subsystem logs are
+not the same as the redacted error details.
+
 ## Built-in features
 
 Native modules can use `crate::diagnostics::write(LogOrigin::Native, LogEntry { ... })`. Existing
 `tracing` events continue to use the same local writer. Frontend modules import
-`writeLog(domain, entry)` or the best-effort `reportError(domain, operation, error)` from
-`src/lib/diagnostics.ts`. The native `logs_write` command prefixes frontend domains with `frontend.`.
-The event buses use this path so subscriber failures reach local logs instead of only DevTools.
+`writeLog(domain, entry)` for explicitly authored log entries, or use
+`reportError(domain, operation, error)` at a failure boundary. `logs_write` remains an
+explicit logging command. The separate `diagnostics_report` path validates and stores safe
+error records from the main window and registered satellite windows.
 
 ```ts
 await writeLog("files", {

@@ -21,7 +21,7 @@ vi.mock("@/i18n/i18n", () => ({
   setLanguage: mocks.setLanguage,
 }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
-vi.mock("@/lib/api/errors", () => ({ translateError: (error: unknown) => String(error) }));
+vi.mock("@/lib/api/errors", () => ({ presentError: (error: unknown) => String(error) }));
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;

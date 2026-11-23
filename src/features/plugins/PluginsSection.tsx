@@ -27,7 +27,7 @@ import { PluginError } from "./PluginError";
 import { usePlugins } from "@/store/plugins";
 import { usePanelViewController, usePanelViewState } from "@/lib/panels/viewState";
 import { usePanelLeaseAction } from "@/lib/panels/interaction";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { pluginListSource } from "./panel/source";
 import { executePluginListCommand } from "./panel/actions";
 import {
@@ -64,7 +64,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
     void usePlugins.getState().load();
   }, []);
   const run = (command: PluginListCommand) => {
-    void executePluginListCommand(command).catch((e) => toast(translateError(e), "error"));
+    void executePluginListCommand(command).catch((e) => toast(presentError(e), "error"));
   };
   return (
     <PluginsBrowser
@@ -89,10 +89,10 @@ export function WindowPluginsSection({ data }: { data: PluginBrowserData }) {
   const run = (command: PluginListCommand) => {
     const result = action({ kind: "plugins", command });
     if (!result) {
-      toast(translateError(new Error("panel.window.staleOwner")), "error");
+      toast(presentError(new Error("panel.window.staleOwner")), "error");
       return;
     }
-    void result.catch((e) => toast(translateError(e), "error"));
+    void result.catch((e) => toast(presentError(e), "error"));
   };
   return (
     <PluginsBrowser

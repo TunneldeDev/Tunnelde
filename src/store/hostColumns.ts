@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { reportError } from "@/lib/diagnostics";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { create } from "zustand";
 import { synchronizeContributions, nativeContributionSource } from "@/lib/plugins/contributionSync";
 import {
@@ -20,7 +21,7 @@ export function wireHostColumns(signal: AbortSignal): Promise<() => void> {
           columns: indexHostColumns(snapshot.items),
         }),
       clear: () => useHostColumns.setState({ columns: [] }),
-      report: (error) => console.error("Could not synchronize host columns", error),
+      report: (error) => reportError("plugins.hostColumns", "synchronize", error),
     }),
     signal,
   );

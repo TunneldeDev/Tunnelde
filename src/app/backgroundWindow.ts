@@ -1,3 +1,4 @@
+import { reportError } from "@/lib/diagnostics";
 import {
   decodeTerminalCheckpoint,
   encodeTerminalCheckpoint,
@@ -214,7 +215,7 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
     };
     suspended = await api.mainWindowSuspend(token, encodeViewSnapshot(snapshot));
   } catch (error) {
-    console.warn("Background window checkpoint deferred", error);
+    reportError("windows", "checkpoint", error, "warn");
   } finally {
     if (!suspended) {
       await resumeTerminalCheckpoints();
@@ -230,13 +231,13 @@ export function useBackgroundWindow() {
     const lifetime = new AbortController();
     void events
       .onWindowSuspend((token) => void suspendBackgroundWindow(token), lifetime.signal)
-      .catch((error) => console.warn("Could not register background checkpoint listener", error));
+      .catch((error) => reportError("windows", "subscribeCheckpoint", error));
     void events
       .onWindowResume(() => {
         cancellation++;
         if (!active) void resumeTerminalCheckpoints();
       }, lifetime.signal)
-      .catch((error) => console.warn("Could not register background resume listener", error));
+      .catch((error) => reportError("windows", "subscribeResume", error));
     return () => {
       cancellation++;
       lifetime.abort();

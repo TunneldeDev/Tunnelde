@@ -1,4 +1,15 @@
 {
+  "diagnostic": {
+    "copyFailed": "无法复制详情。你可以选中文本并手动复制。",
+    "unsaved": "未落盘",
+    "failure": "无法显示此内容。",
+    "reference": "错误编号 {{id}}",
+    "memoryOnly": "部分诊断未写入磁盘，请在重启前复制。",
+    "copyDetails": "复制详情",
+    "copied": "已复制",
+    "readDiagnostic": "无法读取诊断日志。",
+    "readOperations": "无法读取操作记录。"
+  },
   "hosts": {
     "read": {
       "busy": "主机读取繁忙，请等待当前读取完成后重试。",

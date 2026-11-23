@@ -5,7 +5,7 @@ import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { Dialog } from "@/components/ui/overlay/Dialog";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { validateUserCss } from "@/lib/prefs/appearance";
 import {
   sameSettings,
@@ -169,7 +169,7 @@ export function SettingsProfilesView({
       const document = await services.importFile();
       if (document) setPreview(document);
     } catch (failure) {
-      services.notify(translateError(failure), "error");
+      services.notify(presentError(failure), "error");
     } finally {
       setWorking(false);
     }
@@ -184,7 +184,7 @@ export function SettingsProfilesView({
       );
       if (path) services.notify(t("profiles.exported", { path }), "success");
     } catch (failure) {
-      services.notify(translateError(failure), "error");
+      services.notify(presentError(failure), "error");
     } finally {
       setWorking(false);
     }

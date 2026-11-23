@@ -6,7 +6,7 @@ import { createDefaultSettings } from "@/lib/prefs/defaults";
 import { applyAppearance, observeSystemAppearance } from "@/lib/prefs/appearance";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 export interface NativeViewProps {
   client: PanelWindowClient;
   record: WindowViewRecord;
@@ -54,7 +54,7 @@ export function useNativeReadModel<T extends WindowModelAppearance>({
             if (!disposed) setModel(next);
           }
         } catch (error) {
-          if (!disposed) toast(translateError(error), "error");
+          if (!disposed) toast(presentError(error), "error");
         } finally {
           running = false;
         }
@@ -70,7 +70,7 @@ export function useNativeReadModel<T extends WindowModelAppearance>({
         }
       })
       .catch((error) => {
-        if (!disposed) toast(translateError(error), "error");
+        if (!disposed) toast(presentError(error), "error");
       });
     return () => {
       disposed = true;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runnerRecoveryApi as client } from "@/lib/api/runners/recovery";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { Host, SshConnectRequest } from "@/lib/api/types";
 import type { RecoveryEntry } from "@/lib/runners/recovery/contracts";
 import { useWorkspace } from "@/store/workspace";
@@ -42,7 +42,7 @@ export function useRecoveryFiles(pluginId: string) {
       if (target.acquired)
         await api
           .sshDisconnect(target.session.id)
-          .catch((error) => toast(translateError(error), "error"));
+          .catch((error) => toast(presentError(error), "error"));
       return;
     }
     operation.current = null;
@@ -80,7 +80,7 @@ export function useRecoveryFiles(pluginId: string) {
         if (plan.host) setConnection({ id, host: plan.host, jumpHosts: plan.jumpHosts });
         else await finish(id);
       } catch (cause) {
-        if (active.current && operation.current === id) setError(translateError(cause));
+        if (active.current && operation.current === id) setError(presentError(cause));
         if (operation.current === id) cancel();
       }
     },
@@ -121,7 +121,7 @@ export function useRecoveryFiles(pluginId: string) {
         await finish(id);
       } catch (cause) {
         if (active.current && operation.current === id) {
-          setError(translateError(cause));
+          setError(presentError(cause));
           cancel();
         }
       }

@@ -5,9 +5,9 @@ import { useId, useRef, useState } from "react";
 import { IconButton } from "@/components/ui/form/Button";
 import { cn } from "@/lib/text/format";
 import { toast as notify, useToasts, type Toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
-import { formatErrorDetails } from "@/lib/api/errors";
+import { CopyDiagnosticDetails } from "./DiagnosticNotice";
 
 const ICONS = {
   info: Info,
@@ -20,14 +20,20 @@ function ToastDetails({ toast }: { toast: Toast }) {
   const id = useId();
   if (toast.details === undefined) return null;
   return (
-    <details className="td-toast__details">
+    <details
+      className="td-toast__details"
+      onToggle={(event) => {
+        if (event.currentTarget.open) useToasts.getState().hold(toast.id);
+      }}
+    >
       <summary id={`${id}-summary`} aria-controls={`${id}-panel`}>
         <ChevronDown size={12} />
         {t("common.details", { defaultValue: "Details" })}
       </summary>
       <pre id={`${id}-panel`} aria-labelledby={`${id}-summary`}>
-        {formatErrorDetails(toast.details)}
+        {JSON.stringify(toast.details, null, 2)}
       </pre>
+      <CopyDiagnosticDetails event={toast.details} />
     </details>
   );
 }
@@ -46,7 +52,7 @@ function ToastAction({ toast }: { toast: Toast }) {
       reportError("notifications", "action", error);
       // A dismissed notification must not come back through a late failure.
       if (useToasts.getState().items.some((item) => item.id === toast.id))
-        notify(translateError(error), "error");
+        notify(presentError(error), "error");
     } finally {
       active.current = false;
       setBusy(false);

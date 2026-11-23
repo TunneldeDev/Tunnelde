@@ -21,7 +21,7 @@ import type { MountedFileAction } from "@/lib/plugins/mountFileMenu";
 import type { SshSession } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { FileWindowModel, FileWindowCommand } from "./fileWindowModel";
 import type { FilePageServices } from "./filePageServices";
 import { createFileWindowPageFileSystem } from "./fileWindowFileSystem";
@@ -61,7 +61,7 @@ export function createFileWindowBinding(
   const action = <T,>(command: FileWindowCommand) =>
     client.action<T>(owned(), { kind: "files", command });
   const report = (error: unknown) => {
-    if (!disposed) toast(translateError(error), "error");
+    if (!disposed) toast(presentError(error), "error");
   };
   const send = (command: FileWindowCommand) => {
     try {

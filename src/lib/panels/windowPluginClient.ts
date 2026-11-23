@@ -1,5 +1,6 @@
 import type { PreviewWindowAction } from "@/features/sftp/preview/windowActions";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { FrontendSession } from "@/lib/extensions/frontendRuntime";
 import type { FrontendModule } from "@/lib/extensions/uiSdk";
 import type { FrontendViewTransport } from "@/lib/extensions/runtime/views/frontend";

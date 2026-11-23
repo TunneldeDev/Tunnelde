@@ -60,7 +60,11 @@ pub(crate) fn changed(app: &AppHandle) {
         if let Some(window) = app.get_webview_window(&window.id) {
             // Invalidation only. Staged drafts and document tokens must never
             // become event-bus payloads visible to unrelated plugin views.
-            let _ = window.emit("ui://panel-windows-changed", ());
+            crate::diagnostics::failure::observe_tauri(
+                "panels.windows",
+                "publishInvalidation",
+                window.emit("ui://panel-windows-changed", ()),
+            );
         }
     }
 }
@@ -488,7 +492,11 @@ pub(crate) fn native_event(app: &AppHandle, window: &str, event: &WindowEvent) {
             // The UI must freeze/capture all panels and return them before this
             // window can be destroyed. No session/task cleanup happens here.
             if let Some(target) = app.get_webview_window(window) {
-                let _ = target.emit("ui://panel-window-close", ());
+                crate::diagnostics::failure::observe_tauri(
+                    "panels.windows",
+                    "publishClose",
+                    target.emit("ui://panel-window-close", ()),
+                );
             }
         }
         WindowEvent::Destroyed if window != MAIN => {
@@ -613,7 +621,11 @@ pub(crate) fn panel_window_focus(
     };
     if current {
         if let Some(target) = app.get_webview_window(&target) {
-            let _ = target.emit("ui://panel-window-focus", &lease);
+            crate::diagnostics::failure::observe_tauri(
+                "panels.windows",
+                "publishFocus",
+                target.emit("ui://panel-window-focus", &lease),
+            );
         }
     }
     Ok(())

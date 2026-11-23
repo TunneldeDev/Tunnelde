@@ -35,7 +35,7 @@ import { fitFileColumn } from "@/lib/files/columnWidth";
 import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors, pathForEditing, pathForNavigation } from "@/lib/files/navigation";
 import { type FilesChanged } from "@/lib/events/domain";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
 import { isIpcError } from "@/lib/api/types";
 import {
@@ -613,7 +613,7 @@ export function SftpPageView({
       } catch (error) {
         if (!mounted.current || requests.current[id] !== version) return null;
         requested.current[id] = { path: panesRef.current[id].state.listing?.path ?? null };
-        patch(id, { busy: false, error: translateError(error) });
+        patch(id, { busy: false, error: presentError(error) });
         return null;
       } finally {
         release?.();
@@ -998,7 +998,7 @@ export function SftpPageView({
       const transferId = await fs.transfer(from, fromPath, to, toPath, move, overwrite);
       if (onDone && isRelevant) watchCutCompletion(transferId, onDone, isRelevant);
     } catch (error) {
-      toast(translateError(error), "error");
+      toast(presentError(error), "error");
     }
   };
 
@@ -1035,7 +1035,7 @@ export function SftpPageView({
         });
       } else run(false);
     } catch (error) {
-      toast(translateError(error), "error");
+      toast(presentError(error), "error");
     }
   };
 
@@ -1069,13 +1069,13 @@ export function SftpPageView({
       }
     } catch (error) {
       toast(
-        translateError(error),
+        presentError(error),
         "error",
         isIpcError(error) && error.details?.operation === "rename"
           ? {
               label: t("output.openFile"),
               onClick: () =>
-                services.openLatestLog().catch((cause) => toast(translateError(cause), "error")),
+                services.openLatestLog().catch((cause) => toast(presentError(cause), "error")),
             }
           : undefined,
       );
@@ -1252,7 +1252,7 @@ export function SftpPageView({
           )
             handleDrop(id, directory, { source: LOCAL_SOURCE, paneId: "external", items });
         })
-        .catch((error: unknown) => toast(translateError(error), "error"));
+        .catch((error: unknown) => toast(presentError(error), "error"));
     };
   });
 
@@ -1265,7 +1265,7 @@ export function SftpPageView({
         if (disposed) unlisten();
         else cleanup = unlisten;
       })
-      .catch((error: unknown) => toast(translateError(error), "error"));
+      .catch((error: unknown) => toast(presentError(error), "error"));
     return () => {
       disposed = true;
       cleanup?.();
@@ -1337,7 +1337,7 @@ export function SftpPageView({
         panesRef.current[id].state.listing?.path === state.listing?.path &&
         requested.current[id].path === state.listing?.path
       )
-        patch(id, { error: translateError(error), busy: false });
+        patch(id, { error: presentError(error), busy: false });
     } finally {
       mutations.current.delete(id);
     }
@@ -1405,7 +1405,7 @@ export function SftpPageView({
         panesRef.current[id].state.listing?.path === directory &&
         requested.current[id].path === directory
       )
-        patch(id, { error: translateError(error), busy: false });
+        patch(id, { error: presentError(error), busy: false });
     } finally {
       mutations.current.delete(id);
     }
@@ -1431,7 +1431,7 @@ export function SftpPageView({
             await fs.remove(source, entry.path, entry.isDir);
           }
         } catch (error) {
-          toast(translateError(error), "error");
+          toast(presentError(error), "error");
         } finally {
           await refreshSource(source);
         }
@@ -1496,7 +1496,7 @@ export function SftpPageView({
             onSelect: () =>
               void fs
                 .openLocal(entry.path)
-                .catch((error: unknown) => toast(translateError(error), "error")),
+                .catch((error: unknown) => toast(presentError(error), "error")),
           });
       }
       if (source.kind === "local") {
@@ -1505,7 +1505,7 @@ export function SftpPageView({
           onSelect: () =>
             void services
               .revealLocalPath(entry.path)
-              .catch((error: unknown) => toast(translateError(error), "error")),
+              .catch((error: unknown) => toast(presentError(error), "error")),
         });
         if (entry.isDir)
           items.push({
@@ -1513,7 +1513,7 @@ export function SftpPageView({
             onSelect: () =>
               void fs
                 .openLocal(entry.path)
-                .catch((error: unknown) => toast(translateError(error), "error")),
+                .catch((error: unknown) => toast(presentError(error), "error")),
           });
       }
       for (const contribution of fileMenuCommands(source, entry)) {
@@ -1557,7 +1557,7 @@ export function SftpPageView({
           onSelect: () =>
             void fs
               .openLocal(directory)
-              .catch((error: unknown) => toast(translateError(error), "error")),
+              .catch((error: unknown) => toast(presentError(error), "error")),
         });
       items.push({ label: t("sftp.newFile"), onSelect: () => startCreate(id, "file") });
       items.push({ label: t("sftp.newFolder"), onSelect: () => startCreate(id, "folder") });

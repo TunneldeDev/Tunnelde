@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import type { TitleBarStyle } from "@/lib/api/types";
 import { isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
 
@@ -53,7 +53,7 @@ export function WindowTitleBar({
   }, [enabled, mac]);
 
   const run = (action: () => Promise<unknown>) => {
-    void action().catch((error) => toast(translateError(error), "error"));
+    void action().catch((error) => toast(presentError(error), "error"));
   };
   const toggle = () =>
     run(async () => {
@@ -71,7 +71,7 @@ export function WindowTitleBar({
       if (event.button === 0 && event.detail < 2 && isDragTarget(event.target)) {
         void getCurrentWindow()
           .startDragging()
-          .catch((error) => toast(translateError(error), "error"));
+          .catch((error) => toast(presentError(error), "error"));
       }
     };
     const maximize = (event: MouseEvent) => {
@@ -81,7 +81,7 @@ export function WindowTitleBar({
         .toggleMaximize()
         .then(() => window.isMaximized())
         .then(setMaximized)
-        .catch((error) => toast(translateError(error), "error"));
+        .catch((error) => toast(presentError(error), "error"));
     };
     document.addEventListener("mousedown", drag);
     document.addEventListener("dblclick", maximize);

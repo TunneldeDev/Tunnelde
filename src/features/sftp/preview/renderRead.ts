@@ -1,4 +1,4 @@
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { PreviewReadSnapshot } from "./readSource";
 import type { PreviewRenderRead } from "./PreviewRenderer";
 
@@ -15,6 +15,6 @@ export function previewRenderRead(read: PreviewReadSnapshot): PreviewRenderRead 
           : {}),
       }
     : read.status === "error"
-      ? { status: "error", message: translateError(read.cause) }
+      ? { status: "error", message: presentError(read.cause) }
       : { status: read.status };
 }

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ConnectionPrompt } from "@/features/connect/ConnectionPrompt";
 import { Button } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { SshSession } from "@/lib/api/types";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
@@ -97,12 +97,12 @@ function OriginPrompt({
         if (live) setResult({ client, providerClient, scope, prompt });
       })
       .catch((cause) => {
-        if (live) setResult({ client, providerClient, scope, error: translateError(cause) });
+        if (live) setResult({ client, providerClient, scope, error: presentError(cause) });
       });
     return () => {
       live = false;
       if (active.current === scope) active.current = null;
-      void scope.close().catch((cause) => toast(translateError(cause), "error"));
+      void scope.close().catch((cause) => toast(presentError(cause), "error"));
     };
   }, [client, binding, providerClient]);
   const close = () => {
@@ -112,7 +112,7 @@ function OriginPrompt({
     setDismissed(true);
     // Local dismissal does not depend on native reply delivery. Cleanup and
     // original actual-effect fences continue independently after unmount.
-    if (scope) void scope.close().catch((cause) => toast(translateError(cause), "error"));
+    if (scope) void scope.close().catch((cause) => toast(presentError(cause), "error"));
     callbacks.current.onClose();
   };
   const current =
@@ -135,7 +135,7 @@ function OriginPrompt({
           if (callbacks.current.onBatchComplete) await callbacks.current.onBatchComplete(result);
           else if (result.failed.length)
             toast(
-              result.failed.map((item) => `${item.id}: ${translateError(item.error)}`).join("; "),
+              result.failed.map((item) => `${item.id}: ${presentError(item.error)}`).join("; "),
               "error",
             );
           if (active.current !== current.scope) return;

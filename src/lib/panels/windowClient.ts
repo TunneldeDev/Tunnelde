@@ -4,7 +4,7 @@ import type { ForwardingWindowMutation } from "@/features/forwarding/runtime/win
 import { createNativePluginViewClient } from "./windowPluginClient";
 import { createNativeDeclarativeClient } from "@/lib/plugins/views/declarativeNative";
 import type { NativePluginUiPrompt } from "./windowPluginUi";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { listen } from "@tauri-apps/api/event";
 import type {
   NativePanelIdentity,

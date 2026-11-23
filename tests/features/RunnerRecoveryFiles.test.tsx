@@ -26,7 +26,7 @@ vi.mock("@/store/ssh", () => ({
   useSsh: { getState: () => ({ refresh: mock.refresh, acceptSession: mock.acceptSession }) },
 }));
 vi.mock("@/store/toasts", () => ({ toast: mock.toast }));
-vi.mock("@/lib/api/errors", () => ({ translateError: (error: unknown) => String(error) }));
+vi.mock("@/lib/api/errors", () => ({ presentError: (error: unknown) => String(error) }));
 const entry = { token: "record-token" } as RecoveryEntry;
 const target = {
   session: { id: "native-session", hostId: "host", address: "user@server:22", title: "Server" },

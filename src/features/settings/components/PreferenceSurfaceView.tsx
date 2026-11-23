@@ -7,6 +7,7 @@ import {
   type ComponentType,
 } from "react";
 import { createPortal } from "react-dom";
+import { PanelViewStateGroup } from "@/lib/panels/viewState";
 import { createPersistentSurface } from "@/lib/extensions/persistentSurface";
 import type { FrontendPreferenceField } from "@/lib/extensions/contracts/preferences/provider";
 import type { Settings } from "@/lib/api/types";
@@ -82,11 +83,11 @@ export function PreferenceSurfaceView({
       (!mutation || active.current),
   };
   return (
-    <>
+    <PanelViewStateGroup name={`preferences:${section}`}>
       <Provider context={context} visible={visible}>
         <Fields />
       </Provider>
       {createPortal(children, surface.container)}
-    </>
+    </PanelViewStateGroup>
   );
 }

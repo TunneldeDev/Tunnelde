@@ -2,7 +2,7 @@ import { FileText, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import type { UpdateSourceFailure } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { formatDateTime } from "@/lib/text/format";
 
 const SOURCE_LABELS = {
@@ -30,7 +30,7 @@ export function UpdateDiagnosticsView({
           <div key={`${failure.source}:${index}`}>
             <dt>{t(SOURCE_LABELS[failure.source] ?? "updates.sourceCustom")}</dt>
             <dd>
-              <span>{translateError({ code: "update", message: failure.reason })}</span>
+              <span>{presentError({ code: "update", message: failure.reason })}</span>
               {failure.status !== null ? (
                 <span className="settings-row__hint">HTTP {failure.status}</span>
               ) : null}

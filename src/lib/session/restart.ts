@@ -1,6 +1,6 @@
 import i18n from "@/i18n/i18n";
 import { api, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { useSettings } from "@/store/settings";
@@ -43,7 +43,7 @@ export function requestApplicationAction(
         } else if (action === "restart" && isTauri()) await api.appRestart();
         else throw new Error(i18n.t("restart.nativeOnly"));
       } catch (error) {
-        toast(translateError(error), "error");
+        toast(presentError(error), "error");
       }
     },
   });

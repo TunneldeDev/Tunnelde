@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { hasPluginGrant, usePluginSecurity } from "@/store/pluginSecurity";
 import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
@@ -132,6 +132,6 @@ export async function revealMountedFile(
       params: { id: action.mount.id, sessionId, path },
     });
   } catch (error) {
-    toast(translateError(error), "error");
+    toast(presentError(error), "error");
   }
 }

@@ -27,7 +27,7 @@ import type { SidebarView } from "@/store/navigation";
 import type { FloatingPanelState } from "@/store/panelPresentation";
 import { isFloatingRect } from "@/lib/layout/floatingPanel";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import "./panelWorkspace.css";
 import "./tabBar.css";
 
@@ -74,7 +74,7 @@ function Mount({ slot }: { slot: Slot }) {
   return <div className="panel-workspace__mount" ref={root} />;
 }
 const close = (id: string) => {
-  void movePanelToWindow(id, "main").catch((error) => toast(translateError(error), "error"));
+  void movePanelToWindow(id, "main").catch((error) => toast(presentError(error), "error"));
 };
 function Group({
   id,

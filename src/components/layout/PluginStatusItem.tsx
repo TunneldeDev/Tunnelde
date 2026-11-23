@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import {
   Activity,
   Check,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import i18n from "@/i18n/i18n";
 import type { PluginStatusBarItem } from "@/lib/plugins/statusBar";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 
 const icons = {
@@ -59,7 +59,7 @@ export function PluginStatusItem({ item }: { item: PluginStatusBarItem }) {
           token: item.token,
           locale: i18n.resolvedLanguage ?? i18n.language,
         })
-          .catch((error: unknown) => toast(`${item.pluginName}: ${translateError(error)}`, "error"))
+          .catch((error: unknown) => toast(`${item.pluginName}: ${presentError(error)}`, "error"))
           .finally(() => setBusy(false));
       }}
     >

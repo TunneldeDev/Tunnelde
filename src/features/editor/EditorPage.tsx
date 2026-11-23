@@ -11,7 +11,7 @@ import { editorHasPendingChanges, type EditorSelectionSnapshot } from "@/store/e
 import type { EditorPageServices } from "./editorPageServices";
 import { mainEditorPageServices } from "./mainEditorPageServices";
 import { useBackgroundGuard } from "@/lib/session/viewState";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import type { TextEncoding } from "@/lib/api/types";
 import type { EditorView } from "@codemirror/view";
@@ -166,7 +166,7 @@ export function EditorPageView({
         toast(t("editor.nativeSetupComplete"), "success");
       }
     } catch (error) {
-      const message = translateError(error);
+      const message = presentError(error);
       setSetupFailure({ scope: `${session}:${path}`, message });
       toast(message, "error");
     } finally {

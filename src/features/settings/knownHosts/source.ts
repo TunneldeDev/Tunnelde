@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createStore } from "zustand/vanilla";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { KnownHostEntry } from "@/lib/api/types";
 
 export interface KnownHostsData {
@@ -35,7 +35,7 @@ export function createKnownHostsSource() {
           });
       })
       .catch((error: unknown) => {
-        if (!disposed && serial === version) store.setState({ error: translateError(error) });
+        if (!disposed && serial === version) store.setState({ error: presentError(error) });
         throw error;
       })
       .finally(() => {

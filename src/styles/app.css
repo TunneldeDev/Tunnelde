@@ -1891,8 +1891,17 @@
   transform: rotate(180deg);
 }
 
-.td-toast__details pre {
-  max-width: 360px;
+.diagnostic-notice {
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-notice p {
+  margin: 0 0 8px;
+}
+
+.td-toast__details pre,
+.diagnostic-notice pre {
   max-height: 180px;
   margin: 5px 0 0;
   padding: 6px;
@@ -1903,6 +1912,10 @@
   color: var(--td-text);
   font: 11px/1.45 var(--td-font-mono);
   white-space: pre-wrap;
+}
+
+.td-toast__details pre {
+  max-width: 360px;
 }
 
 .td-toast.has-action {
