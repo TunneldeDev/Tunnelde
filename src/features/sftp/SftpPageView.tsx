@@ -1158,7 +1158,9 @@ export function SftpPageView({
   };
 
   const handleDrop = (id: PaneId, directory: string, payload: DragPayload) => {
-    const target = panesRef.current[id].source;
+    const model = panesRef.current[id];
+    if (model.state.busy || !model.state.listing) return;
+    const target = model.source;
     const action = resolveDrop(payload, target, directory, `${instanceId}:${id}`, sameFilesystem);
     if (action.kind === "noop") {
       return;
@@ -1197,9 +1199,12 @@ export function SftpPageView({
       const id = paneElement.dataset.pane as PaneId;
       const model = panesRef.current[id];
       if (!model || model.state.busy || !model.state.listing) return;
+      const columnPath = element?.closest<HTMLElement>("[data-column-path]")?.dataset.columnPath;
+      const listing =
+        model.state.ancestors.find((item) => item.path === columnPath) ?? model.state.listing;
       const rowPath = element?.closest<HTMLElement>("[data-path]")?.dataset.path;
-      const row = model.state.listing.entries.find((entry) => entry.path === rowPath);
-      const directory = row?.isDir ? row.path : model.state.listing.path;
+      const row = listing.entries.find((entry) => entry.path === rowPath);
+      const directory = row?.isDir ? row.path : listing.path;
       void Promise.all(
         paths.map(async (path) => {
           const listing = await fs.list(LOCAL_SOURCE, parentOf(path));
@@ -1574,9 +1579,19 @@ export function SftpPageView({
         ? (ancestor.entries.find((entry) => entry.path === branch) ?? null)
         : primaryEntry(id);
       const selected = ancestor ? (primary ? [primary] : []) : selectedEntries(id);
+      const control = !!event.target.closest("button, a, [role=separator], [role=combobox]");
       const text =
-        (isTextTarget(event.target) && !event.target.classList.contains("sftp-type-select")) ||
-        !!event.target.closest("button, a, [role=separator]");
+        isTextTarget(event.target) && !event.target.classList.contains("sftp-type-select");
+      // Modified file commands remain available after toolbar clicks. Bare keys
+      // belong to the focused control (Enter/Space activate, arrows navigate).
+      if (
+        control &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !/^F\d{1,2}$/.test(event.key)
+      )
+        return [];
       const actions = [
         "filter",
         "path",
@@ -1606,6 +1621,7 @@ export function SftpPageView({
         actions.map((action) => `files.${action}`),
         (command) => {
           const action = command.slice(6);
+          setActive(id);
           if (ancestor && action !== "filter" && action !== "path") {
             activateColumn(id, ancestorIndex);
             if (primary) selectEntry(id, primary, "single");
@@ -1939,6 +1955,10 @@ export function SftpPageView({
           )}
           draggable={!state.busy && renaming?.path !== entry.path}
           onDragStart={(event) => {
+            if (panesRef.current[id].state.busy || panesRef.current[id].state.renaming) {
+              event.preventDefault();
+              return;
+            }
             if (ancestorIndex !== undefined) activateColumn(id, ancestorIndex);
             const chosen = selectedEntries(id);
             const items = chosen.some((item) => item.path === entry.path) ? chosen : [entry];
@@ -1975,7 +1995,7 @@ export function SftpPageView({
             setDropTarget({ pane: id, path: entry.path });
           }}
           onDrop={(event) => {
-            if (!entry.isDir || !event.dataTransfer.types.includes(DRAG_MIME)) {
+            if (state.busy || !entry.isDir || !event.dataTransfer.types.includes(DRAG_MIME)) {
               return;
             }
             event.preventDefault();
@@ -2023,6 +2043,7 @@ export function SftpPageView({
             <Input
               autoFocus
               className="sftp-row__name"
+              aria-label={entry.isDir ? t("sftp.folderName") : t("sftp.fileName")}
               value={renaming.value}
               spellCheck={false}
               onFocus={(event) => {
@@ -2104,6 +2125,7 @@ export function SftpPageView({
         data-hide-size={!columns.includes("size") || undefined}
         data-hide-modified={!columns.includes("modified") || undefined}
         onMouseDown={() => setActive(id)}
+        onFocusCapture={() => setActive(id)}
       >
         <header className="sftp-pane__head">
           {!single && (
@@ -2141,128 +2163,136 @@ export function SftpPageView({
             onChange={(value) => chooseSource(id, value)}
           />
           <div className="sftp-pane__actions">
-            <IconButton
-              label={t("sftp.back")}
-              size="sm"
-              disabled={state.historyIndex <= 0 || state.busy}
-              onClick={() => travel(id, -1)}
-            >
-              <ArrowLeft size={13} />
-            </IconButton>
-            <IconButton
-              label={t("sftp.forward")}
-              size="sm"
-              disabled={state.historyIndex >= state.history.length - 1 || state.busy}
-              onClick={() => travel(id, 1)}
-            >
-              <ArrowRight size={13} />
-            </IconButton>
-            <IconButton
-              label={t("sftp.up")}
-              size="sm"
-              disabled={
-                !state.listing || state.busy || parentOf(state.listing.path) === state.listing.path
-              }
-              onClick={() => state.listing && navigate(id, parentOf(state.listing.path))}
-            >
-              <ArrowUp size={13} />
-            </IconButton>
-            <IconButton label={t("sftp.refresh")} size="sm" onClick={() => refreshPane(id)}>
-              <RotateCw size={13} />
-            </IconButton>
-            <IconButton
-              label={t("sftp.preview")}
-              size="sm"
-              disabled={state.busy || !previewTarget}
-              onClick={() => previewTarget && previewEntry(id, previewTarget)}
-            >
-              <Eye size={13} />
-            </IconButton>
-            <IconButton
-              label={t("sftp.newFile")}
-              size="sm"
-              disabled={!state.listing || state.busy}
-              onClick={() => startCreate(id, "file")}
-            >
-              <FilePlus size={13} />
-            </IconButton>
-            <IconButton
-              label={t("sftp.newFolder")}
-              size="sm"
-              disabled={!state.listing || state.busy}
-              onClick={() => startCreate(id, "folder")}
-            >
-              <FolderPlus size={13} />
-            </IconButton>
-            {!single ? (
+            <div className="sftp-pane__action-group">
               <IconButton
-                label={t(transferKey(source, panes[other(id)].source))}
+                label={t("sftp.back")}
+                size="sm"
+                disabled={state.historyIndex <= 0 || state.busy}
+                onClick={() => travel(id, -1)}
+              >
+                <ArrowLeft size={13} />
+              </IconButton>
+              <IconButton
+                label={t("sftp.forward")}
+                size="sm"
+                disabled={state.historyIndex >= state.history.length - 1 || state.busy}
+                onClick={() => travel(id, 1)}
+              >
+                <ArrowRight size={13} />
+              </IconButton>
+              <IconButton
+                label={t("sftp.up")}
                 size="sm"
                 disabled={
+                  !state.listing ||
                   state.busy ||
-                  panes[other(id)].state.busy ||
-                  selectedCount === 0 ||
-                  !panes[other(id)].state.listing
+                  parentOf(state.listing.path) === state.listing.path
                 }
-                onClick={() => transferSelected(id)}
+                onClick={() => state.listing && navigate(id, parentOf(state.listing.path))}
               >
-                <ArrowLeftRight size={13} />
+                <ArrowUp size={13} />
               </IconButton>
-            ) : null}
-            {!single ? (
+              <IconButton label={t("sftp.refresh")} size="sm" onClick={() => refreshPane(id)}>
+                <RotateCw size={13} />
+              </IconButton>
+            </div>
+            <div className="sftp-pane__action-group">
               <IconButton
-                label={t("sftp.detachPanel")}
+                label={t("sftp.preview")}
                 size="sm"
-                disabled={!state.listing}
-                onClick={() => {
-                  const detached = filePaneOptions(id);
-                  const newTabId = services.workspace.openFilePane(detached.pane, detached.title);
-                  services.workspace.splitTab(newTabId, "row");
-                  retainOtherPane(id);
-                }}
+                disabled={state.busy || !previewTarget}
+                onClick={() => previewTarget && previewEntry(id, previewTarget)}
               >
-                <PanelRightOpen size={13} />
+                <Eye size={13} />
               </IconButton>
-            ) : null}
-            <FileViewMenu
-              view={view}
-              onChange={(change) =>
-                updateView(
-                  id,
-                  change,
-                  change.filesGroupBy !== undefined ? { collapsedGroups: [] } : {},
-                )
-              }
-              onReset={() => {
-                const defaults = services.getState().settings;
-                updateView(
-                  id,
-                  {
-                    filesShowHidden: defaults.filesShowHidden,
-                    filesFoldersFirst: defaults.filesFoldersFirst,
-                    filesSortBy: defaults.filesSortBy,
-                    filesSortDirection: defaults.filesSortDirection,
-                    filesGroupBy: "none",
-                    filesLayout: "details",
-                    filesColumns: [...FILE_COLUMNS],
-                    filesColumnWidths: {},
-                  },
-                  { filter: "", filterKind: "all", filterOpen: false, collapsedGroups: [] },
-                );
-              }}
-            />
-            <IconButton
-              label={t("sftp.filterFiles")}
-              size="sm"
-              active={state.filterOpen}
-              onClick={() =>
-                state.filterOpen
-                  ? updateView(id, {}, { filterOpen: false, filter: "", filterKind: "all" })
-                  : focusFilter(id)
-              }
-            >
-              <Search size={13} />
-            </IconButton>
+              <IconButton
+                label={t("sftp.newFile")}
+                size="sm"
+                disabled={!state.listing || state.busy}
+                onClick={() => startCreate(id, "file")}
+              >
+                <FilePlus size={13} />
+              </IconButton>
+              <IconButton
+                label={t("sftp.newFolder")}
+                size="sm"
+                disabled={!state.listing || state.busy}
+                onClick={() => startCreate(id, "folder")}
+              >
+                <FolderPlus size={13} />
+              </IconButton>
+              {!single ? (
+                <IconButton
+                  label={t(transferKey(source, panes[other(id)].source))}
+                  size="sm"
+                  disabled={
+                    state.busy ||
+                    panes[other(id)].state.busy ||
+                    selectedCount === 0 ||
+                    !panes[other(id)].state.listing
+                  }
+                  onClick={() => transferSelected(id)}
+                >
+                  <ArrowLeftRight size={13} />
+                </IconButton>
+              ) : null}
+            </div>
+            <div className="sftp-pane__action-group">
+              {!single ? (
+                <IconButton
+                  label={t("sftp.detachPanel")}
+                  size="sm"
+                  disabled={!state.listing}
+                  onClick={() => {
+                    const detached = filePaneOptions(id);
+                    const newTabId = services.workspace.openFilePane(detached.pane, detached.title);
+                    services.workspace.splitTab(newTabId, "row");
+                    retainOtherPane(id);
+                  }}
+                >
+                  <PanelRightOpen size={13} />
+                </IconButton>
+              ) : null}
+              <FileViewMenu
+                view={view}
+                onChange={(change) =>
+                  updateView(
+                    id,
+                    change,
+                    change.filesGroupBy !== undefined ? { collapsedGroups: [] } : {},
+                  )
+                }
+                onReset={() => {
+                  const defaults = services.getState().settings;
+                  updateView(
+                    id,
+                    {
+                      filesShowHidden: defaults.filesShowHidden,
+                      filesFoldersFirst: defaults.filesFoldersFirst,
+                      filesSortBy: defaults.filesSortBy,
+                      filesSortDirection: defaults.filesSortDirection,
+                      filesGroupBy: "none",
+                      filesLayout: "details",
+                      filesColumns: [...FILE_COLUMNS],
+                      filesColumnWidths: {},
+                    },
+                    { filter: "", filterKind: "all", filterOpen: false, collapsedGroups: [] },
+                  );
+                }}
+              />
+              <IconButton
+                label={t("sftp.filterFiles")}
+                size="sm"
+                active={state.filterOpen}
+                onClick={() =>
+                  state.filterOpen
+                    ? updateView(id, {}, { filterOpen: false, filter: "", filterKind: "all" })
+                    : focusFilter(id)
+                }
+              >
+                <Search size={13} />
+              </IconButton>
+            </div>
           </div>
         </header>
 
@@ -2382,7 +2412,10 @@ export function SftpPageView({
                       {listing.path}
                     </div>
                     <div
-                      className="sftp-pane__body"
+                      className={cn(
+                        "sftp-pane__body",
+                        dropTarget?.pane === id && dropTarget.path === listing.path && "is-drop",
+                      )}
                       data-column-path={listing.path}
                       data-panel-scroll={`file:${id}:column:${columnIndex}`}
                       onScroll={(event) =>
@@ -2431,12 +2464,14 @@ export function SftpPageView({
                       onDragOver={(event) => {
                         if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
                         event.preventDefault();
+                        event.stopPropagation();
+                        setDropTarget({ pane: id, path: listing.path });
                         const dragged = currentDragSource();
                         event.dataTransfer.dropEffect =
                           dragged && sameFilesystem(dragged, source) ? "move" : "copy";
                       }}
                       onDrop={(event) => {
-                        if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
+                        if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
                         event.preventDefault();
                         event.stopPropagation();
                         const payload = readDragPayload(event.dataTransfer);
@@ -2445,6 +2480,7 @@ export function SftpPageView({
                       }}
                     >
                       <FileTypeSelect
+                        focusKey={`file:${id}:column:${columnIndex}:type`}
                         onText={(text, at) => {
                           activateColumn(id, columnIndex);
                           selectByText(id, text, at);
@@ -2655,10 +2691,17 @@ export function SftpPageView({
                     dragged && sameFilesystem(dragged, source) ? "move" : "copy";
                   setDropTarget({ pane: id, path: "" });
                 }}
-                onDragLeave={() => setDropTarget(null)}
+                onDragLeave={(event) => {
+                  if (
+                    !(event.relatedTarget instanceof Node) ||
+                    !event.currentTarget.contains(event.relatedTarget)
+                  )
+                    setDropTarget(null);
+                }}
                 onDrop={(event) => {
-                  if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
+                  if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
                   event.preventDefault();
+                  event.stopPropagation();
                   const payload = readDragPayload(event.dataTransfer);
                   setDropTarget(null);
                   if (payload && state.listing) {
@@ -2666,7 +2709,10 @@ export function SftpPageView({
                   }
                 }}
               >
-                <FileTypeSelect onText={(text, at) => selectByText(id, text, at)} />
+                <FileTypeSelect
+                  focusKey={`file:${id}:type`}
+                  onText={(text, at) => selectByText(id, text, at)}
+                />
                 {state.error ? <p className="sftp-pane__error">{state.error}</p> : null}
                 {!state.busy && state.listing && fileView.total === 0 && !creating ? (
                   <p className="sftp-pane__empty">

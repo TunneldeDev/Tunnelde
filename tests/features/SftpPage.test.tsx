@@ -1019,6 +1019,60 @@ describe("SftpPage", () => {
     expect(useFileClipboard.getState().clip?.items[0]?.path).toBe("C:\\work\\src");
     expect(currentPath()).toBe("C:\\work");
   });
+
+  it.each(["background", "file", "folder"])(
+    "resolves native drops against the ancestor column %s",
+    async (target) => {
+      const { mainFilePageServices } = await import("@/features/sftp/mainFilePageServices");
+      const nativeDrop = vi.spyOn(mainFilePageServices, "onNativeDrop").mockResolvedValue(() => {});
+      const external = {
+        ...localListing.entries[0],
+        name: "external.txt",
+        path: "C:\\inbox\\external.txt",
+      };
+      fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
+        if (source.kind === "local" && path === "C:\\inbox") return { path, entries: [external] };
+        if (source.kind === "local" && path === "C:\\work\\src")
+          return {
+            path,
+            entries: [{ ...localListing.entries[0], name: "child.ts", path: `${path}\\child.ts` }],
+          };
+        return listingFor(source);
+      });
+      const view = render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("notes.txt");
+      fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
+      fireEvent.click(await screen.findByRole("menuitemradio", { name: "Column view" }));
+      fireEvent.click(screen.getByText("src"));
+      await screen.findByText("child.ts");
+      const ancestor = view.container.querySelector('.sftp-miller__column [role="listbox"]')!;
+      const hit =
+        target === "background"
+          ? ancestor
+          : within(ancestor as HTMLElement).getByText(target === "file" ? "notes.txt" : "src");
+      vi.spyOn(Element.prototype, "getClientRects").mockReturnValue([
+        new DOMRect(0, 0, 800, 600),
+      ] as unknown as DOMRectList);
+      const originalHitTest = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+      Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => hit });
+      try {
+        await act(async () => nativeDrop.mock.calls[0]![0]([external.path], 10, 10));
+        const directory = target === "folder" ? "C:\\work\\src" : "C:\\work";
+        await waitFor(() =>
+          expect(fsMock.rename).toHaveBeenCalledExactlyOnceWith(
+            { kind: "local" },
+            external.path,
+            `${directory}\\external.txt`,
+            false,
+          ),
+        );
+      } finally {
+        if (originalHitTest) Object.defineProperty(document, "elementFromPoint", originalHitTest);
+        else Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    },
+  );
+
   it("commits Chinese IME input once and selects the matching file", async () => {
     fsMock.list.mockImplementation(async (source: FsSource) =>
       source.kind === "local"
@@ -1117,7 +1171,7 @@ describe("SftpPage", () => {
       await screen.findByText("notes.txt");
       await screen.findByText("readme.md");
       const local = screen.getAllByRole("listbox")[0]!;
-      local.focus();
+      act(() => local.focus());
       expect(fireEvent.keyDown(local, { key: "l", ...modifier })).toBe(false);
       const localPath = screen.getByRole("textbox", { name: "Path" }) as HTMLInputElement;
       expect(document.activeElement).toBe(localPath);
@@ -1127,7 +1181,7 @@ describe("SftpPage", () => {
 
       const remotePane = document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!;
       const refresh = within(remotePane).getByRole("button", { name: "Refresh" });
-      refresh.focus();
+      act(() => refresh.focus());
       fireEvent.keyDown(refresh, { key: "l", ...modifier });
       const remotePath = within(remotePane).getByRole("textbox", {
         name: "Path",
@@ -2567,4 +2621,130 @@ describe("SftpPage visible file interactions", () => {
     fireEvent.keyDown(local, { key: "ArrowUp", metaKey: true });
     await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\"));
   });
+});
+
+it.each([{ ctrlKey: true }, { metaKey: true }])(
+  "keeps file commands available after toolbar focus (%j) without hijacking button activation",
+  async (modifier) => {
+    render(<SftpPage sessionId="session-1" />);
+    fireEvent.click((await screen.findByText("notes.txt")).closest(".sftp-row")!);
+    const pane = document.querySelectorAll<HTMLElement>(".sftp-pane")[0]!;
+    const preview = within(pane).getByRole("button", { name: "Preview file" });
+    act(() => preview.focus());
+    fireEvent.keyDown(preview, { key: "c", ...modifier });
+    expect(useFileClipboard.getState().clip?.items.map((item) => item.name)).toEqual(["notes.txt"]);
+    expect(fireEvent.keyDown(preview, { key: "Enter" })).toBe(true);
+    expect(fireEvent.keyDown(preview, { key: " " })).toBe(true);
+    fireEvent.keyDown(preview, { key: "n", ...modifier });
+    expect(within(pane).getByRole("textbox", { name: "File name" })).toBeTruthy();
+  },
+);
+
+it("tracks keyboard focus in the other pane and marks the actual focused proxy for restoration", async () => {
+  render(<SftpPage sessionId="session-1" />);
+  await screen.findByText("readme.md");
+  const panes = document.querySelectorAll<HTMLElement>(".sftp-pane");
+  const body = within(panes[1]!).getByRole("listbox");
+  act(() => body.focus());
+  expect(panes[1]!.classList.contains("is-active")).toBe(true);
+  expect(panes[0]!.classList.contains("is-active")).toBe(false);
+  expect(document.activeElement?.getAttribute("data-panel-focus")).toBe("file:b:type");
+  fireEvent.keyDown(document.activeElement!, { key: "a", ctrlKey: true });
+  expect(within(body).getAllByRole("option", { selected: true })).toHaveLength(1);
+});
+
+it("rejects a drop that became busy after hover", async () => {
+  render(<SftpPage sessionId="session-1" />);
+  const row = (await screen.findByText("notes.txt")).closest(".sftp-row")!;
+  await screen.findByText("readme.md");
+  const data: Record<string, string> = {};
+  const dataTransfer = {
+    types: [DRAG_MIME],
+    setData: (key: string, value: string) => {
+      data[key] = value;
+    },
+    getData: (key: string) => data[key] ?? "",
+  };
+  fireEvent.dragStart(row, { dataTransfer });
+  const remote = screen.getAllByRole("listbox")[1]!;
+  fireEvent.dragOver(remote, { dataTransfer });
+  let resolve!: (value: typeof remoteListing) => void;
+  fsMock.list.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const pane = remote.closest(".sftp-pane") as HTMLElement;
+  fireEvent.click(within(pane).getByRole("button", { name: "Refresh" }));
+  expect(remote.getAttribute("aria-busy")).toBe("true");
+  fireEvent.drop(remote, { dataTransfer });
+  expect(fsMock.transfer).not.toHaveBeenCalled();
+  await act(async () => resolve(remoteListing));
+  fireEvent.dragEnd(row);
+});
+
+it.each(["drop", "Escape"])(
+  "runs file pointer gestures through the mounted browser surface: %s",
+  async (finish) => {
+    const { installInternalDrag } = await import("@/lib/session/useInternalDrag");
+    const dispose = installInternalDrag();
+    const view = render(<SftpPage sessionId="session-1" />);
+    try {
+      const row = (await screen.findByText("notes.txt")).closest(".sftp-row")!;
+      const remoteRow = (await screen.findByText("readme.md")).closest(".sftp-row")!;
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: () => remoteRow,
+      });
+      fireEvent(row, resizePointer("pointerdown", 10));
+      fireEvent(document, resizePointer("pointermove", 70));
+      expect(document.querySelector("[data-drag-preview]")).toBeTruthy();
+      expect(remoteRow.closest(".sftp-pane__body")!.classList.contains("is-drop")).toBe(true);
+      if (finish === "Escape") {
+        fireEvent.keyDown(document, { key: "Escape" });
+        expect(fsMock.transfer).not.toHaveBeenCalled();
+      } else {
+        fireEvent(document, resizePointer("pointerup", 70));
+        await waitFor(() =>
+          expect(fsMock.transfer).toHaveBeenCalledExactlyOnceWith(
+            { kind: "local" },
+            "C:\\work\\notes.txt",
+            { kind: "remote", sessionId: "session-1" },
+            "/srv/app/notes.txt",
+            false,
+            false,
+          ),
+        );
+      }
+      expect(document.querySelector("[data-drag-preview]")).toBeNull();
+      expect(row.getAttribute("draggable")).toBe("true");
+      expect(document.querySelector(".is-drop")).toBeNull();
+    } finally {
+      act(() => dispose());
+      view.unmount();
+    }
+  },
+);
+
+it("routes a real list proxy once through window capture with a non-modal panel open", async () => {
+  const { dispatchShortcuts } = await import("@/lib/keyboard/routing");
+  const capture = (event: KeyboardEvent) => dispatchShortcuts(event);
+  window.addEventListener("keydown", capture, true);
+  const floating = document.createElement("section");
+  floating.setAttribute("role", "dialog");
+  floating.setAttribute("aria-modal", "false");
+  document.body.append(floating);
+  const set = vi.spyOn(useFileClipboard.getState(), "set");
+  try {
+    render(<SftpPage sessionId="session-1" />);
+    fireEvent.click((await screen.findByText("notes.txt")).closest(".sftp-row")!);
+    expect(document.activeElement?.classList.contains("sftp-type-select")).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "c", ctrlKey: true });
+    expect(set).toHaveBeenCalledOnce();
+    expect(useFileClipboard.getState().clip?.items[0]?.name).toBe("notes.txt");
+  } finally {
+    floating.remove();
+    window.removeEventListener("keydown", capture, true);
+  }
 });

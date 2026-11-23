@@ -27,6 +27,9 @@ export interface ShortcutResult {
   handled: boolean;
   consumed: boolean;
 }
+export type ShortcutConfiguration = Pick<Settings, "keyboardShortcuts" | "shortcutRules"> & {
+  mac?: boolean;
+};
 const COLLECTION = "tunnelde:collect-shortcuts";
 const results = new WeakMap<KeyboardEvent, ShortcutResult>();
 const shortcutReleases = new WeakMap<Element, Set<string>>();
@@ -113,18 +116,23 @@ export function scopedShortcutCandidates(
   ids: readonly string[],
   run: (id: string) => boolean,
   overrides?: Settings["keyboardShortcuts"],
+  mac?: boolean,
 ): ShortcutCandidate[] {
   const shortcuts = overrides ?? useSettings.getState().settings.keyboardShortcuts;
   return shortcutCommands(overrides ? [] : usePlugins.getState().items)
     .filter((command) => ids.includes(command.id))
     .flatMap((command) => {
-      return bindingsFor(command.id, shortcuts, undefined, [command])
+      return bindingsFor(command.id, shortcuts, mac, [command])
         .filter((key) => shortcutMatches(event, key))
         .map((binding) => ({ command, binding, run: () => run(command.id) }));
     });
 }
 
-export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true): ShortcutResult {
+export function dispatchShortcuts(
+  event: KeyboardEvent,
+  includeWorkbench = true,
+  configuration?: ShortcutConfiguration,
+): ShortcutResult {
   const previous = results.get(event);
   if (previous) return previous;
   const empty = { handled: false, consumed: false };
@@ -142,7 +150,7 @@ export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true)
     event.isComposing ||
     event.keyCode === 229 ||
     event.getModifierState("AltGraph") ||
-    document.querySelector("[role='dialog'], .td-palette") ||
+    document.querySelector("[role='dialog']:not([aria-modal='false']), .td-palette") ||
     (event.target instanceof Element &&
       event.target.closest(
         ".td-select__popup, [role='menu'], [aria-expanded='true'][aria-controls]",
@@ -153,8 +161,8 @@ export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true)
     const terminal = terminalTarget(event);
     if (terminal) shortcutReleases.get(terminal)?.delete(physicalKey(event));
   }
-  const settings = useSettings.getState().settings;
-  const definitions = shortcutCommands(usePlugins.getState().items);
+  const settings = configuration ?? useSettings.getState().settings;
+  const definitions = shortcutCommands(configuration ? [] : usePlugins.getState().items);
   const candidates: ShortcutCandidate[] = [];
   const target = event.target;
   if (target instanceof Element)
@@ -177,7 +185,7 @@ export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true)
         terminalAllowsCommand(event, command.id, settings.keyboardShortcuts)),
   );
   const globalCandidates = global.flatMap((command) => {
-    return bindingsFor(command.id, settings.keyboardShortcuts, undefined, definitions)
+    return bindingsFor(command.id, settings.keyboardShortcuts, configuration?.mac, definitions)
       .filter((key) => shortcutMatches(event, key))
       .map((binding) => ({ command, binding, run: () => runWorkbenchCommand(command.id) }));
   });
@@ -189,7 +197,7 @@ export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true)
     candidates.some(
       (item) => item.command.plugin || settings.shortcutRules?.[item.command.id]?.[item.binding],
     );
-  if ((includeWorkbench || candidates.length > 0) && (!localMatch || shared))
+  if ((includeWorkbench || (!configuration && candidates.length > 0)) && (!localMatch || shared))
     candidates.push(...globalCandidates);
   const result = executeShortcutCandidates(event, candidates, settings.shortcutRules);
   results.set(event, result);

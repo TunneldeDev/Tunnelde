@@ -2,7 +2,11 @@ import { useEffect, useRef, useLayoutEffect, useMemo, type ReactNode } from "rea
 import { createStore, useStore } from "zustand";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { events } from "@/lib/api/ipc";
-import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
+import {
+  bindShortcutProvider,
+  dispatchShortcuts,
+  scopedShortcutCandidates,
+} from "@/lib/keyboard/routing";
 import { usePanelViewState } from "@/lib/panels/viewState";
 import { useWindowViews, type WindowViewRecord } from "@/lib/panels/windowViews";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
@@ -368,8 +372,33 @@ export function createFileWindowBinding(
       preferences.set(key, view);
       send({ operation: "preference", data: { key, view } });
     },
-    bindShortcuts: bindShortcutProvider,
-    shortcutCandidates: scopedShortcutCandidates,
+    bindShortcuts(element, provide) {
+      // Main participates in the workbench router; satellites must not invoke
+      // commands against unhydrated main stores or use their default settings.
+      return bindShortcutProvider(
+        element,
+        provide,
+        client.windowId === "main"
+          ? undefined
+          : (event) => {
+              const model = store.getState().model;
+              dispatchShortcuts(event, false, {
+                ...model.files.shortcuts,
+                mac: model.platform === "macos",
+              });
+            },
+      );
+    },
+    shortcutCandidates(event, ids, run) {
+      const model = store.getState().model;
+      return scopedShortcutCandidates(
+        event,
+        ids,
+        run,
+        model.files.shortcuts.keyboardShortcuts,
+        model.platform === "macos",
+      );
+    },
     async openLatestLog() {
       await action({ operation: "openLog", data: {} });
     },
