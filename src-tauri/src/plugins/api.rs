@@ -111,7 +111,16 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
         method_info(method).ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?;
     authorize(context, entry.permissions)?;
     validate_params(&params)?;
-    let result = routing::route(context, method, params).await?;
+    let result = routing::route(context, method, params)
+        .await
+        .inspect_err(|error| {
+            // Some hosts deliver directly to a plugin, with no WebView IPC caller.
+            // Exclude ordinary validation/authorization/cancellation failures and
+            // use only the registered method name, never plugin parameters.
+            if matches!(error.code(), "internal" | "database" | "io" | "ssh") {
+                crate::diagnostics::failure::native("plugins.rpc", entry.name, error);
+            }
+        })?;
     // A revoked or replaced runtime must not receive a response after an await.
     authorize(context, entry.permissions)?;
     if serde_json::to_vec(&result)?.len() > MAX_PAYLOAD {

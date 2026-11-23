@@ -139,7 +139,11 @@ pub(crate) fn snapshot(app: &AppHandle) -> Value {
     let (snapshot, changed) = registry.public.update(ownership.public_metadata());
     drop(ownership);
     if let Some(revision) = changed {
-        let _ = app.emit("workspace://windows-changed", json!({"revision": revision}));
+        crate::diagnostics::failure::observe_tauri(
+            "panels.windows",
+            "publishPublicWindows",
+            app.emit("workspace://windows-changed", json!({"revision": revision})),
+        );
     }
     snapshot
 }

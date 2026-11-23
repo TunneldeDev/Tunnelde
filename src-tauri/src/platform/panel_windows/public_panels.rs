@@ -62,7 +62,11 @@ pub(crate) fn refresh(app: &AppHandle) -> Option<Value> {
         .update(ownership.presentation_projection());
     drop(ownership);
     if let Some(revision) = changed {
-        let _ = app.emit("workspace://panels-changed", json!({"revision":revision}));
+        crate::diagnostics::failure::observe_tauri(
+            "panels.windows",
+            "publishPublicPanels",
+            app.emit("workspace://panels-changed", json!({"revision":revision})),
+        );
     }
     value
 }
