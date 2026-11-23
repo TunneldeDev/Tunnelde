@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "@/components/ui/overlay/ConfirmDialog";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button } from "@/components/ui/form/Button";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
 import { createPanelWindowInteraction } from "@/lib/panels/windowInteraction";
@@ -43,7 +43,7 @@ function OriginalScope({ client, lease, children }: Props) {
   useForwardingCaptureGuard("native-confirmation", () => view?.entry.owner === owner);
   const live = useRef<object | null>(null);
   const closeEntry = (entry: Entry) => {
-    void entry.scope.close().catch((cause) => toast(translateError(cause), "error"));
+    void entry.scope.close().catch((cause) => toast(presentError(cause), "error"));
   };
   useLayoutEffect(() => {
     live.current = owner;
@@ -89,7 +89,7 @@ function OriginalScope({ client, lease, children }: Props) {
         })
         .catch((cause) => {
           if (live.current === owner && current.current === entry)
-            setView({ entry, error: translateError(cause) });
+            setView({ entry, error: presentError(cause) });
           closeEntry(entry);
         });
     },

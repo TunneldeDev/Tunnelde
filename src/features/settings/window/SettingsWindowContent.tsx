@@ -51,7 +51,7 @@ import {
 } from "./SettingsDraftScope";
 import type { ConfirmOptions } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 const Context = createContext<SettingsProjection | null>(null);
 const useData = () => {
   const data = useContext(Context);
@@ -77,14 +77,14 @@ function composition(
   };
   const notify = (message: string, kind: "success" | "error") => toast(message, kind);
   const effect = <K extends SettingsOperation>(name: K, ...args: SettingsCalls[K]["args"]) => {
-    void adapter.call(name, ...args).catch((error) => notify(translateError(error), "error"));
+    void adapter.call(name, ...args).catch((error) => notify(presentError(error), "error"));
   };
   const confirm = (options: ConfirmOptions) => {
     const { onConfirm, ...description } = options;
     void adapter
       .call("confirm", description)
       .then((accepted) => (accepted ? onConfirm() : undefined))
-      .catch((error) => notify(translateError(error), "error"));
+      .catch((error) => notify(presentError(error), "error"));
   };
   const capture = { useViewState: useSettingsControlState, useBusyGuard: useSettingsBusyGuard };
   function Row(props: ComponentProps<SettingsPageServices["renderProtectedRow"]>) {

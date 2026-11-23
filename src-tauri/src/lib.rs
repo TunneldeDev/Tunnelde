@@ -124,7 +124,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
-            state::init(&handle)?;
+            state::init(&handle).inspect_err(|error| {
+                diagnostics::failure::native("startup", "state.initialize", error);
+            })?;
             platform::panel_windows::native::start(&handle);
             services::forwarding::automation::start(&handle);
             services::proxy::start_auto(&handle);
@@ -323,6 +325,7 @@ pub fn run() {
             logs::logs_read,
             logs::logs_output_read,
             diagnostics::logs_write,
+            diagnostics::failure::diagnostics_report,
             commands::open_local_path,
             commands::reveal_local_path,
             commands::open_external,

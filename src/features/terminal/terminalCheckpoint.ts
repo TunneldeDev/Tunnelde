@@ -1,3 +1,4 @@
+import { reportError } from "@/lib/diagnostics";
 import type { TerminalDecoderState } from "./terminalOutput";
 import type { TerminalState } from "./terminalState";
 import type { CommandCapture } from "@/lib/session/terminalInput";
@@ -104,8 +105,11 @@ export async function beginTerminalHandoff(
             remaining.delete(participant);
           }),
         );
-        if (results.some((result) => result.status === "rejected"))
+        const failed = results.find((result) => result.status === "rejected");
+        if (failed) {
+          reportError("terminal", "rollbackCheckpoint", failed.reason);
           throw new Error("terminal.checkpointBusy");
+        }
         state = "rolledBack";
         recovering.delete(handoff);
         release();
@@ -122,6 +126,7 @@ export async function beginTerminalHandoff(
   if (failed || signal?.aborted || !current()) {
     // Wait for *all* preparations before rollback: a late detach must never
     // occur after we resumed/released its session. Retain failed rollback work.
+    // Rollback records its failure and keeps the failed participants for retry.
     await handoff.rollback().catch(() => {});
     throw failed?.status === "rejected" ? failed.reason : new Error("terminal.checkpointBusy");
   }

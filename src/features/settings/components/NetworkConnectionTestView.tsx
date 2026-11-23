@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { NetworkConnectionQuality, NetworkSettings } from "@/lib/api/network";
 import { useLocalControlState, type SettingsControlState } from "./controlState";
 import "../networkConnectionTest.css";
@@ -88,7 +88,7 @@ export function NetworkConnectionTestView({
             const quality = await services.test(selected, host.trim(), Number(port));
             if (alive.current) setResult({ scope, quality, error: null });
           } catch (cause) {
-            if (alive.current) setResult({ scope, quality: null, error: translateError(cause) });
+            if (alive.current) setResult({ scope, quality: null, error: presentError(cause) });
           } finally {
             pending.current = false;
             if (alive.current) setTesting(false);
@@ -200,12 +200,12 @@ export function NetworkConnectionTestView({
                       status: quality.https.status,
                     })
                   : quality.https.error
-                    ? translateError(quality.https.error)
+                    ? presentError(quality.https.error)
                     : t("network.httpsFailed")}
               </p>
             ) : null}
             {quality.lastError ? (
-              <p className="network-quality__error">{translateError(quality.lastError)}</p>
+              <p className="network-quality__error">{presentError(quality.lastError)}</p>
             ) : null}
           </section>
         ) : null}

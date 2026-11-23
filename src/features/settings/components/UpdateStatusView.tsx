@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import type { Settings, UpdateState, UpdateSourceFailure } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { formatBytes, formatDateTime } from "@/lib/text/format";
 import { validUpdateSource } from "@/lib/updates/sourceValidation";
 
@@ -71,7 +71,7 @@ export function UpdateStatusView({
   else if (phase === "unsupported") status = t(reason);
   else if (phase === "error")
     status = state?.error
-      ? translateError({ code: "update", message: state.error })
+      ? presentError({ code: "update", message: state.error })
       : t("updates.error");
   const canCheck =
     nativeAvailable &&

@@ -1,3 +1,4 @@
+import { reportError } from "@/lib/diagnostics";
 /** Load the selected bundled fonts without relying on animation frames in a hidden webview. */
 export async function loadStartupFonts(): Promise<void> {
   if (!document.fonts?.load) return;
@@ -19,6 +20,6 @@ export async function loadStartupFonts(): Promise<void> {
       ),
   );
   if (results.some((result) => result.status === "rejected")) {
-    console.warn("Some startup fonts could not be loaded; using font fallbacks.");
+    reportError("startup", "loadFonts", new Error("fonts.loadFailed"), "warn");
   }
 }

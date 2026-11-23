@@ -25,7 +25,7 @@ import { Button, IconButton } from "@/components/ui/form/Button";
 import { Textarea } from "@/components/ui/form/Field";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { api, events, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import {
   CHAT_MODES,
   applyChatEvent,
@@ -152,7 +152,7 @@ export function PluginChat({
       // Keep a visible, retryable error; never start a stream without its listener.
       void subscription.current.catch((cause) => {
         if (!disposed) {
-          setError(translateError(cause));
+          setError(presentError(cause));
           setStreamFailed(true);
         }
       });
@@ -387,7 +387,7 @@ export function PluginChat({
       )
         return false;
       reportPluginExecutionFailure(cause);
-      if (lifetime.current === token) setError(translateError(cause));
+      if (lifetime.current === token) setError(presentError(cause));
       return false;
     } finally {
       if (invocation.current === controller) {

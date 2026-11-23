@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, Theme, WindowEvent};
 use tauri_plugin_window_state::{StateFlags, WindowExt};
 
+use crate::diagnostics::failure;
 use crate::error::AppResult;
 use crate::state::AppState;
 pub(crate) mod close;
@@ -70,13 +71,19 @@ pub fn show_main(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
         let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            if let Err(error) = handle.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                tracing::warn!(%error, "could not restore Dock icon");
-            }
-            let _ = handle.show();
-            show_main_window(&handle);
-        });
+        failure::observe_tauri(
+            "window",
+            "scheduleShowMain",
+            app.run_on_main_thread(move || {
+                failure::observe_tauri(
+                    "window",
+                    "restoreDockIcon",
+                    handle.set_activation_policy(tauri::ActivationPolicy::Regular),
+                );
+                failure::observe_tauri("window", "showApplication", handle.show());
+                show_main_window(&handle);
+            }),
+        );
     }
     #[cfg(not(target_os = "macos"))]
     show_main_window(app);
@@ -84,9 +91,9 @@ pub fn show_main(app: &AppHandle) {
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        failure::observe_tauri("window", "unminimizeMain", window.unminimize());
+        failure::observe_tauri("window", "showMain", window.show());
+        failure::observe_tauri("window", "focusMain", window.set_focus());
     }
 }
 
@@ -146,7 +153,7 @@ fn apply_window_theme(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str
         "light" => Some(Theme::Light),
         _ => None,
     };
-    let _ = window.set_theme(theme);
+    failure::observe_tauri("window", "setTheme", window.set_theme(theme));
     let background = app
         .try_state::<AppState>()
         .and_then(|state| {
@@ -163,7 +170,11 @@ fn apply_window_theme(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str
                 tauri::window::Color(7, 11, 18, 255)
             }
         });
-    let _ = window.set_background_color(Some(background));
+    failure::observe_tauri(
+        "window",
+        "setBackgroundColor",
+        window.set_background_color(Some(background)),
+    );
 }
 
 /// Applies native chrome immediately, including when the preference changes.

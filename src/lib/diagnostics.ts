@@ -8,126 +8,271 @@ export interface LogEntry {
   fields?: Record<string, LogValue>;
 }
 
-/** Write through the host's local rotating log. The host prefixes frontend domains,
- * validates bounds and redacts structured credential fields. Never log secrets or
- * document contents in message text. Resolution means accepted, not durable fsync.
- */
+function nativeAvailable() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** Explicitly authored log messages. Callers must supply only safe data. */
 export function writeLog(domain: string, entry: LogEntry): Promise<void> {
-  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return Promise.resolve();
-  // Keep native IPC out of the static graph of owner-independent views. Those
-  // views intentionally reject direct invoke imports, while still needing the
-  // unified error normalizer and structured diagnostic logging.
+  if (!nativeAvailable()) return Promise.resolve();
   return import("@tauri-apps/api/core").then(({ invoke }) =>
     invoke<void>("logs_write", { entry: { ...entry, domain } }),
   );
 }
 
-function errorCode(error: unknown): string {
-  return error && typeof error === "object" && "code" in error && typeof error.code === "string"
-    ? error.code.slice(0, 128)
-    : "unknown";
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message || error.name;
-  if (error && typeof error === "object" && "message" in error) {
-    const value = (error as { message?: unknown }).message;
-    if (typeof value === "string") return value;
+function property(value: unknown, key: string): unknown {
+  try {
+    return value && typeof value === "object" ? Reflect.get(value, key) : undefined;
+  } catch {
+    // Rejected values can be proxies or have throwing getters.
+    return undefined;
   }
-  if (typeof error === "string") return error;
-  return "Operation failed";
 }
 
-/** Stable severity for both UI diagnostics and persisted output. */
+function stringProperty(value: unknown, key: string): string {
+  const result = property(value, key);
+  return typeof result === "string" ? result : "";
+}
+
+const CODES = new Set(["validation", "notFound", "update", "io", "internal", "database", "ssh"]);
+const ERROR_NAMES = new Set([
+  "Error",
+  "TypeError",
+  "ReferenceError",
+  "RangeError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+  "DOMException",
+  "AbortError",
+]);
+
+function errorCode(error: unknown): string {
+  const code = stringProperty(error, "code");
+  if (CODES.has(code)) return code;
+  return ERROR_NAMES.has(stringProperty(error, "name")) ? "runtime" : "unknown";
+}
+
 export function diagnosticLevel(error: unknown): LogLevel {
   const code = errorCode(error);
-  const message = errorMessage(error);
+  const message = typeof error === "string" ? error : stringProperty(error, "message");
   if (
-    (error instanceof Error && error.name === "AbortError") ||
-    /(?:^|\.)(?:cancelled|canceled)$/i.test(message) ||
-    message === "panel.window.cancelled"
+    stringProperty(error, "name") === "AbortError" ||
+    /(?:^|\.)(?:cancelled|canceled)$/i.test(message)
   )
     return "debug";
-  if (["database", "io", "internal", "ssh"].includes(code)) return "error";
-  if (["validation", "notFound", "update"].includes(code)) return "warn";
-  return error instanceof Error ? "error" : "warn";
+  if (["database", "io", "internal", "ssh", "runtime"].includes(code)) return "error";
+  return "warn";
 }
 
-const reported = new WeakSet<object>();
-const reportedPrimitives = new Set<string>();
+const identifier = (value: string) =>
+  value.replace(/[^a-zA-Z0-9._:-]/g, "_").slice(0, 128) || "unknown";
 
-/** Best-effort diagnostics for failure paths. Never recurse on a failed log write.
- * Original code, message, structured-detail keys and stack are retained; native
- * logging redacts credential-like field names before writing the JSON log. */
+// Arbitrary exception text can contain data supplied by the user or a server.
+const SAFE_MESSAGES = new Set([
+  "panel.viewState.duplicateKey",
+  "panel.viewState.identityChanged",
+  "panel.viewState.invalid",
+  "panel.viewState.invalidKey",
+  "panel.viewState.tooLarge",
+  "panel.viewState.tooManyFields",
+  "panel.window.viewNotReady",
+  "panel.window.staleOwner",
+  "panel.window.cancelled",
+  "plugin.frontend.viewUnavailable",
+  "host.name.required",
+  "logs.diagnosticReadFailed",
+  "logs.operationsReadFailed",
+  "fonts.loadFailed",
+  "diagnostics.recovered",
+  "diagnostics.clipboardUnavailable",
+  "terminal.checkpointBusy",
+  "updates.sourcesUnavailable",
+]);
+
+function safeFrames(stack: string): string[] {
+  const frames: string[] = [];
+  const trustedOrigin = typeof window === "undefined" ? "" : window.location.origin;
+  const applicationSources = new Set([
+    trustedOrigin,
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+  ]);
+  for (const raw of stack.slice(0, 32768).split("\n")) {
+    const line = raw.trim();
+    // Ignore the exception headline and arbitrary text, even if it resembles
+    // a source path. Chromium and React use "at"; WebKit uses "name@source".
+    if (!/^(?:at\s|[^\s@:]*@)/.test(line)) continue;
+    // Retain only application source coordinates. Drop arbitrary function names,
+    // external URLs, absolute paths, surrounding text, queries and fragments.
+    const frame =
+      /(?:^|[/@\s(])((?:src\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_.-]+\.[cm]?[jt]sx?|assets\/[a-zA-Z0-9_-]+\.js))(?:[?#][^\s)]*)?:(\d{1,7}):(\d{1,7})\)?$/.exec(
+        line,
+      );
+    const origin = /[a-z][a-z+.-]*:\/\/[^/ )]+/i.exec(line)?.[0];
+    if (
+      origin ? !applicationSources.has(origin) : !/(?:^|[@\s(])(?:src|assets)\//.test(line.trim())
+    )
+      continue;
+    if (frame && frame[1]!.length <= 220) frames.push(`${frame[1]}:${frame[2]}:${frame[3]}`);
+    if (frames.length === 12) break;
+  }
+  return frames;
+}
+
+export interface DiagnosticEvent {
+  eventId: string;
+  timestamp: string;
+  domain: string;
+  operation: string;
+  level: LogLevel;
+  code: string;
+  message: string;
+  requestId?: string;
+  frames: string[];
+  occurrences?: number;
+}
+
+type Delivery = "pending" | "accepted" | "memory";
+interface LocalDiagnostic {
+  event: DiagnosticEvent;
+  delivery: Delivery;
+}
+const byError = new WeakMap<object, { event: DiagnosticEvent; at: number }>();
+const listeners = new Set<() => void>();
+let localDiagnostics: readonly LocalDiagnostic[] = [];
+
+export function clearLocalDiagnostics() {
+  localDiagnostics = [];
+  for (const notify of listeners) notify();
+}
+const LOCAL_LIMIT = 100;
+const IPC_LIMIT = 16;
+let writesInFlight = 0;
+let sequence = 0;
+const fallbackPrefix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+function publish(event: DiagnosticEvent, delivery: Delivery) {
+  const current = localDiagnostics.find((row) => row.event.eventId === event.eventId);
+  // A late reply must not revive an evicted pending entry.
+  if (delivery !== "pending" && !current) return;
+  localDiagnostics = current
+    ? localDiagnostics.map((row) => (row === current ? { event, delivery } : row))
+    : [...localDiagnostics, { event, delivery }].slice(-LOCAL_LIMIT);
+  for (const notify of listeners) notify();
+}
+
+export const getLocalDiagnostics = () => localDiagnostics;
+export function subscribeLocalDiagnostics(notify: () => void) {
+  listeners.add(notify);
+  return () => {
+    listeners.delete(notify);
+  };
+}
+
 export function reportError(
   domain: string,
   operation: string,
   error: unknown,
-  level: LogLevel = diagnosticLevel(error),
-): void {
-  if (error && typeof error === "object") {
-    if (reported.has(error)) return;
-    reported.add(error);
-  } else {
-    const identity = `${level}:${errorCode(error)}:${errorMessage(error)}`;
-    if (reportedPrimitives.has(identity)) return;
-    if (reportedPrimitives.size >= 1024) reportedPrimitives.clear();
-    reportedPrimitives.add(identity);
-  }
-  const details =
-    error && typeof error === "object" && "details" in error
-      ? (error as { details?: unknown }).details
-      : undefined;
-  // Never persist even detail field names: plugin payloads may use a sensitive
-  // key as a value-bearing field. The native logger independently redacts values.
-  const detailCount =
-    details && typeof details === "object" && !Array.isArray(details)
-      ? Math.min(Object.keys(details).length, 32)
-      : 0;
-  const name =
-    error instanceof Error
-      ? error.name.slice(0, 128)
-      : error && typeof error === "object" && "name" in error
-        ? String((error as { name?: unknown }).name ?? "").slice(0, 128)
-        : "";
-  const stack = error instanceof Error ? error.stack?.slice(0, 8192) : undefined;
-  const normalizedOperation =
-    operation.replace(/[^a-zA-Z0-9._:-]/g, "_").slice(0, 128) || "unknown";
-  if (import.meta.env.MODE !== "test") {
-    const log = level === "error" ? console.error : console.warn;
-    log(`[${domain}:${normalizedOperation}] ${errorMessage(error)}`, { code: errorCode(error) });
-  }
-  void writeLog(domain, {
+  level = diagnosticLevel(error),
+  context: { requestId?: string; occurrences?: number; componentStack?: string } = {},
+): DiagnosticEvent {
+  const now = Date.now();
+  const object = error && typeof error === "object" ? error : undefined;
+  const previous = object ? byError.get(object) : undefined;
+  if (previous && now - previous.at < 1000) return previous.event;
+  const rawMessage = typeof error === "string" ? error : stringProperty(error, "message");
+  const name = stringProperty(error, "name");
+  const event: DiagnosticEvent = {
+    eventId: globalThis.crypto?.randomUUID?.() ?? `${fallbackPrefix}-${++sequence}`,
+    timestamp: new Date(now).toISOString(),
+    domain: identifier(domain),
+    operation: identifier(operation),
     level,
-    message: errorMessage(error).slice(0, 4096),
-    operation: normalizedOperation,
-    fields: {
-      code: errorCode(error),
-      ...(name ? { name } : {}),
-      ...(detailCount ? { detailCount } : {}),
-      ...(stack ? { stack } : {}),
-    },
-  }).catch((failure) => {
-    // One terminal console report is preferable to silently dropping the only
-    // diagnostic when the native log writer itself is unavailable.
-    if (import.meta.env.MODE !== "test") console.error("[diagnostics] log write failed", failure);
-  });
+    code: errorCode(error),
+    message: SAFE_MESSAGES.has(rawMessage)
+      ? rawMessage
+      : ERROR_NAMES.has(name)
+        ? name
+        : "Operation failed",
+    frames: safeFrames([stringProperty(error, "stack"), context.componentStack].join("\n")),
+    ...(context.requestId ? { requestId: identifier(context.requestId) } : {}),
+    ...(context.occurrences && context.occurrences > 1 ? { occurrences: context.occurrences } : {}),
+  };
+  if (object) byError.set(object, { event, at: now });
+  // Keep a local copy for the error details while the host accepts the event.
+  publish(event, "pending");
+  if (import.meta.env.MODE !== "test") {
+    // eslint-disable-next-line no-console
+    const log = level === "error" ? console.error : level === "warn" ? console.warn : console.debug;
+    log(`[${event.eventId}] ${event.domain}.${event.operation}: ${event.message}`, event);
+  }
+  const fallback = () => publish(event, "memory");
+  if (!nativeAvailable() || writesInFlight >= IPC_LIMIT) fallback();
+  else {
+    writesInFlight++;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      fallback();
+    }, 3000);
+    void import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke<boolean>("diagnostics_report", { event }))
+      .then((accepted) => publish(event, accepted ? "accepted" : "memory"))
+      .catch(() => {
+        if (!timedOut) fallback();
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        writesInFlight--;
+      });
+  }
+  return event;
 }
 
-/** Capture errors that escaped local handlers instead of leaving them only in
- * the WebView console. Safe to install once per document. */
+/** Rate-limit repeated polling failures within an outage. On recovery, report
+ * the total observed count, including failures suppressed between samples. */
+export function createDiagnosticSampler(domain: string, operation: string, intervalMs = 30000) {
+  let last = -Infinity;
+  let count = 0;
+  return {
+    failed(error: unknown) {
+      count++;
+      const now = Date.now();
+      if (now - last < intervalMs) return;
+      last = now;
+      reportError(domain, operation, error, diagnosticLevel(error), { occurrences: count });
+    },
+    recovered() {
+      if (count > 1) {
+        reportError(domain, `${operation}.recovered`, new Error("diagnostics.recovered"), "info", {
+          occurrences: count,
+        });
+      }
+      count = 0;
+      last = -Infinity;
+    },
+  };
+}
+
+let uninstall: (() => void) | undefined;
 export function installGlobalErrorDiagnostics(): () => void {
+  if (uninstall) return uninstall;
   if (typeof window === "undefined") return () => {};
   const onError = (event: ErrorEvent) => {
-    reportError("runtime", "unhandledError", event.error ?? event.message);
+    reportError("runtime", "unhandledError", event.error ?? event.message, "error");
   };
   const onRejection = (event: PromiseRejectionEvent) => {
     reportError("runtime", "unhandledRejection", event.reason);
   };
   window.addEventListener("error", onError);
   window.addEventListener("unhandledrejection", onRejection);
-  return () => {
+  uninstall = () => {
     window.removeEventListener("error", onError);
     window.removeEventListener("unhandledrejection", onRejection);
+    uninstall = undefined;
   };
+  return uninstall;
 }

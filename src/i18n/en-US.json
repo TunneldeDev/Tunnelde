@@ -1,4 +1,15 @@
 {
+  "diagnostic": {
+    "copyFailed": "Could not copy the details. You can select and copy the text manually.",
+    "unsaved": "Not saved",
+    "failure": "This view could not be displayed.",
+    "reference": "Error reference {{id}}",
+    "memoryOnly": "Some diagnostics could not be written to disk. Copy them before restarting.",
+    "copyDetails": "Copy details",
+    "copied": "Copied",
+    "readDiagnostic": "Could not read the diagnostic log.",
+    "readOperations": "Could not read operation history."
+  },
   "hosts": {
     "read": {
       "busy": "Host readers are busy. Try again after the current reads finish.",

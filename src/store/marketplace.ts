@@ -11,7 +11,7 @@ import type {
   PluginInfo,
 } from "@/lib/api/types";
 import { MARKETPLACE_INDEX_URL, fetchMarketplace } from "@/lib/plugins/marketplace";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { usePlugins } from "@/store/plugins";
 import { toast } from "@/store/toasts";
 
@@ -156,7 +156,7 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
           : { sources: [OFFICIAL_SOURCE], nodePath: null, nodeSystemAllowed: false };
         if (configRevision === revision) applyConfig(next);
       } catch (error) {
-        if (configRevision === revision) set({ configError: translateError(error) });
+        if (configRevision === revision) set({ configError: presentError(error) });
       } finally {
         configRequest = null;
         set({ configLoading: false });
@@ -193,7 +193,7 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
         }));
       } catch (error) {
         if (get().config.sources.some((s) => s.id === source.id && s.url === source.url))
-          set((state) => ({ errors: { ...state.errors, [source.id]: translateError(error) } }));
+          set((state) => ({ errors: { ...state.errors, [source.id]: presentError(error) } }));
       } finally {
         loads.delete(key);
         set({ loading: activeLoads(get().config) });
@@ -276,11 +276,11 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
               error.message === "market.cancelled";
             if (!isCancelled)
               set((state) => ({
-                taskErrors: { ...state.taskErrors, [entry.id]: translateError(error) },
+                taskErrors: { ...state.taskErrors, [entry.id]: presentError(error) },
               }));
           });
         } catch (error) {
-          const message = translateError(error);
+          const message = presentError(error);
           set((state) => ({ taskErrors: { ...state.taskErrors, [entry.id]: message } }));
           toast(message, "error");
         } finally {
@@ -309,7 +309,7 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
       } catch (error) {
         if (get().tasks[id]?.taskId !== task.taskId) return;
         cancelled.delete(task.taskId);
-        const message = translateError(error);
+        const message = presentError(error);
         set((state) => ({
           cancelling: state.cancelling.filter((value) => value !== id),
           taskErrors: { ...state.taskErrors, [id]: message },

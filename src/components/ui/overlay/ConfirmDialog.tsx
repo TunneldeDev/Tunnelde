@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Dialog } from "./Dialog";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 
 export function ConfirmDialog({
@@ -36,7 +36,7 @@ export function ConfirmDialog({
       await onConfirm();
       onClose();
     } catch (cause) {
-      toast(translateError(cause), "error");
+      toast(presentError(cause), "error");
     } finally {
       pending.current = false;
       setBusy(false);

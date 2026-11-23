@@ -14,7 +14,7 @@ import { NativeWorkspaceFrame } from "@/components/layout/NativeWorkspaceFrame";
 import { movePanelToWindow } from "@/lib/panels/windowMoves";
 import { isTauri } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 export const useNativeFileTitles = create<{ titles: Record<string, string> }>(() => ({
   titles: {},
 }));
@@ -76,7 +76,7 @@ export function NativeFileView(props: NativeViewProps) {
             type="button"
             onClick={() =>
               void movePanelToWindow(props.record.panelId, "main").catch((e) =>
-                toast(translateError(e), "error"),
+                toast(presentError(e), "error"),
               )
             }
           >

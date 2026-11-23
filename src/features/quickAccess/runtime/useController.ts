@@ -10,7 +10,7 @@ import { useEditors } from "@/store/editors";
 import { useSsh } from "@/store/ssh";
 import { shortcutCommands } from "@/lib/keyboard/registry";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import { searchPathKey } from "@/lib/files/searchPaths";
 import { quickAccessQuery } from "../data/query";
@@ -147,7 +147,7 @@ export function useQuickAccessController(initialQuery: string) {
     try {
       run(command);
     } catch (error) {
-      toast(translateError(error), "error");
+      toast(presentError(error), "error");
     }
   };
   const mounted = useRef(true);
@@ -177,7 +177,7 @@ export function useQuickAccessController(initialQuery: string) {
       })
       .catch((cause) => {
         if (mounted.current && epoch === folderEpoch.current)
-          setFailure({ key: searchKey, message: translateError(cause) });
+          setFailure({ key: searchKey, message: presentError(cause) });
       });
   };
   return {

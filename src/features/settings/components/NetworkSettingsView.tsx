@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { NetworkSettings, ProxyProfile } from "@/lib/api/network";
 import type { ProxyEdit } from "@/lib/api/credentials";
 import type { SettingsControlState } from "./controlState";
@@ -67,13 +67,13 @@ export function NetworkSettingsView({
             : { action: "keep" },
       });
       if (result.credentialError != null) {
-        setError(translateError(result.credentialError));
+        setError(presentError(result.credentialError));
         return;
       }
       setEditing(null);
       setPassword("");
     } catch (cause) {
-      setError(translateError(cause));
+      setError(presentError(cause));
     } finally {
       setSaving(false);
     }

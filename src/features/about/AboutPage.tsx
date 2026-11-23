@@ -1,5 +1,5 @@
 import { AboutPageView, type AboutLink } from "./AboutPageView";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
@@ -11,7 +11,7 @@ const links: Record<AboutLink, string> = {
   notices: `${REPOSITORY}/blob/main/THIRD_PARTY_NOTICES.md`,
 };
 function openLink(link: AboutLink) {
-  void api.openExternal(links[link]).catch((error) => toast(translateError(error), "error"));
+  void api.openExternal(links[link]).catch((error) => toast(presentError(error), "error"));
 }
 export function AboutPage({ embedded = false }: { embedded?: boolean }) {
   const info = useSettings((state) => state.info);

@@ -10,7 +10,7 @@ import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input, Switch } from "@/components/ui/form/Field";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import type { MarketSource } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { PluginErrorView } from "./PluginErrorView";
 
 export interface PluginSourceServices {
@@ -74,8 +74,8 @@ export function PluginSettingsSectionView({ services }: { services: PluginSource
     try {
       await services.change(command);
     } catch (error) {
-      setSaveError(translateError(error));
-      services.notify(translateError(error), "error");
+      setSaveError(presentError(error));
+      services.notify(presentError(error), "error");
       throw error;
     } finally {
       setSaving(false);
@@ -252,7 +252,7 @@ function SourceDialog({
       try {
         await onSave(source);
       } catch (e) {
-        if (alive.current) setError(translateError(e));
+        if (alive.current) setError(presentError(e));
       } finally {
         commitLock.current = false;
         if (alive.current) setSaving(false);
@@ -326,7 +326,7 @@ function SourceDialog({
                 if (alive.current) update({ result: count });
               })
               .catch((e) => {
-                if (alive.current) setError(translateError(e));
+                if (alive.current) setError(presentError(e));
               })
               .finally(() => {
                 if (alive.current) setTesting(false);

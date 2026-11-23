@@ -10,7 +10,7 @@ import { create } from "zustand";
 
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { api, events, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useDialogs } from "@/store/dialogs";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { ActivationDecision } from "@/lib/plugins/activation/decision";
@@ -31,7 +31,7 @@ async function check() {
   try {
     useRuntime.setState({ info: await api.nodeDetect() });
   } catch (error) {
-    useRuntime.setState({ error: translateError(error) });
+    useRuntime.setState({ error: presentError(error) });
   } finally {
     useRuntime.setState({ busy: null });
   }
@@ -45,7 +45,7 @@ async function choose(automatic = false) {
     if (!automatic && path === null) return;
     useRuntime.setState({ info: await api.nodeSetPath(path) });
   } catch (error) {
-    useRuntime.setState({ error: translateError(error) });
+    useRuntime.setState({ error: presentError(error) });
   } finally {
     useRuntime.setState({ busy: null });
   }
@@ -57,7 +57,7 @@ async function allowSystem(allowed: boolean) {
   try {
     useRuntime.setState({ info: await api.nodeAllowSystem(allowed) });
   } catch (error) {
-    useRuntime.setState({ error: translateError(error) });
+    useRuntime.setState({ error: presentError(error) });
   } finally {
     useRuntime.setState({ busy: null });
   }
@@ -84,7 +84,7 @@ async function install() {
     // Show the resolver's active runtime after the private installation completes.
     useRuntime.setState({ info: await api.nodeDetect().catch(() => info) });
   } catch (error) {
-    useRuntime.setState({ error: translateError(error) });
+    useRuntime.setState({ error: presentError(error) });
   } finally {
     unlisten?.();
     useRuntime.setState({ busy: null, progress: null, cancelling: false });
@@ -100,7 +100,7 @@ async function cancel() {
     // starting the backend task.
     await api.downloadCancel(progress.taskId);
   } catch (error) {
-    useRuntime.setState({ error: translateError(error), cancelling: false });
+    useRuntime.setState({ error: presentError(error), cancelling: false });
   }
 }
 
@@ -154,7 +154,7 @@ export function ensureNodeRuntime(signal?: AbortSignal): Promise<boolean> {
       }
     } catch (error) {
       if (!request.active) return;
-      useRuntime.setState({ error: translateError(error) });
+      useRuntime.setState({ error: presentError(error) });
     }
     if (!request.active) return;
     if (usePluginSecurity.getState().state.restricted) {

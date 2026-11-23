@@ -16,7 +16,7 @@ import { startWindowActions } from "@/lib/panels/windowActions";
 import { createTaskProjection } from "@/lib/panels/taskProjection";
 import { clearFinishedBackgroundTasks } from "@/lib/tasks/actions";
 import { useSsh } from "@/store/ssh";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 
 export function startPanelActions(client: PanelWindowClient, failure: (error: unknown) => void) {
@@ -56,7 +56,7 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
             // prompt; translate only at the originating window.
             if (error && typeof error === "object" && "message" in error)
               throw new Error(String(error.message));
-            throw new Error(translateError(error));
+            throw new Error(presentError(error));
           }
         case "refreshKnownHosts":
         case "forgetKnownHost": {
@@ -66,7 +66,7 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
             if (request.kind === "refreshKnownHosts") await source.refresh();
             else await source.forget(request.entry);
           } catch (error) {
-            throw new Error(translateError(error));
+            throw new Error(presentError(error));
           }
           return null;
         }
@@ -96,13 +96,13 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
           try {
             return await tasks.run(request.key, request.ticket, request.actionId);
           } catch (error) {
-            throw new Error(translateError(error));
+            throw new Error(presentError(error));
           }
         case "clearTasks": {
           const errors = await clearFinishedBackgroundTasks();
           return {
             count: errors.length,
-            first: errors[0] === undefined ? undefined : translateError(errors[0]).slice(0, 4096),
+            first: errors[0] === undefined ? undefined : presentError(errors[0]).slice(0, 4096),
           };
         }
         case "disconnect": {
@@ -112,7 +112,7 @@ export function startPanelActions(client: PanelWindowClient, failure: (error: un
             failed = true;
             failure = error;
           });
-          if (failed) throw new Error(translateError(failure));
+          if (failed) throw new Error(presentError(failure));
           return null;
         }
       }

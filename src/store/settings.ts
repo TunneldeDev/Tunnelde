@@ -7,7 +7,7 @@ import type { AppInfo, Settings, SettingsPatch } from "@/lib/api/types";
 import { setLanguage } from "@/i18n/i18n";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { ApplySettingsProfile } from "@/lib/prefs/profiles";
 import type { ProxyEdit, ProxySaved } from "@/lib/api/credentials";
 
@@ -118,8 +118,8 @@ export const useSettings = create<SettingsStore>((set, get) => {
         set({ error: null });
       } catch (error) {
         ok = false;
-        set({ error: translateError(error) });
-        toast(translateError(error), "error");
+        set({ error: presentError(error) });
+        toast(presentError(error), "error");
       } finally {
         pending.shift();
         display();
@@ -159,7 +159,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
         const failed =
           settings.status === "rejected" ? settings : info.status === "rejected" ? info : null;
         display();
-        set({ ready: true, error: failed ? translateError(failed.reason) : null });
+        set({ ready: true, error: failed ? presentError(failed.reason) : null });
       });
       queue = task.catch(() => undefined);
       loading = task.finally(() => {

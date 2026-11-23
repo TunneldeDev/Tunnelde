@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { FsSource, Listing } from "@/lib/api/types";
 import type { NativePanelIdentity, PanelLease } from "@/lib/panels/windowProtocol";
 export type FileWindowTarget =

@@ -1,4 +1,5 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { ComponentType } from "react";
 import type { PluginInfo, PluginSecurityState } from "@/lib/api/types";
 import { reportError } from "@/lib/diagnostics";

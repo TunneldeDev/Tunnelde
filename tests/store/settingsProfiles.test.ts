@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks, isTauri: () => true }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
-vi.mock("@/lib/api/errors", () => ({ translateError: (error: unknown) => String(error) }));
+vi.mock("@/lib/api/errors", () => ({ presentError: (error: unknown) => String(error) }));
 const first: SettingsProfile = {
   id: "work",
   name: "Work",

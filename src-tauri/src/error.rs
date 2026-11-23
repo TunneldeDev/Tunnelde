@@ -134,21 +134,6 @@ impl AppError {
         }
     }
 
-    /// Log every transport failure exactly once at its serialization boundary.
-    /// The frontend may add UI context, but the native code/message remains in
-    /// the rotating log even when a caller only renders a generic category.
-    pub fn log_transport(&self) {
-        let original = self.original();
-        let code = original.code();
-        let message = original.to_string();
-        match code {
-            "validation" | "notFound" | "update" => {
-                tracing::warn!(error_code = code, error_message = %message, "command failed")
-            }
-            _ => tracing::error!(error_code = code, error_message = %message, "command failed"),
-        }
-    }
-
     pub fn update_source_errors(&self) -> Option<Vec<UpdateSourceFailure>> {
         match self {
             Self::Shared(error) => error.update_source_errors(),
@@ -214,7 +199,6 @@ impl Serialize for AppError {
                 | Self::UpdateRequest(_)
                 | Self::UpdateSources(_)
         );
-        self.log_transport();
         let mut state = serializer.serialize_struct("AppError", if detailed { 3 } else { 2 })?;
         state.serialize_field("code", self.code())?;
         state.serialize_field("message", &self.to_string())?;
@@ -279,13 +263,11 @@ pub type AppResult<T> = Result<T, AppError>;
 mod tests {
     use super::*;
     #[test]
-    fn serialization_logs_original_category_and_specific_message_without_changing_payload() {
+    fn serialization_preserves_original_category_and_specific_message() {
         let error = AppError::validation("host.name.required");
         let value = serde_json::to_value(&error).unwrap();
         assert_eq!(value["code"], "validation");
         assert_eq!(value["message"], "host.name.required");
-        // log_transport is intentionally side-effectful only in tracing; the
-        // serialized contract must remain byte-for-byte stable.
         assert_eq!(serde_json::to_string(&error).unwrap(), value.to_string());
     }
 

@@ -26,7 +26,7 @@ afterEach(() => {
   useWindowViews.setState({ entries: new Map() });
   usePanelWindows.setState({ available: false });
 });
-function fixture(initial?: unknown, staged = false) {
+function fixture(initial?: unknown, staged = false, sections = ["general"]) {
   const activate = vi.fn(),
     restore = vi.fn();
   let observed: FrontendViewProps["preferences"];
@@ -125,16 +125,19 @@ function fixture(initial?: unknown, staged = false) {
     return (
       <PanelViewStateScope controller={controller}>
         <SettingsProviderScope client={client} record={current}>
-          <PreferenceSurfaceView
-            services={services}
-            section="general"
-            query=""
-            modifiedOnly={false}
-            fields={[]}
-            visible
-          >
-            <Fields />
-          </PreferenceSurfaceView>
+          {sections.map((section) => (
+            <PreferenceSurfaceView
+              services={services}
+              key={section}
+              section={section}
+              query=""
+              modifiedOnly={false}
+              fields={[]}
+              visible
+            >
+              <Fields />
+            </PreferenceSurfaceView>
+          ))}
         </SettingsProviderScope>
       </PanelViewStateScope>
     );
@@ -193,4 +196,24 @@ it("denies retained callbacks once their display owner retires", async () => {
   await act(async () => useWindowViews.setState({ entries: new Map() }));
   await expect(old.read()).rejects.toThrow("staleOwner");
   expect(f.invoke.mock.calls.filter(([, v]) => v.request.action === "call")).toHaveLength(0);
+});
+
+it("keeps native plugin factories independent when multiple settings categories match", async () => {
+  const f = fixture(undefined, false, ["general", "editor"]);
+  const current = render(f.display());
+  const [general, editor] = await screen.findAllByRole("textbox", { name: "Provider draft" });
+  fireEvent.change(general!, { target: { value: "general draft" } });
+  fireEvent.change(editor!, { target: { value: "editor draft" } });
+  const capsule = await f.controller.captureAsync();
+  expect(capsule.fields).toMatchObject({
+    "preferences:general": { fields: { "plugin.factory": { state: { draft: "general draft" } } } },
+    "preferences:editor": { fields: { "plugin.factory": { state: { draft: "editor draft" } } } },
+  });
+  current.unmount();
+  const restored = fixture(capsule, true, ["general", "editor"]);
+  render(restored.display());
+  const inputs = await screen.findAllByRole<HTMLInputElement>("textbox", {
+    name: "Provider draft",
+  });
+  expect(inputs.map((input) => input.value)).toEqual(["general draft", "editor draft"]);
 });

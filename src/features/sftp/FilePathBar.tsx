@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { Menu } from "@/components/ui/overlay/Menu";
 import type { FileEntry, FsSource } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { fs, sourceKey } from "@/lib/files/fs";
 import { pathCrumbs } from "@/lib/files/navigation";
 import { visibleFiles, type FileViewPreferences } from "@/lib/files/view";
@@ -43,7 +43,7 @@ function ChildFolders({
       const listing = await list(source, path);
       if (request.current === version) setResult({ entries: listing.entries });
     } catch (error) {
-      if (request.current === version) setResult({ error: translateError(error) });
+      if (request.current === version) setResult({ error: presentError(error) });
     }
   };
   return (

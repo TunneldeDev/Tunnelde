@@ -10,7 +10,7 @@ import type { TFunction } from "i18next";
 import { windowViews, transferablePanel } from "./windowViews";
 import { usePanelWindows } from "@/store/panelWindows";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 
 const moving = new Set<string>();
 export async function movePanelToWindow(
@@ -128,7 +128,7 @@ export function nativePanelMoveActions(panelId: string, t: TFunction): MenuActio
   )
     return [];
   const move = (target?: string) => {
-    void movePanelToWindow(panelId, target).catch((error) => toast(translateError(error), "error"));
+    void movePanelToWindow(panelId, target).catch((error) => toast(presentError(error), "error"));
   };
   const blocked =
     state.snapshot.settingsPages?.find((view) => view.panelId === panelId)?.allowMove === false ||

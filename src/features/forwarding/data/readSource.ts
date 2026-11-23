@@ -1,6 +1,6 @@
 import { createStore } from "zustand/vanilla";
 import { connectionPromptHost } from "@/features/connect/prompt";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useHosts } from "@/store/hosts";
 import { usePanelWindows } from "@/store/panelWindows";
 import { useSsh } from "@/store/ssh";
@@ -17,7 +17,7 @@ function snapshot<T, U>(
   return {
     entries: value.entries?.map(project) ?? null,
     busy: value.busy,
-    error: value.error == null ? null : translateError(value.error),
+    error: value.error == null ? null : presentError(value.error),
   };
 }
 const rule = (entry: ForwardInfo): ForwardInfo => ({
@@ -43,7 +43,7 @@ const rule = (entry: ForwardInfo): ForwardInfo => ({
           error:
             entry.automationStatus.error == null
               ? null
-              : translateError(entry.automationStatus.error),
+              : presentError(entry.automationStatus.error),
         },
       }
     : {}),

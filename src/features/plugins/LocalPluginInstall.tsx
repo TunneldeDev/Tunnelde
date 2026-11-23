@@ -4,7 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Button } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { api, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { supportsManifestVersion } from "@/lib/plugins/activation/compatibility";
 import { usePlugins } from "@/store/plugins";
 import { toast } from "@/store/toasts";
@@ -44,7 +44,7 @@ export function LocalPluginInstall({ request }: { request: number }) {
           if (alive) setPreview(p);
         })
         .catch((e) => {
-          if (alive) setError(translateError(e));
+          if (alive) setError(presentError(e));
         });
     return () => {
       alive = false;
@@ -88,7 +88,7 @@ export function LocalPluginInstall({ request }: { request: number }) {
       const selected = await (archive ? api.pluginPickArchive() : api.pluginPickFolder());
       if (selected) choose(selected);
     } catch (e) {
-      toast(translateError(e), "error");
+      toast(presentError(e), "error");
     }
   };
   const install = async () => {

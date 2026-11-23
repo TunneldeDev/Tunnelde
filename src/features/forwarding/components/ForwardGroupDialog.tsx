@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Dialog } from "@/components/ui/overlay/Dialog";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { ForwardGroup } from "../model/contract";
 
 export function ForwardGroupDialog({
@@ -46,7 +46,7 @@ export function ForwardGroupDialog({
       await operation();
       onClose();
     } catch (cause) {
-      setError(translateError(cause));
+      setError(presentError(cause));
     } finally {
       setBusy(false);
       actions.refresh();

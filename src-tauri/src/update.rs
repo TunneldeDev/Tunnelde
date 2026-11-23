@@ -147,7 +147,11 @@ impl UpdateService {
     }
 
     pub(crate) fn publish(&self, app: &AppHandle) {
-        let _ = app.emit(EVENT, self.snapshot());
+        crate::diagnostics::failure::observe_tauri(
+            "update",
+            "publishState",
+            app.emit(EVENT, self.snapshot()),
+        );
     }
 
     fn set_pending(&self, update: Option<Update>) {
@@ -590,7 +594,9 @@ pub fn release_page(settings: &Settings, snapshot: &UpdateState) -> String {
 
 pub fn spawn_check(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let _ = check(app, true).await;
+        if let Err(error) = check(app, true).await {
+            crate::diagnostics::failure::native("update", "startupCheck", &error);
+        }
     });
 }
 

@@ -1,4 +1,5 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { NativePanelIdentity, PanelLease } from "@/lib/panels/windowProtocol";
 
 export interface TerminalWindowOutput {

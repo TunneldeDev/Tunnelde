@@ -30,7 +30,7 @@ vi.mock("@/store/workspace", () => ({
   useWorkspace: { getState: () => ({ ensureWelcome: mocks.ensureWelcome }) },
 }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
-vi.mock("@/lib/api/errors", () => ({ translateError: String }));
+vi.mock("@/lib/api/errors", () => ({ presentError: String }));
 
 function deferred() {
   let resolve!: () => void;

@@ -19,7 +19,7 @@ import {
   ListFilter,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
 import { useTabBarContent, usePluginTabBar } from "@/store/tabBar";
@@ -28,7 +28,7 @@ import { orderStatusItems } from "@/lib/plugins/statusBar";
 import { groupTabBarItems } from "@/lib/plugins/tabBarLayout";
 import type { MenuAction } from "@/components/ui/overlay/menuTypes";
 import { TabBarToolbar } from "./TabBarToolbar";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 import "./tabBar.css";
@@ -141,7 +141,7 @@ export function TabBarContributions({
       value,
       locale: i18n.resolvedLanguage ?? i18n.language,
     })
-      .catch((error: unknown) => toast(`${item.pluginName}: ${translateError(error)}`, "error"))
+      .catch((error: unknown) => toast(`${item.pluginName}: ${presentError(error)}`, "error"))
       .finally(() => {
         running.current.delete(key);
         setBusy(new Set(running.current));

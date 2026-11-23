@@ -1,5 +1,6 @@
+import { reportError } from "@/lib/diagnostics";
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { useLayoutEffect, type ReactNode } from "react";
 import { synchronizeContributions, nativeContributionSource } from "@/lib/plugins/contributionSync";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
@@ -50,7 +51,7 @@ export function wireTabBarContributions(signal: AbortSignal) {
       read: () => invoke("plugin_tab_bar_snapshot"),
       apply: (snapshot) => usePluginTabBar.setState(snapshot),
       clear: () => usePluginTabBar.setState({ items: [] }),
-      report: (error) => console.error("Could not synchronize tab bar contributions", error),
+      report: (error) => reportError("plugins.tabBar", "synchronize", error),
     }),
     signal,
   );

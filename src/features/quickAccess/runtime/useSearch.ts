@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { SearchQuery } from "@/lib/search/query";
 import type { QuickAccessMode } from "../data/query";
 import type { SearchResult } from "../data/model";
@@ -40,7 +40,7 @@ export function useQuickAccessSearch(
           }
         })
         .catch((cause) => {
-          if (!disposed) setFailure({ key: searchKey, message: translateError(cause) });
+          if (!disposed) setFailure({ key: searchKey, message: presentError(cause) });
         })
         .finally(() => {
           if (!disposed) setPendingKey(null);

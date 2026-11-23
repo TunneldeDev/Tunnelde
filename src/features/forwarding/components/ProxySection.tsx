@@ -7,7 +7,7 @@ import { PasswordInput } from "@/components/ui/form/PasswordInput";
 import { SwitchRow } from "@/components/ui/form/Switch";
 import { HelpHint } from "@/components/ui/form/HelpHint";
 import { Select } from "@/components/ui/form/Select";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { useForwardingReadModel } from "../data/readScope";
 import { proxyApi } from "../data/proxy";
@@ -99,7 +99,7 @@ export function ProxySection({
       setConnections(current.flatMap((snapshot) => (Array.isArray(snapshot) ? snapshot : [])));
       setError(null);
     } catch (cause) {
-      setError(translateError(cause));
+      setError(presentError(cause));
     }
   }, [hostId, scoped]);
   useEffect(() => {
@@ -117,7 +117,7 @@ export function ProxySection({
       await load();
       onChanged?.();
     } catch (cause) {
-      setError(translateError(cause));
+      setError(presentError(cause));
     } finally {
       setBusy(false);
     }

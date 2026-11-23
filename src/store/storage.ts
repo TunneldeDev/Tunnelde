@@ -1,6 +1,7 @@
+import { reportError } from "@/lib/diagnostics";
 import { create } from "zustand";
 import { api, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { StorageChange, StorageStatus } from "@/lib/api/storage";
 import { useRestartPrompt } from "./restartPrompt";
 
@@ -43,7 +44,7 @@ export const useStorage = create<StorageStore>((set, get) => {
       useRestartPrompt.getState().observe(status.pending);
       return true;
     } catch (failure) {
-      set({ error: translateError(failure) });
+      set({ error: presentError(failure) });
       // A failed cancellation can already have persisted its recovery direction.
       // Read it back so the view cannot keep promising an ordinary migration.
       try {
@@ -66,7 +67,7 @@ export const useStorage = create<StorageStore>((set, get) => {
       try {
         await readRestartPending();
       } catch (failure) {
-        console.warn("Could not check pending storage changes", failure);
+        reportError("storage", "checkPendingChanges", failure, "warn");
       }
     },
     refreshMetadata: async (signal) => {
@@ -94,7 +95,7 @@ export const useStorage = create<StorageStore>((set, get) => {
           }
         })
         .catch((failure: unknown) => {
-          if (started === revision) set({ error: translateError(failure) });
+          if (started === revision) set({ error: presentError(failure) });
         })
         .finally(() => {
           loading = null;

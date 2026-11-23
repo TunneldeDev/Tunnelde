@@ -1,6 +1,11 @@
 import i18n from "@/i18n/i18n";
 import { isIpcError } from "@/lib/api/types";
-import { diagnosticLevel, reportError, type LogLevel } from "@/lib/diagnostics";
+import {
+  diagnosticLevel,
+  reportError,
+  type DiagnosticEvent,
+  type LogLevel,
+} from "@/lib/diagnostics";
 import { rememberErrorDetails } from "./errorDetails";
 
 /** Stable application-facing failure contract shared by logs, UI state and
@@ -42,6 +47,24 @@ function translateKey(key: string): string | null {
 }
 
 export function normalizeError(error: unknown): AppFailure {
+  try {
+    return normalize(error);
+  } catch {
+    // Rejected values need not be Error instances: even reading their
+    // properties (or checking their prototype) can throw.
+    const message = translate("error.generic");
+    return {
+      code: "unknown",
+      message,
+      userMessage: message,
+      severity: diagnosticLevel(error),
+      details: null,
+      stack: null,
+    };
+  }
+}
+
+function normalize(error: unknown): AppFailure {
   const code = isIpcError(error) ? error.code : error instanceof Error ? "runtime" : "unknown";
   const message = isIpcError(error)
     ? error.message
@@ -51,7 +74,7 @@ export function normalizeError(error: unknown): AppFailure {
         ? error
         : translate("error.generic");
   const translated = translateErrorDetailed(error);
-  const generic = code in CODE_KEYS ? translate(CODE_KEYS[code]!) : null;
+  const generic = Object.hasOwn(CODE_KEYS, code) ? translate(CODE_KEYS[code]!) : null;
   const userMessage =
     generic && translated === generic && message && message !== generic && !i18n.exists(message)
       ? `${generic} · ${message}`
@@ -69,52 +92,31 @@ export function normalizeError(error: unknown): AppFailure {
   };
 }
 
-/** Translate for presentation while retaining the original failure in the
- * structured diagnostic log and the matching toast's Details disclosure. */
+/** Pure localized presentation for callers that already captured a failure. */
 export function translateError(error: unknown): string {
-  return translateErrorWithContext(error);
+  return normalizeError(error).userMessage;
 }
 
-/** Presentation translation with an explicit domain/operation. Existing call
- * sites can migrate incrementally while new code should use `notifyError`. */
-export function translateErrorWithContext(error: unknown, context: ErrorContext = {}): string {
-  const failure = normalizeError(error);
-  reportError(
-    context.domain ?? "ui",
-    context.operation ?? "translateError",
-    error,
-    failure.severity,
-  );
-  // Inline callers get the same normalized failure without importing the UI
-  // store. A later toast with this exact title claims the structured original.
-  rememberErrorDetails(failure.userMessage, error);
+/** Capture the failure before setting a legacy inline message or toast title. */
+export function presentError(error: unknown, context: ErrorContext = {}): string {
+  const failure = captureError(error, context);
+  rememberErrorDetails(failure.userMessage, failure.diagnostic);
   return failure.userMessage;
 }
 
-/** Human-readable, bounded representation used by notification details.
- * The full structured object remains available to diagnostics; this view only
- * avoids hiding the original code/message from the user. */
-export function formatErrorDetails(error: unknown): string {
+export function captureError(
+  error: unknown,
+  context: ErrorContext = {},
+): AppFailure & { diagnostic: DiagnosticEvent } {
   const failure = normalizeError(error);
-  return JSON.stringify(
-    {
-      code: failure.code,
-      message: failure.message,
-      ...(failure.details ? { details: failure.details } : {}),
-      ...(failure.stack ? { stack: failure.stack } : {}),
-    },
-    null,
-    2,
+  const diagnostic = reportError(
+    context.domain ?? "ui",
+    context.operation ?? "operation",
+    error,
+    failure.severity,
+    context,
   );
-}
-
-/** Normalize and log once. Presentation surfaces can then choose toast,
- * inline error, dialog or a custom renderer without duplicating diagnostics. */
-export function captureError(error: unknown, context: ErrorContext = {}): AppFailure {
-  const failure = normalizeError(error);
-  reportError(context.domain ?? "ui", context.operation ?? "operation", error, failure.severity);
-  rememberErrorDetails(failure.userMessage, error);
-  return failure;
+  return { ...failure, diagnostic };
 }
 
 /** Default toast presentation of the unified failure contract. */
@@ -125,7 +127,7 @@ export async function notifyError(
 ): Promise<AppFailure> {
   const failure = captureError(error, context);
   const { toast } = await import("@/store/toasts");
-  toast(failure.userMessage, "error", options.action);
+  toast(failure.userMessage, "error", options.action, failure.diagnostic);
   return failure;
 }
 
@@ -231,7 +233,7 @@ function translateErrorDetailed(error: unknown): string {
     if (known) {
       return known;
     }
-    const codeKey = CODE_KEYS[error.code];
+    const codeKey = Object.hasOwn(CODE_KEYS, error.code) ? CODE_KEYS[error.code] : null;
     if (codeKey) {
       const generic = translate(codeKey);
       // An unrecognized backend key is actionable detail; append it rather
