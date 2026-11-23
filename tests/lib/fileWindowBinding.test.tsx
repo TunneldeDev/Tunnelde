@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { render, screen, waitFor, act, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, act, cleanup, fireEvent } from "@testing-library/react";
 const { onTransfer, onNative } = vi.hoisted(() => ({
   onTransfer: vi.fn().mockResolvedValue(vi.fn()),
   onNative: vi.fn().mockResolvedValue(vi.fn()),
@@ -91,6 +91,7 @@ function fixture(staged = false, initial?: unknown) {
       sessions: [],
       clip: null,
       preferences: filePagePreferenceProjection(DEFAULT_SETTINGS),
+      shortcuts: { keyboardShortcuts: {}, shortcutRules: {} },
       views: {},
       highlights: [],
       previews: [],
@@ -380,4 +381,66 @@ it("does not acknowledge a restored listing before its staged source read settle
   });
   await pending;
   expect(ready).toBe(true);
+});
+
+it("routes projected shortcuts in a satellite, updates rules live and leaves main settings untouched", async () => {
+  const f = fixture();
+  const { useSettings } = await import("@/store/settings");
+  const before = useSettings.getState().settings;
+  f.binding.update({
+    ...f.model,
+    files: {
+      ...f.model.files,
+      shortcuts: {
+        keyboardShortcuts: { "files.newFile": ["Meta+J"] },
+        shortcutRules: {
+          "files.newFile": { "Meta+J": { priority: 300, propagation: "continue" } },
+        },
+      },
+    },
+  });
+  render(
+    <PanelViewStateScope controller={f.controller}>
+      <SftpPageView {...f.model.files.props} services={f.binding.services} />
+    </PanelViewStateScope>,
+  );
+  await screen.findByText("file.txt");
+  const body = screen.getByRole("listbox");
+  expect(fireEvent.keyDown(body, { key: "j", metaKey: true })).toBe(true);
+  expect(screen.getByRole("textbox", { name: "File name" })).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "File name" }), { key: "Escape" });
+  act(() =>
+    f.binding.update({
+      ...f.model,
+      files: {
+        ...f.model.files,
+        shortcuts: { keyboardShortcuts: { "files.newFile": ["Meta+K"] }, shortcutRules: {} },
+      },
+    }),
+  );
+  expect(fireEvent.keyDown(body, { key: "j", metaKey: true })).toBe(true);
+  expect(screen.queryByRole("textbox", { name: "File name" })).toBeNull();
+  expect(fireEvent.keyDown(body, { key: "k", metaKey: true })).toBe(false);
+  expect(screen.getByRole("textbox", { name: "File name" })).toBeTruthy();
+  expect(useSettings.getState().settings).toBe(before);
+});
+
+it("uses coordinator platform defaults and ignores local shortcut overrides in the satellite", async () => {
+  const f = fixture();
+  render(
+    <PanelViewStateScope controller={f.controller}>
+      <SftpPageView {...f.model.files.props} services={f.binding.services} />
+    </PanelViewStateScope>,
+  );
+  fireEvent.click(await screen.findByText("file.txt"));
+  // jsdom reports a non-Mac platform; the coordinator identifies this as macOS.
+  fireEvent.keyDown(screen.getByRole("listbox"), { key: "Enter" });
+  expect(screen.getByDisplayValue("file.txt")).toBeTruthy();
+  expect(f.client.action).not.toHaveBeenCalledWith(
+    f.lease,
+    expect.objectContaining({
+      kind: "files",
+      command: expect.objectContaining({ operation: "editor" }),
+    }),
+  );
 });

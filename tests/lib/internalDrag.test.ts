@@ -284,3 +284,55 @@ it("captures an actual drag, reports release separately from cancellation and re
     document.removeEventListener(INTERNAL_DRAG_FINISH, finished);
   }
 });
+
+it.each(["missing", "throwing"])("drags when WebKit drag constructors are %s", (mode) => {
+  const unavailable =
+    mode === "missing"
+      ? undefined
+      : class {
+          constructor() {
+            throw new TypeError("Illegal constructor");
+          }
+        };
+  vi.stubGlobal("DataTransfer", unavailable);
+  vi.stubGlobal("DragEvent", unavailable);
+  const drop = vi.fn((event: Event) => {
+    const data = (event as DragEvent).dataTransfer!;
+    expect(data.types).toContain("application/x-tunnelde-file");
+    expect(data.getData("application/x-tunnelde-file")).toBe("file.txt");
+  });
+  target.addEventListener("dragover", (event) => event.preventDefault());
+  target.addEventListener("drop", drop);
+  pointer(source, "pointerdown", 10);
+  pointer(document, "pointermove", 30);
+  pointer(document, "pointerup", 30);
+  expect(drop).toHaveBeenCalledOnce();
+  expect(source.draggable).toBe(true);
+  expect(document.querySelector("[data-drag-preview]")).toBeNull();
+});
+
+it.each(["blur", "dispose", "pointercancel"])(
+  "cleans the source and permits another gesture after %s",
+  (reason) => {
+    const ended = vi.fn();
+    source.addEventListener("dragend", ended);
+    target.addEventListener("dragover", (event) => event.preventDefault());
+    const drop = vi.fn();
+    target.addEventListener("drop", drop);
+    pointer(source, "pointerdown", 10);
+    pointer(document, "pointermove", 30);
+    if (reason === "blur") window.dispatchEvent(new Event("blur"));
+    else if (reason === "dispose") {
+      dispose();
+      dispose = installInternalDrag();
+    } else pointer(source, "pointercancel", 30);
+    expect(ended).toHaveBeenCalledOnce();
+    expect(document.querySelector("[data-drag-preview]")).toBeNull();
+    expect(source.draggable).toBe(true);
+    expect(document.body.style.userSelect).toBe("");
+    pointer(source, "pointerdown", 10);
+    pointer(document, "pointermove", 30);
+    pointer(document, "pointerup", 30);
+    expect(drop).toHaveBeenCalledOnce();
+  },
+);

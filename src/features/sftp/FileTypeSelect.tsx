@@ -2,12 +2,19 @@ import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 /** An input proxy lets platform IMEs commit text without displaying an editor. */
-export function FileTypeSelect({ onText }: { onText: (text: string, at: number) => void }) {
+export function FileTypeSelect({
+  onText,
+  focusKey,
+}: {
+  onText: (text: string, at: number) => void;
+  focusKey?: string;
+}) {
   const { t } = useTranslation();
   const composition = useRef<{ text: string; at: number } | null>(null);
   return (
     <input
       className="sftp-type-select"
+      data-panel-focus={focusKey}
       tabIndex={-1}
       aria-label={t("sftp.typeToSelect")}
       autoComplete="off"

@@ -167,3 +167,25 @@ describe("shortcut routing", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 });
+
+it.each([true, false])("routes shortcuts with a non-modal panel inside=%s", (inside) => {
+  const floating = document.createElement("section");
+  floating.setAttribute("role", "dialog");
+  floating.setAttribute("aria-modal", "false");
+  const element = document.createElement("div");
+  document.body.append(floating);
+  if (inside) floating.append(element);
+  else document.body.append(element);
+  const run = vi.fn(() => true);
+  const unbind = bindShortcutProvider(element, () => [candidate("copy", run)]);
+  try {
+    const key = event();
+    element.dispatchEvent(key);
+    expect(run).toHaveBeenCalledOnce();
+    expect(key.defaultPrevented).toBe(true);
+  } finally {
+    unbind();
+    element.remove();
+    floating.remove();
+  }
+});

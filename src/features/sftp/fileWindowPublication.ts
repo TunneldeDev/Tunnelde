@@ -94,6 +94,10 @@ export function startFileWindowPublication(
                 sessions: registration.sessions,
                 clip: useFileClipboard.getState().clip,
                 preferences: filePagePreferenceProjection(settings),
+                shortcuts: {
+                  keyboardShortcuts: settings.keyboardShortcuts,
+                  shortcutRules: settings.shortcutRules,
+                },
                 views: fileWindowViews(id),
                 highlights: Array.from(useFileHighlights.getState().bySource.entries()),
                 icons: theme?.theme,

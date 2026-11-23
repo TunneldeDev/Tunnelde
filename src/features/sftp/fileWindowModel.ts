@@ -7,6 +7,7 @@ import type {
   PluginFilePreview,
   FsSource,
   FileEntry,
+  Settings,
 } from "@/lib/api/types";
 import type { WorkspaceTab, FilePaneOptions } from "@/store/workspace";
 import type { PasteClip } from "@/lib/files/dnd";
@@ -21,6 +22,7 @@ export interface FileWindowModel extends WindowModelAppearance {
     sessions: SshSession[];
     clip: PasteClip | null;
     preferences: FilePagePreferences;
+    shortcuts: Pick<Settings, "keyboardShortcuts" | "shortcutRules">;
     views: Record<string, FileViewPreferences>;
     highlights: Array<[string, OwnedFileHighlight[]]>;
     icons?: PluginFileIconTheme;
