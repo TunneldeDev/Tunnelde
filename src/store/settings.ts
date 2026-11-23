@@ -81,11 +81,15 @@ export const useSettings = create<SettingsStore>((set, get) => {
   let appliedOrder = 0;
   let proxySaving = 0;
   const pending: SettingsPatch[] = [];
+  const applyPatch = (value: Settings, patch: SettingsPatch): Settings => ({
+    ...value,
+    ...patch,
+    ...(patch.monoFont !== undefined && patch.fontSelections === undefined
+      ? { fontSelections: { ...value.fontSelections, mono: null } }
+      : {}),
+  });
   const display = () => {
-    const settings = pending.reduce<Settings>(
-      (value, patch) => ({ ...value, ...patch }),
-      confirmed,
-    );
+    const settings = pending.reduce<Settings>(applyPatch, confirmed);
     applySettings(settings);
     set({ settings, saving: pending.length > 0 || proxySaving > 0 });
   };
@@ -108,7 +112,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
               : reset
                 ? api.resetSettings()
                 : api.updateSettings(patch))
-          : { ...confirmed, ...patch };
+          : applyPatch(confirmed, patch);
         // Native events can overtake their invocation response. A confirmed
         // later event must not be replaced by an older write's return value.
         if (revision === remoteRevision && order >= appliedOrder) {

@@ -40,6 +40,7 @@ const appearanceKeys = [
   "uiFontSize",
   "monoFontSize",
   "monoFont",
+  "fontSelections",
   "userCss",
   "motion",
   "titleBarStyle",

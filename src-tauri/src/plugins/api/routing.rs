@@ -21,7 +21,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
         }
         "app" => domains::application::dispatch(context, method, params).await,
         "logs" => domains::logging::dispatch(context, method, params).await,
-        "settings" | "preferences" | "profiles" => {
+        "settings" | "preferences" | "profiles" | "fonts" => {
             domains::settings::dispatch(context, method, params).await
         }
         "configuration" => plugins::configuration::rpc::call(context, method, params).await,

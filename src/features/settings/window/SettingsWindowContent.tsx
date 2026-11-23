@@ -6,6 +6,7 @@ import {
   useState,
   type ComponentProps,
 } from "react";
+import { FontSettingsView } from "../components/FontSettingsView";
 import { SettingsPageView } from "../SettingsPageView";
 import type { SettingsPageServices, SettingsSpecialSection } from "../settingsPageServices";
 import { PreferenceRowView } from "../components/PreferenceRowView";
@@ -53,6 +54,7 @@ import type { ConfirmOptions } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
 import { presentError } from "@/lib/api/errors";
 const Context = createContext<SettingsProjection | null>(null);
+const LiveSettings = createContext(false);
 const useData = () => {
   const data = useContext(Context);
   if (!data) throw new Error("panel.window.staleOwner");
@@ -142,6 +144,22 @@ function composition(
           exportFile: method("profile_exportFile"),
           confirm,
           notify,
+        }}
+      />
+    );
+  }
+  function Fonts() {
+    return (
+      <FontSettingsView
+        settings={useData().page.settings}
+        live={useContext(LiveSettings)}
+        services={{
+          catalogue: method("fonts_catalogue"),
+          importFile: method("fonts_import"),
+          remove: method("fonts_remove"),
+          select: method("fonts_select"),
+          confirm,
+          useViewState: useSettingsControlState,
         }}
       />
     );
@@ -476,6 +494,7 @@ function composition(
     renderPreferenceSurface: (props) => <PreferenceSurfaceView {...props} services={surface} />,
     renderProtectedRow: (props) => <Row {...props} />,
     fields: {
+      renderFonts: () => <Fonts />,
       renderTerminalPreview: () => <Preview />,
       renderUpdateSource: (props) => <UpdateSource {...props} />,
       renderHostList: () => <HostList />,
@@ -506,7 +525,11 @@ export function SettingsWindowContent({
   useLayoutEffect(() => adapter.publish(model), [adapter, model]);
   return (
     <Context.Provider value={model}>
-      <SettingsPageView visible={visible} services={services} />
+      <LiveSettings.Provider
+        value={!record.staged && !record.moving && !record.failed && !!record.lease}
+      >
+        <SettingsPageView visible={visible} services={services} />
+      </LiveSettings.Provider>
     </Context.Provider>
   );
 }

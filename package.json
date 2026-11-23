@@ -61,6 +61,7 @@
     "zustand": "5.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.5",
     "@tauri-apps/cli": "2.12.6",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",

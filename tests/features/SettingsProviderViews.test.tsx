@@ -110,9 +110,7 @@ describe("provider settings independent production views", () => {
     fireEvent.click(screen.getByRole("button", { name: "Source code" }));
     expect(openLink).toHaveBeenCalledWith("source");
     fireEvent.click(screen.getByRole("button", { name: "Third-party notices" }));
-    expect(
-      within(screen.getByRole("dialog")).getByText(/SIL OPEN FONT LICENSE Version 1.1/),
-    ).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText(/fontdb/)).toBeTruthy();
     view.unmount();
     render(<AboutPageView embedded {...hooks} info={info} openLink={openLink} />);
     expect(screen.getByRole("dialog", { name: "Third-party notices" })).toBeTruthy();

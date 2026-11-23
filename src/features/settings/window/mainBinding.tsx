@@ -1,3 +1,4 @@
+import { mainFontServices } from "../FontSettings";
 import type { NetworkSettingsServices } from "../components/NetworkSettingsView";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/ipc";
@@ -217,6 +218,10 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
         else delete colors[region];
         return owner.update({ colors });
       },
+      fonts_select: mainFontServices.select,
+      fonts_catalogue: mainFontServices.catalogue,
+      fonts_import: mainFontServices.importFile,
+      fonts_remove: mainFontServices.remove,
       cssImport: () => api.importCss(),
       cssExport: (text) => api.exportCss(text),
       updateCheck: (force) => useUpdates.getState().check(force),

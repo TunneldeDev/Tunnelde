@@ -1,0 +1,50 @@
+.font-settings {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.font-settings__choice {
+  display: grid;
+  gap: 6px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--td-border);
+}
+.font-settings__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.font-settings__row > .td-select,
+.font-settings__row > .td-input {
+  flex: 1;
+  min-width: 180px;
+}
+.font-settings__row > span:first-child {
+  min-width: 110px;
+}
+.font-settings__sample {
+  color: var(--td-muted);
+  overflow-wrap: anywhere;
+}
+.font-settings__filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--td-muted);
+}
+.font-settings__preview {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius);
+  background: var(--td-bg);
+  font-size: var(--td-mono-size);
+  line-height: 1.6;
+}
+.font-settings__name {
+  flex: 1;
+  overflow-wrap: anywhere;
+}

@@ -711,9 +711,24 @@ export function TerminalPageView({
         <Select
           label={t("settings.monoFont")}
           className="terminal-font-select"
-          value={monoFont}
-          options={MONO_FONT_OPTIONS}
-          onChange={(value) => void services.updateFont(value as MonoFont)}
+          value={preferences.fontSelections?.mono ? "custom" : monoFont}
+          options={
+            preferences.fontSelections?.mono
+              ? [
+                  {
+                    value: "custom",
+                    label:
+                      preferences.fontSelections.mono.source === "system"
+                        ? preferences.fontSelections.mono.family
+                        : t("fonts.mono"),
+                  },
+                  ...MONO_FONT_OPTIONS,
+                ]
+              : MONO_FONT_OPTIONS
+          }
+          onChange={(value) => {
+            if (value !== "custom") void services.updateFont(value as MonoFont);
+          }}
         />
         <IconButton
           label={t("history.title")}
