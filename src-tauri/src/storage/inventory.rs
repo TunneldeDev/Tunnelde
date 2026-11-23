@@ -16,6 +16,7 @@ pub struct Inventory {
 pub fn roots(category: Category, directory: &Path) -> Vec<PathBuf> {
     match category {
         Category::Database => [
+            "fonts",
             "tunnelde.db",
             "tunnelde.db-wal",
             "tunnelde.db-shm",

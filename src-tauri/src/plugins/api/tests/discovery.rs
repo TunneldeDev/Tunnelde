@@ -98,6 +98,7 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "files.content.open",
             "files.content.prepare",
             "files.content.read",
+            "fonts.catalogue",
             "forwards.automation.list",
             "forwards.automation.save",
             "forwards.groups.list",

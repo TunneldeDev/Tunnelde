@@ -3,6 +3,48 @@ use crate::settings::Settings;
 use serde_json::{json, Value};
 
 #[test]
+fn font_choices_roundtrip_as_references_and_legacy_mono_changes_preserve_other_targets() {
+    let choices = json!({
+        "ui": {"source":"system","family":"Example UI"},
+        "mono": {"source":"imported","id":"a".repeat(64)},
+        "editorCjk": {"source":"system","family":"Example CJK"}
+    });
+    let selected = update::apply(
+        &Settings::default(),
+        json!({"appearance":{"fontSelections":choices}}),
+    )
+    .unwrap();
+    assert_eq!(
+        projection::values(&selected).unwrap()["appearance"]["fontSelections"],
+        choices
+    );
+    let builtin = update::apply(&selected, json!({"appearance":{"monoFont":"system"}})).unwrap();
+    let resulting = projection::values(&builtin).unwrap();
+    assert!(resulting["appearance"]["fontSelections"]["mono"].is_null());
+    assert_eq!(
+        resulting["appearance"]["fontSelections"]["ui"],
+        choices["ui"]
+    );
+    assert_eq!(
+        resulting["appearance"]["fontSelections"]["editorCjk"],
+        choices["editorCjk"]
+    );
+    for invalid in [
+        json!({"source":"system","family":"\n"}),
+        json!({"source":"imported","id":"../outside"}),
+        json!({"source":"imported","id":"A".repeat(64)}),
+    ] {
+        let mut malformed = choices.clone();
+        malformed["mono"] = invalid;
+        assert!(update::apply(
+            &selected,
+            json!({"appearance":{"fontSelections":malformed}})
+        )
+        .is_err());
+    }
+}
+
+#[test]
 fn updates_reject_unbounded_or_malformed_revisions_before_domain_work() {
     for revision in [
         json!(null),
@@ -94,7 +136,7 @@ fn independent_schema_covers_exactly_the_public_projection() {
     for key in excluded {
         assert!(!covered.contains(key));
     }
-    assert_eq!(65, mapped.len());
+    assert_eq!(66, mapped.len());
 }
 
 #[test]

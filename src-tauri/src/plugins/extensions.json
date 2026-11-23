@@ -331,7 +331,7 @@
     },
     {
       "id": "preferences",
-      "namespaces": ["settings", "preferences", "profiles", "storage"]
+      "namespaces": ["settings", "preferences", "profiles", "storage", "fonts"]
     },
     {
       "id": "governance",

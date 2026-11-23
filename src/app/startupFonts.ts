@@ -1,7 +1,10 @@
 import { reportError } from "@/lib/diagnostics";
-/** Load the selected bundled fonts without relying on animation frames in a hidden webview. */
+import { selectedFontsReady } from "@/lib/fonts/runtime";
+
+/** Load the selected fonts without relying on animation frames in a hidden webview. */
 export async function loadStartupFonts(): Promise<void> {
   if (!document.fonts?.load) return;
+  await selectedFontsReady();
   const ui = getComputedStyle(document.body).fontFamily.split(",")[0]?.trim() ?? "";
   const mono =
     getComputedStyle(document.documentElement)

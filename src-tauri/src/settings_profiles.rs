@@ -36,6 +36,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "uiFontSize",
     "monoFontSize",
     "monoFont",
+    "fontSelections",
     "sidebarWidth",
     "rightPanel",
     "rightPanelWidth",

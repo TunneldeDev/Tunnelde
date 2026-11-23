@@ -35,6 +35,21 @@ fn batch_copy_verifies_bytes_switches_together_and_keeps_originals() {
     )
     .unwrap();
     std::fs::write(paths.dir(Category::Database).join("tunnelde.db"), b"db").unwrap();
+    let font = std::path::PathBuf::from("fonts").join("a".repeat(64));
+    std::fs::create_dir_all(paths.dir(Category::Database).join(&font)).unwrap();
+    std::fs::write(
+        paths.dir(Category::Database).join(&font).join("font"),
+        b"user font",
+    )
+    .unwrap();
+    std::fs::write(
+        paths
+            .dir(Category::Database)
+            .join(&font)
+            .join("metadata.json"),
+        b"metadata",
+    )
+    .unwrap();
     std::fs::write(paths.home.join("unrelated.txt"), b"keep").unwrap();
     let mut config = config::Config::default();
     migration::schedule(
@@ -64,6 +79,19 @@ fn batch_copy_verifies_bytes_switches_together_and_keeps_originals() {
         b"db"
     );
     assert!(!root.join("new/database/unrelated.txt").exists());
+    for (name, bytes) in [
+        ("font", b"user font".as_slice()),
+        ("metadata.json", b"metadata"),
+    ] {
+        assert_eq!(
+            std::fs::read(root.join("new/database").join(&font).join(name)).unwrap(),
+            bytes
+        );
+        assert_eq!(
+            std::fs::read(paths.dir(Category::Database).join(&font).join(name)).unwrap(),
+            bytes
+        );
+    }
     assert_eq!(
         std::fs::read(paths.home.join("unrelated.txt")).unwrap(),
         b"keep"

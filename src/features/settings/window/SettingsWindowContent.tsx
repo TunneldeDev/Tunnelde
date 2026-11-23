@@ -6,6 +6,7 @@ import {
   useState,
   type ComponentProps,
 } from "react";
+import { FontSettingsView } from "../components/FontSettingsView";
 import { SettingsPageView } from "../SettingsPageView";
 import type { SettingsPageServices, SettingsSpecialSection } from "../settingsPageServices";
 import { PreferenceRowView } from "../components/PreferenceRowView";
@@ -142,6 +143,21 @@ function composition(
           exportFile: method("profile_exportFile"),
           confirm,
           notify,
+        }}
+      />
+    );
+  }
+  function Fonts() {
+    return (
+      <FontSettingsView
+        settings={useData().page.settings}
+        services={{
+          catalogue: method("fonts_catalogue"),
+          importFile: method("fonts_import"),
+          remove: method("fonts_remove"),
+          select: method("fonts_select"),
+          confirm,
+          useViewState: useSettingsControlState,
         }}
       />
     );
@@ -476,6 +492,7 @@ function composition(
     renderPreferenceSurface: (props) => <PreferenceSurfaceView {...props} services={surface} />,
     renderProtectedRow: (props) => <Row {...props} />,
     fields: {
+      renderFonts: () => <Fonts />,
       renderTerminalPreview: () => <Preview />,
       renderUpdateSource: (props) => <UpdateSource {...props} />,
       renderHostList: () => <HostList />,

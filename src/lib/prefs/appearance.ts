@@ -1,3 +1,5 @@
+import { activateFonts, cjkFontSource, fontFamily } from "@/lib/fonts/runtime";
+import type { FontReference } from "@/lib/fonts/types";
 import type { Language, MonoFont, Settings, ThemeMode } from "../api/types";
 import { applyColorPreferences } from "./colors";
 
@@ -12,8 +14,9 @@ export const MONO_STACKS: Record<MonoFont, string> = {
   system: "ui-monospace, SFMono-Regular, Consolas, monospace",
 };
 
-export function monoStack(font: MonoFont): string {
-  return MONO_STACKS[font] ?? MONO_STACKS["fira-code"];
+export function monoStack(font: MonoFont, reference?: FontReference | null): string {
+  const fallback = MONO_STACKS[font] ?? MONO_STACKS["fira-code"];
+  return reference ? `${JSON.stringify(fontFamily(reference))}, ${fallback}` : fallback;
 }
 
 export function resolveTheme(mode: ThemeMode, prefersLight = false): ResolvedTheme {
@@ -111,7 +114,14 @@ export function applyAppearance(settings: Settings, prefersLight = prefersLightS
   root.dataset.motionPreference = settings.motion;
   root.style.setProperty("--td-font-size", `${settings.uiFontSize}px`);
   root.style.setProperty("--td-mono-size", `${settings.monoFontSize}px`);
-  root.style.setProperty("--td-mono", monoStack(settings.monoFont));
+  const fonts = settings.fontSelections ?? { ui: null, mono: null, editorCjk: null };
+  root.style.setProperty("--td-mono", monoStack(settings.monoFont, fonts.mono));
+  root.style.setProperty(
+    "--td-ui-font",
+    `${fonts.ui ? `${JSON.stringify(fontFamily(fonts.ui))}, ` : ""}"IBM Plex Sans", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif`,
+  );
+  root.style.setProperty("--td-editor-cjk-source", cjkFontSource(fonts.editorCjk));
+  activateFonts(fonts);
   applyColorPreferences(settings, resolveTheme(settings.theme, prefersLight));
 
   const styleId = "td-user-css";

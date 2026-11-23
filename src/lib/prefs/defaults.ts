@@ -21,6 +21,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     uiFontSize: 13,
     monoFontSize: 14,
     monoFont: "fira-code",
+    fontSelections: { ui: null, mono: null, editorCjk: null },
     sidebarWidth: 272,
     rightPanel: false,
     rightPanelWidth: 296,

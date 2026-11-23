@@ -15,6 +15,18 @@ pub(in crate::plugins::api) async fn dispatch(
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
+    if method == "fonts.catalogue" {
+        if params.as_object().is_none_or(|fields| !fields.is_empty()) {
+            return Err(AppError::validation("plugin.api.invalid:params"));
+        }
+        let policy = crate::plugins::frontend::native::CallPolicy::StagedData;
+        crate::platform::panel_windows::plugin_views::origin::check(policy)?;
+        authorize(context, &["settings.read"])?;
+        let result = crate::fonts::catalogue(&context.app, false).await?;
+        authorize(context, &["settings.read"])?;
+        crate::platform::panel_windows::plugin_views::origin::check(policy)?;
+        return encode(result);
+    }
     if method.starts_with("profiles.") {
         return profiles::dispatch(context, method, params).await;
     }

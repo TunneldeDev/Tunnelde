@@ -110,6 +110,161 @@
         "system",
         "compact"
       ]
+    },
+    "fontSelections": {
+      "type": "object",
+      "properties": {
+        "ui": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "system"
+                  ]
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "x-maxBytes": 1024
+                }
+              },
+              "required": [
+                "source",
+                "family"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "imported"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "source",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "mono": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "system"
+                  ]
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "x-maxBytes": 1024
+                }
+              },
+              "required": [
+                "source",
+                "family"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "imported"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "source",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "editorCjk": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "system"
+                  ]
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "x-maxBytes": 1024
+                }
+              },
+              "required": [
+                "source",
+                "family"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "imported"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "source",
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "ui",
+        "mono",
+        "editorCjk"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -122,7 +277,8 @@
     "monoFont",
     "motion",
     "userCss",
-    "titleBarStyle"
+    "titleBarStyle",
+    "fontSelections"
   ],
   "additionalProperties": false
 }

@@ -6,13 +6,16 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import cjkFontUrl from "../../../assets/fonts/noto-cjk-editor.woff2?url";
+import { AUTO_CJK_SOURCE, FONT_READY_EVENT, fontGeneration } from "@/lib/fonts/runtime";
 
 const FAMILY = "Tunnelde Editor CJK";
 const UNICODE_RANGE =
   "U+2E80-9FFF,U+F900-FAFF,U+FE10-FE1F,U+FE30-FE4F,U+FF01-FF60,U+FFE0-FFE6,U+20000-323AF";
 type AdjustableFontFace = FontFace & { sizeAdjust: string };
 let face: AdjustableFontFace | undefined;
+let source = "";
+let generation = -1;
+let usingFallback = false;
 let nativeAdjustment: boolean | undefined;
 const revisions = new WeakMap<EditorView, number>();
 const legacyScaling = StateEffect.define<boolean>();
@@ -99,32 +102,82 @@ async function alignCjkFont(view: EditorView): Promise<void> {
   const context = document.createElement("canvas").getContext("2d");
   if (!context) return;
   context.font = font;
-  const scale = (2 * context.measureText("00000000").width) / 8;
-  if (!Number.isFinite(scale) || scale <= 0) return;
+  const target = (2 * context.measureText("00000000").width) / 8;
+  if (!Number.isFinite(target) || target <= 0) return;
   if (nativeAdjustment === undefined) nativeAdjustment = "sizeAdjust" in FontFace.prototype;
+  const nextSource =
+    getComputedStyle(document.documentElement).getPropertyValue("--td-editor-cjk-source").trim() ||
+    AUTO_CJK_SOURCE;
+  if (source !== nextSource || generation !== fontGeneration()) {
+    if (face) document.fonts.delete(face);
+    face = undefined;
+    source = nextSource;
+    generation = fontGeneration();
+    usingFallback = false;
+  }
   if (!face) {
     const descriptors: FontFaceDescriptors & { sizeAdjust?: string } = {
       unicodeRange: UNICODE_RANGE,
     };
-    if (nativeAdjustment) descriptors.sizeAdjust = `${scale}%`;
-    face = new FontFace(FAMILY, `url("${cjkFontUrl}")`, descriptors) as AdjustableFontFace;
+    if (nativeAdjustment) descriptors.sizeAdjust = "100%";
+    face = new FontFace(FAMILY, nextSource, descriptors) as AdjustableFontFace;
     document.fonts.add(face);
-  } else if (nativeAdjustment && face.sizeAdjust !== `${scale}%`) {
-    face.sizeAdjust = `${scale}%`;
   }
-  await face.load();
+  let loading = face;
+  let available = true;
+  try {
+    await loading.load();
+  } catch {
+    available = false;
+    if (face !== loading || !connected()) return;
+    document.fonts.delete(loading);
+    if (source !== AUTO_CJK_SOURCE && !usingFallback) {
+      usingFallback = true;
+      // Keep the requested choice in preferences, but use the automatic local
+      // fallback while its file/family is unavailable on this machine.
+      loading = new FontFace(FAMILY, AUTO_CJK_SOURCE, {
+        unicodeRange: UNICODE_RANGE,
+      }) as AdjustableFontFace;
+      face = loading;
+      document.fonts.add(loading);
+      try {
+        await loading.load();
+        available = true;
+      } catch {
+        document.fonts.delete(loading);
+      }
+    }
+    if (!available) {
+      // Retain the failed face so loadingdone cannot trigger a retry loop.
+      // A new preference/resource generation retries it explicitly.
+      if (!connected()) return;
+      view.dom.style.setProperty("--td-editor-cjk-scale", "1");
+      view.dispatch({ effects: legacyScaling.of(false) });
+      view.requestMeasure();
+      return;
+    }
+  }
+  if (face !== loading) return;
   if (!connected()) return;
+  // Installed and imported fonts do not necessarily use a one-em CJK advance.
+  // Measure their actual glyphs before applying either scaling mechanism.
+  if (nativeAdjustment) face.sizeAdjust = "100%";
+  context.font = `100px "${FAMILY}"`;
+  const width = context.measureText("中").width;
+  if (!Number.isFinite(width) || width <= 0) return;
+  const scale = target / width;
+  if (nativeAdjustment) face.sizeAdjust = `${scale * 100}%`;
   // Check actual glyph metrics as well as the property: ignored descriptors
   // must not make a supported older engine silently use the wrong grid.
   if (nativeAdjustment) {
     context.font = `100px "${FAMILY}"`;
-    if (Math.abs(context.measureText("中").width - scale) > 0.1) {
+    if (Math.abs(context.measureText("中").width - target) > 0.1) {
       nativeAdjustment = false;
       face.sizeAdjust = "100%";
     }
   }
   const legacy = !nativeAdjustment;
-  view.dom.style.setProperty("--td-editor-cjk-scale", String(legacy ? scale / 100 : 1));
+  view.dom.style.setProperty("--td-editor-cjk-scale", String(legacy ? scale : 1));
   view.dispatch({ effects: legacyScaling.of(legacy) });
   view.requestMeasure();
 }
@@ -146,11 +199,13 @@ export function observeEditorFont(view: EditorView): () => void {
   const observer = new MutationObserver(update);
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
   document.fonts?.addEventListener?.("loadingdone", update);
+  window.addEventListener(FONT_READY_EVENT, update);
   update();
   return () => {
     disposed = true;
     revisions.delete(view);
     observer.disconnect();
     document.fonts?.removeEventListener?.("loadingdone", update);
+    window.removeEventListener(FONT_READY_EVENT, update);
   };
 }

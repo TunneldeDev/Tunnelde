@@ -1,3 +1,5 @@
+import { ensureFont, FONT_READY_EVENT } from "@/lib/fonts/runtime";
+import { sameFont } from "@/lib/fonts/types";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import type { ITerminalOptions, Terminal } from "@xterm/xterm";
@@ -27,15 +29,12 @@ export const localTerminalSettings: TerminalSettingsSource = {
 /** Wait for glyph metrics before opening or resizing the terminal. */
 export async function waitForFont(family: string, size: number): Promise<void> {
   if (!document.fonts) return;
-  const name = family
-    .split(",")[0]
-    ?.trim()
-    .replace(/^["']|["']$/g, "");
+  const name = family.trim().match(/^("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,]+)/)?.[0];
   if (!name) return;
   let timeout: number | undefined;
   try {
     await Promise.race([
-      document.fonts.load(`${size}px "${name}"`),
+      document.fonts.load(`${size}px ${name}`),
       new Promise((resolve) => {
         timeout = window.setTimeout(resolve, 1500);
       }),
@@ -54,9 +53,15 @@ export async function waitForCurrentTerminalFont(
 ): Promise<void> {
   while (!cancelled()) {
     const before = source.read();
-    await waitForFont(monoStack(before.monoFont), before.monoFontSize);
+    if (before.fontSelections?.mono) await ensureFont(before.fontSelections.mono);
+    await waitForFont(monoStack(before.monoFont, before.fontSelections?.mono), before.monoFontSize);
     const after = source.read();
-    if (before.monoFont === after.monoFont && before.monoFontSize === after.monoFontSize) return;
+    if (
+      before.monoFont === after.monoFont &&
+      before.monoFontSize === after.monoFontSize &&
+      sameFont(before.fontSelections?.mono ?? null, after.fontSelections?.mono ?? null)
+    )
+      return;
   }
 }
 
@@ -71,7 +76,7 @@ export function terminalOptions(
     allowProposedApi: true,
     // Let applications negotiate enhanced keys instead of guessing their input mode.
     vtExtensions: { kittyKeyboard: true },
-    fontFamily: monoStack(settings.monoFont),
+    fontFamily: monoStack(settings.monoFont, settings.fontSelections?.mono),
     fontSize: settings.monoFontSize,
     lineHeight: settings.terminalLineHeight,
     cursorStyle: settings.terminalCursorStyle,
@@ -159,7 +164,10 @@ export function bindTerminalSettings(
       requestedFont = fontFamily;
       requestedSize = fontSize;
       const revision = ++fontRevision;
-      void waitForFont(fontFamily!, fontSize!).then(() => {
+      const loaded = settings.fontSelections?.mono
+        ? ensureFont(settings.fontSelections.mono).then(() => waitForFont(fontFamily!, fontSize!))
+        : waitForFont(fontFamily!, fontSize!);
+      void loaded.then(() => {
         if (disposed || revision !== fontRevision) return;
         // Setting these only after loading lets xterm measure the real glyphs.
         terminal.options.fontFamily = fontFamily;
@@ -169,7 +177,12 @@ export function bindTerminalSettings(
     }
   };
   apply();
+  const fontsReady = () => {
+    requestedFont = undefined;
+    apply();
+  };
   const unsubscribe = source.subscribe(apply);
+  window.addEventListener(FONT_READY_EVENT, fontsReady);
   colorScheme.addEventListener("change", apply);
   motion.addEventListener("change", apply);
   window.addEventListener(COLOR_PREVIEW_EVENT, apply);
@@ -179,6 +192,7 @@ export function bindTerminalSettings(
       disposed = true;
       if (frame !== null) cancelAnimationFrame(frame);
       unsubscribe();
+      window.removeEventListener(FONT_READY_EVENT, fontsReady);
       colorScheme.removeEventListener("change", apply);
       motion.removeEventListener("change", apply);
       window.removeEventListener(COLOR_PREVIEW_EVENT, apply);

@@ -1,3 +1,4 @@
+import type { FontSelections } from "@/lib/fonts/types";
 import type { HostSourceReference } from "@/lib/hosts/sources";
 import type { HostFieldsSchema } from "@/lib/hosts/fields";
 import type { ConfigurationSchema } from "@/lib/extensions/contracts/configuration/schema";
@@ -46,6 +47,7 @@ export interface Settings {
   uiFontSize: number;
   monoFontSize: number;
   monoFont: MonoFont;
+  fontSelections: FontSelections;
   sidebarWidth: number;
   rightPanel: boolean;
   rightPanelWidth: number;

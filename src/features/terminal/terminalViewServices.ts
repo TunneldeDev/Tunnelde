@@ -11,6 +11,7 @@ export const terminalPreferenceKeys = [
   "colors",
   "motion",
   "monoFont",
+  "fontSelections",
   "monoFontSize",
   "lightweightMode",
   "terminalLineHeight",

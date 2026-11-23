@@ -77,6 +77,7 @@ fn policy(method: &str) -> Option<CallPolicy> {
         // No default writes, migrations, credentials, SSH or OS prompts.
         "app.info"
         | "settings.get"
+        | "fonts.catalogue"
         | "resources.identify"
         | "runners.list"
         | "history.list"

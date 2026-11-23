@@ -9,6 +9,7 @@ import { groupSettings, type SettingDefinition } from "../catalog";
 import type { PreferenceRowProps } from "./PreferenceRow";
 
 export interface PreferenceFieldsServices {
+  renderFonts?(): ReactNode;
   renderTerminalPreview(): ReactNode;
   renderUpdateSource(props: { onReset(): void }): ReactNode;
   renderHostList(): ReactNode;
@@ -94,6 +95,8 @@ export function PreferenceFieldsView({
                 )
               ) : definition.kind === "hostList" ? (
                 <Fragment key={definition.key}>{services.renderHostList()}</Fragment>
+              ) : definition.kind === "fonts" ? (
+                <Fragment key={definition.key}>{services.renderFonts?.()}</Fragment>
               ) : definition.kind === "css" ? (
                 <div key={definition.key} className="settings-css-group" data-setting="userCss">
                   <div className="settings-section__head">

@@ -7,6 +7,7 @@ pub(super) const FIELDS: &[(&str, &str)] = &[
     ("fontSize", "uiFontSize"),
     ("monoFontSize", "monoFontSize"),
     ("monoFont", "monoFont"),
+    ("fontSelections", "fontSelections"),
     ("motion", "motion"),
     ("userCss", "userCss"),
     ("titleBarStyle", "titleBarStyle"),

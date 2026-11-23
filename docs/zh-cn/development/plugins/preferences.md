@@ -125,3 +125,9 @@ const after = await host.call("preferences.update", {
 `contracts/preferences/provider.ts`；运行授权适配归属 `extensions/preferences/`，
 与原生表单组件、私有字段映射分开。市场 UI 与 RPC 类型从同一公开源生成。
 该表现接口尚不包含插件自定义设置 Schema 与迁移能力。
+
+## 字体选择与目录
+
+实验性 `fonts.catalogue({})` 需要 `settings.read`，返回 `{version:1,items}`。条目包含 `reference`、`name`、`monospaced`，导入字体另有 `format` 和 `bytes`；不暴露文件路径或字体内容。系统字体按需扫描并缓存，原生设置界面可以刷新；扫描结束后重新校验权限及前端生命周期。
+
+`appearance.fontSelections` 包含 `ui`、`mono`、`editorCjk`，各项为 `null`、`{source:"system",family:string}` 或 `{source:"imported",id:string}`。导入字体 ID 是小写 SHA-256 内容哈希。空值分别使用现有界面默认、`monoFont` 或自动系统 CJK 后备。通过 `preferences.update`、正常修订令牌及 `settings.write` 修改。单独更新 `monoFont` 时清除自定义等宽覆盖；缺失字体的引用会保留并使用后备显示。设置方案只包含引用，不携带字体文件。字体文件的导入、删除需要原生设置界面。

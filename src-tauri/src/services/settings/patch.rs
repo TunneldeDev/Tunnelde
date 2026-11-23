@@ -8,6 +8,7 @@ use serde_json::Value;
 // Empty maps deliberately clear these settings. In particular, deep-merging an
 // empty provider selection would undo the user's recovery to the built-in UI.
 const REPLACED_KEYS: &[&str] = &[
+    "fontSelections",
     "colors",
     "keyboardShortcuts",
     "shortcutRules",
@@ -21,6 +22,9 @@ pub(super) fn apply(previous: &Settings, patch: Value) -> AppResult<Settings> {
         return Err(AppError::validation("settings.invalid"));
     }
     let mut base = serde_json::to_value(previous)?;
+    if patch.get("monoFont").is_some() && patch.get("fontSelections").is_none() {
+        base["fontSelections"]["mono"] = Value::Null;
+    }
     let replacements: Vec<_> = REPLACED_KEYS
         .iter()
         .filter_map(|key| patch.get(*key).map(|value| (*key, value.clone())))
