@@ -3073,6 +3073,6 @@
     "savedValue": "Saved",
     "currentValue": "Current",
     "defaultValue": "Default",
-    "detailsHint": "Loaded on demand. Current values can differ from disk until saved. Window coordinates and sizes use physical pixels."
+    "detailsHint": "Loaded on demand. Current values can differ from disk until saved. Current and saved window geometry uses physical pixels; default sizes use logical pixels."
   }
 }
