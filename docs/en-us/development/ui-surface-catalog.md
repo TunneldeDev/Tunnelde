@@ -61,3 +61,7 @@ and checked native ownership for editor reads racing a transfer commit. Generate
 now use a separate save confirmation; direct and dependent import conflicts are highlighted. Future changes must consider
 main/satellite, wide/narrow, light/dark and empty/populated/failed states. Record checks actually
 performed; do not imply unperformed cross-platform acceptance.
+
+## Usage habit management
+
+Settings → Usage habits: `features/settings/components/HabitsSettingsView.tsx`. Use the settings section heading, save status, descriptive category checkbox cards and a footer action toolbar. Wrap actions at narrow widths and scroll tall content. Keep errors and reset consequences visible; explicitly review selected categories before resetting. Background tasks default to the bottom right, with persisted user geometry taking priority. See [User habits](user-habits.md) for category, upgrade retention and reset rules.

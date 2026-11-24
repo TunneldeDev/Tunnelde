@@ -1,3 +1,5 @@
+import { loadHabitDetails } from "@/store/habitDetails";
+import { resetHabits, useHabits } from "@/store/habits";
 import { mainFontServices } from "../FontSettings";
 import type { NetworkSettingsServices } from "../components/NetworkSettingsView";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
@@ -103,6 +105,7 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
     };
   });
   useLayoutEffect(() => lifetime.start(), [lifetime]);
+  const habits = useHabits();
   const page = mainSettingsPageServices.useData();
   const profiles = mainSettingsProfilesServices.useData();
   const storage = mainStorageSettingsServices.useData();
@@ -133,6 +136,7 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
     return () => controller.abort();
   }, []);
   const projection: SettingsProjection = {
+    habits,
     page,
     profiles,
     storage,
@@ -164,6 +168,8 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
   };
   const handlers: OwnerHandlers = useMemo(
     () => ({
+      habitsReset: resetHabits,
+      habitsDetails: loadHabitDetails,
       preference: (patch) => useSettings.getState().update(patch),
       reset: () => useSettings.getState().reset(),
       section: (section) => useNavigation.getState().selectSettings(section),

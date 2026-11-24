@@ -142,6 +142,11 @@ export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   clipboardReadText: () => invoke<string>("clipboard_read_text"),
   clipboardWriteText: (text: string) => invoke<void>("clipboard_write_text", { text }),
+  windowHabits: () =>
+    invoke<{ name: string; current: unknown; saved: unknown }[]>("habits_windows"),
+  habits: () => invoke<Record<string, string> | null>("habits_get"),
+  saveHabits: (values: Record<string, string>) => invoke<void>("habits_save", { values }),
+  resetWindowHabits: () => invoke<void>("habits_reset_windows"),
   settings: () => invoke<Settings>("settings_get"),
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("settings_update", { patch }),
   resetSettings: () => invoke<Settings>("settings_reset"),
