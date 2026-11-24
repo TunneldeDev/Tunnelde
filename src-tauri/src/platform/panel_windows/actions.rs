@@ -196,6 +196,7 @@ pub(crate) enum PreviewCommand {
     Undock {},
     Edit {},
     SelectProvider { provider_id: String },
+    Syntax { from: u32, to: u32 },
 }
 impl PreviewCommand {
     pub(super) fn provider_action(&self) -> bool {
@@ -374,6 +375,7 @@ impl ViewAction {
                     .iter()
                     .all(|value| uuid::Uuid::parse_str(value).is_ok())
                     && match command {
+                        PreviewCommand::Syntax { from, to } => to > from && to - from <= 32768,
                         PreviewCommand::SelectProvider { provider_id } => {
                             bounded(provider_id, 129) && !provider_id.contains('\0')
                         }
@@ -1457,6 +1459,25 @@ mod tests {
             let result = f.registry.action_result("source", &f.source, &id, f.now);
             assert_eq!(result.is_ok(), matches!(mode, "close" | "edit"), "{mode}");
         }
+    }
+    #[test]
+    fn preview_syntax_is_bounded_and_never_a_provider_write_action() {
+        let valid = PreviewCommand::Syntax {
+            from: 100,
+            to: 32868,
+        };
+        assert!(!valid.provider_action());
+        assert!(preview_request(valid).validate().is_ok());
+        for (from, to) in [(1, 1), (2, 1), (0, 32769)] {
+            assert!(preview_request(PreviewCommand::Syntax { from, to })
+                .validate()
+                .is_err());
+        }
+        let mut value =
+            serde_json::to_value(preview_request(PreviewCommand::Syntax { from: 0, to: 5 }))
+                .unwrap();
+        value["command"]["source"] = json!("arbitrary text");
+        assert!(serde_json::from_value::<ViewAction>(value).is_err());
     }
     #[test]
     fn preview_action_grammar_is_closed_bounded_and_exact_panel_scoped() {

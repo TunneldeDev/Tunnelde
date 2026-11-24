@@ -1,3 +1,4 @@
+import { usePreviewSyntaxSource } from "./preview/previewSyntax";
 import { useEffect } from "react";
 import type { PreviewReadSource } from "./preview/readSource";
 import { usePreviewReadSource } from "./preview/usePreviewReadSource";
@@ -16,6 +17,7 @@ export function TextPreview({
   onReady?: () => void;
   onError?: () => void;
 }) {
+  const syntax = usePreviewSyntaxSource(file, source);
   const result = usePreviewReadSource(source);
   useEffect(() => {
     if (result.status === "error") onError?.();
@@ -23,6 +25,7 @@ export function TextPreview({
   return (
     <PreviewRenderer
       file={file}
+      syntax={syntax}
       renderer={/\.(md|markdown)$/i.test(file.path) ? "markdown" : "text"}
       read={previewRenderRead(result)}
       onReady={onReady}

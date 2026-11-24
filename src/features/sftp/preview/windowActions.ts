@@ -1,12 +1,18 @@
+import { SYNTAX_TOKEN_TYPES } from "@/lib/plugins/syntax";
+import { previewSyntaxSource } from "./previewSyntax";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
 import { usePanelWindows } from "@/store/panelWindows";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 import { previewOwners } from "./owner";
 
+/** Compact validated tokens keep the complete result within the native 64KiB reply limit. */
+export type PreviewSyntaxReply = readonly (readonly [number, number, number])[] | null;
+
 export type PreviewCommand =
   | { operation: "ready" | "decodeError" | "close" | "retry" | "dock" | "undock" | "edit" }
-  | { operation: "selectProvider"; providerId: string };
+  | { operation: "selectProvider"; providerId: string }
+  | { operation: "syntax"; from: number; to: number };
 export interface PreviewWindowAction {
   kind: "preview";
   id: string;
@@ -37,6 +43,75 @@ export function executePreviewWindowAction(lease: PanelLease, request: PreviewWi
     throw new Error("plugin.filePreview.changed");
   owner.context.validate();
   switch (request.command.operation) {
+    case "syntax": {
+      const { from, to } = request.command;
+      const read = owner.source.snapshot();
+      if (
+        (snapshot.renderer !== "text" && snapshot.renderer !== "markdown") ||
+        read.status !== "ready" ||
+        typeof read.value.content !== "string" ||
+        !Number.isSafeInteger(from) ||
+        !Number.isSafeInteger(to) ||
+        from < 0 ||
+        to <= from ||
+        to > read.value.content.length ||
+        to - from > 32768
+      )
+        throw new Error("plugin.filePreview.changed");
+      const stillOwned = () => {
+        const current = previewOwners.snapshot();
+        if (
+          current?.source !== owner.source ||
+          current.context.snapshot.attemptId !== snapshot.attemptId ||
+          current.context.snapshot.revision !== snapshot.revision ||
+          !usePanelWindows
+            .getState()
+            .snapshot.panels.some(
+              (p) =>
+                p.panelId === lease.panelId &&
+                p.windowId === lease.windowId &&
+                p.generation === lease.generation,
+            )
+        )
+          return false;
+        try {
+          current.context.validate();
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const syntax = previewSyntaxSource(snapshot.path, owner.source, stillOwned);
+      if (!syntax) return null;
+      const lifetime = new AbortController();
+      return syntax
+        .highlight(
+          {
+            tabId: `preview:${snapshot.attemptId}`,
+            documentId: snapshot.attemptId,
+            version: 0,
+            path: snapshot.path,
+            name: snapshot.path.split(/[\\/]/).pop() ?? snapshot.path,
+            content: read.value.content,
+            dirty: false,
+          },
+          { from, to, documentId: snapshot.attemptId, version: 0 },
+          lifetime.signal,
+        )
+        .then((tokens) => {
+          // A lease and attempt must remain current across the asynchronous provider call.
+          if (!stillOwned()) return null;
+          // Numeric tuples keep the full validated 128KiB token response under
+          // the native reply ceiling, without dropping tokens from dense code.
+          const compact: PreviewSyntaxReply =
+            tokens?.map((token) => [
+              token.start,
+              token.end,
+              SYNTAX_TOKEN_TYPES.indexOf(token.type),
+            ]) ?? null;
+          return JSON.stringify(compact).length <= 60_000 ? compact : null;
+        });
+    }
     case "ready":
       owner.onReady?.();
       break;

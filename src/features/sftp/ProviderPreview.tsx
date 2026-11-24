@@ -1,3 +1,4 @@
+import { usePreviewSyntaxSource } from "./preview/previewSyntax";
 import { useCallback, useEffect } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { PluginFilePreview } from "@/lib/api/types";
@@ -24,6 +25,7 @@ export function ProviderPreview({
   onDecodeError(): void;
   onRetry(): void;
 }) {
+  const syntax = usePreviewSyntaxSource(file, source);
   const view = usePreviewReadSource(source);
   useEffect(() => {
     if (view.status === "error" && view.stage === "read") onReadError();
@@ -39,6 +41,7 @@ export function ProviderPreview({
   return (
     <PreviewRenderer
       file={file}
+      syntax={syntax}
       renderer={provider.renderer}
       read={previewRenderRead(view)}
       url={info ? convertFileSrc(info.id, "preview") : undefined}

@@ -40,6 +40,9 @@ export interface SyntaxHighlightTarget {
   provider: SyntaxProvider;
   document: SyntaxDocumentSnapshot;
   window?: { offset: number; length: number } | null;
+  /** Read-only previews supply text directly; they are not editor API buffers. */
+  inlineWindow?: boolean;
+  isCurrent?: () => boolean;
 }
 
 function metadata(document: SyntaxDocumentSnapshot): SyntaxDocumentMetadata {
@@ -70,6 +73,20 @@ function requestFor(target: SyntaxHighlightTarget): SyntaxProviderRequest | null
       !syntaxScalarBoundary(document.content, end)
     )
       return null;
+    if (target.inlineWindow) {
+      const source = document.content.slice(window.offset, end);
+      const request: SyntaxProviderRequest = {
+        mode: "inline",
+        source,
+        document: metadata(document),
+        extensions: [documentExtension(document.path, target.provider.extensions)],
+        _locale: i18n.resolvedLanguage ?? i18n.language,
+      };
+      return textBytes(source) <= SYNTAX_SOURCE_MAX_BYTES &&
+        textBytes(JSON.stringify(request)) <= SYNTAX_REQUEST_MAX_BYTES
+        ? request
+        : null;
+    }
     const request: SyntaxWindowRequest = {
       mode: "window",
       source: null,
@@ -104,7 +121,7 @@ export async function runSyntaxHighlighting(
   target: SyntaxHighlightTarget,
   signal: AbortSignal,
 ): Promise<SyntaxToken[] | null> {
-  if (signal.aborted) return null;
+  if (signal.aborted || target.isCurrent?.() === false) return null;
   const { provider, document } = target;
   const original = usePlugins.getState().items.find((item) => item.id === provider.id);
   const command = original?.commands.find((item) => item.id === provider.command);
@@ -115,6 +132,7 @@ export async function runSyntaxHighlighting(
     command.editor.format === true ||
     !editorSyntaxMatches(document.path, command.editor.extensions) ||
     !original.permissions.includes("editor.read") ||
+    usePlugins.getState().stoppingIds.includes(original.id) ||
     !authorized(original)
   )
     return null;
@@ -125,21 +143,27 @@ export async function runSyntaxHighlighting(
     const result = await scheduleLatestSyntaxCall(
       runtimeKey,
       () =>
-        api.pluginRun(
-          provider.id,
-          provider.command,
-          request as unknown as Record<string, unknown>,
-          original.runtimeId ?? "",
-        ),
+        signal.aborted || target.isCurrent?.() === false
+          ? Promise.resolve(null)
+          : api.pluginRun(
+              provider.id,
+              provider.command,
+              request as unknown as Record<string, unknown>,
+              original.runtimeId ?? "",
+            ),
       signal,
     );
     if (signal.aborted) return null;
     const latest = usePlugins.getState().items.find((item) => item.id === provider.id);
-    const current = editorDocument(document.tabId);
+    const current = target.isCurrent ? null : editorDocument(document.tabId);
+    const currentDocument = target.isCurrent
+      ? target.isCurrent()
+      : !!current &&
+        current.documentId === document.documentId &&
+        current.version === document.version;
     if (
-      !current ||
-      current.documentId !== document.documentId ||
-      current.version !== document.version ||
+      !currentDocument ||
+      usePlugins.getState().stoppingIds.includes(original.id) ||
       !samePluginAction(latest, original, { id: provider.id, command: provider.command }) ||
       latest.status !== "running" ||
       !samePluginRuntime(latest, original) ||

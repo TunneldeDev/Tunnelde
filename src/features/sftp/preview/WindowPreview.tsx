@@ -1,9 +1,11 @@
+import { SYNTAX_TOKEN_TYPES } from "@/lib/plugins/syntax";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -22,13 +24,15 @@ import { PreviewRenderer, type PreviewRenderRead } from "./PreviewRenderer";
 import { createWindowPreviewContext } from "./windowContext";
 import { WindowPreviewProvider } from "./WindowPreviewProvider";
 import { useWindowPreviewHandle } from "./useWindowPreviewHandle";
-import type { PreviewWindowAction } from "./windowActions";
+import type { PreviewSyntaxSource } from "./usePreviewSyntax";
+import type { PreviewWindowAction, PreviewSyntaxReply } from "./windowActions";
 
 interface BodyFrame {
   data: PreviewWindowData;
   read: PreviewRenderRead;
   url?: string;
   active: boolean;
+  syntax?: PreviewSyntaxSource;
   onReady(): void;
   onDecodeError(cause: unknown): void;
   retry(): void;
@@ -50,6 +54,7 @@ function Body() {
       read={frame.read}
       url={frame.url}
       active={frame.active}
+      syntax={frame.syntax}
       onReady={frame.onReady}
       onDecodeError={frame.onDecodeError}
       onRetry={frame.retry}
@@ -132,6 +137,38 @@ function Attempt({
     snapshot.renderer !== "markdown"
       ? (data.read.resource?.id ?? null)
       : null;
+  const syntax = useMemo<PreviewSyntaxSource | undefined>(
+    () =>
+      data.syntaxKey
+        ? {
+            key: data.syntaxKey,
+            highlight: async (_document, range, signal) => {
+              owner.check(true);
+              const target = owner.target();
+              if (target.kind !== "owned") return null;
+              const tokens = await owner.client.action<PreviewSyntaxReply>(
+                target.lease,
+                {
+                  kind: "preview",
+                  id: snapshot.id,
+                  attemptId: snapshot.attemptId,
+                  revision: snapshot.revision,
+                  command: { operation: "syntax", from: range.from, to: range.to },
+                },
+                signal,
+              );
+              return (
+                tokens?.map(([start, end, type]) => {
+                  const semanticType = SYNTAX_TOKEN_TYPES[type];
+                  if (!semanticType) throw new Error("invalid:syntaxToken");
+                  return { start, end, type: semanticType };
+                }) ?? null
+              );
+            },
+          }
+        : undefined,
+    [owner, data.syntaxKey, snapshot.id, snapshot.attemptId, snapshot.revision],
+  );
   const handle = useWindowPreviewHandle(owner, resourceId);
   const onReady = useCallback(() => setDecoded(true), []);
   const onDecodeError = useCallback((cause: unknown) => setFailure({ cause }), []);
@@ -248,7 +285,16 @@ function Attempt({
             />
           ) : null}
           <Context.Provider
-            value={{ data, read, url, active, onReady, onDecodeError, retry: context.retry }}
+            value={{
+              data,
+              read,
+              url,
+              active,
+              syntax,
+              onReady,
+              onDecodeError,
+              retry: context.retry,
+            }}
           >
             <WindowPreviewProvider
               owner={owner}

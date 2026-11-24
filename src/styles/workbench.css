@@ -1222,6 +1222,12 @@
   line-height: 20px;
   resize: vertical;
 }
+.file-preview__code {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--td-border);
+  background: var(--td-bg);
+}
 .file-preview__empty {
   min-height: 260px;
   display: flex;

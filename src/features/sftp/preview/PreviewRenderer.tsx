@@ -6,6 +6,7 @@ import type { FilePreviewRenderer } from "@/lib/api/types";
 import type { PreviewFile } from "@/store/filePreview";
 import { fileName } from "@/store/editors";
 import { MediaPreview } from "../MediaPreview";
+import type { PreviewSyntaxSource } from "./usePreviewSyntax";
 import { TextContent } from "./TextContent";
 
 const PdfPreview = lazy(() => import("../PdfPreview"));
@@ -29,12 +30,14 @@ export function PreviewRenderer({
   onDecodeError,
   onRetry,
   active = true,
+  syntax,
 }: {
   file: PreviewFile;
   renderer: FilePreviewRenderer;
   read: PreviewRenderRead;
   url?: string;
   active?: boolean;
+  syntax?: PreviewSyntaxSource;
   onReady?(): void;
   onDecodeError?(cause: unknown): void;
   onRetry?(): void;
@@ -75,6 +78,8 @@ export function PreviewRenderer({
     return typeof read.content === "string" ? (
       <TextContent
         file={file}
+        active={active}
+        syntax={syntax}
         content={read.content}
         encoding={read.encoding}
         markdown={renderer === "markdown"}

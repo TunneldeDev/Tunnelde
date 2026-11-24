@@ -2,9 +2,9 @@
 
 [简体中文](../../../zh-cn/development/plugins/editor-syntax.md) · [Editor commands](editor-plugins.md)
 
-Plugin syntax highlighting is experimental. It colors code inside an open small
-editor document; it does not decorate file-list rows and it never modifies the
-document. The CodeMirror editor remains the only editing and accessibility surface. The
+Plugin syntax highlighting is experimental. It colors code inside open editor
+documents and source file previews; it does not decorate file-list rows and it
+never modifies the document. The CodeMirror editor remains the only editing and accessibility surface. The
 host converts validated semantic tokens into CodeMirror `Decoration.mark`
 ranges. Without a usable result, ordinary unstyled editor text remains visible.
 
@@ -93,7 +93,30 @@ for large documents. It is not a whole-document correctness claim: a comment or
 template that starts before the visible window may be classified from visible
 fragments only. Requests are cancelled or discarded when the document
 identity/version, provider package, runtime, permission grant or editor tab
-changes. A provider error or timeout also falls back to plain text.
+changes. A provider error or timeout keeps any still-valid colors, or leaves
+plain text when no valid result exists.
+
+## Source file previews
+
+Quick Look, docked and detached file previews use the same semantic-token colors
+and CodeMirror surface in read-only mode. Local files and SSH files are supported;
+Markdown uses highlighting in **Show source** mode. The rendered Markdown view
+keeps its existing presentation.
+
+Previews reuse an already-running, authorized syntax-only command. Each request
+uses `mode: "inline"` with a bounded text fragment of at most 32K UTF-16 units,
+subject to the existing 128 KiB source and 256 KiB request limits. Token offsets
+are relative to that fragment. Preview document identifiers are ephemeral and
+are **not** editor buffers: providers must tokenize the supplied `source` rather
+than call `editor.readRange` for a preview identifier. No new plugin permission
+or plugin release is needed for providers that implement the inline contract.
+
+Nearby scrolling reuses a buffered range; a pending or failed replacement keeps
+the last valid colors at their original offsets. Closing/replacing the preview,
+stopping the provider or revoking its grant cancels or discards pending results.
+Detached windows request highlighting through the current native panel lease;
+they never start a second plugin runtime. Selection and scroll are restored
+across panel moves without putting source text or tokens in the view capsule.
 
 ## Rendering and editing guarantees
 
