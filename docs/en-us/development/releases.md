@@ -54,6 +54,8 @@ Historical Nightly version metadata remains readable for compatibility.
 `feat` increases minor. Other development changes, including docs, CI and tests, increase patch.
 Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
 and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
+Only product changes create a stable promotion. A batch containing solely tests, docs, CI or
+release-tooling changes does not create a release PR or stable version.
 Explicit Beta versions use the same next stable base with a unique sequence suffix.
 The suffix is **`beta.N`, where N is 1 through 9**. Do not publish `beta.10`
 or higher. For example, `0.28.0-beta.1`, `0.28.0-beta.2`, then stable `0.28.0`;

@@ -160,6 +160,7 @@ function fixture({
               status: commits.length ? "ahead" : "identical",
               total_commits: commits.length,
               commits: globalThis.structuredClone(commits),
+              files: [{ filename: "src-tauri/src/app.rs", status: "modified" }],
             },
           };
         },
@@ -406,6 +407,26 @@ test("migration waits for main metadata, and an identical source creates no rele
   assert.equal((await planDevelopment(f)).version, undefined);
   delete f.files[SOURCE_PATH];
   assert.equal((await planDevelopment(f)).version, undefined);
+});
+
+test("non-product-only changes do not create a stable promotion", async () => {
+  for (const filename of [
+    "docs/en-us/development/releases.md",
+    "scripts/release/publishing/releases.mjs",
+    ".github/workflows/ci.yml",
+    "src-tauri/src/mounts/negotiation/tests.rs",
+  ]) {
+    const f = fixture();
+    f.github.rest.repos.compareCommitsWithBasehead = async () => ({
+      data: {
+        status: "ahead",
+        total_commits: 1,
+        commits: [source],
+        files: [{ filename, status: "modified" }],
+      },
+    });
+    assert.equal((await planDevelopment(f)).version, undefined, filename);
+  }
 });
 
 test("refuses to discard main changes outside generated metadata", async () => {
