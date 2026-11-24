@@ -176,6 +176,10 @@ async function checkPromotions(t, milestone) {
               status: commits.length ? "ahead" : "identical",
               total_commits: commits.length,
               commits,
+              files: git(["diff", "--name-only", base, head])
+                .split("\n")
+                .filter(Boolean)
+                .map((filename) => ({ filename, status: "modified" })),
             },
           };
         },
