@@ -15,7 +15,7 @@ import type { TerminalWindowModel, TerminalWindowCommand } from "./terminalWindo
 import { events } from "@/lib/api/ipc";
 import type { SshDataPayload, SshClosedPayload } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 
 const streamQueues = new WeakMap<PanelWindowClient, Map<string, Promise<unknown>>>();
 /** One exact renderer instance. Native remains the authority for every effect.
@@ -80,7 +80,7 @@ export function createTerminalViewBinding(
   const identity = (id: string) => {
     if (id !== sessionId) throw new Error("panel.window.staleOwner");
   };
-  const report = (error: unknown) => toast(translateError(error), "error");
+  const report = (error: unknown) => toast(presentError(error), "error");
   const action = async <T = unknown>(command: TerminalWindowCommand): Promise<T> =>
     client.action<T>(owned(), { kind: "terminal", command });
   const serial = async (work: () => Promise<void>) => {

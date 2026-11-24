@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { SshConfigIssue, SshConfigPreview } from "@/lib/api/sshConfig";
 import { useBackgroundGuard } from "@/lib/session/viewState";
 import { useHosts } from "@/store/hosts";
@@ -37,7 +37,7 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
         );
       })
       .catch((cause: unknown) => {
-        if (active) setError(translateError(cause));
+        if (active) setError(presentError(cause));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -66,7 +66,7 @@ export function SshConfigImportDialog({ onClose }: { onClose: () => void }) {
       toast(t("sshImport.imported", { count: result.imported.length }), "success");
       onClose();
     } catch (cause) {
-      setError(translateError(cause));
+      setError(presentError(cause));
     } finally {
       setSaving(false);
     }

@@ -50,6 +50,7 @@ Node 和声明式插件可声明 `views[].kind: "sharedMounts"`，由宿主提�
 | 文件面板与预览         | `files.*`、`fileBrowser.*`、`fileList.*`、`filePreview.*`               |
 | 文本编辑               | `editor.*`、`files.content.*`                                           |
 | 转发                   | `forwards.*`、`forwards.automation.*`                                   |
+| SOCKS5 域名转发        | `proxy.groups.*`、`proxy.routes.*`、`proxy.runtime.*`                   |
 | 挂载                   | `mounts.*`                                                              |
 | 监控与命令历史         | `monitor.*`、`history.*`                                                |
 | 工作区与底栏           | `workspace.*`、`statusBar.*`、`tabBar.*`                                |
@@ -62,3 +63,6 @@ revision 保存选项。旧的 `forwards.list`/`forwards.save` 契约不变。�
 停止插件不会撤销已保存的设置；自动启动在下次启动应用时生效，保存选项不会立即建立连接。
 
 `forwards.startMany({sessionId, items:[{id, expectedRevision}]})` 要求 `forwards.write`。传入最多 16 条不同的规则，从 `forwards.automation.list` 取得版本，并指定该主机已有的已认证会话。按输入顺序返回 `{id, status:"started"}`、`{id, status:"failed", error}`，或因 90 秒批次预算耗尽而未尝试的 `{id, status:"notStarted"}`。单条监听失败或版本冲突不会回滚已启动的规则。取消请求不撤销已提交的启动；插件停止或撤权仍会回收它的监听器。接口不会新建 SSH 会话，也不会为规则切换主机。
+
+SOCKS5 域名转发使用独立的实验性 `proxy.*` 域。监听策略、规则优先级、TUN 接入和迁移格式见
+[SOCKS5 域名转发与 TUN 插件](../socks-tun.md)。

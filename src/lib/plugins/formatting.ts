@@ -13,7 +13,7 @@ import {
   type EditorDocument,
 } from "@/store/editors";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import i18n from "@/i18n/i18n";
 import { samePluginAction } from "./commands/identity";
 
@@ -169,7 +169,7 @@ export async function runEditorPlugin(
     const message =
       error instanceof Error && i18n.exists(error.message)
         ? i18n.t(error.message as "editor.documentChanged")
-        : translateError(error);
+        : presentError(error);
     toast(message, "error");
     return false;
   } finally {

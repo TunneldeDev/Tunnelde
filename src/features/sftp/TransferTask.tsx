@@ -5,7 +5,7 @@ import { IconButton } from "@/components/ui/form/Button";
 import { durationParts, transferProgress } from "@/lib/files/transferProgress";
 import { transferNeedsReview } from "@/lib/files/transferRecovery";
 import { cn, formatBytes } from "@/lib/text/format";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { TransferItem } from "@/store/transfers";
 import { PanelViewStateGroup, usePanelViewState } from "@/lib/panels/viewState";
 import { toast } from "@/store/toasts";
@@ -46,7 +46,7 @@ function TransferTaskContent({ item, now, onResume }: TransferTaskProps) {
     setActing(true);
     void Promise.resolve()
       .then(action)
-      .catch((error: unknown) => toast(translateError(error), "error"))
+      .catch((error: unknown) => toast(presentError(error), "error"))
       .finally(() => {
         pendingAction.current = false;
         setActing(false);
@@ -222,7 +222,7 @@ function TransferTaskContent({ item, now, onResume }: TransferTaskProps) {
         <p className="transfer-task__error">
           {item.retainedCreation && item.error === "sftp.transferArtifactUnrecognized"
             ? t("sftp.retainedCreationChanged")
-            : translateError({ code: "ssh", message: item.error })}
+            : presentError({ code: "ssh", message: item.error })}
         </p>
       ) : null}
       {item.backupRecovery ? (

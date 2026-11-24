@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button } from "@/components/ui/form/Button";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { editorDocument, useEditors, type EditorDiskVersion } from "@/store/editors";
 import type { TextEncoding } from "@/lib/api/types";
 
@@ -61,7 +61,7 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
         }
       })
       .catch((error) => {
-        if (!cancelled) setError(translateError(error));
+        if (!cancelled) setError(presentError(error));
       });
     return () => {
       cancelled = true;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   bindShortcutProvider,
   consumeShortcutRelease,
@@ -111,6 +112,37 @@ describe("shortcut routing", () => {
     executeShortcutCandidates(event(), [a, b]);
     expect(a.run).toHaveBeenCalledOnce();
   });
+  it("does not treat an unrelated disclosure button as an open popup", () => {
+    useSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        keyboardShortcuts: { "files.copy": ["Mod+J"] },
+        shortcutRules: { "files.copy": { "Mod+J": { priority: 100, propagation: "continue" } } },
+      },
+    });
+    const page = document.createElement("div");
+    const disclosure = document.createElement("button");
+    disclosure.setAttribute("aria-expanded", "true");
+    disclosure.setAttribute("aria-controls", "group-panel");
+    const panel = document.createElement("div");
+    panel.id = "group-panel";
+    const list = document.createElement("div");
+    list.tabIndex = 0;
+    page.append(disclosure, panel, list);
+    document.body.append(page);
+    const run = vi.fn(() => true);
+    const unbind = bindShortcutProvider(list, (key) =>
+      scopedShortcutCandidates(key, ["files.copy"], run),
+    );
+    try {
+      fireEvent.keyDown(list, { key: "j", ctrlKey: true });
+      expect(run).toHaveBeenCalledOnce();
+      disclosure.remove();
+    } finally {
+      unbind();
+      page.remove();
+    }
+  });
   it("collects scoped commands, passes through without duplicate fallback, and unsubscribes", () => {
     useSettings.setState({
       settings: {
@@ -166,4 +198,26 @@ describe("shortcut routing", () => {
     expect(key.defaultPrevented).toBe(false);
     expect(run).toHaveBeenCalledOnce();
   });
+});
+
+it.each([true, false])("routes shortcuts with a non-modal panel inside=%s", (inside) => {
+  const floating = document.createElement("section");
+  floating.setAttribute("role", "dialog");
+  floating.setAttribute("aria-modal", "false");
+  const element = document.createElement("div");
+  document.body.append(floating);
+  if (inside) floating.append(element);
+  else document.body.append(element);
+  const run = vi.fn(() => true);
+  const unbind = bindShortcutProvider(element, () => [candidate("copy", run)]);
+  try {
+    const key = event();
+    element.dispatchEvent(key);
+    expect(run).toHaveBeenCalledOnce();
+    expect(key.defaultPrevented).toBe(true);
+  } finally {
+    unbind();
+    element.remove();
+    floating.remove();
+  }
 });

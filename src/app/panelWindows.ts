@@ -29,8 +29,7 @@ import { synchronizePluginAdapters } from "@/lib/panels/pluginAdapters";
 import { startNativePluginUi } from "@/lib/panels/windowPluginUi";
 import { startPresentationRequests } from "@/lib/panels/presentationRequests";
 import { installPanelWindowDrag } from "@/lib/panels/windowDrag";
-import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { notifyError } from "@/lib/api/errors";
 import { initializePanelWindow, type PanelWindowClient } from "@/lib/panels/windowClient";
 import { startPanelWindowCoordinator } from "@/lib/panels/windowCoordinator";
 import { usePanelWindows } from "@/store/panelWindows";
@@ -44,6 +43,7 @@ import { createWindowViews, installWindowViews } from "@/lib/panels/windowViews"
 import {
   createMainPanelPresentation,
   revealReturnedWorkspaceTabs,
+  retainReturnableWorkspaceTabs,
 } from "@/lib/panels/mainPresentation";
 import {
   installSourcePanelPresentation,
@@ -151,11 +151,16 @@ export async function startPanelWindows(signal: AbortSignal) {
     startPanelMoveRequests(current, failure),
     startPresentationRequests(current, failure),
     startSourcePanelFocus(current, failure),
-    installPanelWindowDrag(current, (error) => toast(translateError(error), "error")),
+    installPanelWindowDrag(current, (error) =>
+      notifyError(error, { domain: "panels.windows", operation: "drag" }),
+    ),
     usePlugins.subscribe(coordinator.refresh),
     frontendRuntime.subscribe(coordinator.refresh),
     useFilePreview.subscribe(coordinator.refresh),
-    useWorkspace.subscribe(coordinator.refresh),
+    useWorkspace.subscribe((state) => {
+      retainReturnableWorkspaceTabs(state.tabs);
+      coordinator.refresh();
+    }),
     useHosts.subscribe(coordinator.refresh),
     useSsh.subscribe(coordinator.refresh),
     useSettings.subscribe(coordinator.refresh),

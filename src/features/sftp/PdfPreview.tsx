@@ -11,7 +11,7 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/form/Button";
 import { readPreviewRange } from "@/lib/files/preview";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -245,7 +245,7 @@ export default function PdfPreview({
           <Plus size={16} />
         </Button>
       </div>
-      {failure ? <p role="alert">{translateError(failure.cause)}</p> : null}
+      {failure ? <p role="alert">{presentError(failure.cause)}</p> : null}
       <div
         className="file-preview__pdf-pages"
         ref={container}

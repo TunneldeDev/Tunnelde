@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import type { RemoteStats } from "@/lib/api/types";
 import { useMonitorHistory } from "@/store/monitorHistory";
@@ -75,7 +75,7 @@ export const useMonitor = create<MonitorStore>((set, get) => ({
             ...state.entries,
             [sessionId]: {
               ...(state.entries[sessionId] ?? EMPTY),
-              error: translateError(error),
+              error: presentError(error),
               loading: false,
             },
           },

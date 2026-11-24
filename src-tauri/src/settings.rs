@@ -70,6 +70,7 @@ pub struct Settings {
     pub mono_font_size: u16,
     /// Font stack id from [`MONO_FONTS`].
     pub mono_font: String,
+    pub font_selections: crate::fonts::FontSelections,
     pub sidebar_width: u16,
     pub right_panel: bool,
     pub right_panel_width: u16,
@@ -154,6 +155,7 @@ impl Default for Settings {
             ui_font_size: 13,
             mono_font_size: 14,
             mono_font: "fira-code".into(),
+            font_selections: Default::default(),
             sidebar_width: 272,
             right_panel: false,
             right_panel_width: 296,
@@ -408,6 +410,7 @@ impl Settings {
         if !DENSITIES.contains(&self.density.as_str()) {
             self.density = "comfortable".into();
         }
+        self.font_selections.sanitize();
         self.ui_font_size = self.ui_font_size.clamp(11, 20);
         self.mono_font_size = self.mono_font_size.clamp(10, 32);
         self.preload_count = self.preload_count.min(32);

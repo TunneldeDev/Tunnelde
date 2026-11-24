@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import type { SshConnectRequest, SshSession } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
@@ -118,7 +118,7 @@ export const useSsh = create<SshStore>((set, get) => ({
         return session;
       } catch (error) {
         if (onError) onError(error);
-        else toast(translateError(error), "error");
+        else toast(presentError(error), "error");
         return null;
       } finally {
         connections.delete(connectionKey);
@@ -162,13 +162,13 @@ export const useSsh = create<SshStore>((set, get) => ({
               state.history,
               session,
               "disconnectFailed",
-              translateError(error),
+              presentError(error),
             ),
           }));
         }
         entry.failed = true;
         entry.error = error;
-        if (entry.reportToast) toast(translateError(error), "error");
+        if (entry.reportToast) toast(presentError(error), "error");
       } finally {
         disconnections.delete(sessionId);
         set((state) => ({

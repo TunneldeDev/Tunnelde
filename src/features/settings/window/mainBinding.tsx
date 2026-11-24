@@ -1,3 +1,4 @@
+import { mainFontServices } from "../FontSettings";
 import type { NetworkSettingsServices } from "../components/NetworkSettingsView";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/ipc";
@@ -24,7 +25,7 @@ import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { defaultHostListPreferences } from "@/lib/hosts/columns";
 import { changeNetworkRoute } from "../data/networkMutations";
 import { defaultNetwork } from "@/lib/api/network";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { SettingsHandlers, SettingsWindowCommand } from "./protocol";
 import type { SettingsProjection } from "./model";
 import { create } from "zustand";
@@ -85,7 +86,7 @@ export async function executeSettingsCommand(
       ...(command.args as never[]),
     );
   } catch (error) {
-    throw new Error(translateError(error));
+    throw new Error(presentError(error));
   }
 }
 /** Stays in main across every presentation move. Authentication and real effect
@@ -217,6 +218,10 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
         else delete colors[region];
         return owner.update({ colors });
       },
+      fonts_select: mainFontServices.select,
+      fonts_catalogue: mainFontServices.catalogue,
+      fonts_import: mainFontServices.importFile,
+      fonts_remove: mainFontServices.remove,
       cssImport: () => api.importCss(),
       cssExport: (text) => api.exportCss(text),
       updateCheck: (force) => useUpdates.getState().check(force),
@@ -270,7 +275,7 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
       network_saveProfile: async (edit) => {
         const { credentialError } = await useSettings.getState().saveProxyProfile(edit);
         return {
-          credentialError: credentialError == null ? null : translateError(credentialError),
+          credentialError: credentialError == null ? null : presentError(credentialError),
         };
       },
       network_test: (proxy, host, port) => api.testProxyQuality(proxy, host, port),

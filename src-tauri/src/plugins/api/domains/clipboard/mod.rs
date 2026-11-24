@@ -22,12 +22,25 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     let app = &context.app;
+    let check = || {
+        if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
     match method {
-        "clipboard.readText" => encode(commands::clipboard_read_text(app.clone()).await?),
+        "clipboard.readText" => {
+            check()?;
+            let value = encode(commands::clipboard_read_text(app.clone()).await?);
+            check()?;
+            value
+        }
         "clipboard.writeText" => {
             let text = field::<String>(&params, "text")?;
             let worker = context.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let effect_origin = origin.clone();
+            let admission_origin = origin.clone();
             let lifetime = WorkLifetime::current();
             WRITERS
                 .blocking(move |cancel: &Cancellation| {
@@ -35,6 +48,11 @@ pub(in crate::plugins::api) async fn dispatch(
                         cancel.check()?;
                         let effect = || {
                             authorize(&worker, &["clipboard.write"])?;
+                            if let Some(origin) = &effect_origin {
+                                origin.authorize_call(
+                                    crate::plugins::frontend::native::CallPolicy::OwnedData,
+                                )?;
+                            }
                             cancel.check()?;
                             worker
                                 .app
@@ -42,7 +60,7 @@ pub(in crate::plugins::api) async fn dispatch(
                                 .write_text(text)
                                 .map_err(|_| AppError::internal("clipboard.unavailable"))
                         };
-                        match origin {
+                        match admission_origin {
                             Some(origin) => origin.with_current(effect),
                             None => effect(),
                         }

@@ -4,8 +4,7 @@ import { HostDetailsSections } from "./HostDetailsSections";
 import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { usePanelLeaseAction } from "@/lib/panels/interaction";
 import { executeHostPanelCommand } from "./panel/execute";
-import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { notifyError } from "@/lib/api/errors";
 import type { ReactNode } from "react";
 import { useHostPanel } from "./panel/context";
 import type { HostDetailOperation } from "./detail/protocol";
@@ -168,7 +167,7 @@ export function HostPage({ hostId }: { hostId: string | null }) {
     if (!host) return;
     const command = { operation, host: data.hostTarget(host.id) };
     void (action({ kind: "hostDetail", command }) ?? executeHostPanelCommand(command)).catch(
-      (error) => toast(translateError(error), "error"),
+      (error) => notifyError(error, { domain: "hosts.detail", operation }),
     );
   };
   return (

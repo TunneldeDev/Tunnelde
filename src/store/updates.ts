@@ -1,7 +1,7 @@
 import { updateHistoryKey, matchingUpdateState } from "@/lib/updates/stateIdentity";
 import { create } from "zustand";
 
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { ReleaseHistory, UpdateState } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
@@ -74,7 +74,7 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
           key,
           loading: false,
           data: previous?.key === key ? previous.data : null,
-          error: translateError(error),
+          error: presentError(error),
         },
       });
     }
@@ -108,7 +108,7 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
       toast(
         hasDiagnostics && error.message === "updates.sourcesUnavailable"
           ? i18n.t("updates.sourcesUnavailableNotification")
-          : translateError(error),
+          : presentError(error),
         "error",
         hasDiagnostics
           ? {
@@ -130,7 +130,7 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
       await api.installUpdate();
     } catch (error) {
       set({ busy: false });
-      toast(translateError(error), "error");
+      toast(presentError(error), "error");
     } finally {
       set({ busy: false });
     }

@@ -2,7 +2,7 @@ import { ArrowRight, Laptop, Play, Server, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { endpointAddress, localConnectionAddress } from "../model/endpoint";
 import type { ForwardingController } from "../runtime/useForwardingController";
 
@@ -42,7 +42,7 @@ export function ForwardingEntries({
           failure?.target === rule.id
             ? failure.message
             : automation?.error
-              ? translateError(automation.error)
+              ? presentError(automation.error)
               : null;
         const local = rule.mode === "local";
         const active = isActive(rule);

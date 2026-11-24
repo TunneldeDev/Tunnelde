@@ -1,11 +1,11 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, Pencil, Play, Plus, RotateCw, Square, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { nativeEvents } from "@/lib/events/native";
 import type {
   MountEntry,
@@ -37,25 +37,30 @@ const active = (operation: MountOperation) => ["pending", "running"].includes(op
 function useMountActions() {
   const pending = useRef(false);
   const refresh = useRef<() => void>(() => {});
-  const setRefresh = useCallback((read: () => void) => { refresh.current = read; }, []);
+  const setRefresh = useCallback((read: () => void) => {
+    refresh.current = read;
+  }, []);
   const requestRefresh = useCallback(() => refresh.current(), []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const run = useCallback(async (action: () => Promise<unknown>) => {
-    if (pending.current) return;
-    pending.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-    } catch (cause) {
-      setError(translateError(cause));
-    } finally {
-      pending.current = false;
-      setBusy(false);
-      requestRefresh();
-    }
-  }, [requestRefresh]);
+  const run = useCallback(
+    async (action: () => Promise<unknown>) => {
+      if (pending.current) return;
+      pending.current = true;
+      setBusy(true);
+      setError("");
+      try {
+        await action();
+      } catch (cause) {
+        setError(presentError(cause));
+      } finally {
+        pending.current = false;
+        setBusy(false);
+        requestRefresh();
+      }
+    },
+    [requestRefresh],
+  );
   return { busy, error, setError, setRefresh, requestRefresh, run };
 }
 
@@ -167,7 +172,7 @@ function MountPanel({
           if (progress) setOperation(progress);
         }
       } catch (cause) {
-        if (!controller.signal.aborted) setError(translateError(cause));
+        if (!controller.signal.aborted) setError(presentError(cause));
       } finally {
         reading = false;
       }
@@ -183,7 +188,7 @@ function MountPanel({
         controller.signal,
       ),
     ]).then(read, (cause: unknown) => {
-      if (!controller.signal.aborted) setError(translateError(cause));
+      if (!controller.signal.aborted) setError(presentError(cause));
       void read();
     });
     void call<{ available: boolean }>("mounts.dependencies.get").then(
@@ -191,7 +196,7 @@ function MountPanel({
         if (!controller.signal.aborted) setDependency(result.available);
       },
       (cause: unknown) => {
-        if (!controller.signal.aborted) setError(translateError(cause));
+        if (!controller.signal.aborted) setError(presentError(cause));
       },
     );
     return () => {
@@ -342,7 +347,7 @@ function MountPanel({
                         : ""}
                     </span>
                     {status?.error && (
-                      <div className="panel__error">{translateError(status.error.message)}</div>
+                      <div className="panel__error">{presentError(status.error.message)}</div>
                     )}
                   </div>
                   {write && (
@@ -415,7 +420,7 @@ function MountPanel({
                           <code>{rule.value.mountPoint}</code>
                         </div>
                         {state?.error && (
-                          <div className="panel__error">{translateError(state.error.message)}</div>
+                          <div className="panel__error">{presentError(state.error.message)}</div>
                         )}
                       </div>
                       {write && (
@@ -660,7 +665,7 @@ function MountPanel({
                 {snapshot?.rules.find((r) => r.value.id === item.targetId)?.value.name ??
                   snapshot?.groups.find((g) => g.value.id === item.targetId)?.value.name ??
                   item.targetId}
-                : {translateError(item.error?.message)}
+                : {presentError(item.error?.message)}
               </p>
             ))}
           {write && operationId && (

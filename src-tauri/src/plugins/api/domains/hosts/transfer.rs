@@ -43,7 +43,10 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
         );
     }
     state.plugins.security.with_authorized(&lease, READ, || {
-        state.db.with(|conn| match method {
+        crate::platform::panel_windows::plugin_views::origin::check(
+            crate::plugins::frontend::native::CallPolicy::StagedData,
+        )?;
+        let value = state.db.with(|conn| match method {
             "hosts.transfer.export" => encode(transfer::export_at(
                 conn,
                 &field::<Vec<String>>(&params, "ids")?,
@@ -52,6 +55,10 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
                 encode(transfer::preview_at(conn, field(&params, "document")?)?)
             }
             _ => Err(AppError::validation("plugin.api.unknownMethod")),
-        })
+        })?;
+        crate::platform::panel_windows::plugin_views::origin::check(
+            crate::plugins::frontend::native::CallPolicy::StagedData,
+        )?;
+        Ok(value)
     })
 }

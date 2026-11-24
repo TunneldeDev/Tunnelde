@@ -1,8 +1,11 @@
+import type { DiagnosticEvent } from "@/lib/diagnostics";
 import type { OutputSnapshot } from "@/lib/api/ipc";
 import { matchesSearch, parseSearchQuery, type SearchQuery } from "@/lib/search/query";
 
 export interface OutputEntry {
   id: number;
+  eventId?: string;
+  memoryOnly?: boolean;
   timestamp: string;
   level: string;
   domain: string;
@@ -30,6 +33,7 @@ export function parseDiagnostic(line: string): Omit<OutputEntry, "id"> {
   try {
     const item = record(JSON.parse(line));
     const fields = record(item.fields);
+    const eventId = typeof fields.event_id === "string" ? plain(fields.event_id) : undefined;
     const plugin = fields.plugin_id ?? fields.plugin ?? item.plugin_id;
     const domain =
       typeof fields.domain === "string"
@@ -44,6 +48,7 @@ export function parseDiagnostic(line: string): Omit<OutputEntry, "id"> {
       .map(([key, value]) => `${key}=${text(value)}`)
       .join(" · ");
     return {
+      ...(eventId ? { eventId } : {}),
       timestamp: typeof item.timestamp === "string" ? item.timestamp : "",
       level: ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"].includes(level) ? level : "INFO",
       domain: plain(domain),
@@ -68,6 +73,9 @@ export function snapshotEntries(snapshot: OutputSnapshot, nextId: () => number):
     .split("\n")
     .filter((line) => line.trim())
     .map((line) => ({ ...parseDiagnostic(line), id: nextId() }));
+  for (const line of (snapshot.memory ?? "").split("\n").filter(Boolean)) {
+    entries.push({ ...parseDiagnostic(line), id: nextId(), memoryOnly: true });
+  }
   for (const item of [...snapshot.operations].reverse()) {
     entries.push({
       id: nextId(),
@@ -78,6 +86,42 @@ export function snapshotEntries(snapshot: OutputSnapshot, nextId: () => number):
       message: `${item.action}${item.target ? ` · ${item.target}` : ""}`,
       kind: "operations",
     });
+  }
+  return entries.sort((a, b) => (Date.parse(a.timestamp) || 0) - (Date.parse(b.timestamp) || 0));
+}
+
+export function localDiagnosticEntry(event: DiagnosticEvent, id: number): OutputEntry {
+  return {
+    id,
+    eventId: event.eventId,
+    timestamp: event.timestamp,
+    level: event.level.toUpperCase(),
+    domain: `frontend.${event.domain}`,
+    plugin: null,
+    message: `${event.message} · event_id=${event.eventId} · operation=${event.operation} · ${JSON.stringify(
+      {
+        code: event.code,
+        frames: event.frames,
+        requestId: event.requestId,
+        occurrences: event.occurrences,
+      },
+    )}`,
+    memoryOnly: true,
+    kind: "application",
+  };
+}
+
+export function mergeOutput(previous: OutputEntry[], added: OutputEntry[]): OutputEntry[] {
+  const entries: OutputEntry[] = [];
+  const index = new Map<string, number>();
+  for (const entry of [...previous, ...added]) {
+    const duplicate = entry.eventId ? index.get(entry.eventId) : undefined;
+    if (duplicate === undefined) {
+      if (entry.eventId) index.set(entry.eventId, entries.length);
+      entries.push(entry);
+    } else if (entries[duplicate]?.memoryOnly && !entry.memoryOnly) {
+      entries[duplicate] = { ...entry, id: entries[duplicate]!.id };
+    }
   }
   return entries.sort((a, b) => (Date.parse(a.timestamp) || 0) - (Date.parse(b.timestamp) || 0));
 }

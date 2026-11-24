@@ -167,6 +167,9 @@ pub(crate) enum Command {
     CancelDrag {
         token: String,
     },
+    RenewDrag {
+        token: String,
+    },
     AcceptDrag {
         token: String,
     },
@@ -364,6 +367,10 @@ impl Ownership {
             }
             Command::CancelDrag { token } => {
                 self.cancel_drag(window, document, &token)?;
+                Ok(Value::Null)
+            }
+            Command::RenewDrag { token } => {
+                self.renew_drag(window, document, &token, now)?;
                 Ok(Value::Null)
             }
             Command::BeginClose {} => Ok(json!(self.begin_close(window, document)?)),

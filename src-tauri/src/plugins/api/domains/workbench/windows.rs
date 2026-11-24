@@ -15,7 +15,6 @@ pub(super) async fn dispatch(
 ) -> AppResult<Value> {
     match method {
         "workspace.panels.list" | "workspace.panels.observe" => {
-            authorize(context, &["workspace.read"])?;
             let revision: Option<String> = optional(&params, "revision")?;
             if revision
                 .as_ref()
@@ -23,8 +22,19 @@ pub(super) async fn dispatch(
             {
                 return Err(AppError::validation("plugin.api.invalid:revision"));
             }
-            public_panels::snapshot(&context.app, revision, method == "workspace.panels.observe")
-                .await
+            let worker = context.clone();
+            public_panels::snapshot(
+                &context.app,
+                revision,
+                method == "workspace.panels.observe",
+                move || {
+                    authorize(&worker, &["workspace.read"])?;
+                    crate::platform::panel_windows::plugin_views::origin::check(
+                        crate::plugins::frontend::native::CallPolicy::StagedData,
+                    )
+                },
+            )
+            .await
         }
         "workspace.panels.setPresentation" | "workspace.panels.close" => {
             authorize(context, &["workspace.write"])?;
@@ -42,11 +52,17 @@ pub(super) async fn dispatch(
             .await
         }
         "workspace.windows.list" | "workspace.panels.ownership" => {
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
             authorize(context, &["workspace.read"])?;
-            Ok(public::snapshot(&context.app))
+            let value = public::snapshot(&context.app);
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            Ok(value)
         }
         "workspace.windows.observe" => {
-            authorize(context, &["workspace.read"])?;
             let revision: Option<String> = optional(&params, "revision")?;
             if revision
                 .as_ref()
@@ -54,7 +70,14 @@ pub(super) async fn dispatch(
             {
                 return Err(AppError::validation("plugin.api.invalid:revision"));
             }
-            Ok(public::observe(&context.app, revision).await)
+            let worker = context.clone();
+            public::observe(&context.app, revision, move || {
+                authorize(&worker, &["workspace.read"])?;
+                crate::platform::panel_windows::plugin_views::origin::check(
+                    crate::plugins::frontend::native::CallPolicy::StagedData,
+                )
+            })
+            .await
         }
         "workspace.panels.moveToWindow" => {
             authorize(context, &["workspace.write"])?;

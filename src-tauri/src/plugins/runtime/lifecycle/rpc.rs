@@ -22,8 +22,20 @@ pub(in crate::plugins) async fn dispatch(
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check_origin = |policy: crate::plugins::frontend::native::CallPolicy| {
+        if let Some(origin) = &origin {
+            origin.authorize_call(policy)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check_origin(if method == "resources.identify" {
+        crate::plugins::frontend::native::CallPolicy::StagedData
+    } else {
+        crate::plugins::frontend::native::CallPolicy::OwnedData
+    })?;
     let permit = super::admission::acquire(&context.id)?;
-    match method {
+    let result = match method {
         "resources.identify" => {
             let reference: Reference = parse(params)?;
             reference.validate()?;
@@ -33,6 +45,7 @@ pub(in crate::plugins) async fn dispatch(
             )
             .await
             .map_err(|_| AppError::validation("plugin.resources.busy"))??;
+            check_origin(crate::plugins::frontend::native::CallPolicy::StagedData)?;
             Ok(serde_json::to_value(resource)?)
         }
         "resources.snapshot" => {
@@ -69,7 +82,13 @@ pub(in crate::plugins) async fn dispatch(
             })?)
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
-    }
+    }?;
+    check_origin(if method == "resources.identify" {
+        crate::plugins::frontend::native::CallPolicy::StagedData
+    } else {
+        crate::plugins::frontend::native::CallPolicy::OwnedData
+    })?;
+    Ok(result)
 }
 
 async fn collect(context: &HostContext) -> AppResult<Vec<adapters::Entry>> {

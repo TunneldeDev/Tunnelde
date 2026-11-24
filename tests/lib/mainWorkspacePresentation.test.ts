@@ -9,6 +9,10 @@ import {
 } from "@/lib/panels/mainPresentation";
 import { useWorkspace } from "@/store/workspace";
 import { usePanelWindows } from "@/store/panelWindows";
+import {
+  forgetDetachedWorkspaceTab,
+  rememberDetachedWorkspaceTab,
+} from "@/lib/panels/detachedWorkspaceTabs";
 afterEach(() => {
   usePanelWindows.setState({ available: false });
 });
@@ -126,11 +130,13 @@ it("restores only hidden workspace tabs whose exact live owner returned to main"
     activeId: sidebar.id,
     layout: { kind: "pane", paneId: "pane" },
   });
+  forgetDetachedWorkspaceTab("page:settings");
+  rememberDetachedWorkspaceTab("page:settings", "page:settings", 1);
   revealReturnedWorkspaceTabs({
     windows: [],
     transfers: [],
     panels: [
-      { panelId: "page:settings", windowId: "main", generation: 1 },
+      { panelId: "page:settings", windowId: "main", generation: 2 },
       { panelId: "hosts", windowId: "main", generation: 1 },
     ],
   });

@@ -1,10 +1,12 @@
-use crate::plugins::api::{authorize, encode, field, HostContext};
+use crate::plugins::api::{authorize, encode, field, transport::operation::Operation, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
 };
 use serde_json::Value;
+use std::sync::{Arc, OnceLock};
 use tauri::Manager;
+use tokio::sync::Semaphore;
 mod preferences;
 mod profiles;
 
@@ -13,6 +15,18 @@ pub(in crate::plugins::api) async fn dispatch(
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
+    if method == "fonts.catalogue" {
+        if params.as_object().is_none_or(|fields| !fields.is_empty()) {
+            return Err(AppError::validation("plugin.api.invalid:params"));
+        }
+        let policy = crate::plugins::frontend::native::CallPolicy::StagedData;
+        crate::platform::panel_windows::plugin_views::origin::check(policy)?;
+        authorize(context, &["settings.read"])?;
+        let result = crate::fonts::catalogue(&context.app, false).await?;
+        authorize(context, &["settings.read"])?;
+        crate::platform::panel_windows::plugin_views::origin::check(policy)?;
+        return encode(result);
+    }
     if method.starts_with("profiles.") {
         return profiles::dispatch(context, method, params).await;
     }
@@ -22,7 +36,13 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
-        "settings.get" => encode(crate::services::settings::read(&state)),
+        "settings.get" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            let value = encode(crate::services::settings::read(&state));
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            value
+        }
         "settings.update" => {
             let patch: Value = field(&params, "patch")?;
             if !patch.is_object() {
@@ -40,8 +60,13 @@ pub(in crate::plugins::api) async fn dispatch(
             }
             let worker = context.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            static CAPACITY: OnceLock<Arc<Semaphore>> = OnceLock::new();
+            let operation =
+                Operation::admit(CAPACITY.get_or_init(|| Arc::new(Semaphore::new(4))).clone())?;
+            let ticket = operation.ticket();
             crate::services::settings::write(app, move |writer| {
                 let state = worker.app.state::<AppState>();
+                ticket.check()?;
                 authorize(&worker, &["settings.write"])?;
                 let prepared = writer.prepare_update(patch)?;
                 let lease = crate::plugins::security::Lease {
@@ -63,10 +88,17 @@ pub(in crate::plugins::api) async fn dispatch(
                         &state.db,
                         &lease,
                         &["settings.write"],
-                        || cancellation.check(),
+                        || {
+                            ticket.check()?;
+                            cancellation.check()
+                        },
                         authority,
-                        |conn| prepared.borrow().persist_on(conn),
+                        |conn| {
+                            ticket.check()?;
+                            prepared.borrow().persist_on(conn)
+                        },
                         |revision| {
+                            ticket.commit()?;
                             prepared.borrow_mut().committed_revision(revision);
                             Ok(())
                         },

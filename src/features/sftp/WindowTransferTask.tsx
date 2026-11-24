@@ -4,7 +4,7 @@ import type { ConnectionPromptServices } from "@/features/connect/prompt";
 import type { TaskViewProps } from "@/features/tasks/presentation";
 import type { TransferPanelModel } from "@/lib/panels/taskModel";
 import { usePanelInteraction, type PanelInteractionRelease } from "@/lib/panels/interaction";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import { TransferTask } from "./TransferTask";
 import { TransferTaskControllerScope } from "./transferTaskController";
@@ -175,7 +175,7 @@ export function WindowTransferTask({
             connected.current = true;
           }}
           onClose={() => {
-            void close().catch((error) => toast(translateError(error), "error"));
+            void close().catch((error) => toast(presentError(error), "error"));
           }}
         />
       ) : null}

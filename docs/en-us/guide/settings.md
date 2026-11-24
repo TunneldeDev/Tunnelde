@@ -12,6 +12,31 @@ settings; a failed save retains the previous values. Profiles also preserve adva
 shortcut priorities, propagation rules, detail visibility and terminal clipboard
 preferences. Profile files remain version 1 and exclude update-check timestamps.
 
+## Fonts
+
+**Settings → Appearance → Font management** lists installed system fonts and imported
+fonts. Search and preview a font before applying it to interface text, shared
+monospace text, or the editor's CJK fallback. The shared monospace choice affects
+terminals, the editor and monospace information. The existing built-in font selector
+remains the default; choosing it clears a custom monospace override.
+
+Import **TTF, OTF, WOFF or WOFF2** files up to **64 MiB** each. Imports are copied into
+managed application data, validated in the WebView, and deduplicated by content.
+They are not installed system-wide and no fonts are downloaded automatically.
+TTC/OTC collection imports are not supported. Refresh the system font list after
+installing fonts through the operating system.
+
+The editor uses system CJK fonts by default and calibrates their widths against the
+selected monospace face. Glyph coverage and appearance depend on available fonts;
+a machine without suitable CJK fonts uses its WebView fallback. Unavailable choices
+are retained with a default fallback. Reimporting the same font restores its identity.
+Deleting an active import resets the affected choices; resetting preferences retains
+imported files. Changes reach docked and separate windows without reconnecting SSH.
+
+Settings profiles include font references, **not font files**. Import the same font on
+another machine to restore an imported choice. Font files follow the database storage
+location during managed data migration.
+
 ## Application updates
 
 **Settings → Updates** contains the current version, checks, installation progress and

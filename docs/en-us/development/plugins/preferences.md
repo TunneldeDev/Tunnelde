@@ -168,3 +168,23 @@ Public DTOs live in `contracts/preferences/data/`; the presentation contract is
 host-field mapping. Marketplace UI and RPC DTOs are generated from the same
 public source. Custom plugin preference schemas and migration are not provided
 by this presentation contract.
+
+## Font choices and catalogue
+
+The experimental `fonts.catalogue({})` method requires `settings.read` and returns
+`{version:1,items}`. Each item contains `reference`, `name` and `monospaced`; imported
+items also include `format` and `bytes`. It exposes family metadata, never filesystem
+paths or font bytes. Installed fonts are scanned on demand and cached; the native
+settings UI can refresh the cache. Permissions and frontend lifetime are rechecked
+after the scan.
+
+`settings.get` returns the configured native `fontSelections` object. Its
+`ui`, `mono` and `editorCjk` targets are either `null`, a reference to a system
+font by family, or a reference to an import by lowercase SHA-256 content ID.
+Plugins with `settings.write` can replace the object through `settings.update`.
+A native settings patch that updates `monoFont` without including
+`fontSelections` clears its custom monospace override.
+
+The frozen v1 `preferences.*` contract and public profile content do not include
+native font references. Desktop settings profile exports include references,
+not font files. Font-file import and deletion require the native settings UI.

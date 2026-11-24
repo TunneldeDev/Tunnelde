@@ -1,12 +1,12 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { Host } from "@/lib/api/types";
 import type { ConnectionRoute, ProxyProfile } from "@/lib/api/network";
 import type { ForwardRule, ForwardAutomation } from "@/features/forwarding/model/contract";
 
 export interface HostDocument {
   format: "tunnelde-hosts";
-  version: 1;
+  version: 1 | 2;
   platform: string;
   roots: string[];
   hosts: Array<{
@@ -37,6 +37,33 @@ export interface HostDocument {
     mountPoint: string;
     readOnly: boolean;
     autoMount: boolean;
+  }>;
+  proxyGroups?: Array<{
+    id: string;
+    hostId: string;
+    name: string;
+    listenHost: string;
+    listenPort: number;
+    authMode: "none" | "password";
+    authUsername: string;
+    missPolicy: "direct" | "remote" | "reject";
+    autoStart: boolean;
+    autoRetry: boolean;
+  }>;
+  proxyRoutes?: Array<{
+    route: {
+      id: string;
+      groupId: string;
+      name: string;
+      mode: "group" | "dedicated";
+      matchHost: string;
+      matchPort?: number | null;
+      targetHost: string;
+      targetPort: number;
+      bindHost?: string | null;
+      bindPort?: number | null;
+    };
+    revision: string;
   }>;
 }
 export interface HostImportPreview {

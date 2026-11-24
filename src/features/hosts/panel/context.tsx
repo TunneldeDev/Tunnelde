@@ -4,8 +4,7 @@ import type { HostPanelCommand, HostPanelTarget } from "./protocol";
 import { hostPanelSource } from "./source";
 import { executeHostPanelCommand } from "./execute";
 import { usePanelLeaseAction } from "@/lib/panels/interaction";
-import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { notifyError } from "@/lib/api/errors";
 
 const Context = createContext<{ data: HostPanelData; requireRemote: boolean } | null>(null);
 export function HostPanelScope({
@@ -36,7 +35,7 @@ export function useHostPanel() {
       if (remote?.requireRemote && !result) throw new Error("panel.window.staleOwner");
       return (await (result ?? executeHostPanelCommand(command))) !== false;
     } catch (error) {
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts.panel", operation: command.operation });
       return false;
     }
   };

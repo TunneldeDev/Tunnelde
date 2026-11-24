@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { Host, HostKeyInfo, SshConnectRequest, SshSession } from "@/lib/api/types";
 import type { ForwardRule } from "../model/contract";
 

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { PortableSettings, SettingsProfile } from "@/lib/prefs/profiles";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 
 interface ProfilesStore {
@@ -46,7 +46,7 @@ export const useSettingsProfiles = create<ProfilesStore>((set, get) => {
             });
           }
         } catch (failure) {
-          if (started === generation && !get().busy) set({ error: translateError(failure) });
+          if (started === generation && !get().busy) set({ error: presentError(failure) });
         }
       } while (requested && !get().busy);
     })().finally(() => {
@@ -75,7 +75,7 @@ export const useSettingsProfiles = create<ProfilesStore>((set, get) => {
       });
       return true;
     } catch (failure) {
-      const error = translateError(failure);
+      const error = presentError(failure);
       set({ error });
       toast(error, "error");
       return false;

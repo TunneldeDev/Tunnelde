@@ -1,5 +1,5 @@
 import { api, isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useSettings } from "@/store/settings";
 import { matchingUpdateState, updateHistoryKey, useUpdates } from "@/store/updates";
 import { toast } from "@/store/toasts";
@@ -36,7 +36,7 @@ export function UpdateStatus() {
         install,
         skip,
         openRelease: () => {
-          void api.openReleasePage().catch((error) => toast(translateError(error), "error"));
+          void api.openReleasePage().catch((error) => toast(presentError(error), "error"));
         },
         renderDiagnostics: (failures) => <UpdateDiagnostics failures={failures} />,
         renderNotes: (snapshot) => (

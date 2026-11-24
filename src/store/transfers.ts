@@ -3,7 +3,7 @@ import { isTauri } from "@/lib/api/ipc";
 import { create } from "zustand";
 
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import type { TransferEvent } from "@/lib/api/types";
 import { sampleTransfer, type TransferRate } from "@/lib/files/transferProgress";
@@ -37,7 +37,7 @@ export interface TransferOperationOptions {
 }
 function reportTransferError(error: unknown, options?: TransferOperationOptions) {
   if (options?.onError) options.onError(error);
-  else toast(translateError(error), "error");
+  else toast(presentError(error), "error");
 }
 
 interface TransfersStore {
@@ -126,7 +126,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       }));
     } catch (error) {
       if (request !== snapshotRequest) return;
-      toast(translateError(error), "error");
+      toast(presentError(error), "error");
     }
   },
   pause: async (id, options) => {

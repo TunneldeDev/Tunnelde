@@ -23,7 +23,7 @@ vi.mock("react-i18next", async (importOriginal) => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock("@/lib/api/errors", () => ({
-  translateError: (error: { message: string }) => error.message,
+  presentError: (error: { message: string }) => error.message,
 }));
 
 import {

@@ -263,6 +263,15 @@ pub type AppResult<T> = Result<T, AppError>;
 mod tests {
     use super::*;
     #[test]
+    fn serialization_preserves_original_category_and_specific_message() {
+        let error = AppError::validation("host.name.required");
+        let value = serde_json::to_value(&error).unwrap();
+        assert_eq!(value["code"], "validation");
+        assert_eq!(value["message"], "host.name.required");
+        assert_eq!(serde_json::to_string(&error).unwrap(), value.to_string());
+    }
+
+    #[test]
     fn sharing_preserves_original_variant_and_the_entire_ipc_payload() {
         let error = AppError::PluginEngineUnsupported {
             plugin_id: "sample".into(),

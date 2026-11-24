@@ -8,7 +8,7 @@ import { matchesSearch, matchesSearchDate, parseSearchQuery } from "@/lib/search
 import { EmptyState } from "@/components/ui/display/Misc";
 import { encodeBase64 } from "@/lib/text/base64";
 import { notifyHistoryChanged, recordTerminalCommand } from "@/lib/session/history";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { formatRelative } from "@/lib/text/format";
 import { domainEvents } from "@/lib/events/domain";
 import { api } from "@/lib/api/ipc";
@@ -31,7 +31,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
     () =>
       createHistoryStore(
         () => (hostId ? api.historyList(hostId, 500) : Promise.resolve([])),
-        (error) => toast(translateError(error), "error"),
+        (error) => toast(presentError(error), "error"),
       ),
     [hostId],
   );
@@ -96,7 +96,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
           await api.historyClear(session.hostId);
           notifyHistoryChanged(session.hostId);
         } catch (error) {
-          toast(translateError(error), "error");
+          toast(presentError(error), "error");
         }
       },
     });
@@ -134,7 +134,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
 
       {snapshot.error ? (
         <div className="history-error" role="alert">
-          <span>{translateError(snapshot.error)}</span>
+          <span>{presentError(snapshot.error)}</span>
           <Button variant="ghost" size="sm" onClick={store.refresh}>
             {t("common.retry")}
           </Button>
@@ -147,7 +147,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
         query={query}
         entries={filtered}
         busy={snapshot.busy}
-        error={snapshot.error ? translateError(snapshot.error) : null}
+        error={snapshot.error ? presentError(snapshot.error) : null}
         actions={{
           validate,
           setQuery,
@@ -173,7 +173,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
                   size="sm"
                   disabled={snapshot.busy || !!snapshot.error}
                   onClick={() =>
-                    void insert(entry).catch((error) => toast(translateError(error), "error"))
+                    void insert(entry).catch((error) => toast(presentError(error), "error"))
                   }
                 >
                   <CornerDownLeft size={12} />
@@ -184,7 +184,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
                   danger
                   disabled={snapshot.busy || !!snapshot.error}
                   onClick={() =>
-                    void remove(entry).catch((error) => toast(translateError(error), "error"))
+                    void remove(entry).catch((error) => toast(presentError(error), "error"))
                   }
                 >
                   <Trash2 size={12} />

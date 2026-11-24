@@ -80,7 +80,7 @@ function fixture({
   const github = {
     paginate: (method, args) => method(args),
     graphql: async (query, variables) => {
-      calls.push({ ready: { query, variables } });
+      calls.push({ graphql: { query, variables } });
     },
     rest: {
       git: {
@@ -495,6 +495,7 @@ test("promotion tree retains both main and original dev history without modifyin
   assert.equal(f.references["heads/main"], main);
   assert.equal(f.references["heads/dev"], dev);
   assert.equal(f.calls.find((call) => call.createPr).createPr.base, "main");
+  assert.equal(f.calls.find((call) => call.createPr).createPr.draft, true);
   assert.equal(f.calls.at(-1).status.state, "success");
   assert.equal(
     f.calls.some((call) => call.dispatch),
@@ -623,7 +624,7 @@ test("PR policy rejects truncated, changed and duplicate commit history", async 
     });
     await assert.rejects(
       checkPullRequest({ ...f, number: 15, wait: async () => {} }),
-      /Incomplete or changed/,
+      count > 250 ? /more than 250 commits/ : /commit history is still changing/,
     );
     assert.equal(f.calls.at(-1).status.state, "failure");
   }
@@ -668,9 +669,9 @@ test("consistent but stale snapshots never approve a different generated head", 
       expectedHead: generated,
       wait: async (ms) => delays.push(ms),
     }),
-    /Incomplete or changed/,
+    /commit history is still changing/,
   );
-  assert.deepEqual(delays, [1000, 2000, 4000]);
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000]);
   assert.equal(f.calls.at(-1).status.state, "failure");
 });
 
@@ -689,6 +690,8 @@ test("invalid subjects are still rejected after a stale snapshot recovers", asyn
 test("unchanged generated release PRs recheck policy without duplicating CI", async () => {
   const pr = {
     number: 15,
+    node_id: "PR_ready",
+    draft: false,
     title: "chore(main): release 0.26.2",
     state: "open",
     head: { ref: RELEASE_BRANCH, sha: generated, repo },
@@ -705,8 +708,9 @@ test("unchanged generated release PRs recheck policy without duplicating CI", as
   });
   assert.deepEqual(
     f.calls.filter((call) => !call.compare).map((call) => Object.keys(call)[0]),
-    ["status"],
+    ["graphql", "status"],
   );
+  assert.match(f.calls.find((call) => call.graphql).graphql.query, /convertPullRequestToDraft/);
   assert.equal(f.calls.at(-1).status.state, "success");
 });
 
@@ -791,13 +795,13 @@ test("legacy release branches are rebuilt even when their source markers are cur
   assert.equal(f.calls.find((call) => call.updateRef).updateRef.ref, `heads/${RELEASE_BRANCH}`);
 });
 
-test("an old release draft is reopened only after history-preserving regeneration passes policy", async () => {
+test("an existing ready release PR is converted back to draft before its branch is refreshed", async () => {
   const f = fixture({
     refs: { [`heads/${RELEASE_BRANCH}`]: oldHead },
     pr: {
       number: 15,
       node_id: "PR_migration",
-      draft: true,
+      draft: false,
       title: "chore(main): release 0.26.2",
       state: "open",
       head: { ref: RELEASE_BRANCH, sha: oldHead, repo },
@@ -806,10 +810,40 @@ test("an old release draft is reopened only after history-preserving regeneratio
   });
   f.contents.set(`${oldHead}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
   await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
-  assert.equal(f.calls.at(-1).ready.variables.id, "PR_migration");
-  assert.equal(f.calls.at(-2).status.state, "success");
+  const draftIndex = f.calls.findIndex((call) => call.graphql);
+  const updateIndex = f.calls.findIndex((call) => call.updateRef);
+  assert.ok(draftIndex >= 0);
+  assert.ok(draftIndex < updateIndex);
+  assert.match(f.calls[draftIndex].graphql.query, /convertPullRequestToDraft/);
+  assert.equal(f.calls[draftIndex].graphql.variables.id, "PR_migration");
+  assert.equal(f.calls.at(-1).status.state, "success");
   assert.equal(
     f.calls.some((call) => call.dispatch),
+    false,
+  );
+});
+
+test("unchanged draft release PRs remain draft and skip duplicate CI", async () => {
+  const pr = {
+    number: 15,
+    node_id: "PR_draft",
+    draft: true,
+    title: "chore(main): release 0.26.2",
+    state: "open",
+    head: { ref: RELEASE_BRANCH, sha: generated, repo },
+    base: { ref: "main", sha: main, repo },
+  };
+  const f = fixture({ pr, refs: { [`heads/${RELEASE_BRANCH}`]: generated } });
+  f.contents.set(
+    `${generated}:${SOURCE_PATH}`,
+    JSON.stringify({ baseSha: main, sourceSha: dev, version: "0.26.2", history: "merge" }),
+  );
+  assert.deepEqual(await maintainReleasePr({ ...f, plan: await planDevelopment(f) }), {
+    number: 15,
+    sha: generated,
+  });
+  assert.equal(
+    f.calls.some((call) => call.graphql || call.updatePr || call.createPr || call.dispatch),
     false,
   );
 });

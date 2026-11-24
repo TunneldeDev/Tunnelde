@@ -14,7 +14,7 @@ import { resolveAccent } from "@/lib/prefs/colors";
 import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { AUTH_LABELS, AUTH_METHODS } from "@/lib/prefs/labels";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { captureError, notifyError, presentError } from "@/lib/api/errors";
 import type { AuthMethod, Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
@@ -119,7 +119,13 @@ function HostDialog({
         if (active) setSavedPassword(saved);
       })
       .catch((cause: unknown) => {
-        if (active) setCredentialError(translateError(cause));
+        if (active) {
+          const failure = captureError(cause, {
+            domain: "hosts",
+            operation: "credentialStatus",
+          });
+          setCredentialError(failure.userMessage);
+        }
       });
     return () => {
       active = false;
@@ -135,7 +141,10 @@ function HostDialog({
         if (active) setRoute(value);
       })
       .catch((cause) => {
-        if (active) setRouteError(translateError(cause));
+        if (active) {
+          const failure = captureError(cause, { domain: "hosts", operation: "routeLoad" });
+          setRouteError(failure.userMessage);
+        }
       })
       .finally(() => {
         if (active) setRouteLoading(false);
@@ -179,7 +188,7 @@ function HostDialog({
       try {
         keyPath = await api.keyImport(form.keyContent);
       } catch (error) {
-        toast(translateError(error), "error");
+        notifyError(error, { domain: "hosts", operation: "keyImport" });
         setSaving(false);
         pendingSave.current = false;
         return;
@@ -216,7 +225,7 @@ function HostDialog({
       persistedHost.current = saved;
       if (result.credentialError != null) {
         setCredentialError(
-          t("host.credentialSaveFailed", { error: translateError(result.credentialError) }),
+          t("host.credentialSaveFailed", { error: presentError(result.credentialError) }),
         );
         return;
       }
@@ -224,7 +233,8 @@ function HostDialog({
       setPassword("");
       onClose();
     } catch (cause) {
-      setCredentialError(translateError(cause));
+      const failure = captureError(cause, { domain: "hosts", operation: "saveEditor" });
+      setCredentialError(failure.userMessage);
     } finally {
       pendingSave.current = false;
       setSaving(false);
@@ -426,7 +436,7 @@ function HostDialog({
                             set("keyPath", path);
                           }
                         })
-                        .catch((error: unknown) => toast(translateError(error), "error"));
+                        .catch((error: unknown) => toast(presentError(error), "error"));
                     }}
                   >
                     {t("common.browse")}

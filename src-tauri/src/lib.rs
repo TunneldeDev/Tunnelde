@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod diagnostics;
 mod error;
+mod fonts;
 mod logs;
 mod models;
 mod mounts;
@@ -30,6 +31,22 @@ pub fn run() {
         .manage(platform::application_actions::Registry::default())
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
+        .manage(fonts::Registry::default())
+        .register_asynchronous_uri_scheme_protocol(
+            "tunnelde-font",
+            |context, request, responder| {
+                let app = context.app_handle().clone();
+                let origin = platform::protocol_origin::for_app(&app);
+                let caller = context.webview_label().to_owned();
+                tauri::async_runtime::spawn(async move {
+                    let capacity = fonts::capacity().await;
+                    tauri::async_runtime::spawn_blocking(move || {
+                        let _capacity = capacity;
+                        responder.respond(fonts::serve(&app, &caller, request, &origin));
+                    });
+                });
+            },
+        )
         .manage(plugins::frontend::Registry::default())
         .manage(plugins::forwarding::Registry::default())
         .register_asynchronous_uri_scheme_protocol("tunnelde-ui", |context, request, responder| {
@@ -124,9 +141,12 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
-            state::init(&handle)?;
+            state::init(&handle).inspect_err(|error| {
+                diagnostics::failure::native("startup", "state.initialize", error);
+            })?;
             platform::panel_windows::native::start(&handle);
             services::forwarding::automation::start(&handle);
+            services::proxy::start_auto(&handle);
             services::mounts::runtime::launch(&handle);
             automation::transport::start(&handle);
             window::restore_main_geometry(&handle);
@@ -156,6 +176,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(platform::ipc_authority::guard(tauri::generate_handler![
+            fonts::fonts_catalogue,
+            fonts::fonts_import,
+            fonts::fonts_finish_import,
+            fonts::fonts_remove,
+            fonts::fonts_select,
             services::editor::recovery::commands::editor_drafts_read,
             services::editor::recovery::commands::editor_drafts_save,
             window::close::main_window_close_guard_claim,
@@ -213,6 +238,17 @@ pub fn run() {
             commands::forwarding::forwarding_remove,
             commands::forwarding::forwarding_start,
             commands::forwarding::forwarding_stop,
+            commands::proxy::proxy_groups_list,
+            commands::proxy::proxy_group_save,
+            commands::proxy::proxy_group_remove,
+            commands::proxy::proxy_routes_list,
+            commands::proxy::proxy_route_save,
+            commands::proxy::proxy_route_remove,
+            commands::proxy::proxy_runtime_list,
+            commands::proxy::proxy_runtime_start,
+            commands::proxy::proxy_runtime_stop,
+            commands::proxy::proxy_connections_list,
+            commands::proxy::proxy_connection_close,
             network::connection_route_get,
             network::connection_route_save,
             services::credentials::editor::proxy_profile_save,
@@ -311,6 +347,7 @@ pub fn run() {
             logs::logs_read,
             logs::logs_output_read,
             diagnostics::logs_write,
+            diagnostics::failure::diagnostics_report,
             commands::open_local_path,
             commands::reveal_local_path,
             commands::open_external,
@@ -425,6 +462,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<state::AppState>() {
                     services::mounts::runtime::shutdown(&state);
                     state.forwards.stop_all();
+                    services::proxy::runtime::stop_all(app);
                     tauri::async_runtime::block_on(async {
                         let _ = tokio::time::timeout(
                             std::time::Duration::from_secs(5),

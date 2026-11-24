@@ -22,6 +22,21 @@ The SDK's `sdk/runtime/resources/client.mjs` facade has strict signatures withou
 
 Implementation is organized by domain and responsibility: `plugins/runtime/ownership/` owns reservations; `runtime/lifecycle/contracts/` owns wire DTOs; `adapters/` bridges each domain; `projection.rs`, `admission.rs` and `rpc.rs` handle paging, operation budgets and transport coordination. Domain lifecycle helpers stay beside their authoritative registries. Public TypeScript contracts live under `contracts/runtime/lifecycle/`; SDK DTOs, method maps, facade contracts and implementation are separated and checked during SDK synchronization. The existing protocol version and stable APIs are unchanged.
 
+Native-view calls retain their exact issuing document and lease through the
+resource RPC's bounded worker. `identify` remains staging-safe for restore;
+`release` is committed-only and rechecks the original origin before the actual
+disposal. A delayed result or cleanup cannot be accepted by a replacement view.
+Scoped tool calls and ordinary non-native transports retain their existing
+client/request and grant checks.
+
+The same boundary rule applies to the closed read catalogue: every method marked
+staging-safe rechecks its original origin before and after the actual in-memory,
+database, filesystem or long-poll read. A coordinator reply cannot convert a staged
+read into a committed effect or deliver a delayed snapshot to a replacement view.
+Owned transfer status/cancellation remains ownership-scoped and does not require an
+unrelated SFTP permission. The policy table and the actual checks are covered by
+Rust tests; adding a method requires both.
+
 ## Identify a resource explicitly
 
 `resources.identify({kind, id})` returns the same `{handle, kind, state}` item for one

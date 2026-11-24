@@ -19,7 +19,7 @@ it("scales visible CJK runs on engines without size-adjust and preserves each vi
   vi.stubGlobal("FontFace", LegacyFace);
   const canvas = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     font: "",
-    measureText: () => ({ width: 480 }),
+    measureText: (text: string) => ({ width: text === "中" ? 100 : 480 }),
   } as unknown as CanvasRenderingContext2D);
   const views: EditorView[] = [];
   const stops: Array<() => void> = [];

@@ -1,9 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 
 import i18n from "@/i18n/i18n";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { isTauri } from "@/lib/api/ipc";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
@@ -35,7 +35,7 @@ export function useWindowCloseGuard(): void {
         await invoke("main_window_close_guard_finish", { owner });
       } catch (error) {
         // A failed close retains both the guard and the user's in-memory draft.
-        if (alive) toast(translateError(error), "error");
+        if (alive) toast(presentError(error), "error");
       } finally {
         closing = false;
       }
@@ -87,7 +87,7 @@ export function useWindowCloseGuard(): void {
       unlisten = undefined;
     });
     void subscription.catch((error) => {
-      if (alive) toast(translateError(error), "error");
+      if (alive) toast(presentError(error), "error");
     });
     return () => {
       alive = false;

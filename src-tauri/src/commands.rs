@@ -1,5 +1,6 @@
 pub(crate) mod connection_review;
 pub mod forwarding;
+pub mod proxy;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -581,6 +582,15 @@ pub async fn sftp_list(
     path: Option<String>,
 ) -> AppResult<Listing> {
     sftp::remote_list(&app, &session_id, path).await
+}
+
+pub(crate) async fn sftp_list_checked(
+    app: AppHandle,
+    session_id: String,
+    path: Option<String>,
+    check: &impl Fn() -> crate::error::AppResult<()>,
+) -> AppResult<Listing> {
+    sftp::remote_list_checked(&app, &session_id, path, check).await
 }
 
 #[tauri::command]

@@ -1,4 +1,4 @@
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast, useToasts } from "@/store/toasts";
 
 // The ordered writer rejects its waiters with the same failure object. Only
@@ -10,7 +10,7 @@ export function reportDraftRecoveryFailure(error: unknown): void {
   const failure = typeof error === "object" && error !== null ? error : undefined;
   const previous = failure && notices.get(failure);
   if (previous && useToasts.getState().items.some((item) => item.id === previous)) return;
-  toast(translateError(error), "error");
+  toast(presentError(error), "error");
   const notice = useToasts.getState().items.at(-1);
   if (failure && notice) notices.set(failure, notice.id);
 }

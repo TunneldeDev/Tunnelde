@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { ConnectionQuality, Host, HostKeyInfo, SshConnectRequest, SshSession } from "../types";
 
 /** Internal native equality fence; never a plugin grant or persisted credential. */

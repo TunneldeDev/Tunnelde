@@ -3,7 +3,7 @@ mod batch;
 mod groups;
 
 use crate::plugins::{
-    api::{authorize, encode, field, HostContext},
+    api::{authorize, encode, field, optional, HostContext},
     security::Lease,
 };
 use crate::{
@@ -21,12 +21,23 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
+        "proxy.routes.saveForHost" => {
+            let input = field(&params, "route")?;
+            let expected = optional::<String>(&params, "expectedRevision")?;
+            encode(super::proxy::route_for_host(
+                app,
+                input,
+                expected.as_deref(),
+            )?)
+        }
         name if name.starts_with("forwards.groups.") || name == "forwards.move" => {
             groups::dispatch(context, name, params)
         }
         "forwards.startManaged" => {
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
             start_managed(
                 context,
+                origin.as_ref(),
                 &field::<String>(&params, "id")?,
                 &field::<String>(&params, "expectedRevision")?,
                 None,
@@ -35,7 +46,16 @@ pub(in crate::plugins::api) async fn dispatch(
             Ok(Value::Null)
         }
         "forwards.startManyManaged" => batch::start_managed(context, params).await,
-        "forwards.automation.list" => encode(crate::services::forwarding::automation::list(app)?),
+        "forwards.automation.list" => {
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            let value = encode(crate::services::forwarding::automation::list(app)?);
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            value
+        }
         "forwards.automation.save" => {
             let id: String = field(&params, "id")?;
             let revision: String = field(&params, "expectedRevision")?;
@@ -67,7 +87,16 @@ pub(in crate::plugins::api) async fn dispatch(
                 None => mutation(),
             }
         }
-        "forwards.list" => encode(crate::services::forwarding::list(app)?),
+        "forwards.list" => {
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            let value = encode(crate::services::forwarding::list(app)?);
+            crate::platform::panel_windows::plugin_views::origin::check(
+                crate::plugins::frontend::native::CallPolicy::StagedData,
+            )?;
+            value
+        }
         "forwards.save" => {
             let rule = field(&params, "rule")?;
             let lease = Lease {
@@ -114,8 +143,10 @@ pub(in crate::plugins::api) async fn dispatch(
             }
         }
         "forwards.start" => {
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
             start_one(
                 context,
+                origin.as_ref(),
                 &field::<String>(&params, "id")?,
                 &field::<String>(&params, "sessionId")?,
                 None,
@@ -126,7 +157,21 @@ pub(in crate::plugins::api) async fn dispatch(
         }
         "forwards.startMany" => batch::start(context, params).await,
         "forwards.stop" => {
-            crate::services::forwarding::stop(app, &field::<String>(&params, "id")?).await?;
+            let id: String = field(&params, "id")?;
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let check_origin = || {
+                if let Some(origin) = &origin {
+                    origin
+                        .authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+                }
+                Ok::<(), AppError>(())
+            };
+            check_origin()?;
+            let revision = crate::services::forwarding::find(app, &id)?
+                .ok_or_else(|| AppError::validation("forward.missing"))?
+                .revision;
+            crate::services::forwarding::stop_checked(app, &id, &revision, None).await?;
+            check_origin()?;
             Ok(Value::Null)
         }
 
@@ -136,6 +181,7 @@ pub(in crate::plugins::api) async fn dispatch(
 
 async fn start_one(
     context: &HostContext,
+    origin: Option<&crate::platform::panel_windows::plugin_views::origin::Origin>,
     id: &str,
     session_id: &str,
     expected_revision: Option<&str>,
@@ -149,7 +195,14 @@ async fn start_one(
         permissions: context.permissions.clone(),
         generation: context.generation,
     };
-    authorize(context, &["forwards.write"])?;
+    let check = || {
+        authorize(context, &["forwards.write"])?;
+        if let Some(origin) = origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check()?;
     let result = state
         .plugins
         .security
@@ -164,7 +217,7 @@ async fn start_one(
             ),
         )
         .await;
-    if let Err(error) = authorize(context, &["forwards.write"]) {
+    if let Err(error) = check() {
         state
             .forwards
             .stop_generation(&context.id, context.generation);
@@ -175,15 +228,18 @@ async fn start_one(
         .plugins
         .security
         .with_authorized(&lease, &["forwards.write"], || {
+            check()?;
             if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                 return Err(AppError::validation("plugin.timeout"));
             }
             prepared.commit()
-        })
+        })?;
+    check()
 }
 
 async fn start_managed(
     context: &HostContext,
+    origin: Option<&crate::platform::panel_windows::plugin_views::origin::Origin>,
     id: &str,
     revision: &str,
     deadline: Option<tokio::time::Instant>,
@@ -195,7 +251,14 @@ async fn start_managed(
         permissions: context.permissions.clone(),
         generation: context.generation,
     };
-    authorize(context, &["forwards.write"])?;
+    let check = || {
+        authorize(context, &["forwards.write"])?;
+        if let Some(origin) = origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check()?;
     let pending = state
         .plugins
         .security
@@ -215,11 +278,13 @@ async fn start_managed(
         .plugins
         .security
         .with_authorized(&lease, &["forwards.write"], || {
+            check()?;
             if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
                 return Err(AppError::validation("plugin.timeout"));
             }
             pending.commit()
         })?;
+    check()?;
     crate::ssh::session::announce_connection(&context.app);
     Ok(())
 }

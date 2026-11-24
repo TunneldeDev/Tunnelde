@@ -101,7 +101,6 @@ export async function maintainReleasePr({ github, context, plan }) {
   });
   if (prs.length > 1) throw new Error("Multiple release pull requests found");
   let previous;
-  let legacyDraft;
   try {
     previous = await branchSha(github, repo, RELEASE_BRANCH);
   } catch (error) {
@@ -109,7 +108,12 @@ export async function maintainReleasePr({ github, context, plan }) {
   }
   if (previous && prs.length) {
     const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, previous));
-    if (marker.history !== "merge" && prs[0].draft) legacyDraft = prs[0].node_id;
+    if (!prs[0].draft) {
+      await github.graphql(
+        "mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { id isDraft } } }",
+        { id: prs[0].node_id },
+      );
+    }
     if (
       marker.history === "merge" &&
       marker.sourceSha === plan.dev &&
@@ -133,6 +137,10 @@ export async function maintainReleasePr({ github, context, plan }) {
     message: `chore(main): release ${plan.version}\n\nRelease-source: ${plan.dev}`,
   });
   await assertSources(github, repo, { main: plan.main, dev: plan.dev });
+  // A generated release PR is a staging surface, not an invitation to spend a
+  // full CI matrix on every dev update. Convert an existing ready PR before the
+  // branch update so its synchronize event cannot start PR CI. A maintainer
+  // explicitly marks the final reviewed head ready when it is time to merge.
   if (previous) {
     await assertSources(github, repo, { [RELEASE_BRANCH]: previous });
     // This generated branch is serialized by the development workflow; never contribute here.
@@ -149,16 +157,11 @@ export async function maintainReleasePr({ github, context, plan }) {
       head: RELEASE_BRANCH,
       title,
       body,
+      draft: true,
     });
     number = pr.number;
   }
-  const checked = await checkReleasePullRequest({ github, context, number, sha });
-  if (legacyDraft)
-    await github.graphql(
-      "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { id } } }",
-      { id: legacyDraft },
-    );
-  return checked;
+  return checkReleasePullRequest({ github, context, number, sha });
 }
 
 export async function checkReleasePullRequest({ github, context, number, sha }) {

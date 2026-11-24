@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { FileCode2 } from "lucide-react";
 import { Textarea } from "@/components/ui/form/Field";
 import { Button } from "@/components/ui/form/Button";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { validateUserCss } from "@/lib/prefs/appearance";
 import type { SettingsPatch } from "@/lib/api/types";
 
@@ -55,7 +55,7 @@ export function CssEditorView({
         setError(null);
       }
     } catch (failure) {
-      services.notify(translateError(failure), "error");
+      services.notify(presentError(failure), "error");
     }
   };
   const exportFile = async () => {
@@ -63,7 +63,7 @@ export function CssEditorView({
       const path = await services.exportFile(text);
       if (path) services.notify(t("toast.cssExported", { path }), "success");
     } catch (failure) {
-      services.notify(translateError(failure), "error");
+      services.notify(presentError(failure), "error");
     }
   };
   return (

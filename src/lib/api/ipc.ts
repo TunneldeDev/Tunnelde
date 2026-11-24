@@ -1,5 +1,12 @@
+import type {
+  FontCatalogue,
+  FontImport,
+  FontInfo,
+  FontReference,
+  FontSelections,
+} from "@/lib/fonts/types";
 import type { HostEdit, HostSaved, ProxyEdit, ProxySaved } from "./credentials";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { SearchQuery } from "@/lib/search/query";
 import type { DraftSnapshot, EditorDraft } from "@/lib/editor/recovery/contracts";
 import type { HostFieldsSnapshot, HostFieldsUpdate } from "@/lib/hosts/fields";
@@ -80,9 +87,20 @@ export interface OutputSnapshot {
   operations: LogSnapshot["operations"];
   cursor: OutputCursor;
   truncated: boolean;
+  memory?: string;
+  diskUnavailable?: boolean;
+  diagnosticError?: boolean;
+  operationsError?: boolean;
 }
 
 export const api = {
+  fontsCatalogue: (refresh = false) => invoke<FontCatalogue>("fonts_catalogue", { refresh }),
+  fontsImport: () => invoke<FontImport | null>("fonts_import"),
+  fontsFinishImport: (token: string, accepted: boolean, monospaced = false) =>
+    invoke<FontInfo | null>("fonts_finish_import", { token, accepted, monospaced }),
+  fontsSelect: (target: keyof FontSelections, reference: FontReference | null) =>
+    invoke<Settings>("fonts_select", { target, reference }),
+  fontsRemove: (id: string) => invoke<void>("fonts_remove", { id }),
   sshConfigPreview: () => invoke<SshConfigPreview>("ssh_config_preview"),
   sshConfigImport: (aliases: string[], revision: string) =>
     invoke<SshConfigImportResult>("ssh_config_import", { aliases, revision }),

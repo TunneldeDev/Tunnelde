@@ -19,7 +19,7 @@ import { isTauri } from "@/lib/api/ipc";
 import { Button } from "@/components/ui/form/Button";
 import { movePanelToWindow } from "@/lib/panels/windowMoves";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { usePanelWindows } from "@/store/panelWindows";
 
 function MainPreferenceProvider({
@@ -88,7 +88,7 @@ function Content(props: NativeViewProps & { model: SettingsWindowModel }) {
             <Button
               onClick={() =>
                 void movePanelToWindow(props.record.panelId, "main").catch((e) =>
-                  toast(translateError(e), "error"),
+                  toast(presentError(e), "error"),
                 )
               }
             >

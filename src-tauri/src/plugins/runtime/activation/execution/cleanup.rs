@@ -93,6 +93,7 @@ impl PluginsManager {
         let state = app.state::<AppState>();
         state.transfers.cancel_plugin_before(id, boundary);
         state.forwards.stop_before_generation(id, boundary);
+        crate::services::proxy::runtime::stop_owned(app, id, boundary);
         let context = HostContext {
             app: app.clone(),
             id: id.clone(),
@@ -128,17 +129,25 @@ impl PluginsManager {
         }
         if let Some(host) = instance.host.as_ref() {
             if matches!(mode, StopMode::Graceful) {
-                let _ = host
+                if let Err(error) = host
                     .request("shutdown", json!({}), Duration::from_secs(2))
-                    .await;
+                    .await
+                {
+                    crate::diagnostics::failure::native("plugins", "gracefulShutdown", &error);
+                }
             }
         }
         if let Err(error) = instance.terminate_host().await {
+            crate::diagnostics::failure::native("plugins", "terminateHost", &error);
             instance.status = PluginStatus::Failed;
             instance.error = Some(error.to_string());
             let info = instance.info();
             self.remember(&info);
-            let _ = app.emit(STATE_EVENT, &info);
+            crate::diagnostics::failure::observe_tauri(
+                "plugins",
+                "publishStoppedState",
+                app.emit(STATE_EVENT, &info),
+            );
             return Err(error);
         }
         instance.wasm = None;
@@ -150,7 +159,11 @@ impl PluginsManager {
         self.remember_source(&retirement.id, None);
         let info = instance.info();
         self.remember(&info);
-        let _ = app.emit(STATE_EVENT, &info);
+        crate::diagnostics::failure::observe_tauri(
+            "plugins",
+            "publishStoppedState",
+            app.emit(STATE_EVENT, &info),
+        );
         drop(instance);
         Ok(info)
     }

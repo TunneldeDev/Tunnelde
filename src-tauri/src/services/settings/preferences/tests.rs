@@ -80,6 +80,8 @@ fn independent_schema_covers_exactly_the_public_projection() {
         "editorDraftRecovery",
         // Available through settings.get/update; frozen preferences v1 omits it.
         "disconnectOnPanelClose",
+        // Native font references stay outside the frozen preferences v1.
+        "fontSelections",
     ];
     let covered: std::collections::HashSet<_> = mapped
         .iter()
@@ -220,4 +222,21 @@ fn full_profile_requires_every_group_and_field_and_preserves_partial_rpc_bound()
         apply_profile_values(&native, full).unwrap().user_css.len(),
         180_000
     );
+}
+
+#[test]
+fn preference_updates_and_public_profile_saves_preserve_native_font_references() {
+    let mut native = Settings::default();
+    native.font_selections.mono =
+        Some(crate::fonts::FontReference::Imported { id: "a".repeat(64) });
+    let mut profile = profile_values(&native).unwrap();
+    assert!(profile["appearance"].get("fontSelections").is_none());
+    profile["appearance"]["theme"] = json!("dark");
+    let updated = apply_profile_values(&native, profile).unwrap();
+    assert_eq!(updated.font_selections, native.font_selections);
+    assert!(update::apply(
+        &native,
+        json!({"appearance": {"fontSelections": {"ui": null, "mono": null, "editorCjk": null}}}),
+    )
+    .is_err());
 }

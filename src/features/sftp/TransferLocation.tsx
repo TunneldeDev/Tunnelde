@@ -2,7 +2,7 @@ import { FolderOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import type { TransferItem } from "@/store/transfers";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import { useTransferLocation, type TransferLocationKind } from "./transferTaskController";
 
@@ -38,10 +38,10 @@ export function TransferLocation({
             onClick={() => {
               try {
                 void Promise.resolve(action.open()).catch((error: unknown) =>
-                  toast(translateError(error), "error"),
+                  toast(presentError(error), "error"),
                 );
               } catch (error) {
-                toast(translateError(error), "error");
+                toast(presentError(error), "error");
               }
             }}
           >

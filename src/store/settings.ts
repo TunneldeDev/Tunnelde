@@ -7,7 +7,7 @@ import type { AppInfo, Settings, SettingsPatch } from "@/lib/api/types";
 import { setLanguage } from "@/i18n/i18n";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { ApplySettingsProfile } from "@/lib/prefs/profiles";
 import type { ProxyEdit, ProxySaved } from "@/lib/api/credentials";
 
@@ -81,11 +81,15 @@ export const useSettings = create<SettingsStore>((set, get) => {
   let appliedOrder = 0;
   let proxySaving = 0;
   const pending: SettingsPatch[] = [];
+  const applyPatch = (value: Settings, patch: SettingsPatch): Settings => ({
+    ...value,
+    ...patch,
+    ...(patch.monoFont !== undefined && patch.fontSelections === undefined
+      ? { fontSelections: { ...value.fontSelections, mono: null } }
+      : {}),
+  });
   const display = () => {
-    const settings = pending.reduce<Settings>(
-      (value, patch) => ({ ...value, ...patch }),
-      confirmed,
-    );
+    const settings = pending.reduce<Settings>(applyPatch, confirmed);
     applySettings(settings);
     set({ settings, saving: pending.length > 0 || proxySaving > 0 });
   };
@@ -108,7 +112,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
               : reset
                 ? api.resetSettings()
                 : api.updateSettings(patch))
-          : { ...confirmed, ...patch };
+          : applyPatch(confirmed, patch);
         // Native events can overtake their invocation response. A confirmed
         // later event must not be replaced by an older write's return value.
         if (revision === remoteRevision && order >= appliedOrder) {
@@ -118,8 +122,8 @@ export const useSettings = create<SettingsStore>((set, get) => {
         set({ error: null });
       } catch (error) {
         ok = false;
-        set({ error: translateError(error) });
-        toast(translateError(error), "error");
+        set({ error: presentError(error) });
+        toast(presentError(error), "error");
       } finally {
         pending.shift();
         display();
@@ -159,7 +163,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
         const failed =
           settings.status === "rejected" ? settings : info.status === "rejected" ? info : null;
         display();
-        set({ ready: true, error: failed ? translateError(failed.reason) : null });
+        set({ ready: true, error: failed ? presentError(failed.reason) : null });
       });
       queue = task.catch(() => undefined);
       loading = task.finally(() => {

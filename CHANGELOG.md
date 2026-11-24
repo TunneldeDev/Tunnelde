@@ -6,6 +6,53 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.8.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.7.1...v2.8.0) - 2026-11-24
+
+### 更新概览 | Highlights
+
+- **plugins:** fence native resource effects
+- **errors:** unify structured failure diagnostics
+- **proxy:** add SOCKS5 domain forwarding
+- **diagnostics:** recover Settings search and record application failures
+- **fonts:** manage installed and imported fonts
+
+<details open>
+<summary>详细变更 | Details (19)</summary>
+
+### 新增 | New
+
+- **plugins:** fence native resource effects ([#521](https://github.com/TunneldeDev/Tunnelde/pull/521)) @quyansiyuanwang
+- **errors:** unify structured failure diagnostics ([#523](https://github.com/TunneldeDev/Tunnelde/pull/523)) @quyansiyuanwang
+- **proxy:** add SOCKS5 domain forwarding ([#537](https://github.com/TunneldeDev/Tunnelde/pull/537)) @quyansiyuanwang
+- **diagnostics:** recover Settings search and record application failures ([#548](https://github.com/TunneldeDev/Tunnelde/pull/548)) @quyansiyuanwang
+- **fonts:** manage installed and imported fonts ([#550](https://github.com/TunneldeDev/Tunnelde/pull/550)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **panels:** keep detached settings tabs and icons stable ([#519](https://github.com/TunneldeDev/Tunnelde/pull/519)) @quyansiyuanwang
+- **plugins:** align staged reads with native origin fences ([#522](https://github.com/TunneldeDev/Tunnelde/pull/522)) @quyansiyuanwang
+- **tabs:** show insertion line while reordering ([#524](https://github.com/TunneldeDev/Tunnelde/pull/524)) @quyansiyuanwang
+- **ci:** isolate russh close-ack tests ([346f03b](https://github.com/TunneldeDev/Tunnelde/commit/346f03b398650bae36bb4003f3720acbeeba2559)) @quyansiyuanwang
+- **panels:** renew native drag grants while held ([ad0211c](https://github.com/TunneldeDev/Tunnelde/commit/ad0211cb82402a4b263c668171e1fa25b6256999)) @quyansiyuanwang
+- **ci:** bound macOS platform tests ([fed5d9e](https://github.com/TunneldeDev/Tunnelde/commit/fed5d9ef8ca310f7ab04b4b5e5fa5f08674f638a)) @quyansiyuanwang
+- **panels:** report native drag failures ([1898fca](https://github.com/TunneldeDev/Tunnelde/commit/1898fca79e7f3819795e69e0a37582cd02fea465)) @quyansiyuanwang
+- **release:** tolerate settling PR commit lists ([a191020](https://github.com/TunneldeDev/Tunnelde/commit/a191020ddc4d0c79feb56102eff56a9baa818c45)) @quyansiyuanwang
+- **panels:** restore file dragging and keyboard shortcuts ([d5beeff](https://github.com/TunneldeDev/Tunnelde/commit/d5beeffb23b4c89e1ab5e73c461bc747524491fd)) @quyansiyuanwang
+- **deps:** bump @xterm/xterm from 6.1.0-beta.337 to 6.1.0-beta.338 ([#547](https://github.com/TunneldeDev/Tunnelde/pull/547))
+- **deps:** integrate pending JavaScript and Rust updates ([#549](https://github.com/TunneldeDev/Tunnelde/pull/549)) @quyansiyuanwang
+- **forwarding:** separate SOCKS controls and quiet panel checkpoints ([#551](https://github.com/TunneldeDev/Tunnelde/pull/551)) @quyansiyuanwang
+- **editor:** retain syntax colors while scrolling ([#552](https://github.com/TunneldeDev/Tunnelde/pull/552)) @quyansiyuanwang
+
+### 其他 | Other
+
+- **release:** keep promotion PRs in draft ([1cd3281](https://github.com/TunneldeDev/Tunnelde/commit/1cd32810029f6ed9db30ebcd8d013120e91a0166)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.7.1](https://github.com/TunneldeDev/Tunnelde/compare/v2.7.0...v2.7.1) - 2026-11-22
 
 ### 更新概览 | Highlights

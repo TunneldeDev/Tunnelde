@@ -5,6 +5,7 @@ import {
 } from "./internalDragEvents";
 import { useEffect } from "react";
 import { flushSync } from "react-dom";
+import { createInternalDragEvent, createInternalTransfer } from "./dragEvents";
 
 interface PointerDrag {
   source: HTMLElement;
@@ -38,7 +39,7 @@ export function installInternalDrag(): () => void {
   const emit = (target: Element, type: string, event: PointerEvent | MouseEvent) => {
     const transfer = drag?.transfer;
     if (!transfer) return false;
-    const synthetic = new DragEvent(type, {
+    const synthetic = createInternalDragEvent(type, {
       bubbles: true,
       cancelable: true,
       dataTransfer: transfer,
@@ -140,7 +141,7 @@ export function installInternalDrag(): () => void {
       } catch {
         /* Synthetic tests/retired pointers. */
       }
-      current.transfer = new DataTransfer();
+      current.transfer = createInternalTransfer();
       if (emit(current.source, "dragstart", event)) {
         cleanup(event);
         return;
@@ -217,7 +218,7 @@ export function installInternalDrag(): () => void {
   const cancel = (event: PointerEvent | KeyboardEvent) => {
     if (!drag) return;
     if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-    if (event instanceof PointerEvent && event.pointerId !== drag.pointerId) return;
+    if (!(event instanceof KeyboardEvent) && event.pointerId !== drag.pointerId) return;
     if (drag.transfer) {
       event.preventDefault();
       event.stopPropagation();
@@ -257,6 +258,6 @@ export function installInternalDrag(): () => void {
     document.removeEventListener("keydown", cancel, true);
     document.removeEventListener("click", click, true);
     window.removeEventListener("blur", blur);
-    cleanup();
+    cleanup(new MouseEvent("dragend"));
   };
 }
