@@ -13,6 +13,27 @@ const sampled = new Map(
   ].map((command) => [command, createDiagnosticSampler("ipc", command)]),
 );
 
+/** Ownership transitions intentionally reject stale panel documents and leases.
+ * Preserve the rejection for feature logic without turning it into a generic IPC
+ * outage or user-facing diagnostic. */
+function expectedPanelLifecycleRejection(command: string, error: unknown) {
+  if (command !== "panel_window_control" || !error || typeof error !== "object") return false;
+  const message = (error as { message?: unknown }).message;
+  return (
+    typeof message === "string" &&
+    [
+      "stale panel owner",
+      "stale view checkpoint",
+      "panel transfer pending",
+      "panel is frozen",
+      "panel interaction in progress",
+      "coordinator required",
+      "panel.window.moveInProgress",
+      "panel.viewState.changedDuringCapture",
+    ].includes(message)
+  );
+}
+
 /** Record a command failure before a caller discards or converts the rejection.
  * The diagnostic writer uses the raw Tauri invoke to avoid recursive reporting. */
 export async function diagnosticInvoke<T>(
@@ -25,6 +46,7 @@ export async function diagnosticInvoke<T>(
     sampler?.recovered();
     return value;
   } catch (error) {
+    if (expectedPanelLifecycleRejection(command, error)) throw error;
     // Output samples the read failure as an outage instead of logging per poll.
     if (sampler) sampler.failed(error);
     else if (command !== "logs_output_read") reportError("ipc", command, error);

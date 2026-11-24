@@ -9,6 +9,9 @@
   min-height: 0;
   padding: 0;
 }
+.forwarding-panel__host {
+  container-type: inline-size;
+}
 .forwarding-panel__error,
 .forwarding-panel__loading {
   margin: 0;
@@ -54,8 +57,12 @@
 .forwarding-panel__host-button small.is-running {
   color: var(--td-green);
 }
-.forwarding-panel__host > .forwarding {
+.forwarding-panel__host > .forwarding,
+.forwarding-panel__host > .proxy-section {
   padding: 12px;
+}
+.forwarding-panel__host > .proxy-section {
+  border-top: 1px solid var(--td-border);
 }
 
 .forwarding-panel__host-button svg {

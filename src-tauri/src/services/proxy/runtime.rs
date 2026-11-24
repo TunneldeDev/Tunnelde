@@ -121,6 +121,13 @@ fn publish(app: &AppHandle) {
         "plugin://domain-changed",
         serde_json::json!({"domain":"proxy"}),
     );
+    // The proxy group publishes a background SSH session. Connection panels and
+    // the status bar consume the same session projection as forwarding, so the
+    // owning subsystem must invalidate it when a listener starts or stops.
+    let _ = app.emit(
+        "plugin://domain-changed",
+        serde_json::json!({"domain":"sessions"}),
+    );
 }
 
 fn endpoint(host: &str, port: u16) -> String {
