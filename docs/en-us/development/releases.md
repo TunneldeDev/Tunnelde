@@ -121,10 +121,9 @@ not publish a build, bypass CI, or stabilize experimental APIs. Use the finite
 [core contract boundary](core-contracts.md) and final package/upgrade acceptance
 to decide readiness before merging the stable promotion.
 
-Stable preparation and publication also require a published Beta with the same
-target version and exact product source, whose Release body carries the
-maintainer acceptance marker `<!-- tunnelde:beta-accepted -->`. Record acceptance
-through `acceptBeta`; CI and successful package builds do not satisfy this gate.
+Stable preparation and publication do not require a published Beta or a separate
+Release acceptance marker. Review the generated promotion PR, its exact-head CI
+and final package/upgrade evidence before merging it to `main`.
 
 ## Credentials and protection
 

@@ -7,7 +7,6 @@ import {
 } from "../metadata/channels.mjs";
 import { VERSION_PATHS, assertVersionContents } from "../metadata/version-files.mjs";
 import { releaseSection } from "../metadata/notes.mjs";
-import { assertAcceptedBeta } from "./acceptance.mjs";
 
 export async function ensureRelease({
   github,
@@ -41,8 +40,6 @@ export async function ensureRelease({
       throw new Error("Release source/channel mismatch");
     if (!release.draft) return "";
   }
-  if (releaseChannel(tag) === "stable")
-    await assertAcceptedBeta({ github, repo, stableSha: sha, version: tag.slice(1) });
   if (matching.length) return tag;
   await github.rest.repos.createRelease({
     ...repo,
@@ -110,12 +107,6 @@ export async function publishRelease({ github, context, tag }) {
     await assertAncestor(github, repo, source || sha, "dev");
   } else {
     await assertAncestor(github, repo, sha, "main");
-    await assertAcceptedBeta({
-      github,
-      repo,
-      stableSha: sha,
-      version: tag.slice(1),
-    });
   }
   const newerStable = releases.some((item) => {
     if (item.draft || item.prerelease) return false;
