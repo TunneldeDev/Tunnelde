@@ -246,13 +246,13 @@ export function useEditorSyntax({
     plugin?.status !== "running" ||
     stopping ||
     !compatible ||
-    !requestable ||
-    (windowed &&
-      (!rendered.range ||
-        rendered.range.offset !== requestRange?.offset ||
-        rendered.range.length !== requestRange?.length))
+    !requestable
   )
     return EMPTY;
+  // A viewport change does not invalidate tokens for the same source snapshot.
+  // Keep their original offsets until the replacement arrives, including when a
+  // request fails. Identity, version, runtime and permission fences above still
+  // clear immediately; never project old tokens using the new requested range.
   return {
     tokens: rendered.tokens,
     documentId: rendered.documentId,

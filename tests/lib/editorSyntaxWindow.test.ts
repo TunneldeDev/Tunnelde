@@ -1,6 +1,7 @@
 import { renderHook, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api/ipc";
+import * as ipc from "@/lib/api/ipc";
 import type { PluginInfo } from "@/lib/api/types";
 import { usePlugins } from "@/store/plugins";
 import { useEditors } from "@/store/editors";
@@ -146,6 +147,124 @@ describe("windowed editor syntax", () => {
       vi.useRealTimers();
     }
   });
+
+  it.each(["failure", "empty"])(
+    "handles a replacement window %s without a pending flash",
+    async (outcome) => {
+      vi.useFakeTimers();
+      try {
+        const { result, rerender } = renderHook(
+          ({ offset }) =>
+            useEditorSyntax({
+              document: document(),
+              composing: false,
+              enabled: true,
+              requestedRange: { offset, length: 32_000 },
+            }),
+          { initialProps: { offset: 0 } },
+        );
+        await act(() => vi.advanceTimersByTimeAsync(300));
+        const previous = result.current.tokens;
+        if (outcome === "failure")
+          vi.mocked(api.pluginRun).mockRejectedValueOnce(new Error("offline"));
+        else vi.mocked(api.pluginRun).mockResolvedValueOnce({ tokens: [] });
+        rerender({ offset: 20_000 });
+        expect(result.current.highlighted).toBe(true);
+        expect(result.current.tokens).toBe(previous);
+        expect(result.current.range?.offset).toBe(0);
+        await act(() => vi.advanceTimersByTimeAsync(300));
+        if (outcome === "failure") {
+          expect(result.current.tokens).toBe(previous);
+          expect(result.current.range?.offset).toBe(0);
+        } else {
+          expect(result.current.tokens).toEqual([]);
+          expect(result.current.range?.offset).toBe(20_000);
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("rejects an obsolete scroll response while retaining the last valid colors", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result, rerender } = renderHook(
+        ({ offset }) =>
+          useEditorSyntax({
+            document: document(),
+            composing: false,
+            enabled: true,
+            requestedRange: { offset, length: 32_000 },
+          }),
+        { initialProps: { offset: 0 } },
+      );
+      await act(() => vi.advanceTimersByTimeAsync(300));
+      const previous = result.current.tokens;
+      let finish!: (value: { tokens: { start: number; end: number; type: string }[] }) => void;
+      vi.mocked(api.pluginRun).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      rerender({ offset: 20_000 });
+      await act(() => vi.advanceTimersByTimeAsync(300));
+      rerender({ offset: 40_000 });
+      await act(async () => finish({ tokens: [{ start: 0, end: 3, type: "string" }] }));
+      expect(result.current.tokens).toBe(previous);
+      expect(result.current.range?.offset).toBe(0);
+      await act(() => vi.advanceTimersByTimeAsync(300));
+      expect(result.current.range?.offset).toBe(40_000);
+      expect(result.current.tokens).toEqual([{ start: 0, end: 5, type: "keyword" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["version", "identity", "content", "runtime", "revoke", "stopping"])(
+    "clears retained colors immediately on %s while a window is pending",
+    async (change) => {
+      vi.useFakeTimers();
+      try {
+        vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+        const original = document();
+        const { result, rerender } = renderHook(
+          ({ doc, offset }) =>
+            useEditorSyntax({
+              document: doc,
+              composing: false,
+              enabled: true,
+              requestedRange: { offset, length: 32_000 },
+            }),
+          { initialProps: { doc: original, offset: 0 } },
+        );
+        await act(() => vi.advanceTimersByTimeAsync(300));
+        rerender({ doc: original, offset: 20_000 });
+        expect(result.current.highlighted).toBe(true);
+        act(() => {
+          if (change === "runtime")
+            usePlugins.setState({ items: [{ ...plugin, runtimeId: "boot:new" }] });
+          if (change === "revoke")
+            usePluginSecurity.setState((s) => ({ state: { ...s.state, grants: {} } }));
+          if (change === "stopping") usePlugins.setState({ stoppingIds: [plugin.id] });
+          rerender({
+            doc: {
+              ...original,
+              ...(change === "version" ? { version: original.version + 1 } : {}),
+              ...(change === "identity" ? { documentId: "new-document" } : {}),
+              ...(change === "content" ? { content: original.content + "x" } : {}),
+            },
+            offset: 20_000,
+          });
+        });
+        expect(result.current.highlighted).toBe(false);
+        expect(result.current.tokens).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("clears rendered tokens on stale identity, revoke, stop and composing", async () => {
     {
