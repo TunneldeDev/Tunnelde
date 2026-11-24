@@ -6,6 +6,30 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.8.1](https://github.com/TunneldeDev/Tunnelde/compare/v2.8.0...v2.8.1) - 2026-11-24
+
+### 更新概览 | Highlights
+
+- **mounts:** wait for cancelled channel settlement
+- **release:** remove stable Beta acceptance gate
+
+<details open>
+<summary>详细变更 | Details (2)</summary>
+
+### 构建 | Build
+
+- **mounts:** wait for cancelled channel settlement ([#555](https://github.com/TunneldeDev/Tunnelde/pull/555)) @quyansiyuanwang
+
+### 其他 | Other
+
+- **release:** remove stable Beta acceptance gate ([#553](https://github.com/TunneldeDev/Tunnelde/pull/553)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.8.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.7.1...v2.8.0) - 2026-11-24
 
 ### 更新概览 | Highlights
