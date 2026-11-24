@@ -66,3 +66,24 @@ it("identifies a plugin command without serializing its input or runtime identit
   });
   expect(JSON.stringify(getLocalDiagnostics())).not.toMatch(/private source|private-runtime/);
 });
+
+it("records plugin-view gateway actions without opaque targets or credentials", async () => {
+  invoke.mockRejectedValue({ code: "validation", message: "transfer expired" });
+  await expect(
+    diagnosticInvoke("panel_window_plugin_view", {
+      document: "private-document",
+      request: {
+        action: "describePreviewProvider",
+        target: { kind: "staged", id: "private-offer" },
+        params: { secret: "never-log" },
+      },
+    }),
+  ).rejects.toBeDefined();
+  expect(getLocalDiagnostics()[0]!.event).toMatchObject({
+    operation: "panel_window_plugin_view.describePreviewProvider",
+    ipc: { action: "describePreviewProvider" },
+  });
+  expect(JSON.stringify(getLocalDiagnostics())).not.toMatch(
+    /private-document|private-offer|never-log/,
+  );
+});

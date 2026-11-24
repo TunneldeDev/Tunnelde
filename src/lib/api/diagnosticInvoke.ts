@@ -13,7 +13,16 @@ export function ipcDiagnosticContext(
   if (!args || typeof args !== "object") return context;
   const input = args as Record<string, unknown>;
   const request = input.request;
-  if (command === "panel_window_control" && request && typeof request === "object") {
+  if (
+    [
+      "panel_window_control",
+      "panel_window_plugin_view",
+      "panel_window_terminal",
+      "panel_window_files",
+    ].includes(command) &&
+    request &&
+    typeof request === "object"
+  ) {
     const row = request as Record<string, unknown>;
     if (typeof row.action === "string" && /^[a-zA-Z][a-zA-Z0-9]{0,63}$/.test(row.action))
       context.action = row.action;
