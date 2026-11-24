@@ -27,15 +27,13 @@ it("reviews explicit categories before resetting and keeps a failed review visib
 });
 
 it("loads concrete saved data only on expansion and keeps expansion separate from reset selection", async () => {
-  const loadDetails = vi
-    .fn()
-    .mockResolvedValue([
-      {
-        label: "tasks · Position and size",
-        value: '{"x":638,"y":128,"width":540,"height":560}',
-        origin: "saved",
-      },
-    ]);
+  const loadDetails = vi.fn().mockResolvedValue([
+    {
+      label: "tasks · Position and size",
+      value: '{"x":638,"y":128,"width":540,"height":560}',
+      origin: "saved",
+    },
+  ]);
   render(
     <HabitsSettingsView
       data={{ ready: true, saving: false, error: null, entries: 1, workspaceCleared: false }}

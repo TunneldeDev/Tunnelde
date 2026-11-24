@@ -70,8 +70,9 @@ mod tests {
     }
     #[test]
     fn survives_database_reopen_without_browser_cache() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("habits.db");
+        let directory =
+            std::env::temp_dir().join(format!("tunnelde-habits-test-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("habits.db");
         let values = Habits::from([("tunnelde.panels.tasks.pinned".into(), "true".into())]);
         {
             let database = crate::db::Database::open(&path).unwrap();
@@ -79,6 +80,8 @@ mod tests {
         }
         let reopened = crate::db::Database::open(&path).unwrap();
         assert_eq!(reopened.with(load).unwrap(), Some(values));
+        drop(reopened);
+        std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]
     fn rejects_unrelated_and_oversized_data() {
