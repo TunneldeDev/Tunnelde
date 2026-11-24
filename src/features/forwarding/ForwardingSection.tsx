@@ -89,120 +89,127 @@ function SavedForwardingSection({
   );
   const { rules, loading, session, canStart, form, busy, failure, connectingRules } = controller;
   return (
-    <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
-      <header className="forwarding__head">
-        <div>
-          {!embedded && <h2 className="card__title">{t("forward.title")}</h2>}
-          <p className="forwarding__subtitle">
-            {host.username && `${host.username}@`}
-            {host.host || host.name}
-            {host.port ? `:${host.port}` : ""}
-          </p>
-        </div>
-        {!form ? (
-          <div className="forwarding__tools">
-            <Button
-              size="sm"
-              leading={<Plus size={14} />}
-              disabled={busy}
-              onClick={() => controller.add()}
-            >
-              {t("forward.add")}
-            </Button>
-            <Button
-              size="sm"
-              leading={<Plus size={14} />}
-              disabled={busy || loading}
-              onClick={() => setGroupEditor({ hostId: host.id })}
-            >
-              {t("forward.addGroup")}
-            </Button>
-            <HelpHint label={t("forward.addGroup")}>{t("forward.groupHint")}</HelpHint>
-            <IconButton
-              label={t("forward.refresh")}
-              disabled={busy || loading}
-              onClick={controller.refresh}
-            >
-              <RefreshCw size={14} />
-            </IconButton>
+    <>
+      <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
+        <header className="forwarding__head">
+          <div>
+            <h2 className="card__title">{t("forward.title")}</h2>
+            <p className="forwarding__subtitle">
+              {host.username && `${host.username}@`}
+              {host.host || host.name}
+              {host.port ? `:${host.port}` : ""}
+            </p>
           </div>
+          {!form ? (
+            <div className="forwarding__tools">
+              <Button
+                size="sm"
+                leading={<Plus size={14} />}
+                disabled={busy}
+                onClick={() => controller.add()}
+              >
+                {t("forward.add")}
+              </Button>
+              <Button
+                size="sm"
+                leading={<Plus size={14} />}
+                disabled={busy || loading}
+                onClick={() => setGroupEditor({ hostId: host.id })}
+              >
+                {t("forward.addGroup")}
+              </Button>
+              <HelpHint label={t("forward.addGroup")}>{t("forward.groupHint")}</HelpHint>
+              <IconButton
+                label={t("forward.refresh")}
+                disabled={busy || loading}
+                onClick={controller.refresh}
+              >
+                <RefreshCw size={14} />
+              </IconButton>
+            </div>
+          ) : null}
+        </header>
+        {(rules.length > 0 || session) && !form && (
+          <div className="forwarding__group-actions">
+            {rules.length > 0 && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy || !rules.some(canStart)}
+                onClick={() => controller.start(rules.filter(canStart).map((rule) => rule.id))}
+              >
+                {t("forward.startAll")}
+              </Button>
+            )}
+            {session && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => controller.requestDisconnect()}
+              >
+                {t("terminal.disconnect")}
+              </Button>
+            )}
+          </div>
+        )}
+        {failure &&
+          failure.target !== "editor" &&
+          failure.target !== "list" &&
+          !rules.some((rule) => rule.id === failure.target) && (
+            <p role="alert" className="td-field__error">
+              {failure.message}
+            </p>
+          )}
+        {form ? (
+          <ForwardRuleEditor
+            key={`${host.id}:${form.id}:${form.revision ?? "new"}`}
+            rule={form}
+            groups={controller.groups}
+            hostName={host.name}
+            busy={busy}
+            error={failure?.target === "editor" ? failure.message : undefined}
+            onSave={controller.save}
+            onCancel={controller.cancel}
+          />
         ) : null}
-      </header>
-      {(rules.length > 0 || session) && !form && (
-        <div className="forwarding__group-actions">
-          {rules.length > 0 && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy || !rules.some(canStart)}
-              onClick={() => controller.start(rules.filter(canStart).map((rule) => rule.id))}
-            >
-              {t("forward.startAll")}
-            </Button>
-          )}
-          {session && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => controller.requestDisconnect()}
-            >
-              {t("terminal.disconnect")}
-            </Button>
-          )}
-        </div>
-      )}
-      {failure &&
-        failure.target !== "editor" &&
-        failure.target !== "list" &&
-        !rules.some((rule) => rule.id === failure.target) && (
+        {renderSurface({
+          hostId: host.id,
+          title: host.name,
+          controller,
+          children: loading ? (
+            <p className="forwarding__empty" role="status">
+              {t("common.loading")}
+            </p>
+          ) : (
+            <ForwardGroups
+              controller={controller}
+              hostId={host.id}
+              onEditGroup={(group) => setGroupEditor({ hostId: host.id, group })}
+            />
+          ),
+        })}
+        {failure?.target === "list" ? (
           <p role="alert" className="td-field__error">
             {failure.message}
           </p>
-        )}
-      {form ? (
-        <ForwardRuleEditor
-          key={`${host.id}:${form.id}:${form.revision ?? "new"}`}
-          rule={form}
-          groups={controller.groups}
-          hostName={host.name}
-          busy={busy}
-          error={failure?.target === "editor" ? failure.message : undefined}
-          onSave={controller.save}
-          onCancel={controller.cancel}
-        />
-      ) : null}
-      {renderSurface({
-        hostId: host.id,
-        title: host.name,
-        controller,
-        children: loading ? (
-          <p className="forwarding__empty" role="status">
-            {t("common.loading")}
-          </p>
-        ) : (
-          <ForwardGroups
-            controller={controller}
+        ) : null}
+        {groupEditor && (
+          <ForwardGroupDialog
+            key={groupEditor.group?.id ?? "new"}
+            group={groupEditor.group}
             hostId={host.id}
-            onEditGroup={(group) => setGroupEditor({ hostId: host.id, group })}
+            onClose={() => setGroupEditor(null)}
           />
-        ),
-      })}
-      {failure?.target === "list" ? (
-        <p role="alert" className="td-field__error">
-          {failure.message}
-        </p>
-      ) : null}
-      {groupEditor && (
-        <ForwardGroupDialog
-          key={groupEditor.group?.id ?? "new"}
-          group={groupEditor.group}
-          hostId={host.id}
-          onClose={() => setGroupEditor(null)}
-        />
-      )}
-      {connectingRules && renderConnection(connectingRules, controller)}
-      <ProxySection hostId={host.id} hostName={host.name} onChanged={controller.refresh} />
-    </section>
+        )}
+        {connectingRules && renderConnection(connectingRules, controller)}
+      </section>
+      <ProxySection
+        hostId={host.id}
+        hostName={host.name}
+        embedded={embedded}
+        onChanged={controller.refresh}
+      />
+    </>
   );
 }

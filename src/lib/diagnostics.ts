@@ -54,11 +54,22 @@ function errorCode(error: unknown): string {
   return ERROR_NAMES.has(stringProperty(error, "name")) ? "runtime" : "unknown";
 }
 
+const EXPECTED_PANEL_LIFECYCLE = new Set([
+  "stale panel owner",
+  "stale view checkpoint",
+  "panel transfer pending",
+  "panel is frozen",
+  "panel interaction in progress",
+  "coordinator required",
+  "panel.window.moveInProgress",
+  "panel.viewState.changedDuringCapture",
+]);
 export function diagnosticLevel(error: unknown): LogLevel {
   const code = errorCode(error);
   const message = typeof error === "string" ? error : stringProperty(error, "message");
   if (
     stringProperty(error, "name") === "AbortError" ||
+    EXPECTED_PANEL_LIFECYCLE.has(message) ||
     /(?:^|\.)(?:cancelled|canceled)$/i.test(message)
   )
     return "debug";
@@ -80,6 +91,18 @@ const SAFE_MESSAGES = new Set([
   "panel.window.viewNotReady",
   "panel.window.staleOwner",
   "panel.window.cancelled",
+  "panel.window.moveInProgress",
+  "stale panel owner",
+  "stale view checkpoint",
+  "panel transfer pending",
+  "panel is frozen",
+  "panel interaction in progress",
+  "coordinator required",
+  "panel.viewState.changedDuringCapture",
+  "panel.transfer.pending",
+  "panel.is.frozen",
+  "panel.interaction.in.progress",
+  "panel.coordinator.required",
   "plugin.frontend.viewUnavailable",
   "host.name.required",
   "logs.diagnosticReadFailed",

@@ -1,5 +1,5 @@
-import { Pencil, Play, Plus, RefreshCw, Square, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { Play, Plus, RefreshCw, Square, X } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
@@ -7,6 +7,7 @@ import { PasswordInput } from "@/components/ui/form/PasswordInput";
 import { SwitchRow } from "@/components/ui/form/Switch";
 import { HelpHint } from "@/components/ui/form/HelpHint";
 import { Select } from "@/components/ui/form/Select";
+import { Menu } from "@/components/ui/overlay/Menu";
 import { presentError } from "@/lib/api/errors";
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { useForwardingReadModel } from "../data/readScope";
@@ -52,10 +53,12 @@ const emptyRoute = (groupId: string): Omit<ProxyRoute, "revision"> => ({
 export function ProxySection({
   hostId,
   hostName,
+  embedded = false,
   onChanged,
 }: {
   hostId: string;
   hostName: string;
+  embedded?: boolean;
   onChanged?: () => void;
 }) {
   const { t } = useTranslation();
@@ -66,12 +69,14 @@ export function ProxySection({
   const [runtime, setRuntime] = useState<ProxyRuntime[]>([]);
   const [connections, setConnections] = useState<ProxyConnection[]>([]);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState<ProxyGroupInput | null>(null);
   const [routeDraft, setRouteDraft] = useState<
     (Omit<ProxyRoute, "revision"> & { revision?: string }) | null
   >(null);
-  useForwardingCaptureGuard("proxy-admission", () => busy);
+  const [formError, setFormError] = useState<string | null>(null);
+  useForwardingCaptureGuard("proxy-admission", () => busyRef.current);
   const load = useCallback(async () => {
     // A satellite consumes only its explicit forwarding projection. SOCKS5
     // administration remains a main-document surface until a scoped action
@@ -109,16 +114,21 @@ export function ProxySection({
     return () => window.clearInterval(timer);
   }, [load, scoped]);
   const run = async (operation: () => Promise<unknown>) => {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
+    setFormError(null);
     try {
       await operation();
       await load();
       onChanged?.();
     } catch (cause) {
-      setError(presentError(cause));
+      const message = presentError(cause);
+      setError(message);
+      setFormError(message);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -143,13 +153,23 @@ export function ProxySection({
     });
   };
   return (
-    <section className="proxy-section" aria-busy={busy}>
+    <section className={`proxy-section ${embedded ? "" : "card"}`} aria-busy={busy}>
       <header className="proxy-section__head">
         <div>
-          <h3>{t("proxy.title")}</h3>
+          <h2 className="card__title">{t("proxy.title")}</h2>
           <p>{t("proxy.subtitle", { host: hostName })}</p>
         </div>
-        <div className="proxy-section__tools">
+      </header>
+      {error ? (
+        <p role="alert" className="td-field__error">
+          {error}
+        </p>
+      ) : null}
+      {groups.length === 0 && !groupDraft ? (
+        <p className="proxy-section__empty">{t("proxy.empty")}</p>
+      ) : null}
+      {groupDraft || routeDraft ? null : (
+        <div className="proxy-section__actions">
           <Button
             size="sm"
             leading={<Plus size={14} />}
@@ -163,15 +183,7 @@ export function ProxySection({
             <RefreshCw size={14} />
           </IconButton>
         </div>
-      </header>
-      {error ? (
-        <p role="alert" className="td-field__error">
-          {error}
-        </p>
-      ) : null}
-      {groups.length === 0 && !groupDraft ? (
-        <p className="proxy-section__empty">{t("proxy.empty")}</p>
-      ) : null}
+      )}
       {groups.map((group) => {
         const live = runtime.find((item) => item.groupId === group.id);
         const ownRoutes = routes[group.id] ?? [];
@@ -186,50 +198,55 @@ export function ProxySection({
               <span className={`proxy-group__status ${live ? "is-running" : ""}`} role="status">
                 {t(live ? "proxy.running" : "proxy.stopped")}
               </span>
-              <IconButton
-                size="sm"
-                label={t(live ? "proxy.stop" : "proxy.start")}
-                disabled={busy}
-                onClick={() =>
-                  void run(() =>
-                    live
-                      ? proxyApi.stop(group.id, group.revision, live.sessionId)
-                      : proxyApi.start(group.id, group.revision),
-                  )
-                }
-              >
-                {live ? <Square size={14} /> : <Play size={14} />}
-              </IconButton>
-              <IconButton
-                size="sm"
-                label={t("common.edit")}
-                disabled={busy || !!live}
-                onClick={() =>
-                  setGroupDraft({
-                    id: group.id,
-                    hostId: group.hostId,
-                    name: group.name,
-                    listenHost: group.listenHost,
-                    listenPort: group.listenPort,
-                    authMode: group.authMode,
-                    authUsername: group.authUsername,
-                    authPassword: null,
-                    missPolicy: group.missPolicy,
-                    autoStart: group.autoStart,
-                    autoRetry: group.autoRetry,
-                  })
-                }
-              >
-                <Pencil size={13} />
-              </IconButton>
-              <IconButton
-                size="sm"
-                label={t("common.delete")}
-                disabled={busy || !!live || ownRoutes.length > 0}
-                onClick={() => void run(() => proxyApi.removeGroup(group.id, group.revision))}
-              >
-                <Trash2 size={13} />
-              </IconButton>
+              <div className="proxy-group__actions">
+                <IconButton
+                  size="sm"
+                  label={t(live ? "proxy.stop" : "proxy.start")}
+                  disabled={busy}
+                  onClick={() =>
+                    void run(() =>
+                      live
+                        ? proxyApi.stop(group.id, group.revision, live.sessionId)
+                        : proxyApi.start(group.id, group.revision),
+                    )
+                  }
+                >
+                  {live ? <Square size={14} /> : <Play size={14} />}
+                </IconButton>
+                <Menu
+                  label={t("common.more")}
+                  disabled={busy}
+                  items={[
+                    {
+                      label: t("common.edit"),
+                      disabled: !!live,
+                      description: live ? t("proxy.stopBeforeEdit") : undefined,
+                      onSelect: () =>
+                        setGroupDraft({
+                          id: group.id,
+                          hostId: group.hostId,
+                          name: group.name,
+                          listenHost: group.listenHost,
+                          listenPort: group.listenPort,
+                          authMode: group.authMode,
+                          authUsername: group.authUsername,
+                          authPassword: null,
+                          missPolicy: group.missPolicy,
+                          autoStart: group.autoStart,
+                          autoRetry: group.autoRetry,
+                        }),
+                    },
+                    {
+                      label: t("common.delete"),
+                      danger: true,
+                      disabled: !!live || ownRoutes.length > 0,
+                      description: ownRoutes.length > 0 ? t("proxy.groupNotEmpty") : undefined,
+                      onSelect: () =>
+                        void run(() => proxyApi.removeGroup(group.id, group.revision)),
+                    },
+                  ]}
+                />
+              </div>
             </div>
             {live?.exposureWarning ? (
               <p className="proxy-group__warning">{t("proxy.exposure")}</p>
@@ -239,6 +256,11 @@ export function ProxySection({
               <span>{t("proxy.routeCount", { count: ownRoutes.length })}</span>
               {group.autoStart ? <span>{t("proxy.autoStart")}</span> : null}
             </div>
+            {live ? (
+              <p className="proxy-group__listener">
+                {t("proxy.noListeners", { endpoint: live.socksEndpoint })}
+              </p>
+            ) : null}
             <ul className="proxy-routes">
               {ownRoutes.map((route) => (
                 <li key={route.id} className="proxy-route">
@@ -251,22 +273,26 @@ export function ProxySection({
                     </code>
                   </div>
                   <span className="proxy-route__mode">{t(`proxy.mode.${route.mode}`)}</span>
-                  <IconButton
-                    size="sm"
-                    label={t("common.edit")}
-                    disabled={busy || !!live}
-                    onClick={() => setRouteDraft({ ...route })}
-                  >
-                    <Pencil size={13} />
-                  </IconButton>
-                  <IconButton
-                    size="sm"
-                    label={t("common.delete")}
-                    disabled={busy || !!live}
-                    onClick={() => void run(() => proxyApi.removeRoute(route.id, route.revision))}
-                  >
-                    <X size={13} />
-                  </IconButton>
+                  <Menu
+                    label={t("proxy.routeActions", { name: route.name || route.matchHost })}
+                    disabled={busy}
+                    items={[
+                      {
+                        label: t("common.edit"),
+                        disabled: !!live,
+                        description: live ? t("proxy.stopBeforeEdit") : undefined,
+                        onSelect: () => setRouteDraft({ ...route }),
+                      },
+                      {
+                        label: t("common.delete"),
+                        danger: true,
+                        disabled: !!live,
+                        description: live ? t("proxy.stopBeforeEdit") : undefined,
+                        onSelect: () =>
+                          void run(() => proxyApi.removeRoute(route.id, route.revision)),
+                      },
+                    ]}
+                  />
                 </li>
               ))}
             </ul>
@@ -308,7 +334,7 @@ export function ProxySection({
       })}
       {groupDraft ? (
         <form
-          className="proxy-editor"
+          className="proxy-editor proxy-editor--group"
           onSubmit={(event) => {
             event.preventDefault();
             saveGroup();
@@ -323,6 +349,9 @@ export function ProxySection({
                 onChange={(event) => setGroupDraft({ ...groupDraft, name: event.target.value })}
               />
             </Field>
+          </div>
+          <fieldset className="proxy-editor__group">
+            <legend>{t("proxy.listener")}</legend>
             <Field
               label={t("proxy.listenAddress")}
               htmlFor={`${formId}-listen`}
@@ -406,7 +435,7 @@ export function ProxySection({
                 </Field>
               </>
             ) : null}
-          </div>
+          </fieldset>
           <SwitchRow
             label={t("proxy.autoStart")}
             hint={t("proxy.autoStartHint")}
@@ -421,8 +450,19 @@ export function ProxySection({
             checked={groupDraft.autoRetry}
             onChange={(autoRetry) => setGroupDraft({ ...groupDraft, autoRetry })}
           />
+          {formError ? (
+            <p role="alert" className="td-field__error">
+              {formError}
+            </p>
+          ) : null}
           <div className="proxy-editor__actions">
-            <Button variant="ghost" onClick={() => setGroupDraft(null)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setGroupDraft(null);
+                setFormError(null);
+              }}
+            >
               {t("common.cancel")}
             </Button>
             <Button type="submit" variant="primary" disabled={busy || !groupDraft.name.trim()}>
@@ -433,7 +473,7 @@ export function ProxySection({
       ) : null}
       {routeDraft ? (
         <form
-          className="proxy-editor"
+          className="proxy-editor proxy-editor--route"
           onSubmit={(event) => {
             event.preventDefault();
             saveRoute();
@@ -551,8 +591,19 @@ export function ProxySection({
               </>
             ) : null}
           </div>
+          {formError ? (
+            <p role="alert" className="td-field__error">
+              {formError}
+            </p>
+          ) : null}
           <div className="proxy-editor__actions">
-            <Button variant="ghost" onClick={() => setRouteDraft(null)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setRouteDraft(null);
+                setFormError(null);
+              }}
+            >
               {t("common.cancel")}
             </Button>
             <Button

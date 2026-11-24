@@ -123,7 +123,7 @@ describe("sidebar panel docking", () => {
     async (_edge, x, y, direction, side) => {
       useHosts.setState({ hosts: [{ id: "one", name: "Server one" }] as Host[] });
       const rendered = render(<Shell />);
-      const icon = screen.getByRole("button", { name: "Port forwarding" });
+      const icon = screen.getByRole("button", { name: "Forwarding" });
       fireEvent.click(icon);
       const host = screen.getByRole("button", { name: /Server one/ });
       fireEvent.click(host);

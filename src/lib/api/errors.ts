@@ -191,6 +191,9 @@ function translateErrorDetailed(error: unknown): string {
         return translate("sftp.renameFailed", { from: details.from, to: details.to, reason });
       }
     }
+    if (error.code === "validation" && error.message.startsWith("panel.")) {
+      return translate("error.panelUnavailable");
+    }
     if (error.message === "plugin.engine.unsupported") {
       const details = error.details;
       if (

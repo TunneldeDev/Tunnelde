@@ -18,7 +18,7 @@ export const SIDEBAR_VIEWS: BuiltinSidebarView[] = [
 ];
 export const SIDEBAR_LABELS = {
   hosts: "sidebar.hosts",
-  forwarding: "forward.title",
+  forwarding: "forward.panelTitle",
   knownHosts: "settings.knownHosts",
   plugins: "settings.plugins",
   tasks: "tasks.title",

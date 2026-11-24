@@ -106,7 +106,24 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
       if (element.getBoundingClientRect().width) lastDom.current = capturePanelDomState(element);
       clearTimeout(timer);
       timer = setTimeout(() => {
-        void views.checkpoint(record.panelId).then(diagnostics.recovered, diagnostics.failed);
+        // Moving panels are captured by the move transaction itself. Periodic
+        // checkpoints are best-effort and must not turn expected ownership
+        // changes into error diagnostics.
+        void views.checkpoint(record.panelId).then(diagnostics.recovered, (error) => {
+          if (
+            error instanceof Error &&
+            [
+              "panel.window.moveInProgress",
+              "panel.window.staleOwner",
+              "panel.window.cancelled",
+              "panel.window.viewNotReady",
+              "panel.transfer.pending",
+              "panels.finishInteractionBeforeMoving",
+            ].includes(error.message)
+          )
+            return;
+          diagnostics.failed(error);
+        });
       }, 100);
     };
     const events = ["scroll", "input", "change", "toggle", "focusin", "keyup"];
