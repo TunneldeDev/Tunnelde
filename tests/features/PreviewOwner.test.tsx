@@ -66,9 +66,7 @@ it("keeps public preview metadata and the exact remote read above an absent pres
       <Owner visible />
     </StrictMode>,
   );
-  await waitFor(() =>
-    expect(screen.getByRole("textbox")).toHaveProperty("value", "same host-owned text"),
-  );
+  await waitFor(() => expect(screen.getByRole("textbox").textContent).toBe("same host-owned text"));
   expect(api.sftpReadText).toHaveBeenCalledTimes(readCount);
   view.unmount();
   expect(filePreviewObservation().preview).toBeNull();
