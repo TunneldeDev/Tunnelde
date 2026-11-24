@@ -1,6 +1,6 @@
 import { useForwardingCaptureGuard } from "../runtime/useForwardingCaptureGuard";
 import { useState } from "react";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
@@ -28,7 +28,7 @@ export function ForwardGroups({
     try {
       await operation();
     } catch (cause) {
-      setError(translateError(cause));
+      setError(presentError(cause));
     } finally {
       setBusy(false);
       controller.actions.refresh();

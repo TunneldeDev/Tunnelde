@@ -1,3 +1,4 @@
+import { reportError } from "@/lib/diagnostics";
 import { MainSettingsWindowOwner } from "@/features/settings/window/NativeSettingsPage";
 import { PluginPanelDialogs } from "@/features/plugins/panel/PluginPanelDialogs";
 import { HostPanelDialogs } from "@/features/hosts/panel/HostPanelDialogs";
@@ -67,19 +68,19 @@ export function AppShell() {
         .catch(() => {});
     });
     void wireHostSources(controller.signal).catch((error: unknown) =>
-      console.error("Host sources subscription failed", error),
+      reportError("plugins.hostSources", "subscribe", error),
     );
     void wireHostColumns(controller.signal).catch((error: unknown) =>
-      console.error("Host columns subscription failed", error),
+      reportError("plugins.hostColumns", "subscribe", error),
     );
     void wireTabBarContributions(controller.signal).catch((error: unknown) =>
-      console.error("Tab bar subscription failed", error),
+      reportError("plugins.tabBar", "subscribe", error),
     );
     void wireHostDecorations(controller.signal).catch((error: unknown) =>
-      console.error("Host decorations subscription failed", error),
+      reportError("plugins.hostDecorations", "subscribe", error),
     );
     void wireFileHighlights(controller.signal).catch((error: unknown) =>
-      console.error("File highlights subscription failed", error),
+      reportError("plugins.fileHighlights", "subscribe", error),
     );
     return () => {
       stopPanels();

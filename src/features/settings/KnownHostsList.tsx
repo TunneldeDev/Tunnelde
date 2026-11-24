@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
 import { PanelHeader } from "@/components/layout/WorkbenchPanel";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { KnownHostEntry } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 
@@ -52,7 +52,7 @@ export function KnownHostsList({
       }
       setConfirmation({ entry: { ...entry }, release });
     } catch (cause) {
-      if (alive.current) toast(translateError(cause), "error");
+      if (alive.current) toast(presentError(cause), "error");
     } finally {
       opening.current = false;
     }
@@ -60,7 +60,7 @@ export function KnownHostsList({
   const closeConfirmation = () => {
     if (!confirmation) return;
     setConfirmation(null);
-    void confirmation.release().catch((cause: unknown) => toast(translateError(cause), "error"));
+    void confirmation.release().catch((cause: unknown) => toast(presentError(cause), "error"));
   };
 
   const search = query.trim().toLocaleLowerCase();
@@ -98,7 +98,7 @@ export function KnownHostsList({
       label={t("common.refresh")}
       disabled={loading}
       onClick={() => {
-        void refresh().catch((cause: unknown) => toast(translateError(cause), "error"));
+        void refresh().catch((cause: unknown) => toast(presentError(cause), "error"));
       }}
     >
       <RefreshCw size={14} />

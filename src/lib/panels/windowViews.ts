@@ -88,6 +88,12 @@ export function createWindowViews(client: PanelWindowClient) {
   const revisions = new Map<string, number>();
   let disposed = false,
     epoch = 0;
+  // Periodic checkpoints are best-effort. A move owns the capture reservation;
+  // do not start a competing checkpoint for the same panel until it settles.
+  const checkpointing = new Set<string>();
+  // The move transaction owns capture while it is in flight. Keep this
+  // document-local fence independent of a delayed React `moving` publish.
+  const moveCaptures = new Set<string>();
   const publish = () => {
     if (!disposed) useWindowViews.setState({ entries: new Map(records) });
   };
@@ -95,6 +101,8 @@ export function createWindowViews(client: PanelWindowClient) {
     const record = records.get(id);
     record?.controller.dispose();
     records.delete(id);
+    checkpointing.delete(id);
+    moveCaptures.delete(id);
     if (record?.staged)
       ready.get(record.key)?.({
         error: new Error(disposed ? "panel.window.disposed" : "panel.window.cancelled"),
@@ -267,15 +275,39 @@ export function createWindowViews(client: PanelWindowClient) {
     async checkpoint(panelId: string) {
       const record = records.get(panelId),
         root = roots.get(panelId);
-      if (!record?.lease || record.staged || record.failed || !root || disposed) return;
+      if (
+        !record?.lease ||
+        record.staged ||
+        record.failed ||
+        record.moving ||
+        moveCaptures.has(panelId) ||
+        checkpointing.has(panelId) ||
+        !root ||
+        disposed
+      )
+        return;
       const key = `${panelId}:${record.lease.generation}`;
       const revision = (revisions.get(key) ?? 0) + 1;
       revisions.set(key, revision);
-      const state = await captureAsync(panelId, undefined, { intent: "checkpoint" });
-      if (disposed || records.get(panelId)?.controller !== record.controller) return;
-      await client.control({ action: "checkpoint", lease: record.lease, revision, state });
+      checkpointing.add(panelId);
+      try {
+        const state = await captureAsync(panelId, undefined, { intent: "checkpoint" });
+        const current = records.get(panelId);
+        if (
+          disposed ||
+          current?.controller !== record.controller ||
+          current.lease?.generation !== record.lease.generation ||
+          current.moving ||
+          moveCaptures.has(panelId)
+        )
+          return;
+        await client.control({ action: "checkpoint", lease: record.lease, revision, state });
+      } finally {
+        checkpointing.delete(panelId);
+      }
     },
     async captureForMove(panelId: string, signal?: AbortSignal) {
+      if (moveCaptures.has(panelId)) throw new Error("panel.window.moveInProgress");
       const record = records.get(panelId);
       const owner = record?.lease;
       const valid = () => {
@@ -293,6 +325,7 @@ export function createWindowViews(client: PanelWindowClient) {
           !signal?.aborted
         );
       };
+      moveCaptures.add(panelId);
       try {
         return await captureAsync(panelId, signal, { intent: "move" });
       } catch (error) {
@@ -316,6 +349,8 @@ export function createWindowViews(client: PanelWindowClient) {
         // Lost drafts cannot safely inherit caret/scroll offsets from a
         // different, freshly initialized component instance.
         return { ...captured, dom: { version: 1 as const, scroll: {}, focus: null } };
+      } finally {
+        moveCaptures.delete(panelId);
       }
     },
     captureAsync,

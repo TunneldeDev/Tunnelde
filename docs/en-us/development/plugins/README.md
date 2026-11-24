@@ -2,6 +2,8 @@
 
 Host migration and isolated forwarding groups: [API](forwarding-groups.md).
 
+SOCKS5 domain routes and optional TUN adapters: [technical contract](../socks-tun.md).
+
 Interactive host-detail sections and mount contributor selection: [Host details](host-details.md).
 
 [简体中文](../../../zh-cn/development/plugins/README.md)

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import { PluginRuntimeView } from "@/lib/extensions/runtime/views/PluginRuntimeView";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
 import { usePlugins } from "@/store/plugins";
 import { usePluginSecurity } from "@/store/pluginSecurity";
@@ -78,7 +78,7 @@ export function PluginComponentView({
   );
   const fallback = (cause: unknown) => (
     <div role="alert" className="panel__error">
-      {translateError(cause)}
+      {presentError(cause)}
       {retry}
     </div>
   );

@@ -25,6 +25,7 @@ their notices are reproduced or referenced as required.
 | CodeMirror 6 (@codemirror/state, view, commands, language, search, autocomplete) | MIT                                                    |
 | arboard (native clipboard)                                                       | MIT OR Apache-2.0                                      |
 | base64                                                                           | MIT OR Apache-2.0                                      |
+| fontdb / ttf-parser                                                              | MIT / MIT OR Apache-2.0                                |
 | keyring                                                                          | MIT OR Apache-2.0                                      |
 | Tokio                                                                            | MIT                                                    |
 | Serde, serde_json                                                                | MIT OR Apache-2.0                                      |
@@ -43,7 +44,6 @@ their notices are reproduced or referenced as required.
 | IBM Plex Mono  | SIL Open Font License 1.1 |
 | Fira Code      | SIL Open Font License 1.1 |
 | JetBrains Mono | SIL Open Font License 1.1 |
-| Noto Sans Mono CJK SC (editor subset) | SIL Open Font License 1.1 |
 
 The SIL Open Font License permits bundling and redistribution with the application.
 

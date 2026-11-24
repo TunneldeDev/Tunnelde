@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { translateError } from "@/lib/api/errors";
+import { notifyError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import type { Group, Host, HostInput } from "@/lib/api/types";
 import i18n from "@/i18n/i18n";
@@ -46,7 +46,7 @@ function queueMutation(operation: () => Promise<void>): void {
         await next();
       } catch (error) {
         failed = true;
-        toast(translateError(error), "error");
+        notifyError(error, { domain: "hosts", operation: "mutation" });
       }
     }
     running = false;
@@ -148,7 +148,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
     } catch (error) {
       if (request !== snapshotVersion || revision !== editVersion) return false;
       set({ loading: false });
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts", operation: "load" });
       return false;
     }
   },
@@ -160,7 +160,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
       toast(i18n.t("toast.hostCreated"), "success");
       return host;
     } catch (error) {
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts", operation: "create" });
       return null;
     }
   },
@@ -179,7 +179,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
       toast(i18n.t("toast.hostUpdated"), "success");
       return host;
     } catch (error) {
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts", operation: "update" });
       return null;
     }
   },
@@ -192,7 +192,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
       toast(i18n.t("toast.hostDeleted"), "success");
       return true;
     } catch (error) {
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts", operation: "delete" });
       return false;
     }
   },
@@ -264,7 +264,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
       toast(i18n.t("toast.groupCreated"), "success");
       return group;
     } catch (error) {
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts", operation: "groupCreate" });
       return null;
     }
   },
@@ -275,7 +275,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
       await get().load();
       return true;
     } catch (error) {
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts", operation: "groupUpdate" });
       return false;
     }
   },
@@ -287,7 +287,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
       toast(i18n.t("toast.groupDeleted"), "success");
       return true;
     } catch (error) {
-      toast(translateError(error), "error");
+      notifyError(error, { domain: "hosts", operation: "groupDelete" });
       return false;
     }
   },

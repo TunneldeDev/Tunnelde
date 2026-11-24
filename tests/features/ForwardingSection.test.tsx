@@ -63,6 +63,7 @@ beforeEach(() => {
   invokeMock.mockReset().mockImplementation(async (command, args) => {
     if (command === "forwarding_list") return rows;
     if (command === "forwarding_groups_list") return [];
+    if (command === "proxy_groups_list" || command === "proxy_runtime_list") return [];
     if (command === "forwarding_save") {
       if (
         args.expectedRevision &&

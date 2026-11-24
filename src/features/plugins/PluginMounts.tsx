@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { useSsh } from "@/store/ssh";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { authorizePluginAction } from "@/store/pluginSecurity";
 import { useDialogs } from "@/store/dialogs";
 
@@ -72,7 +72,7 @@ export function PluginMounts({ pluginId }: { pluginId: string }) {
         }
       })
       .catch((e) => {
-        if (alive) setError(translateError(e));
+        if (alive) setError(presentError(e));
       });
     return () => {
       alive = false;
@@ -90,7 +90,7 @@ export function PluginMounts({ pluginId }: { pluginId: string }) {
         await refresh();
       }
     } catch (e) {
-      if (mounted.current) setError(translateError(e));
+      if (mounted.current) setError(presentError(e));
       await refresh().catch(() => {});
     } finally {
       running.current = false;
@@ -233,7 +233,7 @@ export function PluginMounts({ pluginId }: { pluginId: string }) {
                   .then((path) => {
                     if (path) setPoint(path);
                   })
-                  .catch((e) => setError(translateError(e)))
+                  .catch((e) => setError(presentError(e)))
               }
             >
               {zh ? "选择…" : "Browse…"}

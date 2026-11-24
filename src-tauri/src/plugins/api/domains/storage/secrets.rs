@@ -43,8 +43,18 @@ pub(in crate::plugins::api) async fn dispatch(
     let method = method.to_owned();
     let context = context.clone();
     let checked_context = context.clone();
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check_origin = move || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    let admission_origin = check_origin.clone();
+    let operation_origin = check_origin;
     run(
         move |job| {
+            let check_origin = admission_origin.clone();
             let lease = Lease {
                 id: checked_context.id.clone(),
                 fingerprint: checked_context.fingerprint.clone(),
@@ -57,6 +67,7 @@ pub(in crate::plugins::api) async fn dispatch(
                 .plugins
                 .security
                 .with_authorized(&lease, &["secrets"], || {
+                    check_origin()?;
                     crate::plugins::tools::with_request_authorized(
                         &lease.id,
                         lease.generation,
@@ -67,8 +78,9 @@ pub(in crate::plugins::api) async fn dispatch(
                 })
         },
         move || {
+            operation_origin()?;
             let state = context.app.state::<crate::state::AppState>();
-            match method.as_str() {
+            let result = match method.as_str() {
                 "secrets.get" => encode(state.vault.load(&identity)?),
                 "secrets.set" => {
                     state
@@ -81,7 +93,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     Ok(Value::Null)
                 }
                 _ => Err(AppError::validation("plugin.api.unknownMethod")),
+            };
+            if result.is_ok() {
+                operation_origin()?;
             }
+            result
         },
     )
     .await

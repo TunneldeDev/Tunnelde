@@ -1,3 +1,4 @@
+use crate::diagnostics::failure;
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -91,7 +92,7 @@ pub fn cancel(app: &AppHandle) {
         guard.request = None;
     }
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.emit("ui://resume", ());
+        failure::observe_tauri("window", "publishResume", window.emit("ui://resume", ()));
     }
 }
 
@@ -201,7 +202,11 @@ pub fn ready(app: &AppHandle) {
     };
     if let Some(page) = navigation {
         if let Some(window) = app.get_webview_window("main") {
-            let _ = window.emit("ui://navigate", page);
+            failure::observe_tauri(
+                "window",
+                "publishNavigation",
+                window.emit("ui://navigate", page),
+            );
         }
     }
     super::application_actions::deliver(app);
@@ -215,7 +220,11 @@ pub fn navigate(app: &AppHandle, page: &str) {
             .unwrap_or_else(|error| error.into_inner())
             .navigation = Some(page.to_owned());
     } else if let Some(window) = app.get_webview_window("main") {
-        let _ = window.emit("ui://navigate", page);
+        failure::observe_tauri(
+            "window",
+            "publishNavigation",
+            window.emit("ui://navigate", page),
+        );
     }
     super::window::show_main(app);
 }

@@ -37,6 +37,14 @@ pub(super) async fn dispatch(
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check_origin = move || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check_origin()?;
     static CAPACITY: OnceLock<Arc<Semaphore>> = OnceLock::new();
     let operation = Operation::admit(CAPACITY.get_or_init(|| Arc::new(Semaphore::new(4))).clone())?;
     let ticket = operation.ticket();
@@ -52,7 +60,8 @@ pub(super) async fn dispatch(
         let lease = lease(&worker);
         let check = || {
             ticket.check()?;
-            authorize(&worker, WRITE)
+            authorize(&worker, WRITE)?;
+            check_origin()
         };
         check()?;
         let change = match method.as_str() {
@@ -71,6 +80,7 @@ pub(super) async fn dispatch(
             "profiles.drafts.append" => {
                 let request: Append = super::parse(params)?;
                 return state.plugins.security.with_authorized(&lease, WRITE, || {
+                    check_origin()?;
                     ticket.commit()?;
                     encode(registry.append(&owner, request)?)
                 });
@@ -78,6 +88,7 @@ pub(super) async fn dispatch(
             "profiles.drafts.discard" => {
                 let request: Discard = super::parse(params)?;
                 return state.plugins.security.with_authorized(&lease, WRITE, || {
+                    check_origin()?;
                     ticket.commit()?;
                     registry.discard(&owner, &request.draft_id)?;
                     Ok(json!({"version":1}))
@@ -106,8 +117,14 @@ pub(super) async fn dispatch(
             &state.db,
             &lease,
             WRITE,
-            || ticket.check(),
-            |conn| change.persist(conn, || ticket.commit()),
+            || {
+                ticket.check()?;
+                check_origin()
+            },
+            |conn| {
+                check_origin()?;
+                change.persist(conn, || ticket.commit())
+            },
         )?;
         publish(&worker.app);
         encode(change.result())

@@ -32,6 +32,14 @@ pub(crate) enum SettingsOperation {
     HostDefaults,
     #[serde(rename = "region")]
     Region,
+    #[serde(rename = "fonts_select")]
+    FontsSelect,
+    #[serde(rename = "fonts_catalogue")]
+    FontsCatalogue,
+    #[serde(rename = "fonts_import")]
+    FontsImport,
+    #[serde(rename = "fonts_remove")]
+    FontsRemove,
     #[serde(rename = "cssImport")]
     CssImport,
     #[serde(rename = "cssExport")]

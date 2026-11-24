@@ -1,4 +1,4 @@
-use crate::plugins::api::{encode, field, optional, HostContext};
+use crate::plugins::api::{authorize, encode, field, optional, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -21,16 +21,35 @@ pub(in crate::plugins::api) async fn dispatch(
         generation: context.generation,
     };
     match method {
-        "history.list" => encode(crate::services::history::service(app, &state).list(
-            &field::<String>(&params, "hostId")?,
-            optional(&params, "limit")?,
-        )?),
+        "history.list" => {
+            let host_id: String = field(&params, "hostId")?;
+            let limit: Option<i64> = optional(&params, "limit")?;
+            let worker = context.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let check = || {
+                    authorize(&worker, &["history.read"])?;
+                    crate::platform::panel_windows::plugin_views::origin::check(
+                        crate::plugins::frontend::native::CallPolicy::StagedData,
+                    )
+                };
+                check()?;
+                let value = encode(
+                    crate::services::history::service(&worker.app, &worker.app.state::<AppState>())
+                        .list(&host_id, limit)?,
+                )?;
+                check()?;
+                Ok(value)
+            })
+            .await
+            .map_err(|_| AppError::internal("history.list.unavailable"))?
+        }
         "history.record" => {
             let host_id = field::<String>(&params, "hostId")?;
             let command = field::<String>(&params, "command")?;
             let worker = context.clone();
             let event_host = host_id.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let origin_after = origin.clone();
             state.plugins.security.with_authorized_fenced_database_then(
                 &state.db,
                 &lease,
@@ -44,6 +63,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     crate::db::history::record(conn, &host_id, &command)
                 },
                 move |entry| {
+                    if let Some(origin) = &origin_after {
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::OwnedData,
+                        )?;
+                    }
                     if entry.is_some() {
                         crate::services::history::changed(&worker.app, &event_host);
                     }
@@ -55,6 +79,7 @@ pub(in crate::plugins::api) async fn dispatch(
             let id = field::<i64>(&params, "id")?;
             let worker = context.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let origin_after = origin.clone();
             state.plugins.security.with_authorized_fenced_database_then(
                 &state.db,
                 &lease,
@@ -77,6 +102,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     Ok(host_id)
                 },
                 move |host_id| {
+                    if let Some(origin) = &origin_after {
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::OwnedData,
+                        )?;
+                    }
                     if let Some(host_id) = host_id {
                         crate::services::history::changed(&worker.app, &host_id);
                     }
@@ -89,6 +119,7 @@ pub(in crate::plugins::api) async fn dispatch(
             let worker = context.clone();
             let event_host = host_id.clone();
             let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let origin_after = origin.clone();
             state.plugins.security.with_authorized_fenced_database_then(
                 &state.db,
                 &lease,
@@ -109,6 +140,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     Ok(changed)
                 },
                 move |changed| {
+                    if let Some(origin) = &origin_after {
+                        origin.authorize_call(
+                            crate::plugins::frontend::native::CallPolicy::OwnedData,
+                        )?;
+                    }
                     if changed {
                         crate::services::history::changed(&worker.app, &event_host);
                     }

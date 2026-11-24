@@ -28,6 +28,7 @@ pub struct AppState {
     pub update: UpdateService,
     pub ssh: SshManager,
     pub forwards: crate::ssh::forward::ForwardRegistry,
+    pub proxy: crate::services::proxy::runtime::Registry,
     pub(crate) forward_starts: crate::services::forwarding::start::ManagerState,
     pub(crate) forward_automation: crate::services::forwarding::automation::Coordinator,
     pub mounts: crate::mounts::MountRegistry,
@@ -116,7 +117,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     let log_dir = storage
         .dir(crate::storage::layout::Category::Logs)
         .to_owned();
-    let guard = crate::platform::logging::init(&log_dir)?;
+    let guard = crate::platform::logging::init(&log_dir);
 
     let db_path = storage
         .dir(crate::storage::layout::Category::Database)
@@ -166,6 +167,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         update: UpdateService::new(version),
         ssh: SshManager::default(),
         forwards: crate::services::forwarding::registry(app),
+        proxy: crate::services::proxy::runtime::Registry::default(),
         forward_starts: Default::default(),
         forward_automation: Default::default(),
         mounts: Default::default(),
@@ -182,7 +184,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         data_dir,
         storage,
         log_dir,
-        _log_guard: Mutex::new(Some(guard)),
+        _log_guard: Mutex::new(guard),
         storage_ownership: storage_lease,
     });
 

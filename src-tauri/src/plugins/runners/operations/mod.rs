@@ -3,4 +3,4 @@ mod actions;
 pub(in crate::plugins::runners) mod configuration;
 mod launch;
 pub(super) use actions::{action, stop_record};
-pub(super) use launch::start;
+pub(super) use launch::start_with_origin;

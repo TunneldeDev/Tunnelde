@@ -173,7 +173,15 @@ fn retire(mounts: unmount::Mounts, info: MountInfo) -> JoinHandle<()> {
 }
 impl MountRegistry {
     pub(super) async fn retire_startup(&self, info: MountInfo) {
-        let _ = retire(self.mounts.clone(), info).await;
+        if let Err(error) = retire(self.mounts.clone(), info).await {
+            if !error.is_cancelled() {
+                crate::diagnostics::failure::native(
+                    "mounts",
+                    "retireStartup",
+                    &crate::error::AppError::internal("mounts.cleanupTaskFailed"),
+                );
+            }
+        }
     }
 }
 

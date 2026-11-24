@@ -1,3 +1,4 @@
+import type { FontSelections } from "@/lib/fonts/types";
 import type { HostSourceReference } from "@/lib/hosts/sources";
 import type { HostFieldsSchema } from "@/lib/hosts/fields";
 import type { ConfigurationSchema } from "@/lib/extensions/contracts/configuration/schema";
@@ -46,6 +47,7 @@ export interface Settings {
   uiFontSize: number;
   monoFontSize: number;
   monoFont: MonoFont;
+  fontSelections: FontSelections;
   sidebarWidth: number;
   rightPanel: boolean;
   rightPanelWidth: number;
@@ -602,6 +604,14 @@ export interface PluginInfo {
   fileIconThemes?: PluginFileIconTheme[];
   filePreviews?: PluginFilePreview[];
   mountedFileReveal?: boolean;
+  trafficAdapters?: Array<{
+    id: string;
+    name: string;
+    kind: "tun";
+    platforms: string[];
+    helper: string;
+    capabilities: string[];
+  }>;
   author?: string | null;
   readme?: string | null;
   engines?: Record<string, string>;

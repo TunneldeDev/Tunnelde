@@ -4,7 +4,7 @@ import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
 import { usePanelWindows } from "@/store/panelWindows";
 import { movePanelToWindow } from "@/lib/panels/windowMoves";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import {
   createContext,
   useContext,
@@ -80,8 +80,7 @@ export function WorkbenchPanel({
   const windowId = usePanelWindows((state) => state.windowId);
   const close = () => {
     if (windowId === "main") closePanel(view);
-    else
-      void movePanelToWindow(view, "main").catch((error) => toast(translateError(error), "error"));
+    else void movePanelToWindow(view, "main").catch((error) => toast(presentError(error), "error"));
   };
   const store = local?.floating ?? panelPresentation(view);
   const pinned = useStore(store, (state) => state.pinned);
@@ -125,9 +124,7 @@ export function WorkbenchPanel({
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (windowId === "main") store.getState().close();
       else
-        void movePanelToWindow(view, "main").catch((error) =>
-          toast(translateError(error), "error"),
-        );
+        void movePanelToWindow(view, "main").catch((error) => toast(presentError(error), "error"));
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);

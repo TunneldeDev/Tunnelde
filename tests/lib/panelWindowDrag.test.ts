@@ -47,7 +47,17 @@ function fixture(targetWindow: string | null = "satellite") {
     document.dispatchEvent(
       new CustomEvent(INTERNAL_DRAG_FINISH, { detail: { transfer, released, accepted } }),
     );
-  return { control, releaseDrag, move, failure, resolveGrant, start, finish, transfer, stop };
+  return {
+    control,
+    releaseDrag,
+    move,
+    failure,
+    resolveGrant,
+    start,
+    finish,
+    transfer,
+    stop,
+  };
 }
 it.each(["satellite", null])(
   "uses only the native release target %s and exact lease for a handoff",
@@ -70,6 +80,62 @@ it("leaves a release inside the same native window to the local workspace", asyn
   f.finish();
   await flush();
   expect(f.move).not.toHaveBeenCalled();
+});
+it("reports native grant failures without interrupting the local drag", async () => {
+  const f = fixture();
+  f.control.mockImplementation((request) =>
+    request.action === "issueDrag"
+      ? Promise.reject<string>(new Error("native grant unavailable"))
+      : Promise.resolve(null),
+  );
+  f.start();
+  await flush();
+  expect(f.failure).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ message: "native grant unavailable" }),
+  );
+  f.finish();
+  expect(f.releaseDrag).not.toHaveBeenCalled();
+});
+it("reports renewal failures and retires the stale grant", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture();
+    f.start();
+    f.resolveGrant("token");
+    await flush();
+    f.control.mockRejectedValueOnce(new Error("renewal expired"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.control).toHaveBeenCalledWith({ action: "cancelDrag", token: "token" });
+    expect(f.failure).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ message: "renewal expired" }),
+    );
+    f.finish();
+    expect(f.releaseDrag).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("renews a held native grant without replacing its single-use token", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture();
+    f.start();
+    f.resolveGrant("token");
+    await flush();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.control).toHaveBeenCalledWith({ action: "renewDrag", token: "token" });
+    f.finish();
+    await flush();
+    expect(f.releaseDrag).toHaveBeenCalledExactlyOnceWith("token");
+    const callsAfterRelease = f.control.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(f.control.mock.calls.filter(([request]) => request.action === "renewDrag")).toHaveLength(
+      1,
+    );
+    expect(f.control.mock.calls.length).toBe(callsAfterRelease);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it.each([
   [false, false],

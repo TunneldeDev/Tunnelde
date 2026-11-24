@@ -8,7 +8,7 @@ import { useEditors, editorHasPendingChanges } from "@/store/editors";
 import i18n from "@/i18n/i18n";
 import { useDialogs } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { EditorPageServices } from "./editorPageServices";
 import type {
   EditorWindowModel,
@@ -88,10 +88,10 @@ export function createEditorWindowBinding(
     store.setState({ frozen: !!row.staged || !!row.moving || busy || !!failure, failure });
   };
   const report = (e: unknown) => {
-    if (!disposed) toast(translateError(e), "error");
+    if (!disposed) toast(presentError(e), "error");
   };
   const fail = (e: unknown) => {
-    failure = translateError(e);
+    failure = presentError(e);
     if (!disposed) publish();
     throw e;
   };

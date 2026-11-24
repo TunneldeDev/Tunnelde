@@ -104,7 +104,7 @@ transaction. Plugin callers can use experimental
 1–32 known IDs and finite 0.1–0.9 ratios are fully validated before one mutation;
 existing workspace size limits still clamp values. Frozen workspace v1 is unchanged.
 
-## Native view handoff (in development)
+## Native view handoff
 
 Native windows are not a second application bootstrap. `panel_windows` registers
 host-issued document identities and generation-fenced panel leases; a move is
@@ -218,10 +218,14 @@ native capture listeners for the opaque document-local token. Exclude the dragge
 floating surface from hit testing for that gesture and restore its original
 style on release, Escape, cancellation, blur and teardown.
 
-### Native drag bridge (in development)
+### Native drag bridge
 
 The common pointer driver reports a genuine release separately from Escape,
 lost capture, blur and teardown. An accepted local drop cancels its native grant.
+While the pointer remains held, the source renews only that already-issued,
+single-use grant at a bounded interval; renewal never mints a new token or
+samples a later cursor. A source that loses ownership or fails renewal cancels
+the grant. Release still rechecks the exact document and lease before hit testing.
 For an unaccepted release, a host-issued, short-lived, single-use grant must be
 ready already: do not wait for a delayed grant and then sample a later cursor.
 The exact originating document and interactive lease are checked again at native
@@ -1147,26 +1151,6 @@ an unrelated home directory. Oversized/hostile replies fail explicitly. The newe
 `mounts.paths.remote.browse` keeps its existing paged result. The subsequent one-off acquisition integration is described below; browsing alone
 does not imply complete native-window parity.
 
-### Beta delivery and remaining rollout
-
-Beta delivery prioritizes working primary flows. Known P0/P1 failures (crashes,
-data loss, connection/resource leaks or authorization failures) block release;
-non-blocking presentation and edge-case issues can follow in patch releases.
-A staged release does not mark the complete native-workspace plan finished.
-
-The native move allowlist covers connections, tasks, output, known hosts,
-forwarding, hosts, plugin lists, docked file previews and compatible sidebar plugin factories. Forwarding uses the shared
-production renderer, original-window prompts and preserved provider view state;
-its real macOS round-trip coverage also retained the original managed SSH session.
-Unsupported views stay in their original window rather than losing state.
-`viewFactories.nativeWindows` remains false until general plugin parity is ready.
-
-Remaining rollout: ordinary terminal/SFTP/editor/settings and other panel
-adapters; factoryless plugin presentation; remaining resource APIs;
-and physical cross-window dragging across desktop platforms, displays and DPI.
-Continue these as follow-up implementation/acceptance work, without treating them
-as completed or requiring every non-blocking detail before a useful Beta.
-
 ### Forwarding native-window delivery
 
 Forwarding now exposes the same new-window and existing-window move actions as
@@ -1720,3 +1704,32 @@ next writer cannot read stale memory. Cancellation after admission cannot split
 publication; domain/publication failures are never replayed. Window work,
 credential cleanup and notifications still finish outside these guards. Frozen
 preference contracts, revision checks and the staging write prohibition remain.
+
+### Native resource RPC admission
+
+Committed native views now share one closed call catalogue with the native
+frontend gateway. `CallPolicy` still decides staging admission and whether a
+request is retained through settlement; each domain adapter now rechecks the
+original document/token/lease at the actual effect boundary as well. The
+expanded retained classes cover file content handles, local and SFTP reads and
+writes, transfers, sessions and terminal I/O, forwarding start/stop and batches,
+runner/task process control, tools, secrets/configuration/storage, settings and
+profile commits, contribution registries, logs/events, monitoring, and resource
+release. `files.content.observe` remains a staging-safe read; `monitor.kill` is
+committed-only.
+
+Remote SFTP list/resolve/read helpers and transfer workers accept an explicit
+check callback rather than trusting an earlier admission. File-content prepare,
+open/read/close, secret keyring work, runner launch, task input/cancel and tool
+invocation all retain the originating native authority through their worker or
+platform operation. Forwarding uses the captured origin through preparation and
+commit, while settings/profile writes recheck it inside the ordered writer and
+fenced database admission. Configuration and plugin storage repeat origin checks
+before and after their bounded workers. Registry-style contributions recheck
+after publication rather than emitting a result from a retired view.
+
+These changes preserve frozen public v1 request/response shapes and the
+existing permissions. They do not admit raw arbitrary invoke, do not make
+factoryless/legacy plugin presentation movable, and do not replace the remaining
+physical pointer, Windows/Linux, mixed-DPI, real SSH/FUSE or final acceptance
+work tracked by the rollout issue.

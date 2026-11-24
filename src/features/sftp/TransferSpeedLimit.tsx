@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { usePanelViewState } from "@/lib/panels/viewState";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useTransferCommands } from "./transferTaskController";
 
 export function TransferSpeedLimit({
@@ -52,7 +52,7 @@ export function TransferSpeedLimit({
           .then((saved) => {
             if (saved) onClose();
           })
-          .catch((cause: unknown) => setError(translateError(cause)))
+          .catch((cause: unknown) => setError(presentError(cause)))
           .finally(() => {
             pending.current = false;
             setBusy(false);

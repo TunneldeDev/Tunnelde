@@ -68,6 +68,15 @@ async fn run<F: Future<Output = AppResult<()>>>(
 }
 
 pub(super) async fn start(context: &HostContext, params: Value) -> AppResult<Value> {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let origin_check = origin.clone();
+    let check_origin = || {
+        if let Some(origin) = &origin_check {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check_origin()?;
     let session_id: String = field(&params, "sessionId")?;
     let items: Vec<Target> = field(&params, "items")?;
     validate(&session_id, &items)?;
@@ -77,16 +86,23 @@ pub(super) async fn start(context: &HostContext, params: Value) -> AppResult<Val
         run(
             items,
             deadline,
-            || authorize(context, &["forwards.write"]),
-            |target| async move {
-                start_one(
-                    context,
-                    &target.id,
-                    session_id,
-                    Some(&target.expected_revision),
-                    Some(deadline),
-                )
-                .await
+            || {
+                authorize(context, &["forwards.write"])?;
+                check_origin()
+            },
+            |target| {
+                let origin = origin.clone();
+                async move {
+                    start_one(
+                        context,
+                        origin.as_ref(),
+                        &target.id,
+                        session_id,
+                        Some(&target.expected_revision),
+                        Some(deadline),
+                    )
+                    .await
+                }
             },
         )
         .await?,
@@ -94,6 +110,15 @@ pub(super) async fn start(context: &HostContext, params: Value) -> AppResult<Val
 }
 
 pub(super) async fn start_managed(context: &HostContext, params: Value) -> AppResult<Value> {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let origin_check = origin.clone();
+    let check_origin = || {
+        if let Some(origin) = &origin_check {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
+        Ok::<(), AppError>(())
+    };
+    check_origin()?;
     let items: Vec<Target> = field(&params, "items")?;
     validate("managed", &items)?;
     let deadline = Instant::now() + BUDGET;
@@ -101,15 +126,22 @@ pub(super) async fn start_managed(context: &HostContext, params: Value) -> AppRe
         run(
             items,
             deadline,
-            || authorize(context, &["forwards.write"]),
-            |target| async move {
-                super::start_managed(
-                    context,
-                    &target.id,
-                    &target.expected_revision,
-                    Some(deadline),
-                )
-                .await
+            || {
+                authorize(context, &["forwards.write"])?;
+                check_origin()
+            },
+            |target| {
+                let origin = origin.clone();
+                async move {
+                    super::start_managed(
+                        context,
+                        origin.as_ref(),
+                        &target.id,
+                        &target.expected_revision,
+                        Some(deadline),
+                    )
+                    .await
+                }
             },
         )
         .await?,

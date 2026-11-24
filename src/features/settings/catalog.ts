@@ -19,6 +19,7 @@ export interface SettingDefinition {
   section: SettingsSection;
   label: MessageKey;
   kind:
+    | "fonts"
     | "toggle"
     | "number"
     | "select"
@@ -99,7 +100,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "typography",
       label: "settings.groups.typography",
-      keys: ["uiFontSize", "monoFont", "monoFontSize"],
+      keys: ["uiFontSize", "monoFont", "monoFontSize", "fontSelections"],
     },
     { id: "interface", label: "settings.groups.interface", keys: ["density", "motion"] },
   ],
@@ -324,6 +325,13 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     choice("comfortable", "settings.densityComfortable"),
     choice("compact", "settings.densityCompact"),
   ]),
+  {
+    key: "fontSelections",
+    section: "appearance",
+    label: "fonts.title",
+    kind: "fonts",
+    hint: "fonts.hint",
+  },
   numeric("uiFontSize", "appearance", UI_FONT_SIZE_MIN, UI_FONT_SIZE_MAX, 1, "px"),
   numeric("monoFontSize", "appearance", MONO_FONT_SIZE_MIN, MONO_FONT_SIZE_MAX, 1, "px"),
   select(

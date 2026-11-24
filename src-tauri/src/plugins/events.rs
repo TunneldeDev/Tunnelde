@@ -34,6 +34,9 @@ pub(super) fn emit(context: &HostContext, event: &str, payload: Value) -> AppRes
 pub(super) fn publish(context: &HostContext, params: Value) -> AppResult<Value> {
     publish_with(&context.id, context.generation, params, |event| {
         authorize(context, &[])?;
+        if let Some(origin) = crate::platform::panel_windows::plugin_views::origin::current() {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+        }
         context.app.emit(EVENT, event)?;
         Ok(())
     })

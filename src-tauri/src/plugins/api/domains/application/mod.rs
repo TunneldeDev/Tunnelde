@@ -15,15 +15,32 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
-        "app.info" => encode(commands::app_info(app.clone(), state)),
+        "app.info" => {
+            let staged = crate::plugins::frontend::native::CallPolicy::StagedData;
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            let value = encode(commands::app_info(app.clone(), state));
+            crate::platform::panel_windows::plugin_views::origin::check(staged)?;
+            value
+        }
         "app.openExternal" => {
             let url = field(&params, "url")?;
             let worker = context.clone();
+            let origin = crate::platform::panel_windows::plugin_views::origin::current();
+            let check_origin_origin = origin.clone();
+            let check_origin = || {
+                if let Some(origin) = &check_origin_origin {
+                    origin
+                        .authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+                }
+                Ok::<(), AppError>(())
+            };
+            check_origin()?;
             let effect = || {
                 authorize(&worker, &["app.openExternal"])?;
+                check_origin()?;
                 commands::open_external(app.clone(), url)
             };
-            match crate::platform::panel_windows::plugin_views::origin::current() {
+            match origin {
                 Some(origin) => origin.with_current(effect)?,
                 None => effect()?,
             }

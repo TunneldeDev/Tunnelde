@@ -10,6 +10,9 @@ export interface OutputPanelData {
   entries: OutputEntry[];
   truncated: boolean;
   error: string;
+  diskUnavailable?: boolean;
+  diagnosticError?: boolean;
+  operationsError?: boolean;
   info: OutputRuntimeInfo | null;
   plugins: OutputPluginInfo[];
   sessionCount: number;

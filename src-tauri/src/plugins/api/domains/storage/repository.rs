@@ -6,12 +6,24 @@ use serde_json::{Map, Value};
 use std::{path::Path, sync::OnceLock};
 use tokio::io::AsyncReadExt;
 
+#[cfg(test)]
 pub(in crate::plugins::api) async fn storage_at(
     root: &Path,
     id: &str,
     method: &str,
     params: &Value,
     authorize_request: impl Fn() -> AppResult<()>,
+) -> AppResult<Value> {
+    storage_at_with_origin(root, id, method, params, authorize_request, || Ok(())).await
+}
+
+pub(in crate::plugins::api) async fn storage_at_with_origin(
+    root: &Path,
+    id: &str,
+    method: &str,
+    params: &Value,
+    authorize_request: impl Fn() -> AppResult<()>,
+    authorize_origin: impl Fn() -> AppResult<()>,
 ) -> AppResult<Value> {
     static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
     if !matches!(
@@ -38,6 +50,7 @@ pub(in crate::plugins::api) async fn storage_at(
         .lock()
         .await;
     authorize_request()?;
+    authorize_origin()?;
     let path = storage_path(root, id);
     let mut values: Map<String, Value> = match tokio::fs::File::open(&path).await {
         Ok(file) => {
@@ -57,6 +70,7 @@ pub(in crate::plugins::api) async fn storage_at(
     if let Some(request) = observation {
         let response = super::observation::project(id, values, request)?;
         authorize_request()?;
+        authorize_origin()?;
         return Ok(response);
     }
     let key = key.ok_or_else(|| AppError::internal("plugin.api.invalidStorageKey"))?;
@@ -80,6 +94,7 @@ pub(in crate::plugins::api) async fn storage_at(
     let result = async {
         tokio::fs::write(&temporary, bytes).await?;
         authorize_request()?;
+        authorize_origin()?;
         tokio::fs::rename(&temporary, &path).await?;
         Ok(Value::Null)
     }

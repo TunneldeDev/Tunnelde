@@ -818,6 +818,34 @@ impl Ownership {
         self.drags.remove(id);
         Ok(lease)
     }
+    /// Keep the already-issued, single-use grant alive while the source still
+    /// owns the pointer. Renewal never mints a replacement token or samples a
+    /// later cursor; it only refreshes the existing exact document/lease grant.
+    pub fn renew_drag(
+        &mut self,
+        window: &str,
+        document: &str,
+        id: &str,
+        now: Instant,
+    ) -> Result<()> {
+        self.authorize(window, document)?;
+        let lease = self
+            .drags
+            .get(id)
+            .filter(|grant| grant.deadline > now)
+            .map(|grant| grant.lease.clone())
+            .ok_or("drag expired")?;
+        if lease.window_id != window {
+            return Err("invalid drag source");
+        }
+        self.authorize_creation(window, document, Some(&lease))?;
+        let grant = self.drags.get_mut(id).ok_or("drag expired")?;
+        if grant.document != document {
+            return Err("invalid drag source");
+        }
+        grant.deadline = now + DRAG_TTL;
+        Ok(())
+    }
     /// Only the exact originating document can resolve/cancel a pointer drag.
     /// Tokens are single-use and cannot authorize a different lease incarnation.
     pub fn release_drag(

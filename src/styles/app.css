@@ -1874,6 +1874,49 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.td-toast__details {
+  margin-top: 4px;
+  color: var(--td-muted);
+}
+
+.td-toast__details summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.td-toast__details[open] summary > svg {
+  transform: rotate(180deg);
+}
+
+.diagnostic-notice {
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-notice p {
+  margin: 0 0 8px;
+}
+
+.td-toast__details pre,
+.diagnostic-notice pre {
+  max-height: 180px;
+  margin: 5px 0 0;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-xs);
+  background: var(--td-panel);
+  color: var(--td-text);
+  font: 11px/1.45 var(--td-font-mono);
+  white-space: pre-wrap;
+}
+
+.td-toast__details pre {
+  max-width: 360px;
+}
 
 .td-toast.has-action {
   display: grid;
@@ -3580,7 +3623,37 @@
 }
 
 .td-tab.is-drop-before {
-  box-shadow: inset 2px 0 0 var(--td-accent);
+  position: relative;
+}
+
+.td-tab.is-drop-before::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  bottom: 4px;
+  left: -1px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--td-text);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--td-panel) 75%, transparent),
+    0 0 6px color-mix(in srgb, var(--td-text) 35%, transparent);
+  pointer-events: none;
+}
+
+.pane__tabs.is-drop-end::after {
+  content: "";
+  flex: 0 0 2px;
+  align-self: center;
+  height: calc(100% - 8px);
+  margin-left: -1px;
+  border-radius: 999px;
+  background: var(--td-text);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--td-panel) 75%, transparent),
+    0 0 6px color-mix(in srgb, var(--td-text) 35%, transparent);
+  pointer-events: none;
 }
 
 .sftp-row.is-cut {

@@ -1,5 +1,5 @@
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { emptyProcessSample, type ProcessConsumer, type ProcessSample } from "./model";
@@ -71,7 +71,7 @@ function createSampler(sessionId: string): Sampler {
             updatedAt: Date.now(),
           });
       } catch (cause) {
-        if (current()) publish({ ...next.sample, error: translateError(cause), loading: false });
+        if (current()) publish({ ...next.sample, error: presentError(cause), loading: false });
       } finally {
         next.busy = false;
         if (!next.consumers.size) samplers.delete(sessionId);
@@ -112,7 +112,7 @@ export function acquireProcessSampler(sessionId: string, receive: () => void): P
       current.generation += 1;
       current.sample = Object.freeze({
         ...emptyProcessSample,
-        error: translateError(new Error("ssh.sessionMissing")),
+        error: presentError(new Error("ssh.sessionMissing")),
       });
       for (const listener of [...current.consumers]) listener.receive();
     };

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { captureError } from "@/lib/api/errors";
 import { nativeEvents } from "@/lib/events/native";
 import {
   reconcileHostFields,
@@ -72,7 +72,13 @@ function FieldForm({ hostId, plugin }: { hostId: string; plugin: PluginInfo }) {
         }
       }
     } catch (error) {
-      if (live.current && generation === request.current) setFailure(translateError(error));
+      if (live.current && generation === request.current) {
+        const failure = captureError(error, {
+          domain: "hosts.fields",
+          operation: "load",
+        });
+        setFailure(failure.userMessage);
+      }
     } finally {
       if (live.current && generation === request.current) {
         busy.current = false;
@@ -100,7 +106,11 @@ function FieldForm({ hostId, plugin }: { hostId: string; plugin: PluginInfo }) {
       })
       .catch((error) => {
         if (!controller.signal.aborted) {
-          setFailure(translateError(error));
+          const failure = captureError(error, {
+            domain: "hosts.fields",
+            operation: "observe",
+          });
+          setFailure(failure.userMessage);
           void load();
         }
       });
@@ -158,7 +168,13 @@ function FieldForm({ hostId, plugin }: { hostId: string; plugin: PluginInfo }) {
         setSaved(true);
       }
     } catch (error) {
-      if (live.current && generation === request.current) setFailure(translateError(error));
+      if (live.current && generation === request.current) {
+        const failure = captureError(error, {
+          domain: "hosts.fields",
+          operation: "save",
+        });
+        setFailure(failure.userMessage);
+      }
     } finally {
       if (live.current && generation === request.current) {
         busy.current = false;

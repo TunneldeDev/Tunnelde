@@ -1,5 +1,6 @@
 import type { ProxyProfile } from "@/lib/api/network";
 import type { SettingsPatch } from "@/lib/api/types";
+import type { FontSelections, FontReference, FontCatalogue, FontInfo } from "@/lib/fonts/types";
 import type { SettingsSection } from "@/store/navigation";
 import type { ConfirmOptions } from "@/store/dialogs";
 import type { SettingsProfilesServices } from "../components/SettingsProfilesView";
@@ -32,6 +33,13 @@ export type SettingsCalls = {
   hostView: { args: ["tree" | "table"]; result: boolean };
   hostDefaults: { args: []; result: boolean };
   region: { args: [ColorRegion, string | null]; result: boolean };
+  fonts_select: {
+    args: [keyof FontSelections, FontReference | null];
+    result: void;
+  };
+  fonts_catalogue: { args: [boolean?]; result: FontCatalogue };
+  fonts_import: { args: []; result: FontInfo | null };
+  fonts_remove: { args: [string]; result: void };
   cssImport: { args: []; result: string | null };
   cssExport: { args: [string]; result: string | null };
   updateCheck: { args: [boolean?]; result: void };

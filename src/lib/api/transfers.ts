@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import type { TransferEvent } from "./types";
 export interface DurableTransfer extends Omit<TransferEvent, "status"> {
   status: TransferEvent["status"] | "paused";

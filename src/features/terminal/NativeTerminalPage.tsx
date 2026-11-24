@@ -15,7 +15,7 @@ import { useLocalPanelScope } from "@/lib/panels/localWorkspaceScope";
 import { movePanelToWindow } from "@/lib/panels/windowMoves";
 import { isTauri } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 
 export const useNativeTerminalTitles = create<{ titles: Record<string, string> }>(() => ({
   titles: {},
@@ -107,7 +107,7 @@ export function NativeTerminalView(props: NativeViewProps & { active?: boolean }
             type="button"
             onClick={() => {
               void movePanelToWindow(props.record.panelId, "main").catch((error) =>
-                toast(translateError(error), "error"),
+                toast(presentError(error), "error"),
               );
             }}
           >

@@ -1,6 +1,6 @@
 import { isPluginInvocationCancelled, samePluginRuntime } from "./commands/runtime";
 import type { PluginInfo } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { isTauri } from "@/lib/api/ipc";
 import { hasPluginGrant, usePluginSecurity } from "@/store/pluginSecurity";
 import { usePlugins } from "@/store/plugins";
@@ -84,7 +84,7 @@ export async function runPluginContextCommand(
     toast(
       error instanceof Error && error.message === "resultTooLarge"
         ? i18n.t("pluginView.resultTooLarge")
-        : translateError(error),
+        : presentError(error),
       "error",
     );
   }

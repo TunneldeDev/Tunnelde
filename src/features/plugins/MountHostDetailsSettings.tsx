@@ -6,7 +6,7 @@ import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import { usePlugins } from "@/store/plugins";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 
 export function useMainMountHostDetailsSettings() {
   const plugins = usePlugins((state) => state.items);
@@ -65,7 +65,7 @@ export function useMainMountHostDetailsSettings() {
             : null,
         });
       } catch (error) {
-        toast(translateError(error), "error");
+        toast(presentError(error), "error");
       } finally {
         lock.current = false;
         setBusy(false);

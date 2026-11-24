@@ -128,8 +128,18 @@ fn cancel_matching(plugin: &str, generation: impl Fn(u64) -> bool) {
 }
 
 pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
+    let check = || {
+        if let Some(origin) = &origin {
+            origin.authorize_call(crate::plugins::frontend::native::CallPolicy::TaskEffect)?;
+        }
+        Ok::<(), AppError>(())
+    };
     if method == "tasks.start" {
-        return start(context, params).await;
+        check()?;
+        let value = start(context, params).await?;
+        check()?;
+        return Ok(value);
     }
     if method == "tasks.list" {
         return Ok(Value::Array(
@@ -150,7 +160,9 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
         match method {
             "tasks.status" => return Ok(snapshot(&id, task)),
             "tasks.cancel" => {
+                check()?;
                 task.cancel.send_replace(true);
+                check()?;
                 return Ok(json!(true));
             }
             "tasks.readOutput" => {
@@ -171,9 +183,11 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
         }
         _ => return Err(AppError::validation("plugin.api.unknownMethod")),
     };
+    check()?;
     input
         .try_send(command)
         .map_err(|_| AppError::validation("plugin.tasks.notWritable"))?;
+    check()?;
     Ok(json!(true))
 }
 

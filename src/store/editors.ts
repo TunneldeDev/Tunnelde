@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
@@ -705,7 +705,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
               ...current,
               loading: false,
               baselineLoaded: false,
-              error: translateError(error),
+              error: presentError(error),
               decodeError: isDecodeError(error),
             },
           },
@@ -868,7 +868,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       return true;
     } catch (error) {
       if (versions.get(tabId) === version && !resource.scope.signal.aborted) {
-        const message = translateError(error);
+        const message = presentError(error);
         toast(message, "error");
         set((state) => {
           const entry = state.entries[tabId];
@@ -991,7 +991,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
               [tabId]: {
                 ...entry,
                 saving: false,
-                saveFailure: translateError(error),
+                saveFailure: presentError(error),
                 saveConflict:
                   isIpcError(error) &&
                   [
@@ -1007,7 +1007,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           isIpcError(error) &&
           error.code === "validation" &&
           error.message === "editor.saveCancelled";
-        toast(translateError(error), cancelled ? "info" : "error");
+        toast(presentError(error), cancelled ? "info" : "error");
         return false;
       }
     })().finally(() => {
@@ -1189,7 +1189,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
         versions.get(tabId) === version &&
         !resource.scope.signal.aborted
       )
-        toast(translateError(error), "error");
+        toast(presentError(error), "error");
       return "failed";
     } finally {
       finishRead(tabId, resource);

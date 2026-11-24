@@ -171,7 +171,7 @@ export type PanelWindowCommand =
   | { action: "beginInteraction"; lease: PanelLease }
   | { action: "endInteraction"; lease: PanelLease; id: string }
   | { action: "block"; panelId: string; blocked: boolean }
-  | { action: "acceptDrag" | "cancelDrag"; token: string };
+  | { action: "acceptDrag" | "cancelDrag" | "renewDrag"; token: string };
 export interface NativePanelIdentity {
   windowId: string;
   document: string;

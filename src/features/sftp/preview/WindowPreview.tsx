@@ -12,7 +12,7 @@ import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import { SquareArrowOutUpRight } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
 import { fileName } from "@/store/editors";
 import type { WindowProviderOwner } from "@/lib/panels/windowProviderSource";
@@ -183,9 +183,9 @@ function Attempt({
     snapshot.state,
   ]);
   const read: PreviewRenderRead = failure
-    ? { status: "error", message: translateError(failure.cause) }
+    ? { status: "error", message: presentError(failure.cause) }
     : handle.status === "error"
-      ? { status: "error", message: translateError(handle.cause) }
+      ? { status: "error", message: presentError(handle.cause) }
       : data.read;
   const url =
     owner.client.windowId === "main" ? mainUrl : handle.status === "ready" ? handle.url : undefined;

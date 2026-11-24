@@ -1,5 +1,5 @@
+import thirdPartyNotices from "../../../THIRD_PARTY_NOTICES.md?raw";
 import { brandMark } from "@/lib/brand";
-import fontLicense from "../../../assets/fonts/OFL.txt?raw";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -82,8 +82,7 @@ export function AboutPageView({
         onClose={() => setNoticesOpen(false)}
         width={640}
       >
-        <h3>Noto Sans Mono CJK SC</h3>
-        <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{fontLicense}</pre>
+        <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{thirdPartyNotices}</pre>
         <Button
           variant="ghost"
           trailing={<ExternalLink size={12} />}

@@ -12,6 +12,7 @@ export const PORTABLE_SETTING_KEYS = [
   "uiFontSize",
   "monoFontSize",
   "monoFont",
+  "fontSelections",
   "sidebarWidth",
   "rightPanel",
   "rightPanelWidth",

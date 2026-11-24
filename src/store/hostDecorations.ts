@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { reportError } from "@/lib/diagnostics";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { create } from "zustand";
 import { synchronizeContributions, nativeContributionSource } from "@/lib/plugins/contributionSync";
 import {
@@ -22,7 +23,7 @@ export function wireHostDecorations(signal: AbortSignal): Promise<() => void> {
           byHost: indexHostDecorations(snapshot.items),
         }),
       clear: () => useHostDecorations.setState({ byHost: new Map() }),
-      report: (error) => console.error("Could not synchronize host decorations", error),
+      report: (error) => reportError("plugins.hostDecorations", "synchronize", error),
     }),
     signal,
   );

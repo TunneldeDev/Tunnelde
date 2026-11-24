@@ -37,9 +37,7 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
     let method = method.to_owned();
     // Snapshot restoration is allowed during staging; only committed writes
     // need the resource-origin authority (which deliberately rejects staging).
-    let origin = (method == "hosts.setFields")
-        .then(crate::platform::panel_windows::plugin_views::origin::current)
-        .flatten();
+    let origin = crate::platform::panel_windows::plugin_views::origin::current();
     worker::run(move |cancellation| {
         call_blocking(
             &context,
@@ -49,6 +47,7 @@ pub(super) async fn call(context: &HostContext, method: &str, params: Value) -> 
             origin
                 .as_ref()
                 .map(|origin| origin as &dyn crate::services::operations::Authority),
+            origin.as_ref(),
         )
     })
     .await
@@ -60,6 +59,7 @@ fn call_blocking(
     params: Value,
     cancellation: &crate::services::operations::Cancellation,
     authority: Option<&dyn crate::services::operations::Authority>,
+    origin: Option<&crate::platform::panel_windows::plugin_views::origin::Origin>,
 ) -> AppResult<Value> {
     let state = context.app.state::<AppState>();
     let lease = Lease {
@@ -76,6 +76,7 @@ fn call_blocking(
         params,
         cancellation,
         authority,
+        origin,
     )?;
     if method == "hosts.setFields" {
         changed(&context.app, &context.id, &result.document);
@@ -83,6 +84,10 @@ fn call_blocking(
     Ok(serde_json::to_value(result)?)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "authority, cancellation, native origin and revision-bound metadata are distinct fences"
+)]
 fn request(
     plugins: &super::PluginsManager,
     db: &crate::db::Database,
@@ -91,6 +96,7 @@ fn request(
     params: Value,
     cancellation: &crate::services::operations::Cancellation,
     authority: Option<&dyn crate::services::operations::Authority>,
+    origin: Option<&crate::platform::panel_windows::plugin_views::origin::Origin>,
 ) -> AppResult<Snapshot> {
     let permissions: &[&str] = match method {
         "hosts.getFields" => &["hosts.read"],
@@ -98,10 +104,21 @@ fn request(
         _ => return Err(AppError::validation("plugin.api.unknownMethod")),
     };
     let mut params = Some(params);
+    let policy = if method == "hosts.getFields" {
+        crate::plugins::frontend::native::CallPolicy::StagedData
+    } else {
+        crate::plugins::frontend::native::CallPolicy::OwnedData
+    };
     plugins.security.with_authorized_fenced_attempt(
         lease,
         permissions,
-        || cancellation.check(),
+        || {
+            cancellation.check()?;
+            if let Some(origin) = origin {
+                origin.authorize_call(policy)?;
+            }
+            Ok(())
+        },
         authority,
         || {
             plugins.with_host_fields(&lease.id, Some(&lease.fingerprint), |schema| {

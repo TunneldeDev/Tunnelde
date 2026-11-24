@@ -19,7 +19,7 @@ import { Select } from "@/components/ui/form/Select";
 import { StatusDot } from "@/components/ui/display/Misc";
 import { MONO_FONT_OPTIONS } from "@/lib/prefs/defaults";
 import type { MonoFont } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { decodeBase64, encodeBase64 } from "@/lib/text/base64";
 import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
 import { copyText } from "@/lib/session/clipboard";
@@ -586,7 +586,7 @@ export function TerminalPageView({
         terminalBridge.update({ status: "closed" });
         setClosed(true);
         subscriptions.splice(0).forEach((unlisten) => unlisten());
-        const message = translateError(error);
+        const message = presentError(error);
         toast(message, "error");
         write(new TextEncoder().encode(`\r\n[${message}]\r\n`));
         // Keep the failed terminal visible, but release its remote PTY.
@@ -652,7 +652,7 @@ export function TerminalPageView({
     void started.catch((error) => {
       if (!disposed) {
         serviceRef.current.failed?.(error);
-        toast(translateError(error), "error");
+        toast(presentError(error), "error");
       }
     });
     if (!serviceRef.current.native)
@@ -711,9 +711,24 @@ export function TerminalPageView({
         <Select
           label={t("settings.monoFont")}
           className="terminal-font-select"
-          value={monoFont}
-          options={MONO_FONT_OPTIONS}
-          onChange={(value) => void services.updateFont(value as MonoFont)}
+          value={preferences.fontSelections?.mono ? "custom" : monoFont}
+          options={
+            preferences.fontSelections?.mono
+              ? [
+                  {
+                    value: "custom",
+                    label:
+                      preferences.fontSelections.mono.source === "system"
+                        ? preferences.fontSelections.mono.family
+                        : t("fonts.mono"),
+                  },
+                  ...MONO_FONT_OPTIONS,
+                ]
+              : MONO_FONT_OPTIONS
+          }
+          onChange={(value) => {
+            if (value !== "custom") void services.updateFont(value as MonoFont);
+          }}
         />
         <IconButton
           label={t("history.title")}

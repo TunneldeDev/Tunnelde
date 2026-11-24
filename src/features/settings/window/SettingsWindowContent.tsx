@@ -6,6 +6,7 @@ import {
   useState,
   type ComponentProps,
 } from "react";
+import { FontSettingsView } from "../components/FontSettingsView";
 import { SettingsPageView } from "../SettingsPageView";
 import type { SettingsPageServices, SettingsSpecialSection } from "../settingsPageServices";
 import { PreferenceRowView } from "../components/PreferenceRowView";
@@ -51,8 +52,9 @@ import {
 } from "./SettingsDraftScope";
 import type { ConfirmOptions } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 const Context = createContext<SettingsProjection | null>(null);
+const LiveSettings = createContext(false);
 const useData = () => {
   const data = useContext(Context);
   if (!data) throw new Error("panel.window.staleOwner");
@@ -77,14 +79,14 @@ function composition(
   };
   const notify = (message: string, kind: "success" | "error") => toast(message, kind);
   const effect = <K extends SettingsOperation>(name: K, ...args: SettingsCalls[K]["args"]) => {
-    void adapter.call(name, ...args).catch((error) => notify(translateError(error), "error"));
+    void adapter.call(name, ...args).catch((error) => notify(presentError(error), "error"));
   };
   const confirm = (options: ConfirmOptions) => {
     const { onConfirm, ...description } = options;
     void adapter
       .call("confirm", description)
       .then((accepted) => (accepted ? onConfirm() : undefined))
-      .catch((error) => notify(translateError(error), "error"));
+      .catch((error) => notify(presentError(error), "error"));
   };
   const capture = { useViewState: useSettingsControlState, useBusyGuard: useSettingsBusyGuard };
   function Row(props: ComponentProps<SettingsPageServices["renderProtectedRow"]>) {
@@ -142,6 +144,22 @@ function composition(
           exportFile: method("profile_exportFile"),
           confirm,
           notify,
+        }}
+      />
+    );
+  }
+  function Fonts() {
+    return (
+      <FontSettingsView
+        settings={useData().page.settings}
+        live={useContext(LiveSettings)}
+        services={{
+          catalogue: method("fonts_catalogue"),
+          importFile: method("fonts_import"),
+          remove: method("fonts_remove"),
+          select: method("fonts_select"),
+          confirm,
+          useViewState: useSettingsControlState,
         }}
       />
     );
@@ -476,6 +494,7 @@ function composition(
     renderPreferenceSurface: (props) => <PreferenceSurfaceView {...props} services={surface} />,
     renderProtectedRow: (props) => <Row {...props} />,
     fields: {
+      renderFonts: () => <Fonts />,
       renderTerminalPreview: () => <Preview />,
       renderUpdateSource: (props) => <UpdateSource {...props} />,
       renderHostList: () => <HostList />,
@@ -506,7 +525,11 @@ export function SettingsWindowContent({
   useLayoutEffect(() => adapter.publish(model), [adapter, model]);
   return (
     <Context.Provider value={model}>
-      <SettingsPageView visible={visible} services={services} />
+      <LiveSettings.Provider
+        value={!record.staged && !record.moving && !record.failed && !!record.lease}
+      >
+        <SettingsPageView visible={visible} services={services} />
+      </LiveSettings.Provider>
     </Context.Provider>
   );
 }

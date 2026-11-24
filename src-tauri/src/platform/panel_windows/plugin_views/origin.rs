@@ -93,6 +93,15 @@ pub(crate) async fn scope<T>(origin: Origin, work: impl Future<Output = T>) -> T
 pub(crate) fn current() -> Option<Origin> {
     CURRENT.try_with(Clone::clone).ok()
 }
+
+/// Recheck the exact issuing native view at a domain effect boundary. Ordinary
+/// transports have no task-local origin and retain their existing authority.
+pub(crate) fn check(policy: CallPolicy) -> AppResult<()> {
+    if let Some(origin) = current() {
+        origin.authorize_call(policy)?;
+    }
+    Ok(())
+}
 /// Non-native transports retain their existing domain authority. Native async
 /// observers must use this at the actual consuming/committing transaction, not
 /// just before waiting, so a delayed source cannot consume a new owner's data.

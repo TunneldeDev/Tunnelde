@@ -139,22 +139,35 @@ pub(crate) fn snapshot(app: &AppHandle) -> Value {
     let (snapshot, changed) = registry.public.update(ownership.public_metadata());
     drop(ownership);
     if let Some(revision) = changed {
-        let _ = app.emit("workspace://windows-changed", json!({"revision": revision}));
+        crate::diagnostics::failure::observe_tauri(
+            "panels.windows",
+            "publishPublicWindows",
+            app.emit("workspace://windows-changed", json!({"revision": revision})),
+        );
     }
     snapshot
 }
 
-pub(crate) async fn observe(app: &AppHandle, revision: Option<String>) -> Value {
+pub(crate) async fn observe(
+    app: &AppHandle,
+    revision: Option<String>,
+    authorize: impl Fn() -> AppResult<()>,
+) -> AppResult<Value> {
     let registry = app.state::<native::Registry>();
     let mut changes = registry.public.changed.subscribe();
+    authorize()?;
     let current = snapshot(app);
+    authorize()?;
     if current["revision"].as_str() != revision.as_deref() {
-        return current;
+        return Ok(current);
     }
     // Subscription precedes inspection. Native teardown/reload and long-poll
     // cancellation drop the receiver; no detached per-plugin polling worker.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(10), changes.changed()).await;
-    snapshot(app)
+    authorize()?;
+    let current = snapshot(app);
+    authorize()?;
+    Ok(current)
 }
 
 fn authorized(app: &AppHandle, owner: &PluginLease) -> AppResult<()> {

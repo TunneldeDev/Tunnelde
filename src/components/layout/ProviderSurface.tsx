@@ -25,7 +25,7 @@ import type { FrontendFileBrowser } from "@/lib/extensions/contracts/files/brows
 import type { FrontendTerminal } from "@/lib/extensions/contracts/terminal/surface";
 import type { FrontendHistory } from "@/lib/extensions/contracts/history/provider";
 import { reportError } from "@/lib/diagnostics";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
 import { useFactorySelection } from "@/lib/extensions/runtime/views/useFactorySelection";
 import type { HistoryContext } from "@/lib/extensions/history/context";
@@ -414,7 +414,7 @@ export function ProviderSurface({
               : t("providers.fallback")}
           </span>
           {failed ? (
-            <span title={translateError(failure.error)}>{translateError(failure.error)}</span>
+            <span title={presentError(failure.error)}>{presentError(failure.error)}</span>
           ) : null}
           <Button size="sm" variant="ghost" onClick={reset}>
             {t("providers.restore")}

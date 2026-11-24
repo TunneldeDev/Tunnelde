@@ -3,13 +3,14 @@ import {
   nativeWorkspaceTabId,
 } from "@/features/editor/editorWindowRegistration";
 import { useWorkspace } from "@/store/workspace";
+import { rememberDetachedWorkspaceTab } from "./detachedWorkspaceTabs";
 import type { PanelLease } from "./windowProtocol";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
 import type { TFunction } from "i18next";
 import { windowViews, transferablePanel } from "./windowViews";
 import { usePanelWindows } from "@/store/panelWindows";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 
 const moving = new Set<string>();
 export async function movePanelToWindow(
@@ -87,6 +88,10 @@ export async function movePanelToWindow(
           if (useWorkspace.getState().tabs.some((tab) => tab.id === tabId))
             useWorkspace.getState().activate(tabId);
         } else {
+          // Record the committed source generation before hiding. A coordinator
+          // may still hold the pre-transfer snapshot briefly; it must not make
+          // this source tab visible again.
+          rememberDetachedWorkspaceTab(panelId, tabId, lease.generation);
           useWorkspace.getState().hideTab(tabId);
         }
         return;
@@ -123,7 +128,7 @@ export function nativePanelMoveActions(panelId: string, t: TFunction): MenuActio
   )
     return [];
   const move = (target?: string) => {
-    void movePanelToWindow(panelId, target).catch((error) => toast(translateError(error), "error"));
+    void movePanelToWindow(panelId, target).catch((error) => toast(presentError(error), "error"));
   };
   const blocked =
     state.snapshot.settingsPages?.find((view) => view.panelId === panelId)?.allowMove === false ||

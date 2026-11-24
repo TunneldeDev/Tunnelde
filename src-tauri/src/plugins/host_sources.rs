@@ -258,6 +258,9 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
         Some(origin) => origin.with_current(mutate)?,
         None => mutate()?,
     };
+    if let Some(origin) = &origin {
+        origin.authorize_call(crate::plugins::frontend::native::CallPolicy::OwnedData)?;
+    }
     let action = match method {
         "hosts.setSource" => "hosts.setSource",
         "hosts.removeSource" => "hosts.removeSource",

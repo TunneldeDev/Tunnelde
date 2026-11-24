@@ -5,6 +5,7 @@
 - [开发与交互规范](working-agreements.md)
 - [插件开发与安全](plugins/README.md)
 - [架构](architecture.md)
+- [错误与诊断](errors-and-diagnostics.md)
 - [本地 API 与 CLI](local-api.md)
 - [面向 1.0 的核心契约](core-contracts.md)
 - [后台任务](background-tasks.md)

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { Field, Input, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { isPluginInvocationCancelled } from "@/lib/plugins/commands/errors";
 import {
   type normalizeResult,
@@ -301,7 +301,7 @@ function PluginToolForm({
                   ? "pluginView.resultTooLarge"
                   : "pluginView.inputTooLarge",
               )
-            : translateError(cause),
+            : presentError(cause),
         );
       }
     } finally {

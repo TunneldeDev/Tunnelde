@@ -39,19 +39,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WindowTitleBar } from "@/components/layout/WindowTitleBar";
 import { useTranslation } from "react-i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Activity,
-  Blocks,
-  Download,
-  FileText,
-  FolderTree,
-  History,
-  Info,
-  Server,
-  Settings as SettingsIcon,
-  ShieldCheck,
-  Terminal,
-} from "lucide-react";
 import { brandMark } from "@/lib/brand";
 import { initializePanelWindow, type PanelWindowClient } from "@/lib/panels/windowClient";
 import {
@@ -78,36 +65,13 @@ import type {
 } from "./panelReadModels";
 import { TaskModelScope, type ClearTasksResult } from "@/lib/panels/taskModel";
 import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
-import { toast } from "@/store/toasts";
 import { ToastHost } from "@/components/ui/overlay/Toast";
-import { translateError } from "@/lib/api/errors";
-import { reportError } from "@/lib/diagnostics";
+import { notifyError } from "@/lib/api/errors";
+import { reportError, type DiagnosticEvent } from "@/lib/diagnostics";
+import { DiagnosticNotice } from "@/components/ui/overlay/DiagnosticNotice";
 import { loadStartupFonts } from "./startupFonts";
+import { panelIcon } from "@/lib/panels/panelIcons";
 import "./satellite.css";
-
-function panelIcon(panelId: string) {
-  if (panelId.startsWith("settings-view:")) return <SettingsIcon size={13} />;
-  if (panelId.startsWith("editor-view:")) return <FileText size={13} />;
-  if (panelId.startsWith("host-view:")) return <Server size={13} />;
-  if (panelId.startsWith("files:") || panelId.startsWith("sftp:")) return <FolderTree size={13} />;
-  if (panelId.startsWith("terminal:")) return <Terminal size={13} />;
-  switch (panelId) {
-    case "plugins":
-      return <Blocks size={13} />;
-    case "hosts":
-      return <Server size={13} />;
-    case "knownHosts":
-      return <ShieldCheck size={13} />;
-    case "tasks":
-      return <Activity size={13} />;
-    case "forwarding":
-      return <Download size={13} />;
-    case "connections":
-      return <History size={13} />;
-    default:
-      return panelId.startsWith("plugin:") ? <Blocks size={13} /> : <Info size={13} />;
-  }
-}
 
 function PluginView(props: NativeViewProps) {
   const model = useNativeReadModel<WindowModelAppearance>(props);
@@ -178,7 +142,7 @@ function ConnectionView(props: NativeViewProps) {
               try {
                 await client.action(record.lease, { kind: "disconnect", sessionId: id });
               } catch (error) {
-                toast(translateError(error), "error");
+                notifyError(error, { domain: "connections", operation: "disconnectMany" });
                 throw error;
               } finally {
                 setPending((items) => items.filter((item) => item !== id));
@@ -191,7 +155,7 @@ function ConnectionView(props: NativeViewProps) {
             try {
               await client.action(record.lease, { kind: "disconnect", sessionId: id });
             } catch (error) {
-              toast(translateError(error), "error");
+              notifyError(error, { domain: "connections", operation: "disconnect" });
             } finally {
               setPending((items) => items.filter((item) => item !== id));
             }
@@ -366,7 +330,7 @@ export function SatelliteApp() {
   useInternalDrag();
   const { t } = useTranslation();
   const [client, setClient] = useState<PanelWindowClient | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<DiagnosticEvent | null>(null);
   const [chrome, setChrome] = useState<{
     style: ConnectionWindowModel["appearance"]["titleBarStyle"];
     os: string;
@@ -390,8 +354,7 @@ export function SatelliteApp() {
           });
       })
       .catch((error) => {
-        reportError("panels.windows", "satellite.initialize", error);
-        if (!disposed) setFailed(true);
+        if (!disposed) setFailed(reportError("panels.windows", "satellite.initialize", error));
       });
     return () => {
       disposed = true;
@@ -417,10 +380,9 @@ export function SatelliteApp() {
           receive: (snapshot) =>
             usePanelWindows.setState({ windowId: current.windowId, available: true, snapshot }),
           failure: (error) => {
-            reportError("panels.windows", "satellite.session", error);
             if (!disposed) {
-              setFailed(true);
-              toast(translateError(error), "error");
+              setFailed(reportError("panels.windows", "satellite.session", error));
+              void notifyError(error, { domain: "panels.windows", operation: "satellite.session" });
             }
           },
         });
@@ -438,7 +400,7 @@ export function SatelliteApp() {
           reportError("panels.windows", "pluginUi", error),
         );
         const stopDrag = installPanelWindowDrag(current, (error) =>
-          toast(translateError(error), "error"),
+          notifyError(error, { domain: "panels.windows", operation: "satelliteDrag" }),
         );
         cleanup = () => {
           stopUi();
@@ -455,8 +417,7 @@ export function SatelliteApp() {
         await session.ready;
       })
       .catch((error) => {
-        reportError("panels.windows", "satellite.initialize", error);
-        if (!disposed) setFailed(true);
+        if (!disposed) setFailed(reportError("panels.windows", "satellite.initialize", error));
       });
     return () => {
       disposed = true;
@@ -473,20 +434,23 @@ export function SatelliteApp() {
             if (event.button === 0 && event.detail < 2)
               void getCurrentWindow()
                 .startDragging()
-                .catch(() => {});
+                .catch((error) => reportError("panels.windows", "startNativeDrag", error));
           }}
           onDoubleClick={() => {
             void getCurrentWindow()
               .toggleMaximize()
-              .catch(() => {});
+              .catch((error) => reportError("panels.windows", "toggleMaximize", error));
           }}
         />
       ) : null}
       {!client || !entries.size ? (
-        <div className="splash" role={failed ? "alert" : "status"}>
-          <img src={brandMark} width={56} height={56} alt="Tunnelde" />
-          {failed ? <span>{t("panels.windowInitializationFailed")}</span> : null}
-        </div>
+        failed ? (
+          <DiagnosticNotice event={failed} retry={() => window.location.reload()} />
+        ) : (
+          <div className="splash" role="status">
+            <img src={brandMark} width={56} height={56} alt="Tunnelde" />
+          </div>
+        )
       ) : (
         <PanelWorkspace
           windowId={client.windowId}

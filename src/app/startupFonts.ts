@@ -1,12 +1,14 @@
-/** Load the selected bundled fonts without relying on animation frames in a hidden webview. */
+import { reportError } from "@/lib/diagnostics";
+import { firstFontFamily, selectedFontsReady } from "@/lib/fonts/runtime";
+
+/** Load the selected fonts without relying on animation frames in a hidden webview. */
 export async function loadStartupFonts(): Promise<void> {
   if (!document.fonts?.load) return;
-  const ui = getComputedStyle(document.body).fontFamily.split(",")[0]?.trim() ?? "";
-  const mono =
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--td-mono")
-      .split(",")[0]
-      ?.trim() ?? "";
+  await selectedFontsReady();
+  const ui = firstFontFamily(getComputedStyle(document.body).fontFamily);
+  const mono = firstFontFamily(
+    getComputedStyle(document.documentElement).getPropertyValue("--td-mono"),
+  );
   const fonts = [
     ...[400, 500, 600].map((weight) => ({ family: ui, weight })),
     ...[400, 500].map((weight) => ({ family: mono, weight })),
@@ -19,6 +21,6 @@ export async function loadStartupFonts(): Promise<void> {
       ),
   );
   if (results.some((result) => result.status === "rejected")) {
-    console.warn("Some startup fonts could not be loaded; using font fallbacks.");
+    reportError("startup", "loadFonts", new Error("fonts.loadFailed"), "warn");
   }
 }

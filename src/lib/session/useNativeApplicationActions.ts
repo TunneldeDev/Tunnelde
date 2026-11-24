@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { isTauri } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import { beforeWindowReload } from "./reload";
 import { requestApplicationAction } from "./restart";
@@ -48,7 +48,7 @@ export function useNativeApplicationActions(): void {
       release = undefined;
     });
     void subscribing.catch((error) => {
-      if (alive) toast(translateError(error), "error");
+      if (alive) toast(presentError(error), "error");
     });
     return () => {
       alive = false;

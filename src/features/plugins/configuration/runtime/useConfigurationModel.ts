@@ -1,6 +1,6 @@
 import type { ConfigurationPlugin, ConfigurationServices } from "../data/services";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import type { ConfigurationSnapshot } from "@/lib/extensions/contracts/configuration/document";
 import { fieldDraft, parseDraft } from "../data/values";
 
@@ -55,7 +55,7 @@ export function useConfigurationModel(
       const next = await operation();
       if (active.current && current === sequence.current && !preserveDraft) apply(next);
     } catch (error) {
-      if (active.current && current === sequence.current) setError(translateError(error));
+      if (active.current && current === sequence.current) setError(presentError(error));
     } finally {
       if (active.current && current === sequence.current) {
         lock.current = false;
@@ -100,7 +100,7 @@ export function useConfigurationModel(
         }
       })
       .catch((error) => {
-        if (active.current && sequence.current === current) setError(translateError(error));
+        if (active.current && sequence.current === current) setError(presentError(error));
       })
       .finally(() => {
         if (active.current && sequence.current === current) {

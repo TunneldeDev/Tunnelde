@@ -1,5 +1,5 @@
 import { useForwardingReadModel, ignoreForwardingSubscription } from "./readScope";
-import { invoke } from "@tauri-apps/api/core";
+import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { useSyncExternalStore } from "react";
 import { isTauri } from "@/lib/api/ipc";
 import { createRetainedListStore } from "@/lib/data/retainedListStore";

@@ -24,7 +24,7 @@ import type { FrontendViewProps } from "@/lib/extensions/uiSdk";
 import { usePanelReadiness } from "@/lib/panels/usePanelReadiness";
 import { useFactorySelection } from "@/lib/extensions/runtime/views/useFactorySelection";
 import { reportError } from "@/lib/diagnostics";
-import { translateError } from "@/lib/api/errors";
+import { presentError } from "@/lib/api/errors";
 import { Button } from "@/components/ui/form/Button";
 import { useTranslation } from "react-i18next";
 
@@ -144,7 +144,7 @@ export function WindowPreferencesProvider(props: Frame) {
     <Context.Provider value={props}>
       {error ? (
         <div role="alert">
-          <p>{translateError(error)}</p>
+          <p>{presentError(error)}</p>
           <Button onClick={source.revalidate}>{t("common.retry")}</Button>
         </div>
       ) : null}
