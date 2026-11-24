@@ -48,3 +48,7 @@ A bounded rolling buffer keeps recent failures available when the directory, wri
 unavailable. Output merges matching records by event ID and prefers the disk copy. A
 diagnostic write failure must never recursively attempt the same write. See the
 [logging guide](../guide/logging.md) for user-facing troubleshooting and retention.
+
+## IPC diagnostic context
+
+`diagnosticInvoke` identifies the subaction (for example `panel_window_control.stagedModel`) and records command, action, panel kind, lease generation and elapsed milliseconds in `ipc`. Plugin calls retain the command identifier, never input or runtime tokens. Fixed transfer/model/view validation reasons are allowlisted in both layers instead of becoming `Operation failed`. Event IDs still connect notifications, details and Output. Model readers confirm retirement with a fresh snapshot for commit/read races; active-request failures remain visible.

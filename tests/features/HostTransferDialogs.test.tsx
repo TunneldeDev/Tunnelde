@@ -133,13 +133,15 @@ it("skips a host whose jump dependency conflicts until explicitly imported as a 
   render(<HostTransferDialogs />);
   const target = await screen.findByRole("checkbox", { name: /Host A/ });
   expect((target as HTMLInputElement).checked).toBe(false);
+  expect(target.closest("label")?.classList.contains("is-conflict")).toBe(true);
+  expect(screen.getByText("A required jump host conflicts with a saved host")).toBeTruthy();
   fireEvent.click(target);
   const dependency = screen.getByRole("checkbox", { name: /^Host B\b/ }) as HTMLInputElement;
   expect(dependency.checked).toBe(true);
   expect(dependency.disabled).toBe(true);
   const submit = screen.getByRole("button", { name: "Import selected (2)" }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
-  expect(screen.getByRole("status").textContent).toMatch(/selected host or jump host conflicts/i);
+  expect(screen.getByRole("alert").textContent).toMatch(/selected host or jump host conflicts/i);
   fireEvent.click(
     screen.getByRole("checkbox", { name: "Import selected conflicting hosts as copies" }),
   );
@@ -306,11 +308,12 @@ it("generates a password without exporting until explicitly saved", async () => 
   expect(screen.getByLabelText<HTMLInputElement>("Export password").value).toBe(
     "secure-generated-test-password123",
   );
-  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Export 1 host" }).disabled).toBe(
-    true,
-  );
-  fireEvent.click(screen.getByRole("checkbox", { name: "I have saved the generated password" }));
-  fireEvent.click(screen.getByRole("button", { name: "Export 1 host" }));
+  expect(screen.getByRole("dialog", { name: "Save your export password" })).toBeTruthy();
+  expect(
+    screen.queryByRole("checkbox", { name: "I have saved the generated password" }),
+  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Copy password" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "I saved the password — export" }));
   await waitFor(() =>
     expect(exported).toHaveBeenCalledWith(["a"], {
       includeCredentials: true,
@@ -410,4 +413,39 @@ it("groups selection with footer actions and embeds reveal/copy in the password 
   expect(
     document.querySelector(".host-transfer .td-dialog__body > .ssh-import > p.td-field__hint"),
   ).toBeNull();
+});
+
+it("cancelling password confirmation preserves the same password and requires explicit confirmation again", async () => {
+  const generate = vi
+    .spyOn(hostTransferApi, "generatePassword")
+    .mockResolvedValue("generated-test-password");
+  const exported = vi.spyOn(hostTransferApi, "export").mockResolvedValue(null);
+  useHostTransfer.getState().openExport(["a"]);
+  render(<HostTransferDialogs />);
+  fireEvent.click(screen.getByRole("button", { name: "Export 1 host" }));
+  await screen.findByRole("dialog", { name: "Save your export password" });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(exported).not.toHaveBeenCalled();
+  expect(screen.getByLabelText<HTMLInputElement>("Export password").value).toBe(
+    "generated-test-password",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Export 1 host" }));
+  await screen.findByRole("dialog", { name: "Save your export password" });
+  expect(generate).toHaveBeenCalledOnce();
+  expect(exported).not.toHaveBeenCalled();
+});
+
+it("highlights conflicting import rows and updates their explanation for copy mode", async () => {
+  vi.spyOn(hostTransferApi, "pick").mockResolvedValue(preview(true));
+  useHostTransfer.getState().openImport();
+  render(<HostTransferDialogs />);
+  const row = (await screen.findByRole("checkbox", { name: /^Host B\b/ })).closest("label")!;
+  expect(row.classList.contains("is-conflict")).toBe(true);
+  expect(row.querySelector(".host-transfer__conflict")?.textContent).toMatch(/skipped by default/);
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Import selected conflicting hosts as copies" }),
+  );
+  expect(row.querySelector(".host-transfer__conflict")?.textContent).toMatch(
+    /will import as a copy/,
+  );
 });

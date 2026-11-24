@@ -46,3 +46,5 @@
 - [Version and release policy](versioning.md)
 
 - [Native file-save transport (experimental)](file-save-transport.md)
+
+- [UI/UX surface catalog](ui-surface-catalog.md)

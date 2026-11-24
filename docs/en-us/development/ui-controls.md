@@ -81,3 +81,11 @@ Reference implementations: VS Code
 [`PanelPart`](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/panel/panelPart.ts)
 and
 [`ViewPaneContainer`](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/views/viewPaneContainer.ts).
+
+[UI/UX surface catalog](ui-surface-catalog.md)
+
+Keep important information prominent: errors/conflicts use error color, tint or border, an icon and
+a reason. Color alone, tooltips and silently added controls are insufficient. Generated export
+passwords require a separate save confirmation with selectable password, explicit copy, continue
+and cancel; confirmation precedes file export. Import previews identify direct/dependent conflicts
+and explain both blocking reasons and their resolution.

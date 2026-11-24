@@ -65,3 +65,10 @@ Escape 优先关闭、移入提示继续阅读、视口边界定位及卸载清�
 [`PanelPart`](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/panel/panelPart.ts)
 与
 [`ViewPaneContainer`](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/views/viewPaneContainer.ts)。
+
+[功能界面与 UI/UX 风格台账](ui-surface-catalog.md)
+
+重点信息必须直接突出：错误／冲突使用错误色、浅底或边框、图标和原因文字；不能仅依赖颜色、
+tooltip 或静默出现的控件。自动生成导出密码必须打开独立保存确认对话框，显示密码、显式复制
+与继续／取消，用户确认保存后才进入文件导出。导入预览逐项标出直接及依赖冲突，阻断原因
+与处理后的结果都要可见。

@@ -27,6 +27,7 @@ import type { Group, Host } from "@/lib/api/types";
 import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import {
   builtinHostColumns,
+  hostTableLayout,
   visibleHostColumns,
   sortHostRows,
   type DisplayHostColumn,
@@ -766,8 +767,8 @@ function HostTreeView() {
         style={
           table
             ? ({
-                "--host-columns": columns.map((column) => `${column.width}px`).join(" "),
-                "--host-table-width": `${columns.reduce((sum, column) => sum + column.width, 0)}px`,
+                "--host-columns": hostTableLayout(columns, preferences.widths).columns,
+                "--host-table-width": `${hostTableLayout(columns, preferences.widths).minimum}px`,
               } as React.CSSProperties)
             : undefined
         }
