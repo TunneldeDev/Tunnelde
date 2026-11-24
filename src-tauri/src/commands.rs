@@ -111,6 +111,70 @@ pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
 }
 
 #[tauri::command]
+pub fn habits_get(state: State<'_, AppState>) -> AppResult<Option<db::habits::Habits>> {
+    state.db.with(db::habits::load)
+}
+#[tauri::command]
+pub fn habits_save(state: State<'_, AppState>, values: db::habits::Habits) -> AppResult<()> {
+    state.db.with(|conn| db::habits::save(conn, &values))
+}
+#[tauri::command]
+pub fn habits_windows(app: AppHandle) -> AppResult<Vec<Value>> {
+    use tauri_plugin_window_state::AppHandleExt;
+    let path = app.path().app_config_dir()?.join(app.filename());
+    let saved: Value = match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
+        Err(e) => return Err(e.into()),
+    };
+    let geometry = |value: &Value| {
+        let mut out = serde_json::Map::new();
+        for key in ["x", "y", "width", "height", "maximized", "fullscreen"] {
+            if let Some(v) = value.get(key) {
+                out.insert(key.into(), v.clone());
+            }
+        }
+        Value::Object(out)
+    };
+    let mut rows = Vec::new();
+    for (id, window) in app.webview_windows() {
+        if id != "main" && !crate::platform::panel_windows::native::registered(&app, &id) {
+            continue;
+        }
+        let size = window.inner_size()?;
+        let position = window.outer_position()?;
+        rows.push(serde_json::json!({
+            "name": if id == "main" { "main".into() } else { window.title()? },
+            "current": { "x": position.x, "y": position.y, "width": size.width,
+                "height": size.height, "maximized": window.is_maximized()?, "fullscreen": window.is_fullscreen()? },
+            "saved": saved.get(&id).map(geometry),
+        }));
+    }
+    rows.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    Ok(rows)
+}
+
+#[tauri::command]
+pub fn habits_reset_windows(app: AppHandle) -> AppResult<()> {
+    use tauri_plugin_window_state::AppHandleExt;
+    for (id, window) in app.webview_windows() {
+        if id != "main" && !crate::platform::panel_windows::native::registered(&app, &id) {
+            continue;
+        }
+        window.set_fullscreen(false)?;
+        window.unmaximize()?;
+        window.set_size(tauri::LogicalSize::new(
+            if id == "main" { 1280.0 } else { 1024.0 },
+            800.0,
+        ))?;
+        window.center()?;
+    }
+    app.save_window_state(crate::platform::window::SAVED_STATE_FLAGS)
+        .map_err(|e| AppError::validation(e.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn settings_get(state: State<'_, AppState>) -> Settings {
     crate::services::settings::read(&state)
 }

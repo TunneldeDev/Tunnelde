@@ -71,3 +71,11 @@ page durable; put temporary plans, screenshots and handoff notes in `.tmp/`.
   maintainer explicitly changes the allowlist. If unavailable, work directly;
   do not silently substitute another model. Contributors implement and revise;
   the coordinating reviewer remains responsible for review, merge and release.
+
+Keep the [UI/UX surface catalog](ui-surface-catalog.md) aligned with UI changes, including location, layout, actions, narrow behavior and states.
+
+Keep important information prominent: errors/conflicts use error color, tint or border, an icon and
+a reason. Color alone, tooltips and silently added controls are insufficient. Generated export
+passwords require a separate save confirmation with selectable password, explicit copy, continue
+and cancel; confirmation precedes file export. Import previews identify direct/dependent conflicts
+and explain both blocking reasons and their resolution.

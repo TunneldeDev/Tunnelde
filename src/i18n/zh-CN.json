@@ -2850,6 +2850,10 @@
     "hidePassword": "隐藏密码",
     "copyPassword": "复制密码",
     "generatedPasswordHint": "请先保存自动生成的密码，再导出文件。密码不会写入文件，也无法找回。请分开传递文件与密码。",
+    "savePasswordTitle": "请先保存导出密码",
+    "savedPasswordExport": "我已保存密码，继续导出",
+    "conflictCopyLabel": "将另存为副本，避免与现有主机冲突",
+    "dependencyConflictLabel": "依赖的跳板主机与现有主机冲突",
     "passwordSaved": "我已保存自动生成的密码",
     "importPassword": "文件密码",
     "encryptedFileHint": "此文件已加密，请输入导出时设置或生成的密码，解密后预览主机。",
@@ -2989,5 +2993,86 @@
     "tooLarge": "字体文件超过 64 MiB 限制。",
     "busy": "待处理的字体导入过多，请完成导入后重试。",
     "unavailableError": "字体管理暂时不可用。"
+  },
+  "habits": {
+    "title": "使用习惯",
+    "description": "使用习惯保存在应用数据目录中，重启和更新不会清除。可按类别管理或恢复默认值；主机、凭据和编辑草稿不受影响。",
+    "saving": "正在保存使用习惯…",
+    "saved": "已启用持久保存 · {{count}} 项界面记录",
+    "unavailable": "习惯数据尚未就绪，请检查上方错误；不会覆盖已有数据。",
+    "choose": "选择要重置的使用习惯",
+    "resetSelected": "重置所选习惯",
+    "manageFonts": "管理字体和外观",
+    "manageLayout": "管理工作区排版",
+    "manageFiles": "管理文件视图",
+    "confirmTitle": "重置所选使用习惯？",
+    "confirmBody": "仅重置下列类别。窗口和字体设置立即生效；文件视图在重新打开后生效。",
+    "workspaceCleared": "下次启动的工作区恢复记录已清除。当前打开内容保留，本次运行不再保存启动恢复记录。",
+    "windows": {
+      "title": "窗口大小和位置",
+      "hint": "重置主窗口和当前独立窗口的尺寸、位置、最大化及全屏状态。"
+    },
+    "panels": {
+      "title": "面板位置与状态",
+      "hint": "重置浮窗位置、尺寸、固定和打开状态、侧栏位置与工作区浮动排版。后台任务默认位于右下角。"
+    },
+    "typography": {
+      "title": "字体和字号",
+      "hint": "恢复界面、等宽及编辑器中文字体选择和字号；保留已导入的字体文件。"
+    },
+    "appearance": {
+      "title": "外观与排版风格",
+      "hint": "恢复主题、强调色、自定义样式、密度、侧栏宽度和主机列表风格。"
+    },
+    "files": {
+      "title": "文件视图习惯",
+      "hint": "清除各位置的列宽、排序、分组、分栏比例和预览方式；重新打开视图后生效。"
+    },
+    "workspace": {
+      "title": "打开的路径和面板",
+      "hint": "清除下次启动时恢复的文件路径、标签页和排版记录，不关闭当前编辑内容或删除文件。"
+    },
+    "fields": {
+      "uiFontSize": "界面字号",
+      "monoFontSize": "等宽字号",
+      "monoFont": "等宽字体",
+      "fontSelections": "各场景字体选择",
+      "theme": "主题",
+      "accent": "强调色",
+      "colors": "区域配色",
+      "density": "界面密度",
+      "motion": "动效",
+      "sidebarWidth": "侧栏宽度",
+      "rightPanel": "右侧面板",
+      "rightPanelWidth": "右侧面板宽度",
+      "hostList": "主机列表风格",
+      "userCss": "自定义样式",
+      "main": "主窗口",
+      "layout": "工作区排版",
+      "paths": "文件路径",
+      "tabs": "标签页",
+      "navigation": "侧栏选择",
+      "floating": "工作区浮窗",
+      "presentation": "呈现方式",
+      "bounds": "位置与尺寸",
+      "open": "打开状态",
+      "pinned": "固定状态",
+      "filePreview": "文件预览",
+      "tasks": "后台任务",
+      "hosts": "主机",
+      "knownHosts": "已知主机",
+      "plugins": "插件",
+      "forwarding": "转发",
+      "output": "输出",
+      "connections": "连接"
+    },
+    "details": "查看具体数据",
+    "refreshDetails": "刷新数据",
+    "loadingDetails": "正在读取数据…",
+    "emptyDetails": "此类别暂无保存记录，使用默认值。",
+    "savedValue": "已保存",
+    "currentValue": "当前值",
+    "defaultValue": "默认值",
+    "detailsHint": "按需读取；保存前当前值可能与磁盘记录不同。窗口当前值与保存值使用物理像素，默认尺寸使用逻辑像素。"
   }
 }

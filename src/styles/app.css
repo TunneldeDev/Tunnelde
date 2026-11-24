@@ -864,6 +864,10 @@
 
 /* ---------- host page ---------- */
 
+.host-page > * {
+  flex-shrink: 0;
+}
+
 .host-head {
   display: flex;
   align-items: center;

@@ -1,3 +1,4 @@
+import { HabitsSettingsView } from "../components/HabitsSettingsView";
 import {
   createContext,
   useContext,
@@ -424,6 +425,23 @@ function composition(
   function Special({ section, expanded }: { section: SettingsSpecialSection; expanded?: boolean }) {
     const data = useData();
     switch (section) {
+      case "habits":
+        return (
+          <HabitsSettingsView
+            data={
+              data.habits ?? {
+                ready: false,
+                saving: false,
+                error: null,
+                entries: 0,
+                workspaceCleared: false,
+              }
+            }
+            reset={method("habitsReset")}
+            loadDetails={method("habitsDetails")}
+            selectSection={(section) => effect("section", section)}
+          />
+        );
       case "plugins":
         return <Plugins />;
       case "about":

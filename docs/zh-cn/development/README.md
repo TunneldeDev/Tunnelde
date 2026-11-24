@@ -45,3 +45,7 @@
 - [版本与发布规则](versioning.md)
 
 - [原生文件保存传输（实验性）](file-save-transport.md)
+
+- [功能界面与 UI/UX 风格台账](ui-surface-catalog.md)
+
+- [使用习惯持久化与管理](user-habits.md)

@@ -374,11 +374,9 @@
 }
 .proxy-section.card {
   padding: 14px;
-  border-top: 0;
 }
 .proxy-section__head,
 .proxy-section__tools,
-.proxy-section__actions,
 .proxy-group__head,
 .proxy-group__meta,
 .proxy-group__actions,
@@ -395,6 +393,10 @@
 }
 .proxy-section__head > div:first-child {
   min-width: 0;
+}
+.proxy-section__tools {
+  flex-wrap: wrap;
+  margin-inline-start: auto;
 }
 .proxy-section__head .card__title {
   margin: 0 0 4px;
@@ -419,13 +421,6 @@
 .proxy-section__head p {
   font-family: var(--td-mono);
   overflow-wrap: anywhere;
-}
-.proxy-section__actions {
-  flex-wrap: wrap;
-  justify-content: flex-start;
-}
-.proxy-section__actions > .td-btn {
-  flex: none;
 }
 .proxy-group {
   display: grid;

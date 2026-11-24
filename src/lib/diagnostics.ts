@@ -82,6 +82,27 @@ const identifier = (value: string) =>
 
 // Arbitrary exception text can contain data supplied by the user or a server.
 const SAFE_MESSAGES = new Set([
+  "transfer expired",
+  "transfer not found",
+  "invalid staged destination",
+  "not transfer destination",
+  "destination not ready",
+  "destination unavailable",
+  "source unavailable",
+  "stale window document",
+  "invalid panel presentation",
+  "invalid view state",
+  "view state limit",
+  "stale read model",
+  "read model too large",
+  "panel not found",
+  "panel.window.timeout",
+  "panel.window.unsupportedView",
+  "panel.window.duplicateView",
+  "panel.window.disposed",
+  "pluginSecurity.changed",
+  "plugin.api.invalidParams",
+  "plugin.syntax.invalidRequest",
   "panel.viewState.duplicateKey",
   "panel.viewState.identityChanged",
   "panel.viewState.invalid",
@@ -156,6 +177,16 @@ export interface DiagnosticEvent {
   requestId?: string;
   frames: string[];
   occurrences?: number;
+  ipc?: IpcDiagnosticContext;
+}
+
+/** Selected transport metadata only. Never attach the request or its data. */
+export interface IpcDiagnosticContext {
+  command: string;
+  action?: string;
+  panelKind?: string;
+  generation?: number;
+  durationMs: number;
 }
 
 type Delivery = "pending" | "accepted" | "memory";
@@ -200,7 +231,12 @@ export function reportError(
   operation: string,
   error: unknown,
   level = diagnosticLevel(error),
-  context: { requestId?: string; occurrences?: number; componentStack?: string } = {},
+  context: {
+    requestId?: string;
+    occurrences?: number;
+    componentStack?: string;
+    ipc?: IpcDiagnosticContext;
+  } = {},
 ): DiagnosticEvent {
   const now = Date.now();
   const object = error && typeof error === "object" ? error : undefined;
@@ -223,6 +259,7 @@ export function reportError(
     frames: safeFrames([stringProperty(error, "stack"), context.componentStack].join("\n")),
     ...(context.requestId ? { requestId: identifier(context.requestId) } : {}),
     ...(context.occurrences && context.occurrences > 1 ? { occurrences: context.occurrences } : {}),
+    ...(context.ipc ? { ipc: context.ipc } : {}),
   };
   if (object) byError.set(object, { event, at: now });
   // Keep a local copy for the error details while the host accepts the event.

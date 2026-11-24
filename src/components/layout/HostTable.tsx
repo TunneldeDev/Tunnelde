@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useLayoutEffect, useRef } from "react";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { Columns3 } from "lucide-react";
-import { visibleHostColumns, type DisplayHostColumn } from "@/lib/hosts/columns";
+import { hostTableLayout, visibleHostColumns, type DisplayHostColumn } from "@/lib/hosts/columns";
 import { DataColumnHeader } from "@/components/ui/display/DataColumnHeader";
 import { useHostPanel } from "@/features/hosts/panel/context";
 import "./hostTable.css";
@@ -80,33 +80,32 @@ export function HostTableHeader({
           }}
           onResize={(width, commit) => {
             const root = header.current?.closest<HTMLElement>(".host-table");
-            root?.style.setProperty(
-              "--host-columns",
-              columns.map((item) => `${item.key === column.key ? width : item.width}px`).join(" "),
+            const layout = hostTableLayout(
+              columns.map((item) => (item.key === column.key ? { ...item, width } : item)),
+              { ...preferences.widths, [column.key]: width },
             );
-            root?.style.setProperty(
-              "--host-table-width",
-              `${columns.reduce((sum, item) => sum + (item.key === column.key ? width : item.width), 0)}px`,
-            );
+            root?.style.setProperty("--host-columns", layout.columns);
+            root?.style.setProperty("--host-table-width", `${layout.minimum}px`);
             if (commit) {
               void run({ operation: "resizeColumn", key: column.key, width }).then((ok) => {
                 if (ok || !root?.isConnected) return;
                 // React may not rewrite an unchanged style after an optimistic
                 // update rolls back; restore the current widths explicitly.
                 const saved = data.preferences;
-                const widths = visibleHostColumns(latestColumns.current, saved).map(
-                  (item) => item.width,
+                const layout = hostTableLayout(
+                  visibleHostColumns(latestColumns.current, saved),
+                  saved.widths,
                 );
-                root.style.setProperty(
-                  "--host-columns",
-                  widths.map((value) => `${value}px`).join(" "),
-                );
-                root.style.setProperty(
-                  "--host-table-width",
-                  `${widths.reduce((sum, value) => sum + value, 0)}px`,
-                );
+                root.style.setProperty("--host-columns", layout.columns);
+                root.style.setProperty("--host-table-width", `${layout.minimum}px`);
               });
             }
+          }}
+          onResizeCancel={() => {
+            const root = header.current?.closest<HTMLElement>(".host-table");
+            const layout = hostTableLayout(columns, preferences.widths);
+            root?.style.setProperty("--host-columns", layout.columns);
+            root?.style.setProperty("--host-table-width", `${layout.minimum}px`);
           }}
           onMove={(from, to) => {
             void run({ operation: "moveColumn", from, to });

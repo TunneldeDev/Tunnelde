@@ -1,3 +1,4 @@
+import type { HabitsData } from "@/lib/habits/types";
 import type { WindowModelAppearance } from "@/app/panelReadModels";
 import type { SettingsPageData } from "../settingsPageServices";
 import type { SettingsProfilesData } from "../components/SettingsProfilesView";
@@ -10,6 +11,7 @@ import type { ProviderSettingsRow } from "@/features/plugins/components/UiProvid
 import type { AppInfo, PluginInfo, UpdateState } from "@/lib/api/types";
 import type { UpdateHistoryProjection } from "../components/UpdateNotesView";
 export interface SettingsProjection {
+  habits?: HabitsData;
   page: SettingsPageData;
   profiles: SettingsProfilesData;
   storage: StorageSettingsData;

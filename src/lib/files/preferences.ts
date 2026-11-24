@@ -1,3 +1,4 @@
+import { habitStorage } from "@/lib/habits/storage";
 import { FILE_COLUMNS, normalizeFileColumns, type FileViewPreferences } from "./view";
 
 const PREFIX = "tunnelde:file-view:v1:";
@@ -15,7 +16,7 @@ export function readFileViewPreferences(
 ): FileViewPreferences {
   const fallback = { ...defaults, filesGroupBy: defaults.filesGroupBy ?? "none" };
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "null");
+    const parsed: unknown = JSON.parse(habitStorage.getItem(key) ?? "null");
     if (!parsed || typeof parsed !== "object" || !("view" in parsed)) return fallback;
     const view = (parsed as { view: Record<string, unknown> }).view;
     if (!view || typeof view !== "object") return fallback;
@@ -62,7 +63,7 @@ export function readFileViewPreferences(
 
 export function writeFileViewPreferences(key: string, view: FileViewPreferences): void {
   try {
-    localStorage.setItem(key, JSON.stringify({ view, updatedAt: Date.now() }));
+    habitStorage.setItem(key, JSON.stringify({ view, updatedAt: Date.now() }));
     const keys = Object.keys(localStorage).filter((item) => item.startsWith(PREFIX));
     if (keys.length <= MAX_ENTRIES) return;
     const oldest = keys
@@ -70,14 +71,14 @@ export function writeFileViewPreferences(key: string, view: FileViewPreferences)
       .sort((a, b) => {
         const timestamp = (item: string): number => {
           try {
-            return Number(JSON.parse(localStorage.getItem(item) ?? "{}").updatedAt) || 0;
+            return Number(JSON.parse(habitStorage.getItem(item) ?? "{}").updatedAt) || 0;
           } catch {
             return 0;
           }
         };
         return timestamp(a) - timestamp(b);
       });
-    for (const item of oldest.slice(0, keys.length - MAX_ENTRIES)) localStorage.removeItem(item);
+    for (const item of oldest.slice(0, keys.length - MAX_ENTRIES)) habitStorage.removeItem(item);
   } catch {
     /* Preferences are optional when browser storage is unavailable. */
   }

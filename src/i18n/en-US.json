@@ -2850,6 +2850,10 @@
     "hidePassword": "Hide password",
     "copyPassword": "Copy password",
     "generatedPasswordHint": "Save this generated password before exporting. It is not included in the file and cannot be recovered. Send the file and password separately.",
+    "savePasswordTitle": "Save your export password",
+    "savedPasswordExport": "I saved the password — export",
+    "conflictCopyLabel": "This host will import as a copy to avoid conflicts with saved hosts",
+    "dependencyConflictLabel": "A required jump host conflicts with a saved host",
     "passwordSaved": "I have saved the generated password",
     "importPassword": "File password",
     "encryptedFileHint": "This file is encrypted. Enter its export password to decrypt and preview the hosts.",
@@ -2989,5 +2993,86 @@
     "tooLarge": "The font exceeds the 64 MiB file limit.",
     "busy": "Too many pending font imports. Finish an import and try again.",
     "unavailableError": "Font management is currently unavailable."
+  },
+  "habits": {
+    "title": "Usage habits",
+    "description": "Habits live in the application data directory and survive restarts and updates. Manage or reset individual categories without changing hosts, credentials or editor drafts.",
+    "saving": "Saving habits…",
+    "saved": "Persistent storage enabled · {{count}} interface records",
+    "unavailable": "Habit storage is not ready. Existing data will not be overwritten.",
+    "choose": "Choose habits to reset",
+    "resetSelected": "Reset selected habits",
+    "manageFonts": "Manage fonts and appearance",
+    "manageLayout": "Manage workspace layout",
+    "manageFiles": "Manage file views",
+    "confirmTitle": "Reset selected habits?",
+    "confirmBody": "Only the following categories will be reset. Window and font changes apply immediately; file views apply when reopened.",
+    "workspaceCleared": "The next-start workspace snapshot was cleared. Current work is preserved and startup snapshot saving is paused for this session.",
+    "windows": {
+      "title": "Window size and position",
+      "hint": "Reset size, position, maximization and fullscreen for the main window and current independent windows."
+    },
+    "panels": {
+      "title": "Panel position and state",
+      "hint": "Reset floating geometry, pinning, visibility, sidebar placement and floating workspace layout. Background tasks default to the bottom right."
+    },
+    "typography": {
+      "title": "Fonts and font sizes",
+      "hint": "Restore UI, monospace and editor CJK font selections and sizes. Imported font files remain available."
+    },
+    "appearance": {
+      "title": "Appearance and layout style",
+      "hint": "Restore theme, accent, custom styles, density, sidebar widths and host list appearance."
+    },
+    "files": {
+      "title": "File view habits",
+      "hint": "Clear per-location column widths, sorting, grouping, split ratios and preview presentation. Reopen views to apply."
+    },
+    "workspace": {
+      "title": "Open paths and panels",
+      "hint": "Clear file paths, tabs and layout restored on the next launch. Current editors stay open and files remain intact."
+    },
+    "fields": {
+      "uiFontSize": "Interface font size",
+      "monoFontSize": "Monospace font size",
+      "monoFont": "Monospace font",
+      "fontSelections": "Font selections by context",
+      "theme": "Theme",
+      "accent": "Accent",
+      "colors": "Region colors",
+      "density": "Density",
+      "motion": "Motion",
+      "sidebarWidth": "Sidebar width",
+      "rightPanel": "Right panel",
+      "rightPanelWidth": "Right panel width",
+      "hostList": "Host list style",
+      "userCss": "Custom styles",
+      "main": "Main window",
+      "layout": "Workspace layout",
+      "paths": "File paths",
+      "tabs": "Tabs",
+      "navigation": "Sidebar selection",
+      "floating": "Workspace floating panels",
+      "presentation": "Presentation",
+      "bounds": "Position and size",
+      "open": "Open state",
+      "pinned": "Pinned state",
+      "filePreview": "File preview",
+      "tasks": "Background tasks",
+      "hosts": "Hosts",
+      "knownHosts": "Known hosts",
+      "plugins": "Plugins",
+      "forwarding": "Forwarding",
+      "output": "Output",
+      "connections": "Connections"
+    },
+    "details": "Show specific data",
+    "refreshDetails": "Refresh data",
+    "loadingDetails": "Loading data…",
+    "emptyDetails": "No saved entries in this category; defaults apply.",
+    "savedValue": "Saved",
+    "currentValue": "Current",
+    "defaultValue": "Default",
+    "detailsHint": "Loaded on demand. Current values can differ from disk until saved. Current and saved window geometry uses physical pixels; default sizes use logical pixels."
   }
 }

@@ -26,7 +26,8 @@ export type SettingsSpecialSection =
   | "network"
   | "shortcuts"
   | "storage"
-  | "logs";
+  | "logs"
+  | "habits";
 /** Document-local view services, not a serializable IPC or whole-store proxy.
  * A native owner must implement every section/effect before admitting a page. */
 export interface SettingsPageServices {

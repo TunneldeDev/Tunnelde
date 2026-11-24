@@ -57,6 +57,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "monitor",
   "updates",
   "plugins",
+  "habits",
   "advanced",
   "about",
 ];
@@ -72,6 +73,7 @@ export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
   monitor: "settings.monitor",
   updates: "settings.updatesSection",
   plugins: "settings.plugins",
+  habits: "habits.title",
   advanced: "settings.advanced",
   about: "nav.about",
 };

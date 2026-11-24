@@ -1,3 +1,4 @@
+import { startHabits, restoreWorkspaceHabits, useHabits } from "@/store/habits";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import type { TabRecord } from "@/lib/api/types";
 import { observeSystemAppearance } from "@/lib/prefs/appearance";
@@ -92,6 +93,9 @@ async function start(signal: AbortSignal): Promise<void> {
     return;
   }
 
+  cleanups.push(await startHabits());
+  if (signal.aborted) return;
+
   // Discover view contributions before restoring their tabs; discovery does not execute plugins.
   await Promise.all([usePluginSecurity.getState().load(), usePlugins.getState().load()]);
   if (signal.aborted) return;
@@ -111,6 +115,7 @@ async function start(signal: AbortSignal): Promise<void> {
     if (signal.aborted) return;
     toast(presentError(error), "error");
   }
+  cleanups.push(restoreWorkspaceHabits());
   const hostsLoaded = await useHosts.getState().load();
   if (signal.aborted) return;
   if (hostsLoaded) pruneMissingHosts();
@@ -169,7 +174,7 @@ async function persistLatest(): Promise<void> {
       const records = pendingRecords;
       pendingRecords = undefined;
       try {
-        await api.saveTabs(records);
+        if (!useHabits.getState().workspaceCleared) await api.saveTabs(records);
       } catch (error) {
         toast(presentError(error), "error");
       }

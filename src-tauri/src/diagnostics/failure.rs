@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::Webview;
 
@@ -10,6 +10,16 @@ use crate::error::{AppError, AppResult};
 
 const RECENT_LIMIT: usize = 100;
 static RECENT: Mutex<VecDeque<(String, String)>> = Mutex::new(VecDeque::new());
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct IpcContext {
+    command: String,
+    action: Option<String>,
+    panel_kind: Option<String>,
+    generation: Option<u64>,
+    duration_ms: u64,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -24,6 +34,7 @@ pub struct Failure {
     #[serde(default)]
     frames: Vec<String>,
     occurrences: Option<u32>,
+    ipc: Option<IpcContext>,
     // Use the host clock for the persisted record.
     #[serde(rename = "timestamp")]
     _timestamp: String,
@@ -31,7 +42,28 @@ pub struct Failure {
 
 fn safe_message(message: &str) -> &str {
     match message {
-        "panel.viewState.duplicateKey"
+        "transfer expired"
+        | "transfer not found"
+        | "invalid staged destination"
+        | "not transfer destination"
+        | "destination not ready"
+        | "destination unavailable"
+        | "source unavailable"
+        | "stale window document"
+        | "invalid panel presentation"
+        | "invalid view state"
+        | "view state limit"
+        | "stale read model"
+        | "read model too large"
+        | "panel not found"
+        | "panel.window.timeout"
+        | "panel.window.unsupportedView"
+        | "panel.window.duplicateView"
+        | "panel.window.disposed"
+        | "pluginSecurity.changed"
+        | "plugin.api.invalidParams"
+        | "plugin.syntax.invalidRequest"
+        | "panel.viewState.duplicateKey"
         | "panel.viewState.identityChanged"
         | "panel.viewState.invalid"
         | "panel.viewState.invalidKey"
@@ -109,9 +141,10 @@ fn emit(source: &str, window: &str, failure: Failure) {
         request_id,
         frames,
         occurrences,
+        ipc,
         ..
     } = failure;
-    let context = json!({ "code": code, "frames": frames, "occurrences": occurrences });
+    let context = json!({ "code": code, "frames": frames, "occurrences": occurrences, "ipc": ipc });
     let level_name = match level {
         LogLevel::Error => "ERROR",
         LogLevel::Warn => "WARN",
@@ -240,6 +273,7 @@ pub(crate) fn native_event(
             request_id: None,
             frames,
             occurrences: None,
+            ipc: None,
             _timestamp: String::new(),
         },
     );
@@ -260,6 +294,35 @@ pub fn diagnostics_report(webview: Webview, mut event: Failure) -> AppResult<boo
 }
 
 fn validate(event: &Failure) -> AppResult<()> {
+    if let Some(ipc) = &event.ipc {
+        if !identifier(&ipc.command, 128)
+            || ipc.action.as_deref().is_some_and(|s| !identifier(s, 128))
+            || ipc.panel_kind.as_deref().is_some_and(|s| {
+                !matches!(
+                    s,
+                    "editor-view"
+                        | "host-view"
+                        | "settings-view"
+                        | "terminal"
+                        | "files"
+                        | "sftp"
+                        | "plugin"
+                        | "plugins"
+                        | "hosts"
+                        | "connections"
+                        | "tasks"
+                        | "output"
+                        | "knownHosts"
+                        | "forwarding"
+                        | "filePreview"
+                )
+            })
+            || ipc.generation.is_some_and(|n| n > 9_007_199_254_740_991)
+            || ipc.duration_ms > 9_007_199_254_740_991
+        {
+            return Err(invalid("ipc"));
+        }
+    }
     for (key, value) in [("domain", &event.domain), ("operation", &event.operation)] {
         if !identifier(value, 128) {
             return Err(invalid(key));
@@ -301,6 +364,54 @@ fn validate(event: &Failure) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn event_with_ipc() -> serde_json::Value {
+        json!({
+            "eventId": "ipc-context-test", "domain": "ipc",
+            "operation": "panel_window_control.readModel", "level": "warn",
+            "code": "validation", "message": "stale read model",
+            "timestamp": "2026-11-25T00:00:00Z",
+            "ipc": { "command": "panel_window_control", "action": "readModel",
+                "panelKind": "editor-view", "generation": 3, "durationMs": 24 }
+        })
+    }
+
+    #[test]
+    fn validates_and_preserves_safe_ipc_context() {
+        let value = event_with_ipc();
+        let event: Failure = serde_json::from_value(value.clone()).unwrap();
+        assert!(validate(&event).is_ok());
+        assert_eq!(
+            serde_json::to_value(event.ipc.unwrap()).unwrap(),
+            value["ipc"]
+        );
+        for reason in [
+            "transfer expired",
+            "stale read model",
+            "plugin.api.invalidParams",
+        ] {
+            assert_eq!(safe_message(reason), reason);
+        }
+    }
+
+    #[test]
+    fn rejects_payloads_and_invalid_ipc_metadata() {
+        for (key, bad) in [
+            ("command", json!("/private/document")),
+            ("action", json!("read model secret")),
+            ("panelKind", json!("editor-view:private-document")),
+            ("generation", json!(9_007_199_254_740_992_u64)),
+            ("durationMs", json!(9_007_199_254_740_992_u64)),
+        ] {
+            let mut value = event_with_ipc();
+            value["ipc"][key] = bad;
+            let event: Failure = serde_json::from_value(value).unwrap();
+            assert!(validate(&event).is_err(), "{key}");
+        }
+        let mut value = event_with_ipc();
+        value["ipc"]["args"] = json!({ "password": "secret" });
+        assert!(serde_json::from_value::<Failure>(value).is_err());
+    }
 
     #[test]
     fn restricts_error_messages_and_locations_to_diagnostic_data() {

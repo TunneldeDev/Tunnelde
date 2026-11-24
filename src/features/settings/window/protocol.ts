@@ -1,3 +1,4 @@
+import type { HabitCategory, HabitDetail } from "@/lib/habits/types";
 import type { ProxyProfile } from "@/lib/api/network";
 import type { SettingsPatch } from "@/lib/api/types";
 import type { FontSelections, FontReference, FontCatalogue, FontInfo } from "@/lib/fonts/types";
@@ -22,6 +23,8 @@ type Methods<S, K extends keyof S, P extends string> = {
 };
 /** Closed first-party owner effects, not arbitrary application IPC or store RPC. */
 export type SettingsCalls = {
+  habitsDetails: { args: [HabitCategory]; result: HabitDetail[] };
+  habitsReset: { args: [HabitCategory[]]; result: void };
   preference: { args: [SettingsPatch]; result: boolean };
   reset: { args: []; result: void };
   section: { args: [SettingsSection]; result: void };
