@@ -3,12 +3,14 @@ import type {
   FilePreviewProviderEntry,
 } from "@/lib/extensions/contracts/files/preview/data";
 import i18n from "@/i18n/i18n";
+import { previewSyntaxKey } from "./previewSyntax";
 import type { PreviewOwner } from "./owner";
 
 /** Private read projection. Content is separate from the <=1MiB view capsule;
  * the native ticket is deliberately absent, including in errors/metadata. */
 export interface PreviewWindowData {
   readonly snapshot: FilePreviewMetadata;
+  readonly syntaxKey?: string | null;
   readonly providers: readonly FilePreviewProviderEntry[];
   readonly read:
     | { readonly status: "loading" | "unavailable" }
@@ -29,6 +31,7 @@ export function previewWindowData(owner: PreviewOwner): PreviewWindowData {
   const read = owner.source.snapshot();
   return {
     snapshot: owner.context.snapshot,
+    syntaxKey: previewSyntaxKey(owner.context.snapshot.path),
     providers: owner.providers.map(({ id, name, renderer }) => ({ id, name, renderer })),
     read:
       read.status === "ready"

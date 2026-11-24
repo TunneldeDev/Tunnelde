@@ -1,3 +1,7 @@
+import { api } from "@/lib/api/ipc";
+import { usePlugins } from "@/store/plugins";
+import { usePluginSecurity } from "@/store/pluginSecurity";
+import { plugin } from "../fixtures/plugins";
 import "@/i18n/i18n";
 import { afterEach, expect, it, vi } from "vitest";
 import { previewOwners, type PreviewOwner } from "@/features/sftp/preview/owner";
@@ -15,7 +19,7 @@ afterEach(() => {
   usePanelWindows.setState(initial, true);
   vi.restoreAllMocks();
 });
-function fixture() {
+function fixture(content = "const value = 1;") {
   const lease = { panelId: "filePreview", windowId: "satellite", generation: 3 };
   usePanelWindows.setState({
     available: true,
@@ -38,9 +42,10 @@ function fixture() {
     undock: vi.fn(),
     selectProvider: vi.fn(),
   } as unknown as FilePreviewContext;
+  const read = { status: "ready", value: { content } };
   const owner = {
     context,
-    source: { fail: vi.fn() },
+    source: { fail: vi.fn(), snapshot: () => read },
     onReady: vi.fn(),
     onDecodeError: vi.fn(),
   } as unknown as PreviewOwner;
@@ -98,3 +103,63 @@ it("decode failure retires the coordinator's own resource; stale failures cannot
   ).toThrow("changed");
   expect(f.owner.source.fail).toHaveBeenCalledOnce();
 });
+
+it.each([false, true])(
+  "highlights complete preview tokens and discards replies after ownership changes (dense=%s)",
+  async (dense) => {
+    const content = dense ? "word".repeat(2048) : "const value = 1;";
+    const f = fixture(content);
+    const highlighter = {
+      ...plugin,
+      status: "running" as const,
+      runtimeId: "syntax:1",
+      permissions: ["editor.read"],
+      commands: [
+        { id: "highlight", title: "Highlight", editor: { syntax: true, extensions: ["txt"] } },
+      ],
+    };
+    usePlugins.setState({ items: [highlighter], stoppingIds: [] });
+    usePluginSecurity.setState({
+      state: {
+        ...usePluginSecurity.getState().state,
+        restricted: false,
+        grants: { [plugin.id]: ["editor.read"] },
+      },
+    });
+    const tokens = dense
+      ? Array.from({ length: 2000 }, (_, index) => ({
+          start: index * 4,
+          end: index * 4 + 3,
+          type: "keyword",
+        }))
+      : [{ start: 0, end: 5, type: "keyword" }];
+    const run = vi.spyOn(api, "pluginRun").mockResolvedValue({ tokens });
+    const request: PreviewWindowAction = {
+      ...f.request,
+      command: { operation: "syntax", from: 0, to: content.length },
+    };
+    await expect(executePreviewWindowAction(f.lease, request)).resolves.toEqual(
+      tokens.map((token) => [token.start, token.end, 0]),
+    );
+    expect(run).toHaveBeenCalledWith(
+      plugin.id,
+      "highlight",
+      expect.objectContaining({ mode: "inline", source: content }),
+      "syntax:1",
+    );
+    let finish!: (value: unknown) => void;
+    run.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = executePreviewWindowAction(f.lease, request);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    usePanelWindows.setState({
+      snapshot: { windows: [], transfers: [], panels: [{ ...f.lease, generation: 4 }] },
+    });
+    finish({ tokens });
+    await expect(pending).resolves.toBeNull();
+  },
+);

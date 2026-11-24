@@ -346,6 +346,7 @@ export function CodeEditorSurface({
             {
               key: "Tab",
               run: (view) => {
+                if (view.state.readOnly) return false;
                 if (view.state.selection.main.empty) {
                   view.dispatch({
                     ...view.state.replaceSelection(" ".repeat(view.state.tabSize)),
@@ -371,7 +372,10 @@ export function CodeEditorSurface({
                   .includes("undo"),
             ),
           ]),
-          editable.current.of(EditorView.editable.of(!readOnly)),
+          editable.current.of([
+            EditorView.editable.of(!readOnly),
+            EditorState.readOnly.of(readOnly),
+          ]),
           wrapping.current.of(wordWrap ? EditorView.lineWrapping : []),
           decorations.current.of(
             EditorView.decorations.of(tokenSet(tokens, latestMap.current, tokensRange)),
@@ -531,7 +535,10 @@ export function CodeEditorSurface({
     if (!instance) return;
     instance.dispatch({
       effects: [
-        editable.current.reconfigure(EditorView.editable.of(!readOnly)),
+        editable.current.reconfigure([
+          EditorView.editable.of(!readOnly),
+          EditorState.readOnly.of(readOnly),
+        ]),
         wrapping.current.reconfigure(wordWrap ? EditorView.lineWrapping : []),
         tab.current.reconfigure([
           EditorState.tabSize.of(tabSize),
