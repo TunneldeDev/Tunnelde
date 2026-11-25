@@ -452,7 +452,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Test opt-in debugger adapter
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features debugger --lib debugger::
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --features debugger --lib debugger::
       - name: Test macOS platform behavior
         timeout-minutes: 25
         run: |
@@ -663,7 +664,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Test opt-in debugger adapter
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features debugger --lib debugger::
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --features debugger --lib debugger::
       - name: Test Windows file operations and guarded backup cleanup
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib vault::
