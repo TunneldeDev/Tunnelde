@@ -210,11 +210,17 @@ export function SettingsPageView({
                       key={group.id}
                       className="settings__nav-item settings__nav-item--child"
                       aria-controls={`${settingsId}-${group.id}`}
-                      onClick={() =>
-                        document
-                          .getElementById(`${settingsId}-${group.id}`)
-                          ?.scrollIntoView({ block: "start" })
-                      }
+                      onClick={() => {
+                        const scroller = body.current;
+                        const target = scroller?.ownerDocument.getElementById(
+                          `${settingsId}-${group.id}`,
+                        );
+                        if (!scroller || !target || !scroller.contains(target)) return;
+                        // scrollIntoView also scrolls clipped application ancestors.
+                        // Local layout offsets remain correct inside a scaled iframe.
+                        const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+                        scroller.scrollTop = target.offsetTop - margin;
+                      }}
                     >
                       {t(group.label)}
                     </button>
