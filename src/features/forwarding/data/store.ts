@@ -2,6 +2,7 @@ import { useForwardingReadModel, ignoreForwardingSubscription } from "./readScop
 import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { useSyncExternalStore } from "react";
 import { isTauri } from "@/lib/api/ipc";
+import { mockEnabled } from "@/debugger/contracts";
 import { createRetainedListStore } from "@/lib/data/retainedListStore";
 import { domainEvents } from "@/lib/events/domain";
 import { useSsh } from "@/store/ssh";
@@ -24,7 +25,8 @@ export function createForwardingStore(
   });
 }
 export const forwardingStore = createForwardingStore(
-  () => (isTauri() ? invoke<ForwardInfo[]>("forwarding_list") : Promise.resolve([])),
+  () =>
+    isTauri() || mockEnabled() ? invoke<ForwardInfo[]>("forwarding_list") : Promise.resolve([]),
   (refresh) => {
     const lifetime = new AbortController();
     void domainEvents.onForwards(refresh, lifetime.signal);

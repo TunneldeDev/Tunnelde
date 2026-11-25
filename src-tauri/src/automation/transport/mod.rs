@@ -1,6 +1,8 @@
 //! One bounded JSON request per authenticated loopback connection.
 mod lifecycle;
-mod listener;
+pub(crate) mod listener;
+#[cfg(all(feature = "debugger", debug_assertions))]
+pub(crate) use super::contract::equal;
 mod location;
 use super::{contract::*, domains};
 pub(crate) use lifecycle::Lifecycle;

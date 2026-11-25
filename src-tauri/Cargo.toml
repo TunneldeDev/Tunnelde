@@ -9,6 +9,10 @@ edition = "2021"
 default-run = "tunnelde"
 rust-version = "1.82"
 
+[features]
+default = []
+debugger = []
+
 [lib]
 name = "tunnelde_lib"
 # The desktop executable links the Rust library directly; no C/mobile library is shipped.

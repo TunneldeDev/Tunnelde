@@ -7,7 +7,7 @@ use tokio::{
 
 const MAX_CONNECTIONS: usize = 8;
 
-pub(super) async fn serve<F, W>(
+pub(crate) async fn serve<F, W>(
     listener: TcpListener,
     mut shutdown: watch::Receiver<bool>,
     connection: F,
