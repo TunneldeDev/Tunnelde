@@ -1,6 +1,8 @@
 pub mod automation;
 mod commands;
 mod db;
+#[cfg(all(feature = "debugger", debug_assertions))]
+mod debugger;
 mod diagnostics;
 mod error;
 mod fonts;
@@ -144,6 +146,8 @@ pub fn run() {
             state::init(&handle).inspect_err(|error| {
                 diagnostics::failure::native("startup", "state.initialize", error);
             })?;
+            #[cfg(all(feature = "debugger", debug_assertions))]
+            debugger::start(&handle)?;
             platform::panel_windows::native::start(&handle);
             services::forwarding::automation::start(&handle);
             services::proxy::start_auto(&handle);
@@ -176,6 +180,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(platform::ipc_authority::guard(tauri::generate_handler![
+            #[cfg(all(feature = "debugger", debug_assertions))]
+            debugger::debugger_context,
+            #[cfg(all(feature = "debugger", debug_assertions))]
+            debugger::debugger_poll,
+            #[cfg(all(feature = "debugger", debug_assertions))]
+            debugger::debugger_ack,
+            #[cfg(all(feature = "debugger", debug_assertions))]
+            debugger::debugger_result,
             fonts::fonts_catalogue,
             fonts::fonts_import,
             fonts::fonts_finish_import,
@@ -461,6 +473,8 @@ pub fn run() {
                 window::show_main(app);
             }
             if matches!(event, tauri::RunEvent::Exit) {
+                #[cfg(all(feature = "debugger", debug_assertions))]
+                debugger::stop(app);
                 automation::transport::stop(app);
                 use tauri::Manager;
                 if let Some(state) = app.try_state::<state::AppState>() {

@@ -68,7 +68,13 @@ import type {
 } from "./types";
 
 export const isTauri = (): boolean =>
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  typeof window !== "undefined" &&
+  "__TAURI_INTERNALS__" in window &&
+  !(
+    import.meta.env.DEV &&
+    import.meta.env.VITE_TUNNELDE_DEBUGGER === "1" &&
+    window.__TUNNELDE_DEBUGGER_MOCK__
+  );
 
 export interface LogSnapshot {
   diagnostic: string;

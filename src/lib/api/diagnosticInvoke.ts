@@ -120,6 +120,14 @@ export async function diagnosticInvoke<T>(
   command: string,
   ...options: Parameters<typeof invoke> extends [string, ...infer P] ? P : never
 ): Promise<T> {
+  if (
+    import.meta.env.DEV &&
+    import.meta.env.VITE_TUNNELDE_DEBUGGER === "1" &&
+    window.__TUNNELDE_DEBUGGER_MOCK__
+  ) {
+    const { invokeFixture } = await import("@/debugger/mock");
+    return invokeFixture<T>(command, options[0] as Record<string, unknown> | undefined);
+  }
   const sampler = sampled.get(command);
   const started = performance.now();
   try {

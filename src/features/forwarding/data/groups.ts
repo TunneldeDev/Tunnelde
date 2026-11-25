@@ -2,6 +2,7 @@ import { useForwardingReadModel, ignoreForwardingSubscription } from "./readScop
 import { diagnosticInvoke as invoke } from "@/lib/api/diagnosticInvoke";
 import { useSyncExternalStore } from "react";
 import { isTauri } from "@/lib/api/ipc";
+import { mockEnabled } from "@/debugger/contracts";
 import { createRetainedListStore } from "@/lib/data/retainedListStore";
 import { domainEvents } from "@/lib/events/domain";
 import type { ForwardGroup } from "../model/contract";
@@ -9,7 +10,10 @@ import type { ForwardGroup } from "../model/contract";
 /** Same owner across host details and the global panel. Empty groups are data,
  * not inferred from forwarding rules; callers select their host explicitly. */
 export const forwardingGroupsStore = createRetainedListStore(
-  () => (isTauri() ? invoke<ForwardGroup[]>("forwarding_groups_list") : Promise.resolve([])),
+  () =>
+    isTauri() || mockEnabled()
+      ? invoke<ForwardGroup[]>("forwarding_groups_list")
+      : Promise.resolve([]),
   (refresh) => {
     const lifetime = new AbortController();
     void domainEvents.onForwards(refresh, lifetime.signal);
