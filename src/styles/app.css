@@ -2722,8 +2722,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  padding: 0 8px 0 12px;
+  min-height: 34px;
+  height: auto;
+  flex-wrap: wrap;
+  padding: 4px 8px 4px 12px;
   border-bottom: 1px solid var(--td-border);
   background: var(--td-panel);
 }
@@ -2798,6 +2800,17 @@
   .editor-head__name {
     flex: 1;
     max-width: none;
+  }
+}
+
+@container (max-width: 240px) {
+  .editor-head__name {
+    flex: 1 0 calc(100% - 14px);
+  }
+  .editor-head__encoding {
+    flex: 1 1 80px;
+    min-width: 0;
+    max-width: 108px;
   }
 }
 
