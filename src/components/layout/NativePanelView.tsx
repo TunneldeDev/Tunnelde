@@ -101,6 +101,8 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
     if (!element || !views || frozen || !record.lease) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const diagnostics = createDiagnosticSampler("panels", "checkpoint");
+    // Terminal capture serializes scrollback; save after a typing pause.
+    const checkpointDelay = record.panelId.startsWith("terminal:") ? 1000 : 100;
     const checkpoint = () => {
       record.controller.invalidate();
       if (element.getBoundingClientRect().width) lastDom.current = capturePanelDomState(element);
@@ -117,6 +119,7 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
               "panel.window.staleOwner",
               "panel.window.cancelled",
               "panel.window.viewNotReady",
+              "terminal.checkpointBusy",
               "panel.transfer.pending",
               "panels.finishInteractionBeforeMoving",
             ].includes(error.message)
@@ -124,7 +127,7 @@ function OwnedNativeView({ record, children }: { record: WindowViewRecord; child
             return;
           diagnostics.failed(error);
         });
-      }, 100);
+      }, checkpointDelay);
     };
     const events = ["scroll", "input", "change", "toggle", "focusin", "keyup"];
     for (const event of events) element.addEventListener(event, checkpoint, true);

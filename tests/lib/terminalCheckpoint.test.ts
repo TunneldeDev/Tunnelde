@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginTerminalHandoff,
+  snapshotTerminalCheckpoint,
   resumeTerminalCheckpoints,
   prepareTerminalCheckpoints,
   registerTerminalCheckpoint,
@@ -17,6 +18,50 @@ afterEach(async () => {
 const checkpoint = { sequence: 3, data: "screen" } as TerminalCheckpoint;
 
 describe("terminal checkpoint coordination", () => {
+  it("reserves live saves against moves without preparing or resuming the PTY", async () => {
+    let finish!: (value: TerminalCheckpoint) => void;
+    const live = {
+      snapshot: vi.fn(
+        () =>
+          new Promise<TerminalCheckpoint>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+      prepare: vi.fn().mockResolvedValue(checkpoint),
+      resume: vi.fn().mockResolvedValue(undefined),
+    };
+    releases.push(registerTerminalCheckpoint("live", live));
+    const saving = snapshotTerminalCheckpoint("live");
+    await expect(beginTerminalHandoff(["live"])).rejects.toThrow("terminal.checkpointBusy");
+    finish(checkpoint);
+    expect(await saving).toBe(checkpoint);
+    expect(live.prepare).not.toHaveBeenCalled();
+    expect(live.resume).not.toHaveBeenCalled();
+    const moving = await beginTerminalHandoff(["live"]);
+    await expect(snapshotTerminalCheckpoint("live")).rejects.toThrow("terminal.checkpointBusy");
+    await moving.rollback();
+  });
+  it("releases failed live saves and rejects results from retired renderers", async () => {
+    const live = {
+      snapshot: vi.fn().mockRejectedValueOnce(new Error("terminal.checkpointBusy")),
+      prepare: vi.fn().mockResolvedValue(checkpoint),
+      resume: vi.fn().mockResolvedValue(undefined),
+    };
+    const release = registerTerminalCheckpoint("live", live);
+    releases.push(release);
+    await expect(snapshotTerminalCheckpoint("live")).rejects.toThrow("terminal.checkpointBusy");
+    let finish!: (value: TerminalCheckpoint) => void;
+    live.snapshot.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const saving = snapshotTerminalCheckpoint("live");
+    release();
+    finish(checkpoint);
+    await expect(saving).rejects.toThrow("terminal.checkpointBusy");
+  });
   it("waits for all participants, restores once and refuses an unmounted required terminal", async () => {
     let resolve!: (value: TerminalCheckpoint) => void;
     releases.push(
