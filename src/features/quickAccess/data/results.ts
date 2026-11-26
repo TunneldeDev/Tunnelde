@@ -60,11 +60,9 @@ export function buildQuickAccessResults({
           detail: `Category: ${item.plugin ? "Plugins" : item.scope === "editor" ? "Editor" : item.id.startsWith("host.") ? "Hosts" : item.id.startsWith("sidebar.forwarding") ? "Port Forwarding" : item.id.startsWith("tab.") || item.id.startsWith("pane.") || item.id.startsWith("sidebar.") || item.id.startsWith("panel.") ? "View" : item.id.startsWith("theme.") || item.id.startsWith("font.") || item.id === "page.settings" || item.id === "keyboard.shortcuts" ? "Preferences" : "Application"}`,
           title:
             item.title ??
-            (item.id === "panel.toggle"
-              ? t(settings.rightPanel ? "panel.hide" : "panel.show")
-              : item.id === "theme.cycle"
-                ? `${t("settings.theme")}: ${t(settings.theme === "dark" ? "settings.themeDark" : settings.theme === "light" ? "settings.themeLight" : "settings.themeSystem")}`
-                : t(item.label as ParseKeys, { number: item.id.slice(-1) })),
+            (item.id === "theme.cycle"
+              ? `${t("settings.theme")}: ${t(settings.theme === "dark" ? "settings.themeDark" : settings.theme === "light" ? "settings.themeLight" : "settings.themeSystem")}`
+              : t(item.label as ParseKeys, { number: item.id.slice(-1) })),
           run: quickAccessCommandAction(item, plugins, activeTabId),
         })),
       limited: false,

@@ -20,12 +20,9 @@ import { WorkspaceContents } from "@/components/layout/TabContent";
 import { ActivityBar } from "@/components/layout/ActivityBar";
 import { WindowTitleBar } from "@/components/layout/WindowTitleBar";
 import { useNavigation } from "@/store/navigation";
-import { useEditors } from "@/store/editors";
-import { RemotePanel } from "@/components/layout/RemotePanel";
 import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
 import { Resizer } from "@/components/layout/Resizer";
 import { StatusBar } from "@/components/layout/StatusBar";
-import { SystemPanel } from "@/components/layout/SystemPanel";
 
 import { ToastHost } from "@/components/ui/overlay/Toast";
 import { DialogHost } from "@/features/dialogs/DialogHost";
@@ -35,7 +32,6 @@ import { dispatchShortcuts } from "@/lib/keyboard/routing";
 import { useInternalDrag } from "@/lib/session/useInternalDrag";
 import { useWindowCloseGuard } from "@/lib/session/useWindowCloseGuard";
 import { useNativeApplicationActions } from "@/lib/session/useNativeApplicationActions";
-import { useSsh } from "@/store/ssh";
 import { isTauri } from "@/lib/api/ipc";
 import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/workspace";
 import { sidebarTabId } from "@/lib/session/sidebarDock";
@@ -99,8 +95,6 @@ export function AppShell() {
   const activeSidebar = useNavigation((state) => state.activeSidebar);
   const sidebarVisible =
     sidebarRequested && !tabs.some((tab) => tab.id === sidebarTabId(activeSidebar));
-  const activeId = useWorkspace((state) => state.activeId);
-  const sessions = useSsh((state) => state.sessions);
 
   const [tabDrag, setTabDrag] = useState(false);
   const [edge, setEdge] = useState<string | null>(null);
@@ -108,7 +102,6 @@ export function AppShell() {
   const workspace = useRef<HTMLElement>(null);
   const app = useRef<HTMLDivElement>(null);
   const sidebarWidth = settings.sidebarWidth;
-  const panelWidth = settings.rightPanelWidth;
 
   useEffect(() => {
     const element = workspace.current;
@@ -191,38 +184,8 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [palette]);
 
-  const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
-  const activeSession = (() => {
-    if (!activeTab) {
-      return null;
-    }
-    if (["terminal", "monitor", "history"].includes(activeTab.kind)) {
-      return sessions.find((session) => activeTab.id === `${activeTab.kind}:${session.id}`) ?? null;
-    }
-    if (activeTab.kind === "sftp") {
-      const id =
-        activeTab.fileSessionId !== undefined
-          ? activeTab.fileSessionId
-          : activeTab.filePane
-            ? activeTab.filePane.source.kind === "remote" && !activeTab.filePane.offline
-              ? activeTab.filePane.source.sessionId
-              : null
-            : activeTab.id.replace(/^sftp:/, "").split(":copy:")[0];
-      return sessions.find((session) => session.id === id) ?? null;
-    }
-    if (activeTab.kind === "editor") {
-      const editor = useEditors.getState().entries[activeTab.id];
-      return sessions.find((session) => session.id === editor?.sessionId) ?? null;
-    }
-    if (activeTab.kind === "host" && activeTab.hostId) {
-      return sessions.find((session) => session.hostId === activeTab.hostId) ?? null;
-    }
-    return null;
-  })();
-
   const style = {
     "--td-sidebar-w": `${sidebarWidth}px`,
-    "--td-panel-w": `${panelWidth}px`,
   } as CSSProperties;
 
   return (
@@ -234,7 +197,6 @@ export function AppShell() {
           isTauri() && settings.titleBarStyle === "compact" && "is-compact-chrome",
           os === "macos" && "is-macos",
           sidebarVisible && "has-sidebar",
-          settings.rightPanel && "has-panel",
           !settings.showStatusBar && "is-statusbar-hidden",
         )}
         style={style}
@@ -297,44 +259,7 @@ export function AppShell() {
           surfaces.container("workspace"),
         )}
         {createPortal(
-          <>
-            {settings.rightPanel ? (
-              <Resizer
-                value={panelWidth}
-                min={240}
-                max={460}
-                edge="left"
-                label="Panel width"
-                onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
-                onCommit={(value) => {
-                  void updateSettings({ rightPanelWidth: Math.round(value) });
-                }}
-              />
-            ) : null}
-            {activeSession ? (
-              <RemotePanel
-                sessionId={activeSession.id}
-                width={panelWidth}
-                hidden={!settings.rightPanel}
-                onHide={() => void updateSettings({ rightPanel: false })}
-              />
-            ) : (
-              <SystemPanel
-                width={panelWidth}
-                hidden={!settings.rightPanel}
-                onHide={() => void updateSettings({ rightPanel: false })}
-              />
-            )}
-          </>,
-          surfaces.container("inspector"),
-        )}
-        {createPortal(
-          settings.showStatusBar ? (
-            <StatusBar
-              panelOpen={settings.rightPanel}
-              onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
-            />
-          ) : null,
+          settings.showStatusBar ? <StatusBar /> : null,
           surfaces.container("statusbar"),
         )}
         <ToastHost />

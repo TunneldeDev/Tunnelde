@@ -334,7 +334,11 @@ describe("settings discovery and scoped resets", () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect([...keys].sort()).toEqual(
       Object.keys(defaults)
-        .filter((key) => !["lastUpdateCheck", "skippedVersion"].includes(key))
+        // Retired inspector fields remain in the frozen preferences API only.
+        .filter(
+          (key) =>
+            !["lastUpdateCheck", "skippedVersion", "rightPanel", "rightPanelWidth"].includes(key),
+        )
         .sort(),
     );
     for (const language of ["en-US", "zh-CN"]) {

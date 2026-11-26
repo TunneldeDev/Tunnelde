@@ -43,7 +43,6 @@ import { AppShell } from "@/components/layout/AppShell";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
 import { useWorkspace } from "@/store/workspace";
-import { useSsh } from "@/store/ssh";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
@@ -191,67 +190,17 @@ describe("detached file panels at workspace edges", () => {
   });
 });
 
-describe("file tab remote monitor", () => {
-  it.each(["monitor", "history"] as const)(
-    "keeps the owning remote selected for a %s tab",
-    (kind) => {
-      const session = {
-        id: "remote-qa",
-        hostId: "host-qa",
-        title: "Remote",
-        address: "qa:22",
-        cols: 80,
-        rows: 24,
-        connectedAt: 0,
-      };
-      useSsh.setState({ sessions: [session] });
-      const id = `${kind}:${session.id}`;
-      useWorkspace.setState({
-        tabs: [{ id, kind, title: "Remote", hostId: session.hostId, pinned: false }],
-        activeId: id,
-        panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
-        activePaneId: "pane-1",
-        layout: { kind: "pane", paneId: "pane-1" },
-      });
-      render(<AppShell />);
-      expect(screen.getByTestId("remote-panel").textContent).toBe(session.id);
-      act(() => useSsh.setState({ sessions: [] }));
-      expect(screen.getByTestId("system-panel")).toBeTruthy();
-    },
-  );
-
-  it("tracks the selected remote source, duplicate tabs and local panels", () => {
-    useSsh.setState({
-      sessions: ["a", "b"].map((id) => ({
-        id,
-        hostId: id,
-        title: id,
-        address: `${id}:22`,
-        cols: 80,
-        rows: 24,
-        connectedAt: 0,
-      })),
-    });
-    const id = "sftp:a:copy:duplicate";
-    useWorkspace.setState({
-      tabs: [{ id, kind: "sftp", title: "a", hostId: "a", pinned: false }],
-      activeId: id,
-      panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
-      activePaneId: "pane-1",
-      layout: { kind: "pane", paneId: "pane-1" },
-    });
-    render(<AppShell />);
-    expect(screen.getByTestId("remote-panel").textContent).toBe("a");
-    act(() => useWorkspace.getState().setFileSession(id, "b"));
-    expect(screen.getByTestId("remote-panel").textContent).toBe("b");
-    act(() => useWorkspace.getState().setFileSession(id, null));
-    expect(screen.getByTestId("system-panel")).toBeTruthy();
-    act(() => useSsh.setState({ sessions: [] }));
-  });
+it("does not mount the retired inspector even with a saved right-panel preference", () => {
+  useSettings.setState({ settings: { ...DEFAULT_SETTINGS, rightPanel: true } });
+  const { container } = render(<AppShell />);
+  expect(screen.queryByTestId("remote-panel")).toBeNull();
+  expect(screen.queryByTestId("system-panel")).toBeNull();
+  expect(screen.queryByRole("separator", { name: "Panel width" })).toBeNull();
+  expect(container.querySelector(".app.has-panel")).toBeNull();
 });
 
 describe("workbench side widths", () => {
-  it.each(["Sidebar width", "Panel width"])(
+  it.each(["Sidebar width"])(
     "previews %s without rerendering the shell and persists only on release",
     (label) => {
       useSettings.setState({ settings: { ...DEFAULT_SETTINGS, rightPanel: true } });
