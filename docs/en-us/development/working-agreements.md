@@ -79,3 +79,17 @@ a reason. Color alone, tooltips and silently added controls are insufficient. Ge
 passwords require a separate save confirmation with selectable password, explicit copy, continue
 and cancel; confirmation precedes file export. Import previews identify direct/dependent conflicts
 and explain both blocking reasons and their resolution.
+
+## Fix commits and verification
+
+Use one commit per independent feature or fix, including related regression tests. Maintain both
+languages of the UI/UX, design conventions and surface catalog. Squash temporary fixups before
+delivery, keeping unrelated fixes in separate commits.
+
+Run type checking, lint, frontend/Rust tests, builds and translation/document checks according to
+the change's risk. Check layout changes in wide/narrow panels, expanded/collapsed states and
+light/dark themes. Synthetic browser scenes using production components verify layout but do not
+replace native-window, real SSH, cross-platform or installer acceptance. Record checks actually
+performed and their limits. Distinguish rolling-window transfer speed from average speed since the
+current observation baseline, with separate remaining-time estimates. Resume resets the rolling
+window but retains the observed average baseline; do not invent historical samples after restart.

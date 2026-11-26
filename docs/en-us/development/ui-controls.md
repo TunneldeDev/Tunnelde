@@ -89,3 +89,37 @@ a reason. Color alone, tooltips and silently added controls are insufficient. Ge
 passwords require a separate save confirmation with selectable password, explicit copy, continue
 and cancel; confirmation precedes file export. Import previews identify direct/dependent conflicts
 and explain both blocking reasons and their resolution.
+
+## Layout and interaction conventions after acceptance fixes
+
+Retain the existing light/dark themes, brand colors and continuous corners. Use theme tokens, shared
+controls and the workbench hierarchy. Settings groups, the host tree, port forwarding and domain
+forwarding share a heading → indented body structure. Expanded content uses `--td-border` hierarchy
+lines to show ownership, while retaining headings and keyboard disclosure state. Plugin descriptions
+and tags share a content start. Keep the plugin security heading separate from its switch row; long
+explanations must not compress switches.
+
+- `NumericChoice` composes `Select` and `NumberPreference`. Preserve quick presets and show an input
+  alongside the custom choice. Quantities have unit selectors; counts use meaningful count/request
+  units. The API stores base units; changing display units does not save a different value. Keep
+  ranges, rounding and frontend/backend validation consistent. Enter or blur applies values; invalid
+  drafts retain visible errors. Unit/custom choices are capturable view state.
+- Segment counts allow 1–8, chunk sizes 256–16384 KiB, and requests 1–64; zero means automatic.
+  Rate limits display KiB/s, MiB/s or GiB/s. Tab width allows 1–16. Monitor intervals allow
+  1000–30000ms, entered in seconds or milliseconds. Preference definitions and Rust sanitization
+  remain the source of truth for limits.
+- Respond to the panel's own narrow width: truncate headings/paths, wrap action groups, and keep
+  icons/switches sized. Do not clip required actions. Prevent vertical card shrink and scroll the
+  body; About cards keep a 16px gap. A `Field` followed by `SwitchRow` uses shared row spacing. Font
+  previews retain adequate height and separate Latin grids, CJK grids and symbols into lines for
+  alignment comparison.
+- Host duplication lives on the detail heading right and requires confirmation before creation.
+  Read the host again at confirmation to avoid stale snapshots. Clicking command history replaces
+  current input; double clicking replaces and executes. Retain explicit execution and keyboard access.
+- Installed plugin details list permissions and contributions when their manifest is available;
+  view launchers sit beside top actions. If an uninstalled catalogue entry lacks a complete manifest,
+  explicitly state that the information is unavailable instead of inferring permissions.
+- Update settings provide a separate Release history panel with loading, empty, partial-result,
+  error and retry states. Ignore old responses after channel changes and render notes on expansion.
+  This entry only browses official notes; installation uses the existing checked-update flow.
+  Arbitrary historical-version installation is not provided.
