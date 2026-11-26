@@ -454,9 +454,11 @@
   display: grid;
   gap: 8px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-sm);
+}
+.proxy-routes {
+  margin-inline-start: 3px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--td-border);
 }
 .proxy-group__identity,
 .proxy-route__identity {
