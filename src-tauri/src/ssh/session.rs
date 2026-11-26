@@ -1592,7 +1592,36 @@ mod tests {
 
     #[tokio::test]
     async fn large_input_keeps_draining_echo_output_while_waiting_for_ssh_window_updates() {
-        let (client, _, server) = server(false, false).await;
+        // Exercise real SSH flow control over a bounded in-memory transport,
+        // independent of platform TCP buffering and delayed acknowledgements.
+        // Leave transport capacity above the SSH windows so simultaneous
+        // protocol flushes cannot stall the test before channel backpressure.
+        let (client_stream, server_stream) = tokio::io::duplex(8 * 1024 * 1024);
+        let config = server::Config {
+            keys: vec![russh::keys::PrivateKey::random(
+                &mut rand::rng(),
+                russh::keys::Algorithm::Ed25519,
+            )
+            .unwrap()],
+            ..server::Config::default()
+        };
+        let server = tokio::spawn(async move {
+            server::run_stream(
+                Arc::new(config),
+                server_stream,
+                TestServer {
+                    reject_pty: false,
+                    reject_shell: false,
+                    requests: Arc::default(),
+                },
+            )
+            .await
+            .unwrap()
+            .await
+            .unwrap();
+        });
+        let (mut client, _, _) = handshake(Box::pin(client_stream), None).await.unwrap();
+        assert!(client.authenticate_none("qa").await.unwrap().success());
         let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
         let (tx, rx) = mpsc::channel(8);
         let (output, mut received) = mpsc::unbounded_channel();
