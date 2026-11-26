@@ -937,7 +937,14 @@
     "diskHint": "磁盘速率来自 /proc/PID/io 的实际存储读写字节，不含缓存命中。服务器可能限制读取其他用户的计数。",
     "networkHint": "网络速率根据可见的已建立 TCP 连接计数估算，不含 UDP、短时连接或隐藏连接；共享连接可能归属多个进程，因此不代表进程的全部流量。",
     "gpuHint": "GPU 需要驱动支持：NVIDIA 的 nvidia-smi 或 Linux DRM fdinfo 引擎计数。占用取已报告引擎的最高值，显存仅统计驱动公开的分配量；不支持或无权读取时显示不可用。",
-    "unavailableHint": "“—”表示无权读取、不支持，或正在等待第二次采样。软件不会安装额外工具，也不会请求提权。"
+    "unavailableHint": "“—”表示无权读取、不支持，或正在等待第二次采样。软件不会安装额外工具，也不会请求提权。",
+    "pageSize": "每页条数",
+    "perPage": "{{count}} 条 / 页",
+    "firstPage": "首页",
+    "lastPage": "末页",
+    "pageNumber": "第 {{page}} / {{total}} 页",
+    "jumpPage": "跳转页码",
+    "go": "跳转"
   },
   "editor": {
     "open": "编辑",

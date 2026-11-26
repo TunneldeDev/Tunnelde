@@ -207,3 +207,28 @@ it("does not act on a reused PID while confirmation is open", async () => {
   await act(async () => confirmation.onConfirm());
   expect(remoteKill).not.toHaveBeenCalled();
 });
+
+it("supports page sizes, first/last navigation and validated direct jumps", async () => {
+  remoteProcesses.mockResolvedValue(
+    Array.from({ length: 245 }, (_, i) => process({ pid: i + 2, name: `task-${i}`, cpuTotal: i })),
+  );
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  await screen.findByText("task-244");
+  fireEvent.click(screen.getByRole("button", { name: "Rows per page" }));
+  fireEvent.click(screen.getByRole("option", { name: "25 / page" }));
+  expect(screen.getAllByRole("row")).toHaveLength(26);
+  expect(screen.getByText("Page 1 of 10")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Last page" }));
+  expect(screen.getAllByRole("row")).toHaveLength(21);
+  expect(screen.getByText("Page 10 of 10")).toBeTruthy();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Go to page" }), {
+    target: { value: "3" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /^Go$/ }));
+  expect(screen.getByText("Page 3 of 10")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "First page" }));
+  expect(screen.getByText("Page 1 of 10")).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "task-244" } });
+  expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+  expect(screen.getAllByRole("row")).toHaveLength(2);
+});

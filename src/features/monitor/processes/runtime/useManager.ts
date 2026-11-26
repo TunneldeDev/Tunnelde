@@ -11,13 +11,13 @@ import { queryProcesses } from "../data/query";
 import { processIdentity } from "@/lib/monitor/processes/model";
 import { readProcessSample } from "./sampling";
 
-const pageSize = 100;
 export function useProcessManager(sessionId: string, active = true) {
   const { t, i18n } = useTranslation();
   const sample = useProcesses(sessionId, active);
   const [query, setQueryState] = useState("");
   const [sort, setSortState] = useState<FrontendProcessSort>({ key: "cpuTotal", descending: true });
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSizeState] = useState(100);
   const [selection, setSelection] = useState<{ sessionId: string; key: string } | null>(null);
   const [action, setAction] = useState<{
     sessionId: string;
@@ -116,6 +116,12 @@ export function useProcessManager(sessionId: string, active = true) {
     page,
     setPage,
     lastPage,
+    pageSize,
+    setPageSize(value: number) {
+      if (![25, 50, 100, 200].includes(value)) return;
+      setPage(Math.floor((Math.min(page, lastPage) * pageSize) / value));
+      setPageSizeState(value);
+    },
     currentPage: Math.min(page, lastPage),
     stopping: action?.sessionId === sessionId && action.busy,
     error: sample.error || (action?.sessionId === sessionId ? action.error : null),

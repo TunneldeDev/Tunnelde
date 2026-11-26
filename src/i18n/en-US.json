@@ -937,7 +937,14 @@
     "diskHint": "Actual storage read/write bytes per second from /proc/PID/io, excluding cache hits. Reading other users’ counters may be restricted by the server.",
     "networkHint": "Best-effort rates from visible TCP socket counters. UDP, short-lived or hidden sockets are not included. Shared sockets can be attributed to more than one process; these values do not represent all process traffic.",
     "gpuHint": "GPU telemetry requires driver support: NVIDIA nvidia-smi or Linux DRM fdinfo engine counters. Usage shows the busiest reported engine; memory covers allocations exposed by the driver. Unsupported or inaccessible metrics remain unavailable.",
-    "unavailableHint": "“—” means permission denied, unsupported, or waiting for a second sample. No additional tools are installed and no elevated permissions are requested."
+    "unavailableHint": "“—” means permission denied, unsupported, or waiting for a second sample. No additional tools are installed and no elevated permissions are requested.",
+    "pageSize": "Rows per page",
+    "perPage": "{{count}} / page",
+    "firstPage": "First page",
+    "lastPage": "Last page",
+    "pageNumber": "Page {{page}} of {{total}}",
+    "jumpPage": "Go to page",
+    "go": "Go"
   },
   "editor": {
     "open": "Edit",
