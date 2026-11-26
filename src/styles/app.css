@@ -3751,3 +3751,14 @@
   border-inline-start: 1px solid var(--td-border);
   pointer-events: none;
 }
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.about > .card {
+  flex: 0 0 auto;
+  min-width: 0;
+}
