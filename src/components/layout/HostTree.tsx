@@ -704,7 +704,10 @@ function HostTreeView() {
           onDelete={() => void run({ operation: "deleteGroup", group: groupTarget(group.id)! })}
         />
         {!isCollapsed ? (
-          <>
+          <div
+            className="host-tree__children"
+            style={{ "--host-tree-depth": depth } as React.CSSProperties}
+          >
             {members.map((host) => (
               <HostRow
                 key={host.id}
@@ -714,8 +717,8 @@ function HostTreeView() {
                 {...rowProps(host)}
               />
             ))}
-            {children.map((child) => renderGroup(child, depth + 1))}
-          </>
+            {children.map((child) => renderGroup(child, depth + 1, readOnly))}
+          </div>
         ) : null}
       </div>
     );
