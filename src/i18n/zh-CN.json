@@ -1131,7 +1131,8 @@
     "copyFailed": "无法复制路径",
     "clear": "清空",
     "clearTitle": "清空历史",
-    "clearBody": "删除“{{name}}”的全部命令记录？"
+    "clearBody": "删除“{{name}}”的全部命令记录？",
+    "clickHint": "单击输入，双击输入并执行"
   },
   "monitor": {
     "title": "监控",
