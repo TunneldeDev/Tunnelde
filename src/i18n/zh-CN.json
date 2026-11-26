@@ -457,7 +457,10 @@
     "fileIconTheme": "文件图标主题",
     "fileIconThemeHint": "已安装的图标主题同时应用于本地与远端文件。自动选择可用主题，无需运行插件代码。",
     "transferCompression": "自动压缩传输数据",
-    "transferCompressionHint": "自动压缩有收益的数据以减少网络传输量。小任务或不支持的主机沿用普通传输，无需在远端安装程序。开始或继续传输时生效。"
+    "transferCompressionHint": "自动压缩有收益的数据以减少网络传输量。小任务或不支持的主机沿用普通传输，无需在远端安装程序。开始或继续传输时生效。",
+    "customValue": "自定义",
+    "customValueFor": "自定义{{name}}",
+    "unitFor": "{{name}}单位"
   },
   "updates": {
     "installInProgress": "更新正在安装，请等待完成后再更改更新渠道或来源。",
