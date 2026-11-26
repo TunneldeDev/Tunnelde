@@ -271,9 +271,16 @@ function TabStrip({
     <div
       className={cn(
         "pane__header",
+        geometry && "pane__header--movable",
         reserveControls && "has-window-controls",
         reserveTrafficLights && "has-native-window-controls",
       )}
+      {...geometry?.handle("move")}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget || event.target === strip.current)
+          geometry?.handle("move").onPointerDown(event);
+      }}
+      onKeyDown={undefined}
     >
       {geometry && (
         <IconButton
