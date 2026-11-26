@@ -464,7 +464,7 @@ impl Settings {
         } else {
             1.2
         };
-        if ![2, 4, 8].contains(&self.editor_tab_size) {
+        if !(1..=16).contains(&self.editor_tab_size) {
             self.editor_tab_size = 4;
         }
         if !MONITOR_INTERVALS.contains(&self.monitor_interval_ms) {
@@ -1041,7 +1041,7 @@ mod tests {
             settings.sanitize();
             assert_eq!(settings.monitor_interval_ms, 3000);
         }
-        for size in [2, 4, 8] {
+        for size in [1, 2, 3, 4, 8, 9, 16] {
             let mut settings = Settings {
                 editor_tab_size: size,
                 ..Settings::default()
@@ -1049,7 +1049,7 @@ mod tests {
             settings.sanitize();
             assert_eq!(settings.editor_tab_size, size);
         }
-        for size in [0, 1, 3, 9, u16::MAX] {
+        for size in [0, 17, u16::MAX] {
             let mut settings = Settings {
                 editor_tab_size: size,
                 ..Settings::default()
