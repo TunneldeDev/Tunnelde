@@ -1736,6 +1736,16 @@ work tracked by the rollout issue.
 
 ## Panel entry points and floating tab-strip dragging
 
+When the main window releases its WebView in the background, startup must check both the native
+lease and the resource descriptor for the current document. If a terminal, file, editor, host detail
+or settings page retains its lease but loses its descriptor, rebind through its existing native
+command before publishing snapshots and read models. A surviving lease alone cannot skip binding;
+do not remove and recreate the panel to restore rendering. Already bound satellite owners remain
+unchanged. Terminals prefer the final background checkpoint captured after draining and detaching
+the output stream over an older periodic panel checkpoint, preserving the latest screen and parser
+state. Regression coverage must include remounting with surviving leases and invalidated descriptors,
+as well as final checkpoint precedence.
+
 Files, monitoring and process management are peer session workspace panels, accessible from host
 details and the terminal toolbar. Host menus also expose monitoring. Reuse an eligible ordinary
 session and use the shared connection navigation for post-connect destinations; do not borrow
