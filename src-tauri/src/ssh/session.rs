@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -715,6 +717,11 @@ async fn pump_terminal(
     let (mut reader, writer) = channel.split();
     let mut output = TerminalOutput::new(startup);
     let mut presentation: Option<super::terminal_presentation::Output> = None;
+    // A window-blocked write must not stop draining remote output. Otherwise
+    // russh can block delivering output before it reaches the WINDOW_ADJUST
+    // needed by that very write. Keep one write future alive across reads;
+    // never cancel/recreate it (a prefix may already have been sent).
+    let mut pending_write: Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>> = None;
     // A remote shell may exit between source detach and destination attach.
     // Retain its final bytes across the bounded handoff instead of dropping the
     // actor immediately. No further SSH reads/writes occur after remote close.
@@ -746,7 +753,11 @@ async fn pump_terminal(
                     std::future::pending::<()>().await;
                 }
             } => break,
-            message = outgoing.recv() => {
+            failed = async { pending_write.as_mut().unwrap().await }, if pending_write.is_some() => {
+                pending_write = None;
+                if failed { break; }
+            }
+            message = outgoing.recv(), if pending_write.is_none() => {
                 match message {
                     Some(WriterMsg::Attach) => {
                         // Legacy/main attach cannot steal a window-scoped stream.
@@ -771,8 +782,26 @@ async fn pump_terminal(
                                 }
                                 Operation::Detach => Ok(Some(output.detach())),
                                 Operation::Write(_) | Operation::Resize { .. } if closed_deadline.is_some() => Err(AppError::validation("ssh.sessionMissing")),
-                                Operation::Write(bytes) => writer.data_bytes(bytes).await.map(|_| None).map_err(map_ssh_error),
-                                Operation::Resize { cols, rows } => writer.window_change(cols, rows, 0, 0).await.map(|_| None).map_err(map_ssh_error),
+                                Operation::Write(bytes) => {
+                                    let writer = &writer;
+                                    pending_write = Some(Box::pin(async move {
+                                        let result = writer.data_bytes(bytes).await.map(|_| None).map_err(map_ssh_error);
+                                        drop(authorization.retention);
+                                        let _ = reply.send(result);
+                                        false
+                                    }));
+                                    continue;
+                                }
+                                Operation::Resize { cols, rows } => {
+                                    let writer = &writer;
+                                    pending_write = Some(Box::pin(async move {
+                                        let result = writer.window_change(cols, rows, 0, 0).await.map(|_| None).map_err(map_ssh_error);
+                                        drop(authorization.retention);
+                                        let _ = reply.send(result);
+                                        false
+                                    }));
+                                    continue;
+                                }
                             }
                         };
                         drop(authorization.retention);
@@ -782,10 +811,19 @@ async fn pump_terminal(
                         let _ = reply.send(output.detach());
                     }
                     Some(WriterMsg::Data(bytes)) => {
-                        if closed_deadline.is_none() && writer.data_bytes(bytes).await.is_err() { break; }
+                        if closed_deadline.is_none() {
+                            let writer = &writer;
+                            pending_write = Some(Box::pin(async move { writer.data_bytes(bytes).await.is_err() }));
+                        }
                     }
                     Some(WriterMsg::Resize { cols, rows }) => {
-                        if closed_deadline.is_none() { let _ = writer.window_change(cols, rows, 0, 0).await; }
+                        if closed_deadline.is_none() {
+                            let writer = &writer;
+                            pending_write = Some(Box::pin(async move {
+                                let _ = writer.window_change(cols, rows, 0, 0).await;
+                                false
+                            }));
+                        }
                     }
                     Some(WriterMsg::Close) | None => {
                         let _ = writer.eof().await;
@@ -1549,6 +1587,39 @@ mod tests {
             *requests.lock().unwrap(),
             ["pty:xterm-256color:80x24", "shell"]
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn large_input_keeps_draining_echo_output_while_waiting_for_ssh_window_updates() {
+        let (client, _, server) = server(false, false).await;
+        let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
+        let (tx, rx) = mpsc::channel(8);
+        let (output, mut received) = mpsc::unbounded_channel();
+        let task = tokio::spawn(async move {
+            pump_terminal(channel, rx, startup, |_, bytes| {
+                let _ = output.send(bytes.to_vec());
+            })
+            .await;
+        });
+        tx.send(WriterMsg::Attach).await.unwrap();
+        assert_eq!(received.recv().await.unwrap(), PROMPT);
+        // Exceed both SSH windows and the bounded incoming packet queue. The
+        // old pump waited for this entire write before it read a single echo.
+        let input: Vec<u8> = (0..8 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+        tx.send(WriterMsg::Data(input.clone())).await.unwrap();
+        let echoed = tokio::time::timeout(Duration::from_secs(10), async {
+            let mut echoed = Vec::new();
+            while echoed.len() < input.len() {
+                echoed.extend(received.recv().await.expect("terminal closed during input"));
+            }
+            echoed
+        })
+        .await
+        .expect("input/output deadlocked waiting for SSH window capacity");
+        assert_eq!(echoed, input);
+        tx.send(WriterMsg::Close).await.unwrap();
+        task.await.unwrap();
         server.abort();
     }
 

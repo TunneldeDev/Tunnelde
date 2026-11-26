@@ -7,6 +7,7 @@ import {
   beginTerminalHandoff,
   registerTerminalCheckpoint,
   takeTerminalCheckpoint,
+  snapshotTerminalCheckpoint,
   type TerminalHandoff,
 } from "./terminalCheckpoint";
 import { decodeTerminalCheckpoint, encodeTerminalCheckpoint } from "./terminalCheckpointCodec";
@@ -158,7 +159,10 @@ export function createTerminalViewBinding(
       },
       sshWrite: async (id, bytes) => {
         identity(id);
-        await client.terminals.write(owned(), bytes);
+        // The renderer freezes new input before capture and drains accepted
+        // keys while the local row is already moving. Native still checks the
+        // exact lease and rejects writes after the ownership transfer begins.
+        await client.terminals.write(owned(false), bytes);
       },
       sshResize: async (id, cols, rows) => {
         identity(id);
@@ -230,6 +234,12 @@ export function createTerminalViewBinding(
   };
   const capture: AsyncPanelCapture = async (signal, options) => {
     if (handoff) throw new Error("terminal.checkpointBusy");
+    if (options?.intent === "checkpoint") {
+      current();
+      const checkpoint = await snapshotTerminalCheckpoint(sessionId, signal);
+      current();
+      return encodeTerminalCheckpoint(checkpoint, "panel");
+    }
     const pending = await beginTerminalHandoff([sessionId], signal);
     let row: WindowViewRecord;
     try {
