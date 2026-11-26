@@ -70,10 +70,10 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
     const current = useSsh.getState().sessions.find((item) => item.id === session.id);
     return current?.hostId === hostId && store.getSnapshot() === snapshot;
   };
-  const insert = async (entry: Readonly<HistoryEntry>) => {
+  const insert = async (entry: Readonly<HistoryEntry>, execute = true) => {
     if (!validate() || snapshot.busy || snapshot.error) throw new Error("plugin.history.changed");
-    await api.sshWrite(session.id, encodeBase64(`${entry.command}\r`));
-    await recordTerminalCommand(session.hostId, entry.command);
+    await api.sshWrite(session.id, encodeBase64(`\u0015${entry.command}${execute ? "\r" : ""}`));
+    if (execute) await recordTerminalCommand(session.hostId, entry.command);
   };
   const remove = async (entry: Readonly<HistoryEntry>) => {
     if (!validate() || snapshot.busy || snapshot.error) throw new Error("plugin.history.changed");
@@ -163,9 +163,21 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
           ) : null}
           {filtered.map((entry) => (
             <div className="history-row" key={entry.id}>
-              <code className="history-row__command" title={entry.command}>
-                {entry.command}
-              </code>
+              <button
+                type="button"
+                className="history-row__command history-row__insert"
+                title={t("history.clickHint")}
+                disabled={snapshot.busy || !!snapshot.error}
+                onClick={(event) => {
+                  if (event.detail > 1) return;
+                  void insert(entry, false).catch((error) => toast(presentError(error), "error"));
+                }}
+                onDoubleClick={() =>
+                  void insert(entry).catch((error) => toast(presentError(error), "error"))
+                }
+              >
+                <code>{entry.command}</code>
+              </button>
               <span className="history-row__time">{formatRelative(entry.executedAt, locale)}</span>
               <span className="history-row__actions">
                 <IconButton

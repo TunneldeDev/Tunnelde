@@ -1131,7 +1131,8 @@
     "copyFailed": "Could not copy the path",
     "clear": "Clear",
     "clearTitle": "Clear history",
-    "clearBody": "Remove all commands recorded for “{{name}}”?"
+    "clearBody": "Remove all commands recorded for “{{name}}”?",
+    "clickHint": "Click to insert; double-click to run"
   },
   "monitor": {
     "title": "Monitor",
