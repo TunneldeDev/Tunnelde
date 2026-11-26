@@ -1,3 +1,5 @@
+import { toast } from "@/store/toasts";
+import { presentError } from "@/lib/api/errors";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Package, Palette, Play, Square, Trash2, ExternalLink } from "lucide-react";
@@ -216,6 +218,28 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           </>
         ) : null}
       </div>
+      {own && !themeOnly && installed.views.some((view) => !view.provider) ? (
+        <section className="plugin-detail__tools">
+          <h2>{t("market.openTool")}</h2>
+          <div className="settings-actions">
+            {installed.views
+              .filter((view) => !view.provider)
+              .map((view) => (
+                <Button
+                  key={view.id}
+                  variant="primary"
+                  disabled={busy || !!task}
+                  leading={<ExternalLink size={13} />}
+                  onClick={() =>
+                    void openView(view).catch((error) => toast(presentError(error), "error"))
+                  }
+                >
+                  {view.title}
+                </Button>
+              ))}
+          </div>
+        </section>
+      ) : null}
       {!compatible ? <p className="panel__error">{t("market.incompatibleApi")}</p> : null}
       {task ? (
         <div className="plugin-download" role="status">
@@ -346,26 +370,6 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
                 </p>
               </article>
             ))}
-          </div>
-        </section>
-      ) : null}
-      {own && !themeOnly && installed.views.some((view) => !view.provider) ? (
-        <section className="plugin-detail__tools">
-          <h2>{t("market.openTool")}</h2>
-          <div className="settings-actions">
-            {installed.views
-              .filter((view) => !view.provider)
-              .map((view) => (
-                <Button
-                  key={view.id}
-                  variant="primary"
-                  disabled={busy || !!task}
-                  leading={<ExternalLink size={13} />}
-                  onClick={() => void openView(view)}
-                >
-                  {view.title}
-                </Button>
-              ))}
           </div>
         </section>
       ) : null}
