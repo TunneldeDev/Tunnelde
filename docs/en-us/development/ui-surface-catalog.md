@@ -88,3 +88,7 @@ installation is not offered.
 This round uses synthetic browser scenes with production components and automated tests. Physical
 native-window dragging, real remote sampling, Windows/Linux and final installers require separate
 acceptance. See [UI controls](ui-controls.md) for the shared conventions.
+
+### Process pagination and height
+
+The process page passes bounded flex height to the table viewport. Its footer provides first/previous/next/last navigation, direct page entry and 25/50/100/200 rows per page. Search and sorting reset to page one; size changes retain the page containing the current first row, and shrinking samples clamp the page. Controls wrap at narrow widths; very short windows allow container scrolling. Selection details and expanded metric help have bounded heights. Providers share the same native entries surface.
