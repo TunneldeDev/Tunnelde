@@ -1224,7 +1224,12 @@
     "processUnsupported": "Process monitoring requires readable Linux /proc counters and a compatible ps command.",
     "outputLimit": "The monitoring response exceeded the safe size limit.",
     "processChanged": "The process has exited or its PID has been reused. Refresh the list before stopping it.",
-    "timeout": "Remote monitoring timed out."
+    "timeout": "Remote monitoring timed out.",
+    "executableUnavailable": "The remote executable path is unavailable. The process may have exited, or access was denied.",
+    "invalidTask": "Enter a nonempty command and an absolute working directory, within the allowed length.",
+    "taskDirectory": "The remote working directory does not exist or cannot be accessed.",
+    "noNohup": "The remote host requires nohup to launch a background task.",
+    "launchFailed": "Could not launch the remote task"
   },
   "pluginView": {
     "hostChanged": "This host was changed or removed. Reopen its menu and try again.",
