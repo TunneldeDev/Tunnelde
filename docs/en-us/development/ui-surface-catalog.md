@@ -96,3 +96,5 @@ The process page passes bounded flex height to the table viewport. Its footer pr
 ### Process actions and performance details
 
 Process rows share the application context menu and Shift+F10: details, remote file location, stop and stop tree. Destructive actions require confirmation and identity revalidation. Run new task sits next to stop; its form retains command/directory input and displays errors or launch PID. Monitor page and panel share token-based detail cards, muted labels, monospace readings, wrapping device information and adaptive columns. Logical CPUs use a bounded scrolling grid, collapsed by default above 32 processors. Narrow/short panels scroll vertically. Missing values use em dashes with source limitations explained. Presentation changes reuse existing history and sampling.
+
+Background tasks and Output share status button dimensions, typography, spacing, radii, hover, expanded and keyboard focus states. Running, paused, attention and aggregate progress enhance the same button without introducing a separate button style.

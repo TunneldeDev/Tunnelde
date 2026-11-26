@@ -103,18 +103,3 @@
   font-size: 11px;
   border-top: 1px solid var(--td-border);
 }
-.output-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  color: var(--td-muted);
-}
-.output-status[aria-expanded="true"] {
-  color: var(--td-text);
-  background: var(--td-active);
-}
-.output-status:focus-visible {
-  outline: 1px solid var(--td-accent);
-  outline-offset: -1px;
-}

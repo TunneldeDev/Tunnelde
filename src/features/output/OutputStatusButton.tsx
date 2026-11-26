@@ -23,7 +23,7 @@ export function OutputStatusButton() {
   return (
     <button
       type="button"
-      className="statusbar__link output-status"
+      className="statusbar__link statusbar__panel-button output-status"
       title={t("output.show")}
       aria-label={t("output.title")}
       aria-expanded={expanded}
