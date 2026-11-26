@@ -209,6 +209,12 @@ function TransferTaskContent({ item, now, onResume }: TransferTaskProps) {
                   : t("sftp.transferSpeed", { value: formatBytes(progress.speed) })}
               </span>
             ) : null}
+            {running && !waiting && progress.averageSpeed !== null ? (
+              <span>{t("sftp.averageSpeed", { value: formatBytes(progress.averageSpeed) })}</span>
+            ) : null}
+            {running && !waiting && progress.averageEta !== null && progress.remaining !== 0 ? (
+              <span>{t("sftp.averageRemainingTime", { value: elapsed(progress.averageEta) })}</span>
+            ) : null}
             {running && !waiting && progress.eta !== null && progress.remaining !== 0 ? (
               <span>{t("sftp.remainingTime", { value: elapsed(progress.eta) })}</span>
             ) : null}
