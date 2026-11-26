@@ -3,11 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSsh } from "@/store/ssh";
 import type { RemoteProcess } from "@/lib/api/types";
 
-const { remoteProcesses, remoteKill } = vi.hoisted(() => ({
+const { remoteProcesses, remoteKill, remoteKillTree, remoteProcessExecutable } = vi.hoisted(() => ({
   remoteProcesses: vi.fn(),
   remoteKill: vi.fn(),
+  remoteKillTree: vi.fn(),
+  remoteProcessExecutable: vi.fn(),
 }));
-vi.mock("@/lib/api/ipc", () => ({ isTauri: () => false, api: { remoteProcesses, remoteKill } }));
+vi.mock("@/lib/api/ipc", () => ({
+  isTauri: () => false,
+  api: { remoteProcesses, remoteKill, remoteKillTree, remoteProcessExecutable },
+}));
 import i18n from "@/i18n/i18n";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
 import { useDialogs } from "@/store/dialogs";
@@ -43,6 +48,8 @@ beforeEach(async () => {
   });
   remoteProcesses.mockReset();
   remoteKill.mockReset().mockResolvedValue(undefined);
+  remoteKillTree.mockReset().mockResolvedValue(undefined);
+  remoteProcessExecutable.mockReset().mockResolvedValue("/opt/bin/worker");
   await i18n.changeLanguage("en-US");
 });
 afterEach(() => {
@@ -231,4 +238,51 @@ it("supports page sizes, first/last navigation and validated direct jumps", asyn
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "task-244" } });
   expect(screen.getByText("Page 1 of 1")).toBeTruthy();
   expect(screen.getAllByRole("row")).toHaveLength(2);
+});
+
+it("opens row actions with pointer and keyboard, and confirms tree termination", async () => {
+  remoteProcesses.mockResolvedValue([process()]);
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  const row = (await screen.findByText("worker")).closest("tr")!;
+  fireEvent.contextMenu(row, { clientX: 40, clientY: 50 });
+  const { useContextMenu } = await import("@/store/contextMenu");
+  let menu = useContextMenu.getState().menu!;
+  expect(menu.items.map((item) => item.label)).toEqual([
+    "Process details",
+    "Open file location",
+    "Stop",
+    "Stop process tree",
+  ]);
+  act(() => menu.items[3]!.onSelect());
+  expect(useDialogs.getState().dialog.kind).toBe("confirm");
+  const confirm = useDialogs.getState().dialog;
+  if (confirm.kind !== "confirm") throw Error("missing confirmation");
+  expect(confirm.body).toContain("current descendants");
+  await act(async () => confirm.onConfirm());
+  expect(remoteKillTree).toHaveBeenCalledWith("s", 42, 123);
+  fireEvent.keyDown(row, { key: "F10", shiftKey: true });
+  menu = useContextMenu.getState().menu!;
+  expect(menu.trigger).toBe(row);
+  useContextMenu.getState().close();
+});
+
+it("resolves executable location on the remote session and opens its directory", async () => {
+  remoteProcesses.mockResolvedValue([process()]);
+  const { useWorkspace } = await import("@/store/workspace");
+  const open = vi.spyOn(useWorkspace.getState(), "openFilePane");
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  fireEvent.contextMenu((await screen.findByText("worker")).closest("tr")!);
+  const { useContextMenu } = await import("@/store/contextMenu");
+  await act(async () => useContextMenu.getState().menu!.items[1]!.onSelect());
+  expect(remoteProcessExecutable).toHaveBeenCalledWith("s", 42, 123);
+  expect(open).toHaveBeenCalledWith(
+    expect.objectContaining({
+      source: { kind: "remote", sessionId: "s" },
+      path: "/opt/bin",
+      ownerSessionId: "s",
+    }),
+    "worker",
+  );
+  open.mockRestore();
+  useContextMenu.getState().close();
 });

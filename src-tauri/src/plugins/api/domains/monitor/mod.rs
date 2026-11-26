@@ -40,6 +40,23 @@ pub(in crate::plugins::api) async fn dispatch(
             check(owned)?;
             value
         }
+        "monitor.killTree" | "monitor.executable" => {
+            let owned = crate::plugins::frontend::native::CallPolicy::OwnedData;
+            check(owned)?;
+            let session = field(&params, "sessionId")?;
+            let pid = field(&params, "pid")?;
+            let start = field(&params, "expectedStartTicks")?;
+            let value = if method == "monitor.killTree" {
+                commands::remote_kill_tree(app.clone(), session, pid, start).await?;
+                Value::Null
+            } else {
+                encode(
+                    commands::remote_process_executable(app.clone(), session, pid, start).await?,
+                )?
+            };
+            check(owned)?;
+            Ok(value)
+        }
         "monitor.kill" => {
             // Monitor reads and the process mutation all retain the original
             // native origin through their actual SSH dispatch.

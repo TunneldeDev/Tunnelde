@@ -51,3 +51,9 @@ Private projection, context and authorization live under
 `extensions/monitor/processes/`. The feature separates `data/`, `runtime/` and
 `components/`; internal process identity stays host-owned. Neither plugin code
 nor generated SDK declarations import those internal stores or feature modules.
+
+## Native process actions
+
+Shared Entries supports pointer context menus and Shift+F10: details, remote executable directory, stop, and stop process tree. Tree termination requires explicit confirmation and sends TERM from children to parent, checking start ticks and parent PID for every target. The action channel and its ancestors are protected. Vanished or reused identities cannot continue; permission and unavailable executable failures remain visible.
+
+New experimental RPC `monitor.killTree({sessionId,pid,expectedStartTicks})` requires `monitor.write`; `monitor.executable` accepts the same parameters, requires `monitor.read`, and returns a remote absolute path. Both retain native origin and session ownership checks. The existing `monitor.kill` contract stays unchanged. Directories open in the same session's file browser.

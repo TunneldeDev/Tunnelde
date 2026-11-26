@@ -1,4 +1,5 @@
 import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { useContextMenu } from "@/store/contextMenu";
 import { useState } from "react";
 import { Select } from "@/components/ui/form/Select";
 import { useTranslation } from "react-i18next";
@@ -52,6 +53,38 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
   const [jump, setJump] = useState("");
   const kill = () => {
     if (selected) requestTerminate(selected);
+  };
+  const openMenu = (process: RemoteProcess, target: HTMLElement, x: number, y: number) => {
+    select(process);
+    const disabled = process.pid <= 1 || process.startedAtTicks == null || stopping;
+    useContextMenu.getState().open(
+      x,
+      y,
+      [
+        { label: t("processes.details"), onSelect: () => select(process) },
+        {
+          label: t("processes.openLocation"),
+          disabled,
+          onSelect: () => {
+            void manager.openLocation(process);
+          },
+        },
+        {
+          label: t("processes.kill"),
+          danger: true,
+          separatorBefore: true,
+          disabled,
+          onSelect: () => requestTerminate(process),
+        },
+        {
+          label: t("processes.killTree"),
+          danger: true,
+          disabled,
+          onSelect: () => requestTerminate(process, undefined, true),
+        },
+      ],
+      target,
+    );
   };
   const cell = (process: RemoteProcess, key: FrontendProcessColumn) => {
     const value = process[key];
@@ -151,8 +184,16 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
                 tabIndex={0}
                 aria-selected={selected === process}
                 onClick={() => select(process)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  openMenu(process, event.currentTarget, event.clientX, event.clientY);
+                }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
+                  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                    event.preventDefault();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    openMenu(process, event.currentTarget, rect.left + 20, rect.bottom);
+                  } else if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     select(process);
                   }

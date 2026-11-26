@@ -317,6 +317,10 @@ export const api = {
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>
     invoke<RemoteProcess[]>("remote_processes", { sessionId }),
+  remoteKillTree: (sessionId: string, pid: number, expectedStartTicks: number) =>
+    invoke<void>("remote_kill_tree", { sessionId, pid, expectedStartTicks }),
+  remoteProcessExecutable: (sessionId: string, pid: number, expectedStartTicks: number) =>
+    invoke<string>("remote_process_executable", { sessionId, pid, expectedStartTicks }),
   remoteKill: (sessionId: string, pid: number, expectedStartTicks?: number) =>
     invoke<void>("remote_kill", { sessionId, pid, expectedStartTicks }),
 

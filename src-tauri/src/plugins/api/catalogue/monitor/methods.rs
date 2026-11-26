@@ -2,6 +2,18 @@ use super::ApiMethod;
 
 pub const METHODS: &[ApiMethod] = &[
     method!(
+        "monitor.killTree",
+        ["monitor.write"],
+        "{sessionId:string,pid:number,expectedStartTicks:number}",
+        "Send TERM to an identity-checked process tree, children first."
+    ),
+    method!(
+        "monitor.executable",
+        ["monitor.read"],
+        "{sessionId:string,pid:number,expectedStartTicks:number}",
+        "Resolve an identity-checked remote executable path."
+    ),
+    method!(
         "monitor.system",
         ["monitor.read"],
         "{}",

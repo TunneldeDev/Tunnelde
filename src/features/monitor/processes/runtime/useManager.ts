@@ -5,6 +5,7 @@ import { presentError } from "@/lib/api/errors";
 import type { RemoteProcess } from "@/lib/api/types";
 import type { FrontendProcessSort } from "@/lib/extensions/contracts/monitor/processes/query";
 import { useDialogs } from "@/store/dialogs";
+import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
 import { useProcesses } from "../../useProcesses";
 import { queryProcesses } from "../data/query";
@@ -51,7 +52,11 @@ export function useProcessManager(sessionId: string, active = true) {
     selection?.sessionId === sessionId
       ? sample.items?.find((item) => processIdentity(item) === selection.key)
       : undefined;
-  const requestTerminate = (process: RemoteProcess, authorize: () => void = () => {}) => {
+  const requestTerminate = (
+    process: RemoteProcess,
+    authorize: () => void = () => {},
+    tree = false,
+  ) => {
     const present = () =>
       live() &&
       readProcessSample(sessionId).items?.some(
@@ -71,9 +76,12 @@ export function useProcessManager(sessionId: string, active = true) {
     confirmation.current = request;
     let consumed = false;
     useDialogs.getState().confirm({
-      title: t("processes.killTitle"),
-      body: t("processes.killBody", { name: process.name, pid: process.pid }),
-      confirmLabel: t("processes.kill"),
+      title: t(tree ? "processes.killTree" : "processes.killTitle"),
+      body: t(tree ? "processes.killTreeBody" : "processes.killBody", {
+        name: process.name,
+        pid: process.pid,
+      }),
+      confirmLabel: t(tree ? "processes.killTree" : "processes.kill"),
       danger: true,
       onConfirm: async () => {
         if (consumed || confirmation.current !== request || lock.current || !present()) return;
@@ -84,7 +92,8 @@ export function useProcessManager(sessionId: string, active = true) {
           authorize();
           // Authorization may synchronously retire this view or connection.
           if (!present()) return;
-          await api.remoteKill(sessionId, process.pid, process.startedAtTicks);
+          if (tree) await api.remoteKillTree(sessionId, process.pid, process.startedAtTicks!);
+          else await api.remoteKill(sessionId, process.pid, process.startedAtTicks);
           if (live()) {
             sample.refresh();
             setAction({ sessionId, busy: false, error: null });
@@ -137,6 +146,42 @@ export function useProcessManager(sessionId: string, active = true) {
       setSelection(process ? { sessionId, key: processIdentity(process) } : null);
     },
     requestTerminate,
+    async openLocation(process: RemoteProcess) {
+      const present = () =>
+        live() &&
+        readProcessSample(sessionId).items?.some(
+          (item) => processIdentity(item) === processIdentity(process),
+        );
+      if (!present() || process.startedAtTicks == null || lock.current) return;
+      const request = {};
+      lock.current = request;
+      setAction({ sessionId, busy: true, error: null });
+      try {
+        const executable = await api.remoteProcessExecutable(
+          sessionId,
+          process.pid,
+          process.startedAtTicks,
+        );
+        if (!present()) return;
+        const session = useSsh.getState().sessions.find((item) => item.id === sessionId)!;
+        useWorkspace
+          .getState()
+          .openFilePane(
+            {
+              source: { kind: "remote", sessionId },
+              path: executable.slice(0, executable.lastIndexOf("/")) || "/",
+              ownerSessionId: sessionId,
+              remoteIdentity: { hostId: session.hostId, address: session.address },
+            },
+            process.name,
+          );
+        setAction({ sessionId, busy: false, error: null });
+      } catch (cause) {
+        if (live()) setAction({ sessionId, busy: false, error: presentError(cause) });
+      } finally {
+        if (lock.current === request) lock.current = null;
+      }
+    },
     validate: () => live() && readProcessSample(sessionId).items === sample.items,
     close() {
       closed.current = epoch;

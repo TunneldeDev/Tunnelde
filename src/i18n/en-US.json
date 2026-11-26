@@ -944,7 +944,10 @@
     "lastPage": "Last page",
     "pageNumber": "Page {{page}} of {{total}}",
     "jumpPage": "Go to page",
-    "go": "Go"
+    "go": "Go",
+    "killTree": "Stop process tree",
+    "killTreeBody": "Send TERM to {{name}} (PID {{pid}}) and its current descendants? Unsaved work may be lost. The action channel and its ancestors are protected.",
+    "openLocation": "Open file location"
   },
   "editor": {
     "open": "Edit",

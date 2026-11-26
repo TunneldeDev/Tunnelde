@@ -944,7 +944,10 @@
     "lastPage": "末页",
     "pageNumber": "第 {{page}} / {{total}} 页",
     "jumpPage": "跳转页码",
-    "go": "跳转"
+    "go": "跳转",
+    "killTree": "结束进程树",
+    "killTreeBody": "向 {{name}}（PID {{pid}}）及其当前子孙进程发送 TERM？未保存的工作可能丢失。操作通道及其祖先进程受保护。",
+    "openLocation": "打开文件所在位置"
   },
   "editor": {
     "open": "编辑",
