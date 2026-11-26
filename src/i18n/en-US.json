@@ -457,7 +457,10 @@
     "fileIconTheme": "File icon theme",
     "fileIconThemeHint": "Installed icon themes apply to local and remote files. Automatic uses the first available theme without running plugin code.",
     "transferCompression": "Compress transfer data automatically",
-    "transferCompressionHint": "Automatically compress data when it reduces network traffic. Small transfers and unsupported hosts use standard transfer; no remote installation is required. Applies when a transfer starts or resumes."
+    "transferCompressionHint": "Automatically compress data when it reduces network traffic. Small transfers and unsupported hosts use standard transfer; no remote installation is required. Applies when a transfer starts or resumes.",
+    "customValue": "Custom",
+    "customValueFor": "Custom {{name}}",
+    "unitFor": "Unit for {{name}}"
   },
   "updates": {
     "installInProgress": "Wait for the current update installation to finish before changing its channel or source.",

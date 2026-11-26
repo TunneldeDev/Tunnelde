@@ -369,13 +369,13 @@ impl Settings {
             self.file_icon_theme = "auto".into();
         }
         let defaults = Self::default();
-        if ![0, 1, 2, 4, 8].contains(&self.transfer_concurrency) {
+        if self.transfer_concurrency > 8 {
             self.transfer_concurrency = 0;
         }
-        if ![0, 256, 1024, 4096, 16384].contains(&self.transfer_chunk_kib) {
+        if self.transfer_chunk_kib != 0 && !(256..=16384).contains(&self.transfer_chunk_kib) {
             self.transfer_chunk_kib = 0;
         }
-        if ![0, 1, 4, 8, 16, 32].contains(&self.transfer_requests) {
+        if self.transfer_requests > 64 {
             self.transfer_requests = 0;
         }
         self.transfer_upload_limit_kib = self.transfer_upload_limit_kib.min(1_048_576);
@@ -700,8 +700,13 @@ mod tests {
         assert_eq!(legacy.transfer_concurrency, 0);
         assert_eq!(legacy.transfer_chunk_kib, 0);
         assert_eq!(legacy.transfer_requests, 0);
-        for (concurrency, chunk, requests) in [(0, 0, 0), (1, 256, 1), (8, 16384, 32), (4, 4096, 8)]
-        {
+        for (concurrency, chunk, requests) in [
+            (0, 0, 0),
+            (1, 256, 1),
+            (8, 16384, 32),
+            (4, 4096, 8),
+            (3, 1536, 7),
+        ] {
             let mut settings: Settings = serde_json::from_value(serde_json::json!({
                 "transferOptimization": false, "transferCompression": false, "transferConcurrency": concurrency,
                 "transferChunkKib": chunk, "transferRequests": requests

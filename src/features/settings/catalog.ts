@@ -36,6 +36,8 @@ export interface SettingDefinition {
     | "updateUrl";
   hint?: MessageKey;
   options?: SettingOption[];
+  customNumeric?: { min: number; max: number };
+  numericUnits?: { label: string; factor: number }[];
   min?: number;
   max?: number;
   step?: number;
@@ -412,6 +414,11 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   ...(["transferUploadLimitKib", "transferDownloadLimitKib"] as const).map((key) => ({
     ...numeric(key, "files", 0, 1_048_576, 1, "KiB/s"),
     hint: "settings.transferSpeedLimitHint" as const,
+    numericUnits: [
+      { label: "KiB/s", factor: 1 },
+      { label: "MiB/s", factor: 1024 },
+      { label: "GiB/s", factor: 1_048_576 },
+    ],
   })),
   ...(
     [
@@ -434,6 +441,19 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
       `settings.${key}Hint`,
     ),
     dependsOn: "transferOptimization" as const,
+    customNumeric:
+      key === "transferConcurrency"
+        ? { min: 1, max: 8 }
+        : key === "transferRequests"
+          ? { min: 1, max: 64 }
+          : { min: 256, max: 16384 },
+    numericUnits:
+      key === "transferChunkKib"
+        ? [
+            { label: "KiB", factor: 1 },
+            { label: "MiB", factor: 1024 },
+          ]
+        : [{ label: "×", factor: 1 }],
   })),
   toggle("filesFoldersFirst", "files"),
   {
