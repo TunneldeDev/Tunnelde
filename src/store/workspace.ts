@@ -550,8 +550,8 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     },
 
     openPage: (kind, options) => {
-      if (kind === "updates") {
-        useNavigation.getState().selectSettings("updates");
+      if (kind === "updates" || kind === "about") {
+        useNavigation.getState().selectSettings(kind);
         kind = "settings";
       }
       const id = `page:${kind}`;
