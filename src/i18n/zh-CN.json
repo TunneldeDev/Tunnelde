@@ -889,7 +889,9 @@
     "retainedCreationInvalid": "保留的操作记录或主机身份不匹配。请保留记录并查看软件日志。",
     "retainedCreationLimit": "保留的未确认临时目录过多。请先完成或检查已有的恢复任务，再尝试新的传输代次。",
     "invalidEncoding": "请选择支持的文本编码",
-    "encodingEncodeFailed": "文件包含无法用所选编码表示的字符"
+    "encodingEncodeFailed": "文件包含无法用所选编码表示的字符",
+    "averageSpeed": "平均：{{value}}/s",
+    "averageRemainingTime": "平均预计剩余：{{value}}"
   },
   "processes": {
     "title": "进程",
