@@ -88,7 +88,11 @@ export function transferView(
       pausing,
       clearing,
       rate: rate
-        ? { baseline: rate.baseline, samples: rate.samples.map(({ at, bytes }) => ({ at, bytes })) }
+        ? {
+            baseline: rate.baseline,
+            startedAt: rate.startedAt,
+            samples: rate.samples.map(({ at, bytes }) => ({ at, bytes })),
+          }
         : undefined,
       speedLimitKib,
       fromAddress,

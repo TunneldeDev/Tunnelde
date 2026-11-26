@@ -1,3 +1,5 @@
+import { toast } from "@/store/toasts";
+import { presentError } from "@/lib/api/errors";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Package, Palette, Play, Square, Trash2, ExternalLink } from "lucide-react";
@@ -11,6 +13,7 @@ import type { MarketEntry, MarketSource, PluginView } from "@/lib/api/types";
 import { useNavigation } from "@/store/navigation";
 import { pluginSidebarId } from "@/lib/plugins/sidebars";
 import i18n from "@/i18n/i18n";
+import { PluginPermissionList } from "./components/PluginPermissionList";
 import { PluginError } from "./PluginError";
 import { PluginThemes } from "./PluginThemes";
 import { PluginFileIconThemes } from "./PluginFileIconThemes";
@@ -215,6 +218,28 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           </>
         ) : null}
       </div>
+      {own && !themeOnly && installed.views.some((view) => !view.provider) ? (
+        <section className="plugin-detail__tools">
+          <h2>{t("market.openTool")}</h2>
+          <div className="settings-actions">
+            {installed.views
+              .filter((view) => !view.provider)
+              .map((view) => (
+                <Button
+                  key={view.id}
+                  variant="primary"
+                  disabled={busy || !!task}
+                  leading={<ExternalLink size={13} />}
+                  onClick={() =>
+                    void openView(view).catch((error) => toast(presentError(error), "error"))
+                  }
+                >
+                  {view.title}
+                </Button>
+              ))}
+          </div>
+        </section>
+      ) : null}
       {!compatible ? <p className="panel__error">{t("market.incompatibleApi")}</p> : null}
       {task ? (
         <div className="plugin-download" role="status">
@@ -295,6 +320,37 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           </div>
         ) : null}
       </dl>
+      <section className="plugin-detail__capabilities">
+        <h2>{t("market.permissionsAndFeatures")}</h2>
+        {own ? (
+          <>
+            <PluginPermissionList permissions={installed.permissions} />
+            <div className="plugin-detail__capability-list">
+              {[
+                ...(installed.themes ?? []).map(
+                  (item) => `${t("plugins.themePack")}: ${item.name}`,
+                ),
+                ...(installed.fileIconThemes ?? []).map(
+                  (item) => `${t("settings.fileIconTheme")}: ${item.name}`,
+                ),
+                ...(installed.filePreviews ?? []).map(
+                  (item) => `${t("preview.providers")}: ${item.name}`,
+                ),
+                ...installed.views.map(
+                  (item) => `${item.provider ?? t("market.openTool")}: ${item.title}`,
+                ),
+                ...installed.commands.map((item) => item.title),
+              ].map((label) => (
+                <span key={label} className="td-tag">
+                  {label}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="settings-hint">{t("market.manifestAfterInstall")}</p>
+        )}
+      </section>
       {own && installed.themes?.length ? (
         <PluginThemes themes={installed.themes} disabled={busy || !!task} />
       ) : null}
@@ -314,26 +370,6 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
                 </p>
               </article>
             ))}
-          </div>
-        </section>
-      ) : null}
-      {own && !themeOnly && installed.views.some((view) => !view.provider) ? (
-        <section className="plugin-detail__tools">
-          <h2>{t("market.openTool")}</h2>
-          <div className="settings-actions">
-            {installed.views
-              .filter((view) => !view.provider)
-              .map((view) => (
-                <Button
-                  key={view.id}
-                  variant="primary"
-                  disabled={busy || !!task}
-                  leading={<ExternalLink size={13} />}
-                  onClick={() => void openView(view)}
-                >
-                  {view.title}
-                </Button>
-              ))}
           </div>
         </section>
       ) : null}

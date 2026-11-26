@@ -103,7 +103,7 @@ function fixture(renderer: "text" | "image" = "text", staged = false) {
 it("renders injected remote text and submits exact target/revision reports only after committed ownership", async () => {
   const f = fixture("text", true);
   const view = render(f.display(false));
-  await screen.findByDisplayValue("same remote contents");
+  expect((await screen.findByRole("textbox")).textContent).toBe("same remote contents");
   expect(f.openPreviewHandle).not.toHaveBeenCalled();
   expect(f.action).not.toHaveBeenCalled();
   f.promote();
@@ -179,4 +179,29 @@ it("denies stale or frozen renderer actions rather than operating on main's curr
   fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
   await act(async () => {});
   expect(f.action).not.toHaveBeenCalled();
+});
+
+it("requests detached preview colors through its current lease and clears them on revocation", async () => {
+  const f = fixture();
+  const action = (f.client.action = vi.fn(async (_lease, request) =>
+    request.kind === "preview" && request.command.operation === "syntax" ? [[0, 4, 0]] : null,
+  ) as PanelWindowClient["action"]);
+  const data = { ...f.data, syntaxKey: "syntax-runtime" };
+  const ui = render(f.display(true, data));
+  await waitFor(() =>
+    expect(ui.container.querySelector(".cm-editor-token-keyword")?.textContent).toBe("same"),
+  );
+  expect(action).toHaveBeenCalledWith(
+    expect.objectContaining({ generation: 2, windowId: "satellite" }),
+    expect.objectContaining({
+      kind: "preview",
+      id: data.snapshot.id,
+      attemptId: data.snapshot.attemptId,
+      revision: data.snapshot.revision,
+      command: { operation: "syntax", from: 0, to: 20 },
+    }),
+    expect.any(AbortSignal),
+  );
+  ui.rerender(f.display(true, { ...data, syntaxKey: null }));
+  expect(ui.container.querySelector(".cm-editor-token-keyword")).toBeNull();
 });

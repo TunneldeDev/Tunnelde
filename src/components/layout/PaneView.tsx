@@ -3,6 +3,7 @@ import { nativePanelMoveActions } from "@/lib/panels/windowMoves";
 import { panelDropZone as zoneOf, type PanelDropZone as DropHint } from "@/lib/layout/dropZone";
 import {
   Activity,
+  List,
   GripVertical,
   PanelTop,
   Blocks,
@@ -83,6 +84,7 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   editor: FileText,
   history: History,
   monitor: Activity,
+  processes: List,
   pluginView: Blocks,
   pluginDetail: Blocks,
   knownHosts: ShieldCheck,
@@ -96,6 +98,7 @@ const NAMED: WorkspaceTab["kind"][] = [
   "editor",
   "history",
   "monitor",
+  "processes",
   "pluginView",
   "pluginDetail",
 ];
@@ -271,9 +274,16 @@ function TabStrip({
     <div
       className={cn(
         "pane__header",
+        geometry && "pane__header--movable",
         reserveControls && "has-window-controls",
         reserveTrafficLights && "has-native-window-controls",
       )}
+      {...geometry?.handle("move")}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget || event.target === strip.current)
+          geometry?.handle("move").onPointerDown(event);
+      }}
+      onKeyDown={undefined}
     >
       {geometry && (
         <IconButton
@@ -417,7 +427,9 @@ function TabStrip({
                     onSelect: closeGroup,
                   });
                 }
-                if (["terminal", "sftp", "editor", "host"].includes(tab.kind))
+                if (
+                  ["terminal", "sftp", "editor", "host", "settings", "updates"].includes(tab.kind)
+                )
                   items.push(...nativePanelMoveActions(tab.id, t));
                 openMenu(event.clientX, event.clientY, items, event.currentTarget);
               }}

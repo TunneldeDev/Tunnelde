@@ -17,6 +17,8 @@ export type HostPanelCommand =
         | "export"
         | "copySsh"
         | "copyAddress"
+        | "processes"
+        | "monitor"
         | "sftp"
         | "installKey";
       host: HostPanelTarget;

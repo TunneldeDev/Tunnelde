@@ -20,7 +20,6 @@ import {
 } from "../automation.mjs";
 import { VERSION_PATHS, versionContents } from "../version.mjs";
 import { TARGET_PATH } from "../planning/target.mjs";
-import { BETA_ACCEPTANCE_MARKER } from "../publishing/acceptance.mjs";
 
 const sha = (letter) => letter.repeat(40);
 const main = sha("a"),
@@ -161,6 +160,7 @@ function fixture({
               status: commits.length ? "ahead" : "identical",
               total_commits: commits.length,
               commits: globalThis.structuredClone(commits),
+              files: [{ filename: "src-tauri/src/app.rs", status: "modified" }],
             },
           };
         },
@@ -407,6 +407,26 @@ test("migration waits for main metadata, and an identical source creates no rele
   assert.equal((await planDevelopment(f)).version, undefined);
   delete f.files[SOURCE_PATH];
   assert.equal((await planDevelopment(f)).version, undefined);
+});
+
+test("non-product-only changes do not create a stable promotion", async () => {
+  for (const filename of [
+    "docs/en-us/development/releases.md",
+    "scripts/release/publishing/releases.mjs",
+    ".github/workflows/ci.yml",
+    "src-tauri/src/mounts/negotiation/tests.rs",
+  ]) {
+    const f = fixture();
+    f.github.rest.repos.compareCommitsWithBasehead = async () => ({
+      data: {
+        status: "ahead",
+        total_commits: 1,
+        commits: [source],
+        files: [{ filename, status: "modified" }],
+      },
+    });
+    assert.equal((await planDevelopment(f)).version, undefined, filename);
+  }
 });
 
 test("refuses to discard main changes outside generated metadata", async () => {
@@ -894,8 +914,6 @@ test("merge settings retain linear contributions and preserve original history i
 
 test("tag is created before a draft; stable recovery is idempotent and never moves tags", async () => {
   const f = fixture({
-    refs: { "tags/v0.26.2-beta.1": baseline },
-    releases: [acceptedBeta("0.26.2", baseline, baseline)],
     messages: { [baseline]: `Release-source: ${baseline}` },
   });
   assert.equal(await ensureRelease({ ...f, tag: "v0.26.2", sha: main, body: "Notes" }), "v0.26.2");
@@ -903,9 +921,8 @@ test("tag is created before a draft; stable recovery is idempotent and never mov
     f.calls.findIndex((call) => call.createRef) < f.calls.findIndex((call) => call.createRelease),
   );
   const retry = fixture({
-    refs: { "tags/v0.26.2": main, "tags/v0.26.2-beta.1": baseline },
+    refs: { "tags/v0.26.2": main },
     releases: [
-      acceptedBeta("0.26.2", baseline, baseline),
       { tag_name: "v0.26.2", target_commitish: main, prerelease: false, draft: true },
     ],
     messages: { [baseline]: `Release-source: ${baseline}` },
@@ -924,9 +941,8 @@ test("tag is created before a draft; stable recovery is idempotent and never mov
 
 test("published releases are never rebuilt and channel mismatches are rejected", async () => {
   const f = fixture({
-    refs: { "tags/v0.26.2": main, "tags/v0.26.2-beta.1": baseline },
+    refs: { "tags/v0.26.2": main },
     releases: [
-      acceptedBeta("0.26.2", baseline, baseline),
       { tag_name: "v0.26.2", target_commitish: main, prerelease: false, draft: false },
     ],
     messages: { [baseline]: `Release-source: ${baseline}` },
@@ -1063,8 +1079,6 @@ test("main migration skips publication and stable preparation requires reviewed 
   const f = fixture();
   assert.equal(await prepareStable(f), "");
   f.files[SOURCE_PATH] = JSON.stringify({ sourceSha: baseline, baseSha: main, version: "0.26.1" });
-  f.references["tags/v0.26.1-beta.1"] = baseline;
-  f.releases.push(acceptedBeta("0.26.1", baseline, baseline));
   f.gitCommits[baseline] = {
     parents: [{ sha: main }],
     message: `Release-source: ${baseline}`,
@@ -1076,8 +1090,7 @@ test("main migration skips publication and stable preparation requires reviewed 
 
 test("stable releases tag the exact reviewed merge while retaining the original dev ancestry", async () => {
   const f = fixture({
-    refs: { "heads/main": oldHead, "heads/dev": baseline, "tags/v0.26.1-beta.1": baseline },
-    releases: [acceptedBeta("0.26.1", baseline, dev)],
+    refs: { "heads/main": oldHead, "heads/dev": baseline },
     gitCommits: {
       [oldHead]: { tree: { sha: generated }, parents: [{ sha: main }, { sha: generated }] },
       [baseline]: { parents: [{ sha: main }], message: `Release-source: ${dev}` },
@@ -1127,18 +1140,6 @@ test("stable merge validation refuses squash, rebase, unreviewed content and bro
   }
 });
 
-function acceptedBeta(version = "0.26.2", target = baseline, sourceSha = baseline) {
-  return {
-    id: 2,
-    tag_name: `v${version}-beta.1`,
-    target_commitish: target,
-    draft: false,
-    prerelease: true,
-    body: BETA_ACCEPTANCE_MARKER,
-    sourceSha,
-  };
-}
-
 function publicationFixture(tag, options = {}) {
   return fixture({
     refs: { [`tags/${tag}`]: generated, ...options.refs },
@@ -1150,14 +1151,13 @@ function publicationFixture(tag, options = {}) {
         draft: true,
         prerelease: tag.includes("-"),
       },
-      ...(tag.includes("-") ? [] : [acceptedBeta(tag.slice(1), baseline, options.acceptedSource)]),
       ...(options.releases || []),
     ],
     gitCommits: {
       [generated]: { parents: [{ sha: dev }], message: `Release-source: ${dev}` },
       [baseline]: {
         parents: [{ sha: dev }],
-        message: `Release-source: ${options.acceptedSource ?? baseline}`,
+        message: `Release-source: ${baseline}`,
       },
     },
   });
@@ -1218,21 +1218,18 @@ test("older Beta recovery preserves newer versions and cannot change latest stab
 test("recovering an older stable release cannot move latest backwards", async () => {
   const tag = "v0.26.2";
   const f = publicationFixture(tag, {
-    refs: { "heads/main": generated, "tags/v0.26.2-beta.1": baseline },
-    acceptedSource: baseline,
+    refs: { "heads/main": generated },
     releases: [{ id: 2, tag_name: "v0.27.0", draft: false, prerelease: false }],
   });
   await publishRelease({ ...f, tag });
   assert.equal(f.calls[0].publish.make_latest, "false");
   const latest = publicationFixture(tag, {
-    refs: { "heads/main": generated, "tags/v0.26.2-beta.1": baseline },
-    acceptedSource: baseline,
+    refs: { "heads/main": generated },
   });
   await publishRelease({ ...latest, tag });
   assert.equal(latest.calls[0].publish.make_latest, "true");
   const advanced = publicationFixture(tag, {
-    refs: { "tags/v0.26.2-beta.1": baseline },
-    acceptedSource: baseline,
+    refs: {},
   });
   await publishRelease({ ...advanced, tag });
   assert.equal(advanced.calls.at(-1).publish.make_latest, "false");

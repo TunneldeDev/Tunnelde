@@ -6,6 +6,78 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.9.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.8.0...v2.9.0) - 2026-11-26
+
+### 更新概览 | Highlights
+
+- **preview:** add plugin syntax highlighting
+- **workbench:** fix panel transfers and manage durable UI habits
+- **debugger:** add opt-in development scenario adapter
+- **settings:** customize transfer values and speed units
+- **editor:** support custom tab display widths
+
+<details open>
+<summary>详细变更 | Details (38)</summary>
+
+### 新增 | New
+
+- **preview:** add plugin syntax highlighting ([#558](https://github.com/TunneldeDev/Tunnelde/pull/558)) @quyansiyuanwang
+- **workbench:** fix panel transfers and manage durable UI habits ([#559](https://github.com/TunneldeDev/Tunnelde/pull/559)) @quyansiyuanwang
+- **debugger:** add opt-in development scenario adapter ([#561](https://github.com/TunneldeDev/Tunnelde/pull/561)) @quyansiyuanwang
+- **settings:** customize transfer values and speed units ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [b78bf83](https://github.com/TunneldeDev/Tunnelde/commit/b78bf83c358dc2c0cf2afecc593746eb3328369a)) @quyansiyuanwang
+- **editor:** support custom tab display widths ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [35f0bb8](https://github.com/TunneldeDev/Tunnelde/commit/35f0bb838ad3176e879c80471d0296ced446780e)) @quyansiyuanwang
+- **monitor:** edit sampling intervals with numeric units ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [1f32641](https://github.com/TunneldeDev/Tunnelde/commit/1f326413f4fff4456fb8779183d3f50fbecca65c)) @quyansiyuanwang
+- **history:** insert on click and execute on double click ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [3acaac7](https://github.com/TunneldeDev/Tunnelde/commit/3acaac72a677547090950cdda93d72645d79aea6)) @quyansiyuanwang
+- **transfers:** show rolling and average speed with both ETAs ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [f1c859b](https://github.com/TunneldeDev/Tunnelde/commit/f1c859b0843bf0c7fdc8ed8d7e59a601962fbc04)) @quyansiyuanwang
+- **monitor:** add peer entry points beside remote files ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [8ec40ed](https://github.com/TunneldeDev/Tunnelde/commit/8ec40edda16befe3a0ba3ce4dd9c1319d706d9ba)) @quyansiyuanwang
+- **processes:** expose process management as a peer workspace panel ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [40c6fd0](https://github.com/TunneldeDev/Tunnelde/commit/40c6fd0b11521ca11486acace12f8d7258439672)) @quyansiyuanwang
+- **updates:** browse official release history without an available update ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [c40de1c](https://github.com/TunneldeDev/Tunnelde/commit/c40de1c745932793fd288ae22d2eaf9600eba8e5)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **release:** require product changes for stable releases ([#557](https://github.com/TunneldeDev/Tunnelde/pull/557)) @quyansiyuanwang
+- **settings:** confine group navigation to the content scroller ([#566](https://github.com/TunneldeDev/Tunnelde/pull/566)) @quyansiyuanwang
+- **deps:** bump wasmi from 0.42.1 to 0.47.2 in /src-tauri ([#562](https://github.com/TunneldeDev/Tunnelde/pull/562)) @quyansiyuanwang
+- **deps:** bump esbuild from 0.27.7 to 0.28.2 ([#564](https://github.com/TunneldeDev/Tunnelde/pull/564))
+- **deps-dev:** bump vitest from 3.2.7 to 4.1.11 ([#563](https://github.com/TunneldeDev/Tunnelde/pull/563))
+- **deps:** bump zip from 5.1.1 to 9.1.3 in /src-tauri ([#565](https://github.com/TunneldeDev/Tunnelde/pull/565))
+- **workbench:** keep narrow-panel controls and editor scrollbars visible ([#567](https://github.com/TunneldeDev/Tunnelde/pull/567)) @quyansiyuanwang
+- **deps-dev:** bump vitest to 4.1.12 ([#568](https://github.com/TunneldeDev/Tunnelde/pull/568)) @quyansiyuanwang
+- **terminal:** preserve rapid input and keep SSH output responsive ([#569](https://github.com/TunneldeDev/Tunnelde/pull/569)) @quyansiyuanwang
+- **hosts:** show hierarchy guides for expanded groups ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [ebba0ad](https://github.com/TunneldeDev/Tunnelde/commit/ebba0adaf2d2ef3f21f5516bbd78e12d321ec47e)) @quyansiyuanwang
+- **workspace:** drag floating panes from empty tab strip ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [7113bda](https://github.com/TunneldeDev/Tunnelde/commit/7113bda1de77d6b0cfd5b69fe7c4afba7d91e914)) @quyansiyuanwang
+- **settings:** preserve font preview height and compare glyph alignment ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [bacbfd0](https://github.com/TunneldeDev/Tunnelde/commit/bacbfd0eea037930876ed9a2b0f8edb78fa96493)) @quyansiyuanwang
+- **editor:** simplify conflict comparison dialog spacing ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [02648b1](https://github.com/TunneldeDev/Tunnelde/commit/02648b133d72713310cdc33115585721e3ba09bc)) @quyansiyuanwang
+- **about:** separate cards without compressing their contents ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [f764617](https://github.com/TunneldeDev/Tunnelde/commit/f76461704e7c544c5c417bf392039b1f40e1ec32)) @quyansiyuanwang
+- **forms:** separate switches from preceding field hints ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [6c47620](https://github.com/TunneldeDev/Tunnelde/commit/6c476201b7a3d0573a02ffeaf2af560233e72b3c)) @quyansiyuanwang
+- **plugins:** align restricted mode switch and security heading ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [dc10a36](https://github.com/TunneldeDev/Tunnelde/commit/dc10a367997211eab792734b128d63d5b404825d)) @quyansiyuanwang
+- **settings:** mark hierarchy of expanded plugin sections ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [5980c8a](https://github.com/TunneldeDev/Tunnelde/commit/5980c8a7bf237d815b391623360aa8b20ab1a047)) @quyansiyuanwang
+- **forwarding:** unify port and domain group presentation ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [816656a](https://github.com/TunneldeDev/Tunnelde/commit/816656afba2f05b47fd4c3d3f398bff20042c9c0)) @quyansiyuanwang
+- **hosts:** confirm duplication from the header action ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [0cd615a](https://github.com/TunneldeDev/Tunnelde/commit/0cd615acba371edb5db3f18509da13a19065a189)) @quyansiyuanwang
+- **plugins:** align tags and expose installed permissions and features ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [8a116a1](https://github.com/TunneldeDev/Tunnelde/commit/8a116a1435ec1232b31b5f200619800c74189870)) @quyansiyuanwang
+- **plugins:** surface view launchers next to plugin actions ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [5fddb51](https://github.com/TunneldeDev/Tunnelde/commit/5fddb518f4d02d1d5b52eb319d0e1e3e3a81db9a)) @quyansiyuanwang
+- **navigation:** route about entries into settings ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [5bfc20b](https://github.com/TunneldeDev/Tunnelde/commit/5bfc20ba9d735824a905894d08ce1f8cdfd9e373)) @quyansiyuanwang
+- **editor:** wrap toolbar controls at minimum split width ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570), [5645727](https://github.com/TunneldeDev/Tunnelde/commit/564572702b0954922faeb352204f7bd7257c7988)) @quyansiyuanwang
+- **window:** restore resource bindings after background WebView recreation ([#571](https://github.com/TunneldeDev/Tunnelde/pull/571)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **ui:** record acceptance design and development conventions ([#570](https://github.com/TunneldeDev/Tunnelde/pull/570)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **mounts:** wait for cancelled channel settlement ([#555](https://github.com/TunneldeDev/Tunnelde/pull/555)) @quyansiyuanwang
+
+### 其他 | Other
+
+- **release:** remove stable Beta acceptance gate ([#553](https://github.com/TunneldeDev/Tunnelde/pull/553)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.8.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.7.1...v2.8.0) - 2026-11-24
 
 ### 更新概览 | Highlights

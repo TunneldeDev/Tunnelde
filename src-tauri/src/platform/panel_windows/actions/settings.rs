@@ -10,6 +10,10 @@ pub(crate) struct SettingsCommand {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) enum SettingsOperation {
+    #[serde(rename = "habitsDetails")]
+    HabitsDetails,
+    #[serde(rename = "habitsReset")]
+    HabitsReset,
     #[serde(rename = "preference")]
     Preference,
     #[serde(rename = "reset")]
@@ -52,6 +56,8 @@ pub(crate) enum SettingsOperation {
     UpdateSkip,
     #[serde(rename = "updateHistory")]
     UpdateHistory,
+    #[serde(rename = "releaseHistory")]
+    ReleaseHistory,
     #[serde(rename = "updateRelease")]
     UpdateRelease,
     #[serde(rename = "provider")]

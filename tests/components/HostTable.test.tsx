@@ -81,3 +81,52 @@ describe("host table persisted preferences", () => {
     ).toBe("210px 230px");
   });
 });
+
+it("starts resizing a fluid column from its rendered width", () => {
+  render(<HostTableHeader columns={columns} allColumns={columns} />);
+  const handle = screen.getByRole("separator", { name: "Resize Address column" });
+  handle.setPointerCapture = vi.fn();
+  handle.releasePointerCapture = vi.fn();
+  vi.spyOn(handle.parentElement!, "getBoundingClientRect").mockReturnValue({
+    width: 150,
+  } as DOMRect);
+  const pointer = (type: string, x: number) => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    fireEvent(handle, event);
+  };
+  pointer("pointerdown", 100);
+  pointer("pointerup", 100);
+  expect(useSettings.getState().settings.hostList.widths.address).toBe(150);
+});
+
+it("cancels a fluid resize without leaving a fixed preview and uses rendered width for keyboard resize", () => {
+  render(
+    <div className="host-table">
+      <HostTableHeader columns={columns} allColumns={columns} />
+    </div>,
+  );
+  const handle = screen.getByRole("separator", { name: "Resize Address column" });
+  handle.setPointerCapture = vi.fn();
+  handle.releasePointerCapture = vi.fn();
+  vi.spyOn(handle.parentElement!, "getBoundingClientRect").mockReturnValue({
+    width: 150,
+  } as DOMRect);
+  const pointer = (type: string, x: number) => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    fireEvent(handle, event);
+  };
+  pointer("pointerdown", 100);
+  pointer("pointermove", 120);
+  expect(
+    document.querySelector<HTMLElement>(".host-table")?.style.getPropertyValue("--host-columns"),
+  ).toContain("170px");
+  fireEvent.keyDown(handle, { key: "Escape" });
+  expect(
+    document.querySelector<HTMLElement>(".host-table")?.style.getPropertyValue("--host-columns"),
+  ).toBe("minmax(120px, 200fr) minmax(140px, 180fr)");
+  expect(useSettings.getState().settings.hostList.widths).toEqual({});
+  fireEvent.keyDown(handle, { key: "ArrowRight" });
+  expect(useSettings.getState().settings.hostList.widths.address).toBe(160);
+});

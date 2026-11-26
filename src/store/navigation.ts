@@ -17,7 +17,8 @@ export type SettingsSection =
   | "plugins"
   | "updates"
   | "about"
-  | "advanced";
+  | "advanced"
+  | "habits";
 export type BuiltinSidebarView =
   | "hosts"
   | "knownHosts"

@@ -1,3 +1,4 @@
+import { habitStorage } from "@/lib/habits/storage";
 import { panelPresentation } from "./panelPresentation";
 import { closePanel, setPanelLocation } from "@/lib/panels/controller";
 import { create } from "zustand";
@@ -12,7 +13,7 @@ export const previewPanelId = "sidebar:filePreview";
 
 function preferredPresentation(): PreviewPresentation {
   try {
-    return localStorage.getItem(presentationKey) === "docked" ? "docked" : "quickLook";
+    return habitStorage.getItem(presentationKey) === "docked" ? "docked" : "quickLook";
   } catch {
     return "quickLook";
   }
@@ -90,7 +91,7 @@ export const useFilePreview = create<{
   dock: () => {
     openPanel();
     try {
-      localStorage.setItem(presentationKey, "docked");
+      habitStorage.setItem(presentationKey, "docked");
     } catch {
       /* The live presentation does not require browser storage. */
     }
@@ -99,7 +100,7 @@ export const useFilePreview = create<{
   undock: () => {
     set({ presentation: "quickLook" });
     try {
-      localStorage.setItem(presentationKey, "quickLook");
+      habitStorage.setItem(presentationKey, "quickLook");
     } catch {
       /* The live presentation does not require browser storage. */
     }

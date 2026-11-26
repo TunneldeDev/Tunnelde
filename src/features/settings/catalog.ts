@@ -36,6 +36,8 @@ export interface SettingDefinition {
     | "updateUrl";
   hint?: MessageKey;
   options?: SettingOption[];
+  customNumeric?: { min: number; max: number };
+  numericUnits?: { label: string; factor: number }[];
   min?: number;
   max?: number;
   step?: number;
@@ -57,6 +59,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "monitor",
   "updates",
   "plugins",
+  "habits",
   "advanced",
   "about",
 ];
@@ -72,6 +75,7 @@ export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
   monitor: "settings.monitor",
   updates: "settings.updatesSection",
   plugins: "settings.plugins",
+  habits: "habits.title",
   advanced: "settings.advanced",
   about: "nav.about",
 };
@@ -410,6 +414,11 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   ...(["transferUploadLimitKib", "transferDownloadLimitKib"] as const).map((key) => ({
     ...numeric(key, "files", 0, 1_048_576, 1, "KiB/s"),
     hint: "settings.transferSpeedLimitHint" as const,
+    numericUnits: [
+      { label: "KiB/s", factor: 1 },
+      { label: "MiB/s", factor: 1024 },
+      { label: "GiB/s", factor: 1_048_576 },
+    ],
   })),
   ...(
     [
@@ -432,6 +441,19 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
       `settings.${key}Hint`,
     ),
     dependsOn: "transferOptimization" as const,
+    customNumeric:
+      key === "transferConcurrency"
+        ? { min: 1, max: 8 }
+        : key === "transferRequests"
+          ? { min: 1, max: 64 }
+          : { min: 256, max: 16384 },
+    numericUnits:
+      key === "transferChunkKib"
+        ? [
+            { label: "KiB", factor: 1 },
+            { label: "MiB", factor: 1024 },
+          ]
+        : [{ label: "×", factor: 1 }],
   })),
   toggle("filesFoldersFirst", "files"),
   {
@@ -457,22 +479,25 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     dependsOn: "preloadDirs",
   },
   toggle("editorWordWrap", "editor", "settings.editorWordWrapHint"),
-  select(
-    "editorTabSize",
-    "editor",
-    [2, 4, 8].map((value) => ({ value, label: String(value), literal: true })),
-    "settings.editorTabSizeHint",
-  ),
+  {
+    ...select(
+      "editorTabSize",
+      "editor",
+      [2, 4, 8].map((value) => ({ value, label: String(value), literal: true })),
+      "settings.editorTabSizeHint",
+    ),
+    customNumeric: { min: 1, max: 16 },
+  },
   toggle("editorSpellCheck", "editor"),
   toggle("editorDraftRecovery", "editor", "settings.editorDraftRecoveryHint"),
-  select(
-    "monitorIntervalMs",
-    "monitor",
-    ([1, 2, 3, 5, 10, 30] as const).map((seconds) =>
-      choice(seconds * 1000, `settings.seconds${seconds}`),
-    ),
-    "settings.monitorIntervalMsHint",
-  ),
+  {
+    ...numeric("monitorIntervalMs", "monitor", 1000, 30000),
+    hint: "settings.monitorIntervalMsHint",
+    numericUnits: [
+      { label: "s", factor: 1000 },
+      { label: "ms", factor: 1 },
+    ],
+  },
   { ...toggle("autoCheckUpdates", "updates"), label: "settings.autoCheck" },
   {
     ...select("updateCheckInterval", "updates", [

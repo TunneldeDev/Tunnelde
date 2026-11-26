@@ -68,7 +68,13 @@ import type {
 } from "./types";
 
 export const isTauri = (): boolean =>
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  typeof window !== "undefined" &&
+  "__TAURI_INTERNALS__" in window &&
+  !(
+    import.meta.env.DEV &&
+    import.meta.env.VITE_TUNNELDE_DEBUGGER === "1" &&
+    window.__TUNNELDE_DEBUGGER_MOCK__
+  );
 
 export interface LogSnapshot {
   diagnostic: string;
@@ -142,6 +148,11 @@ export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   clipboardReadText: () => invoke<string>("clipboard_read_text"),
   clipboardWriteText: (text: string) => invoke<void>("clipboard_write_text", { text }),
+  windowHabits: () =>
+    invoke<{ name: string; current: unknown; saved: unknown }[]>("habits_windows"),
+  habits: () => invoke<Record<string, string> | null>("habits_get"),
+  saveHabits: (values: Record<string, string>) => invoke<void>("habits_save", { values }),
+  resetWindowHabits: () => invoke<void>("habits_reset_windows"),
   settings: () => invoke<Settings>("settings_get"),
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("settings_update", { patch }),
   resetSettings: () => invoke<Settings>("settings_reset"),
@@ -179,6 +190,7 @@ export const api = {
   updateState: () => invoke<UpdateState>("update_state"),
   checkUpdates: (force = true) => invoke<UpdateState>("update_check", { force }),
   installUpdate: () => invoke<UpdateState>("update_install"),
+  releaseHistory: () => invoke<ReleaseHistory>("release_history"),
   updateHistory: (version: string) => invoke<ReleaseHistory>("update_history", { version }),
   openReleasePage: () => invoke<void>("open_release_page"),
 

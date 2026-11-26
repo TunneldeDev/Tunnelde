@@ -2,7 +2,7 @@ import { EditorSelection, EditorState, Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { useRef } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import { LargeEditor, editorSelectionSnapshot } from "@/features/editor/LargeEditor";
 import {
@@ -19,15 +19,15 @@ function mount(content: string, initial: Partial<Parameters<typeof LargeEditor>[
   const result: {
     view: { current: EditorView | null };
     changes: Array<[string, EditorSelectionSnapshot]>;
-    undo: ReturnType<typeof vi.fn>;
-    redo: ReturnType<typeof vi.fn>;
+    undo: Mock<() => boolean>;
+    redo: Mock<() => boolean>;
     inputs: string[];
     rerender: (props: Partial<Parameters<typeof LargeEditor>[0]>) => void;
   } = {
     view: { current: null },
     changes: [],
-    undo: vi.fn(() => true),
-    redo: vi.fn(() => true),
+    undo: vi.fn<() => boolean>(() => true),
+    redo: vi.fn<() => boolean>(() => true),
     inputs: [],
     rerender: () => undefined,
   };

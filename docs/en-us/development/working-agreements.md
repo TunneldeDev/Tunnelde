@@ -62,13 +62,34 @@ page durable; put temporary plans, screenshots and handoff notes in `.tmp/`.
   acceptance beta after the requested scope is complete. Use the automated
   immutable release snapshot workflow; verify platform builds, release assets,
   signatures and updater metadata. A beta is not a claim of stable acceptance.
-- **A stable release must bind to a published, explicitly accepted Beta built
-  from the same product source.** Stable preparation and publication fail unless
-  a maintainer records acceptance on that Beta Release. Green CI, successful
-  builds or verbal approval never replace this gate.
+- Review the generated stable promotion PR, its exact-head CI and the final
+  package/upgrade evidence before merging. A published Beta and separate Release
+  acceptance marker are not required.
 - Keep English and Chinese development guidance and UI translations aligned.
   Document real limitations instead of marking partially implemented work done.
 - Coding subagents may use only `deepseek-ai/DeepSeek-V4.1-Flash` unless the
   maintainer explicitly changes the allowlist. If unavailable, work directly;
   do not silently substitute another model. Contributors implement and revise;
   the coordinating reviewer remains responsible for review, merge and release.
+
+Keep the [UI/UX surface catalog](ui-surface-catalog.md) aligned with UI changes, including location, layout, actions, narrow behavior and states.
+
+Keep important information prominent: errors/conflicts use error color, tint or border, an icon and
+a reason. Color alone, tooltips and silently added controls are insufficient. Generated export
+passwords require a separate save confirmation with selectable password, explicit copy, continue
+and cancel; confirmation precedes file export. Import previews identify direct/dependent conflicts
+and explain both blocking reasons and their resolution.
+
+## Fix commits and verification
+
+Use one commit per independent feature or fix, including related regression tests. Maintain both
+languages of the UI/UX, design conventions and surface catalog. Squash temporary fixups before
+delivery, keeping unrelated fixes in separate commits.
+
+Run type checking, lint, frontend/Rust tests, builds and translation/document checks according to
+the change's risk. Check layout changes in wide/narrow panels, expanded/collapsed states and
+light/dark themes. Synthetic browser scenes using production components verify layout but do not
+replace native-window, real SSH, cross-platform or installer acceptance. Record checks actually
+performed and their limits. Distinguish rolling-window transfer speed from average speed since the
+current observation baseline, with separate remaining-time estimates. Resume resets the rolling
+window but retains the observed average baseline; do not invent historical samples after restart.

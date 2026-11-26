@@ -202,6 +202,9 @@
   min-height: 0;
   overflow: hidden;
 }
+.settings__body {
+  position: relative;
+}
 .settings__nav {
   overflow-y: auto;
 }
@@ -785,4 +788,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.settings-row__control:has(.settings-numeric-choice) {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+  flex: 0 1 360px;
+}
+.settings-numeric-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+.settings-numeric-choice > .td-select {
+  width: auto;
+  min-width: 80px;
+  max-width: 100%;
+}
+.settings-numeric-choice .settings-number {
+  width: 100px;
 }

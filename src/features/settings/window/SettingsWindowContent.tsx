@@ -1,3 +1,5 @@
+import { ReleaseHistoryPanel } from "../components/ReleaseHistoryPanel";
+import { HabitsSettingsView } from "../components/HabitsSettingsView";
 import {
   createContext,
   useContext,
@@ -228,6 +230,19 @@ function composition(
               onShowLogs={() => effect("showOutput")}
             />
           ),
+          renderReleaseHistory: () => (
+            <ReleaseHistoryPanel
+              channel={data.page.settings.updateChannel}
+              useViewState={useSettingsControlState}
+              load={method("releaseHistory")}
+              renderMarkdown={(source) => (
+                <PluginMarkdownView
+                  source={source}
+                  openLink={(url) => effect("externalLink", url)}
+                />
+              )}
+            />
+          ),
           renderNotes: (state) => (
             <UpdateNotesView
               state={state}
@@ -424,6 +439,23 @@ function composition(
   function Special({ section, expanded }: { section: SettingsSpecialSection; expanded?: boolean }) {
     const data = useData();
     switch (section) {
+      case "habits":
+        return (
+          <HabitsSettingsView
+            data={
+              data.habits ?? {
+                ready: false,
+                saving: false,
+                error: null,
+                entries: 0,
+                workspaceCleared: false,
+              }
+            }
+            reset={method("habitsReset")}
+            loadDetails={method("habitsDetails")}
+            selectSection={(section) => effect("section", section)}
+          />
+        );
       case "plugins":
         return <Plugins />;
       case "about":

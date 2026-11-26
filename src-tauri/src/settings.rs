@@ -8,7 +8,7 @@ pub const ACCENTS: [&str; 5] = ["blue", "cyan", "green", "orange", "violet"];
 pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
 pub const MONO_FONTS: [&str; 4] = ["fira-code", "jetbrains-mono", "plex-mono", "system"];
 pub const TITLE_BAR_STYLES: [&str; 2] = ["system", "compact"];
-pub const MONITOR_INTERVALS: [u32; 6] = [1000, 2000, 3000, 5000, 10000, 30000];
+
 pub const COLOR_REGIONS: [&str; 11] = [
     "background",
     "activityBar",
@@ -369,13 +369,13 @@ impl Settings {
             self.file_icon_theme = "auto".into();
         }
         let defaults = Self::default();
-        if ![0, 1, 2, 4, 8].contains(&self.transfer_concurrency) {
+        if self.transfer_concurrency > 8 {
             self.transfer_concurrency = 0;
         }
-        if ![0, 256, 1024, 4096, 16384].contains(&self.transfer_chunk_kib) {
+        if self.transfer_chunk_kib != 0 && !(256..=16384).contains(&self.transfer_chunk_kib) {
             self.transfer_chunk_kib = 0;
         }
-        if ![0, 1, 4, 8, 16, 32].contains(&self.transfer_requests) {
+        if self.transfer_requests > 64 {
             self.transfer_requests = 0;
         }
         self.transfer_upload_limit_kib = self.transfer_upload_limit_kib.min(1_048_576);
@@ -464,10 +464,10 @@ impl Settings {
         } else {
             1.2
         };
-        if ![2, 4, 8].contains(&self.editor_tab_size) {
+        if !(1..=16).contains(&self.editor_tab_size) {
             self.editor_tab_size = 4;
         }
-        if !MONITOR_INTERVALS.contains(&self.monitor_interval_ms) {
+        if !(1000..=30000).contains(&self.monitor_interval_ms) {
             self.monitor_interval_ms = 3000;
         }
         if self.user_css.len() > 200_000 {
@@ -700,8 +700,13 @@ mod tests {
         assert_eq!(legacy.transfer_concurrency, 0);
         assert_eq!(legacy.transfer_chunk_kib, 0);
         assert_eq!(legacy.transfer_requests, 0);
-        for (concurrency, chunk, requests) in [(0, 0, 0), (1, 256, 1), (8, 16384, 32), (4, 4096, 8)]
-        {
+        for (concurrency, chunk, requests) in [
+            (0, 0, 0),
+            (1, 256, 1),
+            (8, 16384, 32),
+            (4, 4096, 8),
+            (3, 1536, 7),
+        ] {
             let mut settings: Settings = serde_json::from_value(serde_json::json!({
                 "transferOptimization": false, "transferCompression": false, "transferConcurrency": concurrency,
                 "transferChunkKib": chunk, "transferRequests": requests
@@ -1019,8 +1024,8 @@ mod tests {
     }
 
     #[test]
-    fn discrete_numeric_choices_reject_unsupported_values() {
-        for interval in MONITOR_INTERVALS {
+    fn custom_numeric_preferences_preserve_valid_values() {
+        for interval in [1000, 1001, 2000, 3000, 4000, 5000, 10000, 30000] {
             let mut settings = Settings {
                 monitor_interval_ms: interval,
                 ..Settings::default()
@@ -1028,7 +1033,7 @@ mod tests {
             settings.sanitize();
             assert_eq!(settings.monitor_interval_ms, interval);
         }
-        for interval in [0, 500, 1001, 4000, 30_001, u32::MAX] {
+        for interval in [0, 500, 999, 30_001, u32::MAX] {
             let mut settings = Settings {
                 monitor_interval_ms: interval,
                 ..Settings::default()
@@ -1036,7 +1041,7 @@ mod tests {
             settings.sanitize();
             assert_eq!(settings.monitor_interval_ms, 3000);
         }
-        for size in [2, 4, 8] {
+        for size in [1, 2, 3, 4, 8, 9, 16] {
             let mut settings = Settings {
                 editor_tab_size: size,
                 ..Settings::default()
@@ -1044,7 +1049,7 @@ mod tests {
             settings.sanitize();
             assert_eq!(settings.editor_tab_size, size);
         }
-        for size in [0, 1, 3, 9, u16::MAX] {
+        for size in [0, 17, u16::MAX] {
             let mut settings = Settings {
                 editor_tab_size: size,
                 ..Settings::default()

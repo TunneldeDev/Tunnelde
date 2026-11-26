@@ -1,4 +1,5 @@
 mod atomic;
+pub mod habits;
 pub mod history;
 pub mod hosts;
 pub mod known_hosts;

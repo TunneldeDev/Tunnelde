@@ -11,7 +11,15 @@ export interface TerminalWindowModel extends WindowModelAppearance {
   };
 }
 export type TerminalWindowCommand =
-  | { operation: "disconnect" | "openSftp" | "openHistory" | "clipboardRead" }
+  | {
+      operation:
+        | "disconnect"
+        | "openSftp"
+        | "openMonitor"
+        | "openProcesses"
+        | "openHistory"
+        | "clipboardRead";
+    }
   | { operation: "clipboardWrite"; text: string }
   | { operation: "font"; font: string }
   | { operation: "recordCommand"; command: string };

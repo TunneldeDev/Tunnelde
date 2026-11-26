@@ -39,9 +39,21 @@ if (!container) {
 // Do not even evaluate the main bootstrap module in a satellite document.
 const satellite = new URLSearchParams(window.location.search).get("panelWindow") === "1";
 const Entry = lazy(() =>
-  satellite
-    ? import("@/app/SatelliteApp").then(({ SatelliteApp }) => ({ default: SatelliteApp }))
-    : import("@/App").then(({ App }) => ({ default: App })),
+  import.meta.env.DEV &&
+  import.meta.env.VITE_TUNNELDE_DEBUGGER === "1" &&
+  "__TAURI_INTERNALS__" in window
+    ? (async () => {
+        if (!satellite) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const context = await invoke<{ mode: string }>("debugger_context");
+          if (context.mode === "native-mock") (await import("@/debugger/storage")).isolateStorage();
+        }
+        const { NativeEntry, DebugSatelliteEntry } = await import("@/debugger/native");
+        return { default: satellite ? DebugSatelliteEntry : NativeEntry };
+      })()
+    : satellite
+      ? import("@/app/SatelliteApp").then(({ SatelliteApp }) => ({ default: SatelliteApp }))
+      : import("@/App").then(({ App }) => ({ default: App })),
 );
 function RootFailure({ event }: { event: DiagnosticEvent | null }) {
   useEffect(() => {

@@ -223,34 +223,45 @@ export async function executeHostPanelCommand(
       return true;
     }
     case "duplicate": {
-      // Main owns persistent creation and route lookup; public display metadata
-      // in another document is never accepted as a writable host input.
-      const copy = await store.createHost({
-        name: host.source ? host.name : `${host.name} ${i18n.t("common.duplicate")}`,
-        host: host.host,
-        port: host.port,
-        username: host.username,
-        authMethod: host.authMethod,
-        keyPath: host.keyPath,
-        groupId: host.groupId,
-        color: host.color,
-        tags: host.tags,
-        note: host.note,
-      });
-      if (!copy) return false;
-      if (!host.source) {
-        try {
-          await api.saveConnectionRoute(copy.id, await api.connectionRoute(host.id));
-        } catch (error) {
+      if (showMain) await reveal();
+      else dialogAvailable();
+      useDialogs.getState().confirm({
+        title: i18n.t("host.duplicateTitle"),
+        body: i18n.t("host.duplicateBody", { name: host.name }),
+        confirmLabel: i18n.t("common.duplicate"),
+        onConfirm: async () => {
+          const host = resolveHostTarget(command.host);
+          // Main owns persistent creation and route lookup; public display metadata
+          // in another document is never accepted as a writable host input.
+          const copy = await store.createHost({
+            name: host.source ? host.name : `${host.name} ${i18n.t("common.duplicate")}`,
+            host: host.host,
+            port: host.port,
+            username: host.username,
+            authMethod: host.authMethod,
+            keyPath: host.keyPath,
+            groupId: host.groupId,
+            color: host.color,
+            tags: host.tags,
+            note: host.note,
+          });
+          if (!copy) return;
+          if (!host.source) {
+            try {
+              await api.saveConnectionRoute(copy.id, await api.connectionRoute(host.id));
+            } catch (error) {
+              await showMain?.();
+              useWorkspace.getState().openHost(copy);
+              throw error;
+            }
+          }
           await showMain?.();
           useWorkspace.getState().openHost(copy);
-          throw error;
-        }
-      }
-      await showMain?.();
-      useWorkspace.getState().openHost(copy);
+        },
+      });
       return true;
     }
+
     case "saveCopy": {
       if (!host.source) throw new Error("pluginView.hostChanged");
       const copy = await store.createHost(savedHostInput(host));
@@ -300,6 +311,8 @@ export async function executeHostPanelCommand(
       if (useSettings.getState().settings.hostDirectConnect) void connectHostDirectly(host);
       else useDialogs.getState().openConnect(host, "terminal");
       break;
+    case "processes":
+    case "monitor":
     case "sftp": {
       const session = useSsh
         .getState()
@@ -307,8 +320,11 @@ export async function executeHostPanelCommand(
           (item) =>
             item.hostId === host.id && item.purpose !== "forwarding" && item.purpose !== "mounts",
         );
-      if (session) useWorkspace.getState().openSftp(session);
-      else useDialogs.getState().openConnect(host, "sftp");
+      if (session) {
+        if (command.operation === "processes") useWorkspace.getState().openProcesses(session);
+        else if (command.operation === "monitor") useWorkspace.getState().openMonitor(session);
+        else useWorkspace.getState().openSftp(session);
+      } else useDialogs.getState().openConnect(host, command.operation);
       break;
     }
     case "installKey":

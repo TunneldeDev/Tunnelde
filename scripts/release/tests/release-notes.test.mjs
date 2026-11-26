@@ -182,7 +182,7 @@ test("collects every comparison page and associates actual development merges", 
       },
     },
   };
-  const changes = await collectChanges({
+  const { commits: changes } = await collectChanges({
     github,
     repo: { owner: "TunneldeDev", repo: "Tunnelde" },
     previousVersion: "0.26.0",
@@ -247,7 +247,7 @@ test("transient comparison and PR pagination failures retain complete ordered hi
       },
     },
   };
-  const changes = await collectChanges({
+  const { commits: changes } = await collectChanges({
     github,
     repo: { owner: "TunneldeDev", repo: "Tunnelde" },
     previousVersion: "0.26.0",
@@ -348,7 +348,7 @@ test("rebased commits retain individual changes, original authors, coauthors and
       },
     },
   };
-  const collected = await collectChanges({
+  const { commits: collected } = await collectChanges({
     github,
     repo: { owner: "TunneldeDev", repo: "Tunnelde" },
     previousVersion: "0.26.0",

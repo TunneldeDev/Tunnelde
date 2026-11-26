@@ -7,6 +7,8 @@ import { applyAppearance, observeSystemAppearance } from "@/lib/prefs/appearance
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 import { presentError } from "@/lib/api/errors";
+import { ipcDiagnosticContext } from "@/lib/api/diagnosticInvoke";
+import { reportError } from "@/lib/diagnostics";
 export interface NativeViewProps {
   client: PanelWindowClient;
   record: WindowViewRecord;
@@ -40,7 +42,48 @@ export function useNativeReadModel<T extends WindowModelAppearance>({
                 ? { action: "readModel" as const, lease: record.lease }
                 : null;
             if (!request) continue;
-            const next = await client.control<T | null>(request);
+            const started = performance.now();
+            let next: T | null;
+            try {
+              next = await client.control<T | null>(request);
+            } catch (error) {
+              if (disposed) return;
+              const message =
+                error && typeof error === "object" && "message" in error ? error.message : null;
+              if (
+                (request.action === "stagedModel" && message === "transfer expired") ||
+                (request.action === "readModel" && message === "stale panel owner")
+              ) {
+                // Commit retires the offer before its invalidation reaches
+                // React. Confirm native retirement rather than showing a toast
+                // for a read started by the still-mounted staged/source tree.
+                const current = await client.snapshot().catch(() => null);
+                if (disposed) return;
+                if (
+                  current &&
+                  (request.action === "stagedModel"
+                    ? !current.transfers.some(({ offer }) => offer.id === request.id)
+                    : !current.panels.some(
+                        (lease) =>
+                          lease.panelId === request.lease.panelId &&
+                          lease.windowId === request.lease.windowId &&
+                          lease.generation === request.lease.generation,
+                      ))
+                )
+                  continue;
+                // These lifecycle rejections are deferred by the transport.
+                // A still-active offer/lease is a real failure: retain the
+                // action and panel kind before legacy UI presentation sees it.
+                reportError("ipc", `panel_window_control.${request.action}`, error, undefined, {
+                  ipc: ipcDiagnosticContext(
+                    "panel_window_control",
+                    { request: { ...request, panelId: record.panelId } },
+                    started,
+                  ),
+                });
+              }
+              throw error;
+            }
             if (disposed || !next) continue;
             // This data originates only from the coordinator's explicit private
             // projection. Do not hydrate writable main stores in a satellite.
@@ -77,7 +120,7 @@ export function useNativeReadModel<T extends WindowModelAppearance>({
       unsubscribe?.();
       appearance();
     };
-  }, [client, record.key, record.staged, record.lease]);
+  }, [client, record.key, record.panelId, record.staged, record.lease]);
   useEffect(() => {
     if (model) presented(model);
   }, [model, presented]);

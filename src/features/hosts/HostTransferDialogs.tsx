@@ -1,3 +1,4 @@
+import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
@@ -41,7 +42,7 @@ function ExportHosts({ ids }: { ids?: string[] }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [generated, setGenerated] = useState(false);
-  const [acknowledged, setAcknowledged] = useState(false);
+  const [confirmingPassword, setConfirmingPassword] = useState(false);
   const close = useHostTransfer((state) => state.close);
   const filter = query.trim().toLowerCase();
   const visible = hosts.filter((host) =>
@@ -50,8 +51,77 @@ function ExportHosts({ ids }: { ids?: string[] }) {
   const allVisible = visible.length > 0 && visible.every((host) => selected.has(host.id));
   const selectedIds = hosts.filter((host) => selected.has(host.id)).map((host) => host.id);
   useBackgroundGuard(true);
+  const exportHosts = () => {
+    setBusy(true);
+    setError(null);
+    void hostTransferApi
+      .export(selectedIds, {
+        includeCredentials,
+        encrypt,
+        password: encrypt ? password : null,
+      })
+      .then((path) => {
+        if (path) {
+          toast(t("hostTransfer.exported"), "success");
+          close();
+        }
+      })
+      .catch((cause) => setError(presentError(cause)))
+      .finally(() => setBusy(false));
+  };
+  if (confirmingPassword)
+    return (
+      <Dialog
+        key="save-password"
+        className="host-transfer"
+        open
+        title={t("hostTransfer.savePasswordTitle")}
+        closeLabel={t("common.close")}
+        onClose={() => setConfirmingPassword(false)}
+        dismissible={!busy}
+        width={480}
+        footer={
+          <>
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirmingPassword(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" disabled={busy} onClick={exportHosts}>
+              {t("hostTransfer.savedPasswordExport")}
+            </Button>
+          </>
+        }
+      >
+        <div className="ssh-import" aria-busy={busy}>
+          <div className="host-transfer__warning" role="note">
+            <AlertTriangle size={18} aria-hidden="true" />
+            <p>{t("hostTransfer.generatedPasswordHint")}</p>
+          </div>
+          <Field label={t("hostTransfer.exportPassword")} htmlFor="hosts-generated-password">
+            <PasswordInput
+              id="hosts-generated-password"
+              value={password}
+              readOnly
+              revealed={showPassword}
+              onRevealedChange={setShowPassword}
+              autoComplete="off"
+              spellCheck={false}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </Field>
+          <Button disabled={busy} onClick={() => copyText(password)}>
+            {t("hostTransfer.copyPassword")}
+          </Button>
+          {error && (
+            <p role="alert" className="td-field__error">
+              {error}
+            </p>
+          )}
+        </div>
+      </Dialog>
+    );
   return (
     <Dialog
+      key="export-options"
       className="host-transfer"
       open
       title={t("hostTransfer.exportTitle")}
@@ -83,37 +153,29 @@ function ExportHosts({ ids }: { ids?: string[] }) {
           </Button>
           <Button
             variant="primary"
-            disabled={busy || !selectedIds.length || (encrypt && generated && !acknowledged)}
+            disabled={busy || !selectedIds.length}
             onClick={() => {
-              setBusy(true);
               setError(null);
+              if (encrypt && generated) {
+                setShowPassword(true);
+                setConfirmingPassword(true);
+                return;
+              }
               if (encrypt && !password) {
+                setBusy(true);
                 void hostTransferApi
                   .generatePassword()
                   .then((value) => {
                     setPassword(value);
                     setGenerated(true);
                     setShowPassword(true);
-                    setAcknowledged(false);
+                    setConfirmingPassword(true);
                   })
                   .catch((cause) => setError(presentError(cause)))
                   .finally(() => setBusy(false));
                 return;
               }
-              void hostTransferApi
-                .export(selectedIds, {
-                  includeCredentials,
-                  encrypt,
-                  password: encrypt ? password : null,
-                })
-                .then((path) => {
-                  if (path) {
-                    toast(t("hostTransfer.exported"), "success");
-                    close();
-                  }
-                })
-                .catch((cause) => setError(presentError(cause)))
-                .finally(() => setBusy(false));
+              exportHosts();
             }}
           >
             {t("hostTransfer.exportSelected", { count: selectedIds.length })}
@@ -164,26 +226,9 @@ function ExportHosts({ ids }: { ids?: string[] }) {
                 onChange={(event) => {
                   setPassword(event.target.value);
                   setGenerated(false);
-                  setAcknowledged(false);
                 }}
               />
             </Field>
-            {generated && (
-              <>
-                <p role="status" className="td-field__hint">
-                  {t("hostTransfer.generatedPasswordHint")}
-                </p>
-                <label className="ssh-import__entry">
-                  <input
-                    type="checkbox"
-                    disabled={busy}
-                    checked={acknowledged}
-                    onChange={(event) => setAcknowledged(event.target.checked)}
-                  />
-                  <span>{t("hostTransfer.passwordSaved")}</span>
-                </label>
-              </>
-            )}
           </>
         )}
 
@@ -500,13 +545,17 @@ function ImportHosts() {
               {t(clearSelection ? "hostTransfer.clearSelection" : "hostTransfer.selectEligible")}
             </Button>
             {conflict && (
-              <p role="status" className="td-field__hint">
-                {t("hostTransfer.conflict")}
-              </p>
+              <div role="alert" className="host-transfer__warning is-error">
+                <AlertTriangle size={18} aria-hidden="true" />
+                <p>{t("hostTransfer.conflict")}</p>
+              </div>
             )}
             <div className="ssh-import__entries">
               {preview.entries.map((entry) => (
-                <label className="ssh-import__entry" key={entry.id}>
+                <label
+                  className={`ssh-import__entry${index.blocked.has(entry.id) ? " is-conflict" : ""}`}
+                  key={entry.id}
+                >
                   <input
                     type="checkbox"
                     checked={selected.has(entry.id)}
@@ -519,7 +568,18 @@ function ImportHosts() {
                   <span className="ssh-import__details">
                     <strong className="ssh-import__alias">{entry.name}</strong>
                     <span className="ssh-import__address">{entry.address}</span>
-                    {entry.conflict && <span>{t("hostTransfer.conflictLabel")}</span>}
+                    {index.blocked.has(entry.id) && (
+                      <span className="host-transfer__conflict">
+                        <AlertTriangle size={14} aria-hidden="true" />
+                        {t(
+                          copies
+                            ? "hostTransfer.conflictCopyLabel"
+                            : entry.conflict
+                              ? "hostTransfer.conflictLabel"
+                              : "hostTransfer.dependencyConflictLabel",
+                        )}
+                      </span>
+                    )}
                     {entry.dependency && <span>{t("hostTransfer.dependency")}</span>}
                     <span>
                       {t("hostTransfer.ruleCounts", {

@@ -1,7 +1,7 @@
 import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
 import { HostFieldsSection } from "./HostFieldsSection";
 import { HostDetailsSections } from "./HostDetailsSections";
-import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
+import { Activity, List, Copy, FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { usePanelLeaseAction } from "@/lib/panels/interaction";
 import { executeHostPanelCommand } from "./panel/execute";
 import { notifyError } from "@/lib/api/errors";
@@ -28,6 +28,8 @@ function Detail({ label, value }: { label: string; value: string }) {
 export interface HostPageServices {
   connect(): void;
   sftp(): void;
+  monitor(): void;
+  processes(): void;
   favorite(): void;
   edit(): void;
   remove(): void;
@@ -71,6 +73,13 @@ export function HostPageView({
           <p className="host-head__meta">{hostSubtitle(host.username, host.host, host.port)}</p>
         </div>
         <div className="host-head__actions">
+          <IconButton
+            label={t(host.source ? "hostSources.saveCopy" : "common.duplicate")}
+            size="sm"
+            onClick={services.duplicate}
+          >
+            <Copy size={15} />
+          </IconButton>
           <Button
             variant="primary"
             size="sm"
@@ -86,6 +95,22 @@ export function HostPageView({
             onClick={services.sftp}
           >
             {t("sftp.title")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leading={<Activity size={13} />}
+            onClick={services.monitor}
+          >
+            {t("monitor.open")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leading={<List size={13} />}
+            onClick={services.processes}
+          >
+            {t("processes.title")}
           </Button>
           {!host.source && (
             <>
@@ -149,9 +174,6 @@ export function HostPageView({
 
       {children}
       <div className="host-page__foot">
-        <Button variant="secondary" onClick={services.duplicate}>
-          {t(host.source ? "hostSources.saveCopy" : "common.duplicate")}
-        </Button>
         <span className="host-page__count">{t("status.hosts", { count: hostCount })}</span>
       </div>
     </div>
@@ -178,6 +200,8 @@ export function HostPage({ hostId }: { hostId: string | null }) {
       services={{
         connect: () => run("connect"),
         sftp: () => run("sftp"),
+        monitor: () => run("monitor"),
+        processes: () => run("processes"),
         favorite: () => run("favorite"),
         edit: () => run("edit"),
         remove: () => run("delete"),

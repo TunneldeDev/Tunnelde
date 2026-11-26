@@ -297,6 +297,16 @@ async fn cancelling_subsystem_wait_closes_channel_without_waiting_for_timeout() 
     task.abort();
     assert!(task.await.err().expect("expected failure").is_cancelled());
     fixture.closed(1).await;
+    // The server observing CLOSE and the client receiving its ACK are separate
+    // events. Retirement owns the permit until the client side settles, so wait
+    // for that proof instead of racing the SSH event loop.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while permits.available_permits() == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("cancelled channel did not release its capacity");
     assert_eq!(permits.available_permits(), 1);
     fixture.sibling_roundtrip().await;
 }

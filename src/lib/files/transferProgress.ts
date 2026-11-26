@@ -5,6 +5,7 @@ export interface TransferSample {
 export interface TransferRate {
   samples: TransferSample[];
   baseline: number;
+  startedAt?: number;
 }
 const WINDOW_MS = 5000;
 
@@ -20,7 +21,7 @@ export function sampleTransfer(
   while (samples.length > 1 && samples[1]!.at <= at - WINDOW_MS) samples.shift();
   if (samples.length > 1 && at - samples.at(-1)!.at < 250) samples[samples.length - 1] = current;
   else samples.push(current);
-  return { baseline, samples };
+  return { baseline, samples, startedAt: previous?.startedAt ?? previous?.samples[0]?.at ?? at };
 }
 
 export function transferProgress(
@@ -50,7 +51,16 @@ export function transferProgress(
       : now - last.at >= WINDOW_MS
         ? 0
         : Math.max(0, (last.bytes - first.bytes) / seconds);
+  const startedAt = item.rate?.startedAt ?? first?.at;
+  const elapsed = startedAt === undefined ? 0 : (now - startedAt) / 1000;
+  const averageSpeed =
+    item.rate && elapsed > 0 ? Math.max(0, (transferred - item.rate.baseline) / elapsed) : null;
   return {
+    averageSpeed,
+    averageEta:
+      remaining !== null && averageSpeed !== null && averageSpeed > 0
+        ? Math.ceil(remaining / averageSpeed)
+        : null,
     transferred,
     total,
     remaining,

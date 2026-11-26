@@ -12,6 +12,7 @@ import { previewColors, resolveAccent } from "@/lib/prefs/colors";
 import type { ResolvedTheme } from "@/lib/prefs/appearance";
 import { cn } from "@/lib/text/format";
 import type { SettingDefinition, SettingOption } from "../catalog";
+import { NumericChoice } from "./NumericChoice";
 import { NumberPreference } from "../NumberPreference";
 import type { SettingsControlState } from "./controlState";
 
@@ -109,7 +110,26 @@ export function PreferenceRowView({
             descriptionId={descriptionId}
           />
         ) : null}
-        {definition.kind === "number" ? (
+        {definition.customNumeric || definition.numericUnits ? (
+          <NumericChoice
+            key={resetVersion}
+            stateKey={`settings:numericChoice:${definition.key}:${resetVersion}`}
+            useViewState={services.useViewState}
+            label={label}
+            descriptionId={descriptionId}
+            value={Number(value)}
+            min={definition.customNumeric?.min ?? definition.min!}
+            max={definition.customNumeric?.max ?? definition.max!}
+            options={definition.options?.map((option) => ({
+              value: String(option.value),
+              label: optionLabel(option),
+            }))}
+            units={definition.numericUnits}
+            disabled={disabled}
+            onChange={setValue}
+          />
+        ) : null}
+        {definition.kind === "number" && !definition.numericUnits ? (
           <NumberPreference
             key={resetVersion}
             stateKey={`settings:number:${definition.key}:${resetVersion}`}
@@ -125,7 +145,7 @@ export function PreferenceRowView({
             onChange={setValue}
           />
         ) : null}
-        {definition.kind === "select" ? (
+        {definition.kind === "select" && !definition.customNumeric ? (
           <Select
             label={label}
             descriptionId={descriptionId}

@@ -93,11 +93,27 @@ describe("transfer throughput", () => {
     const item = { status: "running", transferred: 1200, total: 2000, rate };
     expect(transferProgress(item, 1000)).toMatchObject({
       speed: 200,
+      averageSpeed: 200,
+      averageEta: 4,
       remaining: 800,
       eta: 4,
       percent: 60,
     });
     expect(transferProgress(item, 6000)).toMatchObject({ speed: 0, eta: null });
+  });
+
+  it("retains the overall baseline after the rolling window advances", () => {
+    let rate = sampleTransfer(undefined, 1000, 0);
+    rate = sampleTransfer(rate, 2000, 1000);
+    rate = sampleTransfer(rate, 3000, 6000);
+    rate = sampleTransfer(rate, 3200, 7000);
+    const progress = transferProgress(
+      { status: "running", transferred: 3200, total: 5400, rate },
+      7000,
+    );
+    expect(progress.averageSpeed).toBeCloseTo(2200 / 7);
+    expect(progress.averageEta).toBe(7);
+    expect(progress.speed).not.toBe(progress.averageSpeed);
   });
 
   it("represents unknown totals and completed empty files without invalid percentages", () => {

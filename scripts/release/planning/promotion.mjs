@@ -4,6 +4,7 @@ import {
   releasePrBody,
   releaseSection,
   renderRelease,
+  requiresProductRelease,
   replacePendingRelease,
   summarizeChanges,
 } from "../metadata/notes.mjs";
@@ -44,7 +45,7 @@ export async function planDevelopment({
     if (error.status !== 404) throw error;
     return { main, dev }; // Wait for the reviewed migration PR to reach protected main.
   }
-  const [pkg, history, developmentNotes, ...files] = await Promise.all([
+  const [pkg, history, developmentNotes, ...versionTexts] = await Promise.all([
     readText(github, repo, "package.json", main),
     readText(github, repo, "CHANGELOG.md", main),
     readText(github, repo, "CHANGELOG.md", dev),
@@ -52,8 +53,14 @@ export async function planDevelopment({
   ]);
   const marker = JSON.parse(markerText);
   if (!SHA.test(marker.sourceSha)) throw new Error("Invalid last promoted dev source");
-  const commits = await collectChanges({ github, repo, base: marker.sourceSha, head: dev });
+  const { commits, files: changedFiles } = await collectChanges({
+    github,
+    repo,
+    base: marker.sourceSha,
+    head: dev,
+  });
   if (!summarizeChanges(commits).length) return { main, dev };
+  if (!requiresProductRelease(changedFiles)) return { main, dev };
   await assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker);
   const previousVersion = JSON.parse(pkg).version;
   const automaticVersion = nextVersion(previousVersion, commits);
@@ -86,7 +93,9 @@ export async function planDevelopment({
     distance: commits.length,
     release,
     history,
-    files: Object.fromEntries(VERSION_PATHS.map((path, index) => [path, files[index]])),
+    files: Object.fromEntries(
+      VERSION_PATHS.map((path, index) => [path, versionTexts[index]]),
+    ),
   };
 }
 

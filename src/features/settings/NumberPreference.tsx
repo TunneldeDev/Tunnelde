@@ -8,6 +8,7 @@ interface NumberPreferenceProps {
   min: number;
   max: number;
   step?: number;
+  integerScale?: number;
   label: string;
   disabled?: boolean;
   descriptionId?: string;
@@ -22,6 +23,7 @@ export function NumberPreference({
   min,
   max,
   step = 1,
+  integerScale,
   label,
   disabled,
   descriptionId,
@@ -44,7 +46,11 @@ export function NumberPreference({
     if (draft === null) return;
     const next = Number(draft);
     const validPrecision =
-      step >= 1 ? Number.isInteger(next) : Math.abs(next * 10 - Math.round(next * 10)) < 0.00001;
+      integerScale !== undefined
+        ? Math.abs(next * integerScale - Math.round(next * integerScale)) < 0.00001
+        : step >= 1
+          ? Number.isInteger(next)
+          : Math.abs(next * 10 - Math.round(next * 10)) < 0.00001;
     if (!draft.trim() || !Number.isFinite(next) || next < min || next > max || !validPrecision) {
       setInvalid(true);
       return;

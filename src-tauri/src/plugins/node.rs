@@ -568,10 +568,13 @@ fn extract(
             let mut entry = archive
                 .by_index(index)
                 .map_err(|_| AppError::validation("node.invalidArchive"))?;
-            if !safe_archive_path(entry.name()) {
+            let name = entry
+                .name()
+                .map_err(|_| AppError::validation("node.invalidArchive"))?;
+            if !safe_archive_path(&name) {
                 return Err(AppError::validation("node.invalidArchive"));
             }
-            if entry.name() != wanted {
+            if name != wanted {
                 continue;
             }
             if found

@@ -65,3 +65,8 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
+.td-field + .td-switch-row,
+.td-field__hint + .td-switch-row {
+  margin-top: 12px;
+}

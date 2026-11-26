@@ -31,7 +31,7 @@ const STATUS_KEYS = {
 export interface ConnectionPromptProps {
   host: ConnectionPromptHost;
   services: ConnectionPromptServices;
-  after?: "terminal" | "sftp" | "background";
+  after?: "terminal" | "sftp" | "monitor" | "processes" | "background";
   intent?: "connect" | "installKey";
   initialError?: string;
   purpose?: "forwarding";

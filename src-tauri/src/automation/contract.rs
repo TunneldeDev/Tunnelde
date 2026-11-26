@@ -190,7 +190,7 @@ pub(super) fn validate(request: &Request, token: &str) -> Result<(), Failure> {
     Ok(())
 }
 
-fn equal(left: &str, right: &str) -> bool {
+pub(crate) fn equal(left: &str, right: &str) -> bool {
     left.bytes()
         .zip(right.bytes())
         .fold(0u8, |difference, (a, b)| difference | (a ^ b))

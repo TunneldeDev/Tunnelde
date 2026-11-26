@@ -864,6 +864,10 @@
 
 /* ---------- host page ---------- */
 
+.host-page > * {
+  flex-shrink: 0;
+}
+
 .host-head {
   display: flex;
   align-items: center;
@@ -2129,14 +2133,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  padding: 0 6px 0 12px;
+  min-height: 34px;
+  height: auto;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  padding: 4px 6px 4px 12px;
   border-bottom: 1px solid var(--td-border);
   background: var(--td-panel);
 }
 
 .terminal-head__text {
-  flex: 1 1 auto;
+  flex: 1 1 100px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -2697,21 +2704,28 @@
 
 .editor-page {
   flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--td-bg);
 }
 
 .editor-head {
   container-type: inline-size;
   flex-shrink: 0;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  padding: 0 8px 0 12px;
+  min-height: 34px;
+  height: auto;
+  flex-wrap: wrap;
+  padding: 4px 8px 4px 12px;
   border-bottom: 1px solid var(--td-border);
   background: var(--td-panel);
 }
@@ -2786,6 +2800,17 @@
   .editor-head__name {
     flex: 1;
     max-width: none;
+  }
+}
+
+@container (max-width: 240px) {
+  .editor-head__name {
+    flex: 1 0 calc(100% - 14px);
+  }
+  .editor-head__encoding {
+    flex: 1 1 80px;
+    min-width: 0;
+    max-width: 108px;
   }
 }
 
@@ -3583,6 +3608,7 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -3728,4 +3754,27 @@
 .statusbar__contribution:disabled {
   opacity: 0.65;
   cursor: progress;
+}
+
+.host-tree__children {
+  position: relative;
+}
+.host-tree__children::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(14px + var(--host-tree-depth) * 12px);
+  border-inline-start: 1px solid var(--td-border);
+  pointer-events: none;
+}
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.about > .card {
+  flex: 0 0 auto;
+  min-width: 0;
 }

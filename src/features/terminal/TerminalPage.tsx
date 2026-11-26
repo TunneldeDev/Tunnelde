@@ -10,7 +10,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { Clock, FolderTree, X } from "lucide-react";
+import { Activity, List, Clock, FolderTree, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,7 +20,7 @@ import { StatusDot } from "@/components/ui/display/Misc";
 import { MONO_FONT_OPTIONS } from "@/lib/prefs/defaults";
 import type { MonoFont } from "@/lib/api/types";
 import { presentError } from "@/lib/api/errors";
-import { decodeBase64, encodeBase64 } from "@/lib/text/base64";
+import { decodeBase64 } from "@/lib/text/base64";
 import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
 import { copyText } from "@/lib/session/clipboard";
 import { recordTerminalCommand } from "@/lib/session/history";
@@ -50,6 +50,7 @@ import { shortcutMatches } from "@/lib/keyboard/registry";
 import { createTerminalBridge, type TerminalBridge } from "@/lib/extensions/terminal/bridge";
 import { reportError } from "@/lib/diagnostics";
 import { TerminalSurface } from "./TerminalSurface";
+import { createTerminalInputWriter } from "./terminalInputWriter";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -71,6 +72,8 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         io: api,
         events,
         disconnect: (id) => useSsh.getState().disconnect(id),
+        openProcesses: (session) => useWorkspace.getState().openProcesses(session),
+        openMonitor: (session) => useWorkspace.getState().openMonitor(session),
         openSftp: (session) => {
           useWorkspace.getState().openSftp(session);
         },
@@ -249,6 +252,15 @@ export function TerminalPageView({
       }
     };
     let observer: ResizeObserver | null = null;
+    const inputWriter = createTerminalInputWriter(
+      (data) => serviceRef.current.io.sshWrite(sessionId, data),
+      (error) => {
+        ended = true;
+        terminalBridge.update({ status: "closed" });
+        setClosed(true);
+        toast(presentError(error), "error");
+      },
+    );
 
     const start = async () => {
       await waitForCurrentTerminalFont(() => disposed, serviceRef.current.settings);
@@ -289,10 +301,42 @@ export function TerminalPageView({
         instance.scrollToLine(checkpoint.viewportY);
         checkpointing.current = false;
       }
+      const snapshot = () => ({
+        sequence,
+        cols: instance.cols,
+        rows: instance.rows,
+        viewportY: instance.buffer.active.viewportY,
+        data: serializer.serialize(),
+        decoder: decodeOutput.checkpoint(),
+        state: captureTerminalState(instance),
+        input: { ...capture.current },
+      });
       unregisterCheckpoint = serviceRef.current.checkpoints.register(sessionId, {
+        // Best-effort background saves must never detach or suppress keystrokes.
+        // Capture synchronously at a parser barrier only if no newer packet has
+        // advanced the decoder beyond that barrier; otherwise skip this save.
+        snapshot: () =>
+          new Promise((resolve, reject) => {
+            const target = sequence;
+            const timer = window.setTimeout(
+              () => reject(new Error("terminal.checkpointBusy")),
+              2000,
+            );
+            instance.write("", () => {
+              window.clearTimeout(timer);
+              try {
+                if (disposed || checkpointing.current || sequence !== target)
+                  throw new Error("terminal.checkpointBusy");
+                resolve(snapshot());
+              } catch (error) {
+                reject(error);
+              }
+            });
+          }),
         prepare: async () => {
           checkpointing.current = true;
           terminalBridge.update({ status: "suspended" });
+          await inputWriter.drain();
           const barrier = ended ? sequence : await serviceRef.current.io.sshDetach(sessionId);
           await waitForSequence(barrier);
           // write callbacks run after xterm has parsed every preceding packet.
@@ -307,16 +351,7 @@ export function TerminalPageView({
             });
           });
           if (disposed) throw new Error("terminal.checkpointBusy");
-          return {
-            sequence,
-            cols: instance.cols,
-            rows: instance.rows,
-            viewportY: instance.buffer.active.viewportY,
-            data: serializer.serialize(),
-            decoder: decodeOutput.checkpoint(),
-            state: captureTerminalState(instance),
-            input: { ...capture.current },
-          };
+          return snapshot();
         },
         resume: async () => {
           if (disposed) return;
@@ -542,7 +577,7 @@ export function TerminalPageView({
         if (!serviceRef.current.native || disposed || ended || checkpointing.current) {
           return;
         }
-        void serviceRef.current.io.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
+        inputWriter.push(data);
 
         // Raw terminal input includes password prompts and program responses.
         // Capturing it requires an explicit user opt-in, separate from SSH I/O.
@@ -668,6 +703,7 @@ export function TerminalPageView({
 
     return () => {
       disposed = true;
+      inputWriter.dispose();
       unregisterShortcuts?.();
       checkpointing.current = false;
       unregisterCheckpoint?.();
@@ -751,6 +787,20 @@ export function TerminalPageView({
           }}
         >
           <FolderTree size={15} />
+        </IconButton>
+        <IconButton
+          label={t("monitor.open")}
+          disabled={!session || closed}
+          onClick={() => session && services.openMonitor(session)}
+        >
+          <Activity size={15} />
+        </IconButton>
+        <IconButton
+          label={t("processes.title")}
+          disabled={!session || closed}
+          onClick={() => session && services.openProcesses(session)}
+        >
+          <List size={15} />
         </IconButton>
         <IconButton
           label={t("terminal.disconnect")}

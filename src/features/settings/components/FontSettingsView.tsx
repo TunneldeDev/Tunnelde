@@ -163,7 +163,8 @@ export function FontSettingsView({
       value: previewKey,
       label: `${sourceLabel(candidate)} · ${candidate.name}`,
     });
-  const sample = "AaBb 0123456789  中英文对齐 繁體中文 日本語\n┌────┬────┐  ()[]{} <> /\\ =+-_";
+  const sample =
+    "01234567890123456789\n中英文对齐繁體中文日本\nAaBb ()[]{} <> /\\ =+-_\n┌────┬────┐";
 
   return (
     <div className="font-settings" data-setting="fontSelections" aria-label={t("fonts.title")}>

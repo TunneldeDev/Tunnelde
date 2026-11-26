@@ -53,12 +53,13 @@ impl Endpoint {
     ) -> AppResult<Option<u64>> {
         let (reply, result) = oneshot::channel();
         self.writer
-            .try_send(WriterMsg::Presentation(Request {
+            .send(WriterMsg::Presentation(Request {
                 authorization,
                 operation,
                 reply,
             }))
-            .map_err(|_| AppError::validation("ssh.sessionBusy"))?;
+            .await
+            .map_err(|_| AppError::validation("ssh.sessionMissing"))?;
         // If the caller disappears, the queued message still retains its effect
         // fence. Never abort/retry an already admitted actor operation here.
         result
@@ -108,9 +109,9 @@ mod tests {
         assert!(retired.load(Ordering::SeqCst));
     }
     #[tokio::test]
-    async fn refused_admission_releases_its_own_fence_and_never_retries_the_effect() {
-        let (writer, _receiver) = mpsc::channel(1);
-        writer.try_send(WriterMsg::Attach).unwrap();
+    async fn closed_queue_releases_its_own_fence_and_never_retries_the_effect() {
+        let (writer, receiver) = mpsc::channel(1);
+        drop(receiver);
         let endpoint = Endpoint {
             session_id: "exact".into(),
             writer,
@@ -127,5 +128,36 @@ mod tests {
             .await
             .is_err());
         assert!(retired.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn full_queue_waits_for_capacity_without_losing_or_duplicating_input() {
+        let (writer, mut receiver) = mpsc::channel(1);
+        writer.try_send(WriterMsg::Attach).unwrap();
+        let endpoint = Endpoint {
+            session_id: "exact".into(),
+            writer,
+        };
+        let work = tokio::spawn(async move {
+            endpoint
+                .request(
+                    Authorization {
+                        current: Arc::new(|| true),
+                        retention: Box::new(()),
+                    },
+                    Operation::Write(b"queued key".to_vec()),
+                )
+                .await
+        });
+        tokio::task::yield_now().await;
+        assert!(!work.is_finished());
+        assert!(matches!(receiver.recv().await, Some(WriterMsg::Attach)));
+        let Some(WriterMsg::Presentation(request)) = receiver.recv().await else {
+            panic!("input was lost")
+        };
+        assert!(matches!(request.operation, Operation::Write(ref data) if data == b"queued key"));
+        request.reply.send(Ok(None)).unwrap();
+        work.await.unwrap().unwrap();
+        assert!(receiver.try_recv().is_err());
     }
 }

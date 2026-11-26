@@ -119,6 +119,24 @@ export function visibleHostColumns(
         ];
   });
 }
+/** Unresized columns share the available pane width. Explicit user widths stay
+ * fixed; horizontal scrolling begins only below the combined readable minimum. */
+export function hostTableLayout(
+  columns: DisplayHostColumn[],
+  widths: HostListPreferences["widths"],
+) {
+  let minimum = 0;
+  const tracks = columns.map((column) => {
+    if (Object.hasOwn(widths, column.key)) {
+      minimum += column.width;
+      return `${column.width}px`;
+    }
+    const min = column.key === "name" ? 120 : column.key === "address" ? 140 : 96;
+    minimum += min;
+    return `minmax(${min}px, ${column.width}fr)`;
+  });
+  return { columns: tracks.join(" "), minimum };
+}
 export function sortHostRows(
   hosts: Host[],
   columns: DisplayHostColumn[],

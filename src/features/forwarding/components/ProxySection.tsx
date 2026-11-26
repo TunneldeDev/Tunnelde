@@ -159,6 +159,23 @@ export function ProxySection({
           <h2 className="card__title">{t("proxy.title")}</h2>
           <p>{t("proxy.subtitle", { host: hostName })}</p>
         </div>
+        {groupDraft || routeDraft ? null : (
+          <div className="proxy-section__tools">
+            <Button
+              size="sm"
+              variant="secondary"
+              leading={<Plus size={14} />}
+              disabled={busy}
+              onClick={() => setGroupDraft(emptyGroup(hostId))}
+            >
+              {t("proxy.addGroup")}
+            </Button>
+            <HelpHint label={t("proxy.title")}>{t("proxy.intro")}</HelpHint>
+            <IconButton label={t("proxy.refresh")} disabled={busy} onClick={() => void load()}>
+              <RefreshCw size={14} />
+            </IconButton>
+          </div>
+        )}
       </header>
       {error ? (
         <p role="alert" className="td-field__error">
@@ -168,22 +185,6 @@ export function ProxySection({
       {groups.length === 0 && !groupDraft ? (
         <p className="proxy-section__empty">{t("proxy.empty")}</p>
       ) : null}
-      {groupDraft || routeDraft ? null : (
-        <div className="proxy-section__actions">
-          <Button
-            size="sm"
-            leading={<Plus size={14} />}
-            disabled={busy}
-            onClick={() => setGroupDraft(emptyGroup(hostId))}
-          >
-            {t("proxy.addGroup")}
-          </Button>
-          <HelpHint label={t("proxy.title")}>{t("proxy.intro")}</HelpHint>
-          <IconButton label={t("proxy.refresh")} disabled={busy} onClick={() => void load()}>
-            <RefreshCw size={14} />
-          </IconButton>
-        </div>
-      )}
       {groups.map((group) => {
         const live = runtime.find((item) => item.groupId === group.id);
         const ownRoutes = routes[group.id] ?? [];
