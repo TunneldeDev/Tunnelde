@@ -135,6 +135,7 @@ export function WorkbenchPanel({
         <PanelFrame
           frameRef={panel}
           floating={location === "floating"}
+          visible={visible}
           location={location}
           label={sidebarLabel(view, t)}
           panelId={view}

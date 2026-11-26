@@ -32,6 +32,7 @@ export function useFloatingPanel(
   panel: RefObject<HTMLElement | null>,
   bounds: FloatingRect | null,
   onCommit: (bounds: FloatingRect | null) => void,
+  enabled: boolean,
 ) {
   const [active, setActive] = useState(false);
   useBackgroundGuard(active);
@@ -96,15 +97,18 @@ export function useFloatingPanel(
     finishRef.current = finish;
   });
   useLayoutEffect(() => {
-    paint(bounds ? clampFloatingRect(bounds, availableArea()) : null);
+    paint(enabled && bounds ? clampFloatingRect(bounds, availableArea()) : null);
     // Geometry is committed only on release, reset or viewport changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bounds]);
+  }, [bounds, enabled]);
   useLayoutEffect(() => {
+    if (!enabled) return;
     const resize = () => {
-      finishRef.current(false);
+      if (document.hidden || !panel.current?.getClientRects().length) return;
+      finishRef.current(true);
       if (panel.current?.style.left) {
         const rect = panel.current.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
         const next = clampFloatingRect(
           { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           availableArea(),
@@ -129,7 +133,7 @@ export function useFloatingPanel(
     };
     // The handlers read the latest gesture/commit through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel]);
+  }, [panel, enabled]);
 
   return {
     reset() {
@@ -140,7 +144,7 @@ export function useFloatingPanel(
     handle(action: FloatingAction) {
       return {
         onPointerDown(event: PointerEvent<HTMLElement>) {
-          if (event.button !== 0 || gesture.current || !panel.current) return;
+          if (!enabled || event.button !== 0 || gesture.current || !panel.current) return;
           event.preventDefault();
           const start = read();
           gesture.current = {
@@ -182,7 +186,13 @@ export function useFloatingPanel(
           if (gesture.current?.pointerId === event.pointerId) finish(false);
         },
         onKeyDown(event: KeyboardEvent<HTMLElement>) {
-          if (!event.key.startsWith("Arrow") || event.altKey || event.ctrlKey || event.metaKey)
+          if (
+            !enabled ||
+            !event.key.startsWith("Arrow") ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey
+          )
             return;
           const step = event.shiftKey ? 1 : 10;
           const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;

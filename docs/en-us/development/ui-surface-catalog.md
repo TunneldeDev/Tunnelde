@@ -64,7 +64,7 @@ performed; do not imply unperformed cross-platform acceptance.
 
 ## Usage habit management
 
-Settings → Usage habits: `features/settings/components/HabitsSettingsView.tsx`. Use the settings section heading, save status, descriptive category checkbox cards and a footer action toolbar. Wrap actions at narrow widths and scroll tall content. Keep errors and reset consequences visible; explicitly review selected categories before resetting. Background tasks default to the bottom right, with persisted user geometry taking priority. See [User habits](user-habits.md) for category, upgrade retention and reset rules.
+Settings → Usage habits: `features/settings/components/HabitsSettingsView.tsx`. Use the settings section heading, save status, descriptive category checkbox cards and a footer action toolbar. Wrap actions at narrow widths and scroll tall content. Keep errors and reset consequences visible; explicitly review selected categories before resetting. Background tasks default to the bottom right; status entry opens reset this anchor, while other presentations retain user geometry. See [User habits](user-habits.md) for category, upgrade retention and reset rules.
 
 ## 2026-11-27 acceptance fix conventions
 
@@ -100,3 +100,5 @@ Process rows share the application context menu and Shift+F10: details, remote f
 Background tasks and Output share status button dimensions, typography, spacing, radii, hover, expanded and keyboard focus states. Running, paused, attention and aggregate progress enhance the same button without introducing a separate button style.
 
 The retired monitoring inspector is no longer mounted, sampled or allocated width. Its status, settings and command entries are removed; performance and processes use their dedicated session pages/panels. Legacy preference fields and the Inspector extension slot remain compatible without restoring the old inspector. Compact Windows chrome reserves window controls in the rightmost workspace pane.
+
+Task entry points determine presentation: the activity bar toggles the sidebar panel, while the status entry (including its standalone button when the status bar is hidden) toggles a bottom-right popover. Neither inherits the other entry’s presentation preference. Each status open resets the bottom-right anchor, recovering old invalid coordinates; dragging and resizing remain available during that opening, with content and task ownership retained. A panel transferred to another native window still focuses its sole owner. Only visible floating frames may commit geometry; docked, hidden, background or zero-size measurements must never overwrite it.

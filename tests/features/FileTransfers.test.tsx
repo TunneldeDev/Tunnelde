@@ -583,6 +583,9 @@ function mockPanelRect() {
         height: parseFloat(panel.style.height || "300"),
       }) as DOMRect,
   );
+  vi.spyOn(panel, "getClientRects").mockImplementation(
+    () => [panel.getBoundingClientRect()] as unknown as DOMRectList,
+  );
   return panel;
 }
 

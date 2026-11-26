@@ -105,7 +105,7 @@ it("rejects nonexistent contributions and unavailable previews", () => {
 it("focuses a detached owner from status/navigation without opening duplicate local content", async () => {
   const { createWindowViews, installWindowViews } = await import("@/lib/panels/windowViews");
   const { usePanelWindows } = await import("@/store/panelWindows");
-  const { togglePanel } = await import("@/lib/panels/controller");
+  const { togglePanel, togglePanelAt } = await import("@/lib/panels/controller");
   const focus = vi.fn().mockResolvedValue(null);
   const { windowId, available, snapshot } = usePanelWindows.getState();
   const uninstall = installWindowViews(
@@ -126,7 +126,8 @@ it("focuses a detached owner from status/navigation without opening duplicate lo
     });
     revealPanel("connections");
     togglePanel("connections");
-    expect(focus).toHaveBeenCalledTimes(2);
+    togglePanelAt("connections", "floating");
+    expect(focus).toHaveBeenCalledTimes(3);
     expect(focus).toHaveBeenCalledWith("connections");
     expect(useNavigation.getState().activeSidebar).toBe("hosts");
     expect(panelPresentation("connections").getState().open).toBe(false);
@@ -208,4 +209,22 @@ it("opens an opted-out contribution in the sidebar despite an old floating prefe
     visible: true,
     presentations: ["sidebar", "workspace"],
   });
+});
+
+it("opens tasks at the explicitly requested entry location regardless of saved preference", async () => {
+  const { togglePanelAt } = await import("@/lib/panels/controller");
+  setPanelLocation("tasks", "workspace");
+  panelPresentation("tasks").getState().setBounds({ x: 0, y: 0, width: 540, height: 560 });
+  togglePanelAt("tasks", "floating");
+  expect(useWorkspace.getState().tabs.some((tab) => tab.id === "sidebar:tasks")).toBe(false);
+  expect(panelPresentation("tasks").getState()).toMatchObject({ open: true, bounds: null });
+  togglePanelAt("tasks", "sidebar");
+  expect(panelPresentation("tasks").getState().open).toBe(false);
+  expect(useNavigation.getState()).toMatchObject({ activeSidebar: "tasks", sidebarVisible: true });
+  togglePanelAt("tasks", "sidebar");
+  expect(useNavigation.getState().sidebarVisible).toBe(false);
+  togglePanelAt("tasks", "floating");
+  expect(panelPresentation("tasks").getState().open).toBe(true);
+  togglePanelAt("tasks", "floating");
+  expect(panelPresentation("tasks").getState().open).toBe(false);
 });

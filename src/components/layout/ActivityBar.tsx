@@ -16,6 +16,7 @@ import {
   Terminal,
   Wrench,
 } from "lucide-react";
+import { togglePanelAt } from "@/lib/panels/controller";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { useNavigation } from "@/store/navigation";
@@ -75,6 +76,10 @@ export function ActivityBar() {
     })),
   ] satisfies { view: SidebarView; Icon: typeof Server }[];
   const selectView = async (view: SidebarView) => {
+    if (view === "tasks") {
+      togglePanelAt(view, "sidebar");
+      return;
+    }
     if (panelPresentation(view).getState().open) {
       panelPresentation(view).getState().raise();
       return;
@@ -138,7 +143,8 @@ export function ActivityBar() {
         const docked = !!tab;
         const expanded = docked
           ? !tab.hidden && panes.some((pane) => pane.activeId === id)
-          : !!presentations[view]?.open || (visible && activeSidebar === view);
+          : (view !== "tasks" && !!presentations[view]?.open) ||
+            (visible && activeSidebar === view);
         return (
           <IconButton
             key={view}

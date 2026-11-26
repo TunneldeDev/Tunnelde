@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { PanelHeader, useWorkbenchPanel } from "@/components/layout/WorkbenchPanel";
-import { togglePanel } from "@/lib/panels/controller";
+import { togglePanelAt } from "@/lib/panels/controller";
 import { cn } from "@/lib/text/format";
 import {
   useBackgroundTasks,
@@ -14,8 +14,6 @@ import {
   type BackgroundTaskEntry,
 } from "@/lib/tasks/background";
 import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
-import { useWorkspace } from "@/store/workspace";
-import { useNavigation } from "@/store/navigation";
 import { taskPresentation } from "./presentation";
 import { BackgroundTaskRow } from "./BackgroundTaskRow";
 import { toast } from "@/store/toasts";
@@ -26,13 +24,6 @@ import "./backgroundTasks.css";
 export function BackgroundTaskStatusButton({ floating = false }: { floating?: boolean }) {
   const { t } = useTranslation();
   const open = useBackgroundTaskPanel((s) => s.open);
-  const tabs = useWorkspace((s) => s.tabs);
-  const panes = useWorkspace((s) => s.panes);
-  const taskTab = tabs.find((tab) => tab.id === "sidebar:tasks");
-  const sidebarVisible = useNavigation((s) => s.sidebarVisible && s.activeSidebar === "tasks");
-  const active = taskTab
-    ? !taskTab.hidden && panes.some((pane) => pane.activeId === taskTab.id)
-    : sidebarVisible;
   const items = useBackgroundTasks((s) => s.items);
   const visible = items.filter((item) => item.visible !== false);
   const running = visible.filter((item) => item.status === "running");
@@ -81,11 +72,11 @@ export function BackgroundTaskStatusButton({ floating = false }: { floating?: bo
       aria-label={t("tasks.title")}
       aria-description={hint}
       title={hint}
-      aria-expanded={taskTab ? active : sidebarVisible || open}
+      aria-expanded={open}
       aria-controls="sidebar-tasks"
       data-panel-trigger="tasks"
       data-task-trigger
-      onClick={() => togglePanel("tasks", "floating")}
+      onClick={() => togglePanelAt("tasks", "floating")}
     >
       <ListTodo size={13} />
       <span aria-live="polite" aria-atomic="true">

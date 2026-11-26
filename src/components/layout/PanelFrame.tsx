@@ -10,6 +10,7 @@ type Geometry = ReturnType<typeof useFloatingPanel>;
  * The caller owns lifetime and chrome actions; moving a frame never owns SSH. */
 export function PanelFrame({
   floating = false,
+  visible = true,
   location = "workspace",
   label,
   bounds = null,
@@ -21,6 +22,7 @@ export function PanelFrame({
   panelId,
 }: {
   floating?: boolean;
+  visible?: boolean;
   location?: string;
   label: string;
   bounds?: FloatingRect | null;
@@ -34,7 +36,7 @@ export function PanelFrame({
   const ownRef = useRef<HTMLElement>(null);
   const ref = frameRef ?? ownRef;
   const { t } = useTranslation();
-  const geometry = useFloatingPanel(ref, floating ? bounds : null, onBounds);
+  const geometry = useFloatingPanel(ref, bounds, onBounds, floating && visible);
   useEffect(() => {
     const element = ref.current;
     if (!floating || !element || !onEscape) return;
