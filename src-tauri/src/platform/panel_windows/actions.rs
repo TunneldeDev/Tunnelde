@@ -160,6 +160,7 @@ impl FileCommand {
 )]
 pub(crate) enum TerminalCommand {
     Disconnect {},
+    OpenProcesses {},
     OpenMonitor {},
     OpenSftp {},
     OpenHistory {},

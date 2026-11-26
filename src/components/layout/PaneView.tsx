@@ -3,6 +3,7 @@ import { nativePanelMoveActions } from "@/lib/panels/windowMoves";
 import { panelDropZone as zoneOf, type PanelDropZone as DropHint } from "@/lib/layout/dropZone";
 import {
   Activity,
+  List,
   GripVertical,
   PanelTop,
   Blocks,
@@ -83,6 +84,7 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   editor: FileText,
   history: History,
   monitor: Activity,
+  processes: List,
   pluginView: Blocks,
   pluginDetail: Blocks,
   knownHosts: ShieldCheck,
@@ -96,6 +98,7 @@ const NAMED: WorkspaceTab["kind"][] = [
   "editor",
   "history",
   "monitor",
+  "processes",
   "pluginView",
   "pluginDetail",
 ];

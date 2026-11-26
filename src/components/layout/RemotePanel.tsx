@@ -1,9 +1,7 @@
 import { Activity, List, Maximize2, X } from "lucide-react";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
-import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
 import { cn, formatPercent } from "@/lib/text/format";
 import { useMonitor } from "@/store/monitor";
 import { useWorkspace } from "@/store/workspace";
@@ -27,7 +25,7 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const entry = useMonitor((state) => state.entries[sessionId]);
   const samples = useMonitorHistory((state) => state.samples[sessionId] ?? EMPTY_SAMPLES);
-  const [processesOpen, setProcessesOpen] = useState(false);
+  const openProcesses = useWorkspace((state) => state.openProcesses);
   const openMonitor = useWorkspace((state) => state.openMonitor);
   useRemoteMonitor(sessionId, !hidden && session !== null);
 
@@ -85,7 +83,8 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
             <IconButton
               label={t("processes.title")}
               size="sm"
-              onClick={() => setProcessesOpen(true)}
+              disabled={!session}
+              onClick={() => session && openProcesses(session)}
             >
               <List size={12} />
             </IconButton>
@@ -108,14 +107,6 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
           </div>
         </div>
       </div>
-
-      {processesOpen ? (
-        <ProcessesDialog
-          key={sessionId}
-          sessionId={sessionId}
-          onClose={() => setProcessesOpen(false)}
-        />
-      ) : null}
     </aside>
   );
 }
