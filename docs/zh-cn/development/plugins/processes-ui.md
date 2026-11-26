@@ -49,3 +49,5 @@ Shell 校验与发送信号不是内核原子进程句柄，也不保证进程�
 新增实验 RPC `monitor.killTree({sessionId,pid,expectedStartTicks})` 需要 `monitor.write`；`monitor.executable` 同参数需要 `monitor.read` 并返回远端绝对路径。两者保留 native origin 和会话所有权检查；旧 `monitor.kill` 契约不变。文件目录使用同一会话的文件浏览器打开，不交给本机文件管理器。
 
 “运行新任务”在同一共享工具栏提供 Shell 命令与可选绝对工作目录，保留错误及提交 PID，支持键盘和焦点回退。命令在远端以 SSH 用户通过 `nohup sh -c` 后台运行，无终端、输入输出丢弃，不自动提权。目录留空使用登录目录；命令与目录独立引用，不将目录拼入命令语法。PID 只表示提交，不能作为成功完成证据。实验 RPC `monitor.launch({sessionId,command,cwd})` 需要 `monitor.write` 和 `ssh.exec`，返回 PID；有长度、空值、NUL 和目录校验。
+
+树快照只包含深度大于零的已发现子树成员；AWK 查询父链时产生的零深度占位不属于目标。Linux 回归测试运行真实父子进程，验证启动时间不符时拒绝、子进程实际终止且不误触操作通道保护。

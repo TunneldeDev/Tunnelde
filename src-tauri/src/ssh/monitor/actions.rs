@@ -27,7 +27,7 @@ protected=$(printf '%s\n' "$rows" | awk -v current=$$ '{{p[$1]=$2}} END {{while(
 tree=$(printf '%s\n' "$rows" | awk -v root={pid} '
 {{p[$1]=$2; start[$1]=$3}}
 END {{d[root]=1; for(pass=0;pass<length(p);pass++) {{changed=0; for(id in p) if(!d[id] && d[p[id]]) {{d[id]=d[p[id]]+1;changed=1}}; if(!changed)break}}
-for(id in d) print d[id],id,p[id],start[id]}}' | sort -rn)
+for(id in d) if(d[id]>0) print d[id],id,p[id],start[id]}}' | sort -rn)
 for id in $protected; do
   printf '%s\n' "$tree" | awk -v id="$id" '$2==id {{found=1}} END {{exit !found}}' && {{ echo monitor.killProtected; exit 1; }}
 done
@@ -122,6 +122,15 @@ mod linux_tests {
             .unwrap();
         let _ = root.kill();
         let _ = root.wait();
+        for _ in 0..100 {
+            if std::fs::read_to_string(format!("/proc/{child}/stat"))
+                .map(|s| s.rsplit_once(") ").unwrap().1.starts_with('Z'))
+                .unwrap_or(true)
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         let child_stat = std::fs::read_to_string(format!("/proc/{child}/stat"));
         assert!(
             child_stat
