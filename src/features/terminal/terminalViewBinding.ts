@@ -229,9 +229,12 @@ export function createTerminalViewBinding(
     releaseOnFailure: false,
     checkpoints: {
       take: () => {
-        return restored
-          ? decodeTerminalCheckpoint(restored, "panel")
-          : takeTerminalCheckpoint(sessionId);
+        // Suspension captures after draining/detaching the PTY. The native
+        // panel may still hold an older periodic checkpoint from that document.
+        return (
+          takeTerminalCheckpoint(sessionId) ??
+          (restored ? decodeTerminalCheckpoint(restored, "panel") : undefined)
+        );
       },
       register: registerTerminalCheckpoint,
     },

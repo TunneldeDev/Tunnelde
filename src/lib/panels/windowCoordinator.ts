@@ -2,6 +2,25 @@ import { publishStagedPresentation } from "./presentationRequests";
 import type { PanelWindowClient } from "./windowClient";
 import type { NativePanelSnapshot, PanelTransferOffer } from "./windowProtocol";
 
+function registered(id: string, snapshot: NativePanelSnapshot): boolean {
+  if (!snapshot.panels.some((panel) => panel.panelId === id)) return false;
+  // A lease survives main WebView recreation, but resource bindings belong to
+  // its old document. Missing descriptors require native rebinding before the
+  // new document can render; removing/recreating the panel would lose its state.
+  const descriptors = id.startsWith("terminal:")
+    ? snapshot.terminalViews
+    : id.startsWith("sftp:") || id.startsWith("files:")
+      ? snapshot.filePages
+      : id.startsWith("editor-view:")
+        ? snapshot.editorPages
+        : id.startsWith("host-view:")
+          ? snapshot.hostPages
+          : id.startsWith("settings-view:")
+            ? snapshot.settingsPages
+            : null;
+  return descriptors === null || !!descriptors?.some((view) => view.panelId === id);
+}
+
 /** Main-document coordination only. This adapter owns neither SSH sessions nor
  * feature stores, and never creates a second persistence/autoconnect worker. */
 export function startPanelWindowCoordinator(
@@ -38,7 +57,7 @@ export function startPanelWindowCoordinator(
       if (disposed) return;
     }
     for (const id of ids) {
-      if (snapshot.panels.some((panel) => panel.panelId === id)) continue;
+      if (registered(id, snapshot)) continue;
       if (registerPanel) await registerPanel(id);
       else await client.control({ action: "addPanel", panelId: id });
       if (disposed) return;

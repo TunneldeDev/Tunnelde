@@ -5,6 +5,8 @@ import { terminalPreferenceProjection } from "@/features/terminal/terminalViewSe
 import {
   registerTerminalCheckpoint,
   beginTerminalHandoff,
+  restoreTerminalCheckpoints,
+  takeTerminalCheckpoint,
 } from "@/features/terminal/terminalCheckpoint";
 import {
   encodeTerminalCheckpoint,
@@ -21,6 +23,7 @@ const dispose: Array<() => void> = [];
 afterEach(() => {
   for (const stop of dispose.splice(0).reverse()) stop();
   useWindowViews.setState({ entries: new Map() });
+  restoreTerminalCheckpoints({});
 });
 function fixture(staged = false, restored = false) {
   const id = "terminal:s1";
@@ -135,6 +138,13 @@ it("restores a real lossless checkpoint before acknowledging parser readiness", 
   await waiting;
   expect(ready).toHaveBeenCalledOnce();
   expect(f.client.terminals.attach).not.toHaveBeenCalled();
+});
+it("restores the final background checkpoint ahead of an older periodic panel snapshot", () => {
+  const latest = { ...terminalCheckpointFixture(), sequence: 18, data: "latest screen" };
+  restoreTerminalCheckpoints({ s1: latest });
+  const f = fixture(false, true);
+  expect(f.binding.services.checkpoints.take("s1")).toEqual(latest);
+  expect(takeTerminalCheckpoint("s1")).toBeUndefined();
 });
 it("ordinary checkpoints save the live parser without freezing input or detaching the stream", async () => {
   const f = fixture();

@@ -3,6 +3,7 @@ vi.mock("@/lib/panels/presentationRequests", () => ({
   publishStagedPresentation: vi.fn().mockResolvedValue(undefined),
 }));
 import { startPanelWindowCoordinator } from "@/lib/panels/windowCoordinator";
+import { createWindowViews, useWindowViews } from "@/lib/panels/windowViews";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import type { NativePanelSnapshot, PanelWindowCommand } from "@/lib/panels/windowProtocol";
 const settle = async () => {
@@ -345,6 +346,73 @@ it("uses resource registration before snapshot publication instead of addPanel f
   expect(f.receive).toHaveBeenCalledWith(
     expect.objectContaining({ terminalViews: [{ panelId: id, allowMove: true }] }),
   );
+  expect(f.failure).not.toHaveBeenCalled();
+  coordinator.dispose();
+});
+
+it.each([
+  ["terminal:existing-session", "terminalViews"],
+  ["sftp:existing-session", "filePages"],
+  ["files:local-page", "filePages"],
+  ["editor-view:existing-page", "editorPages"],
+  ["host-view:existing-page", "hostPages"],
+  ["settings-view:existing-page", "settingsPages"],
+] as const)(
+  "rebinds %s after document recreation even when its native lease survives",
+  async (id, descriptor) => {
+    const f = fixture();
+    const lease = { panelId: id, windowId: "main", generation: 10 };
+    // Native navigation rotates the document and leases; resource descriptors
+    // disappear until the new coordinator binds the resource again.
+    f.setSnapshot({ ...f.snapshot(), panels: [lease], [descriptor]: [] });
+    const views = createWindowViews(f.client);
+    const registerPanel = vi.fn(async () => {
+      f.setSnapshot({ ...f.snapshot(), [descriptor]: [{ panelId: id, allowMove: true }] });
+    });
+    const pending: Promise<void>[] = [];
+    const coordinator = startPanelWindowCoordinator(f.client, {
+      panelIds: () => [id],
+      registerPanel,
+      receive: (snapshot) => pending.push(views.reconcile(snapshot)),
+      failure: f.failure,
+    });
+    try {
+      await coordinator.ready;
+      await Promise.all(pending);
+      expect(registerPanel).toHaveBeenCalledExactlyOnceWith(id);
+      expect(useWindowViews.getState().entries.get(id)?.lease).toEqual(lease);
+      expect(f.control).not.toHaveBeenCalledWith({ action: "addPanel", panelId: id });
+      expect(f.control).not.toHaveBeenCalledWith({ action: "removePanel", panelId: id });
+      await coordinator.refresh();
+      expect(registerPanel).toHaveBeenCalledOnce();
+      expect(f.failure).not.toHaveBeenCalled();
+    } finally {
+      coordinator.dispose();
+      views.dispose();
+    }
+  },
+);
+
+it("keeps an already bound terminal satellite owner without rebinding or recreating it", async () => {
+  const f = fixture();
+  const id = "terminal:existing-session";
+  const lease = { panelId: id, windowId: "satellite", generation: 12 };
+  f.setSnapshot({
+    ...f.snapshot(),
+    panels: [lease],
+    terminalViews: [{ panelId: id, allowMove: true }],
+  });
+  const registerPanel = vi.fn();
+  const coordinator = startPanelWindowCoordinator(f.client, {
+    panelIds: () => [id],
+    registerPanel,
+    receive: f.receive,
+    failure: f.failure,
+  });
+  await coordinator.ready;
+  expect(registerPanel).not.toHaveBeenCalled();
+  expect(f.receive).toHaveBeenCalledWith(expect.objectContaining({ panels: [lease] }));
+  expect(f.control).toHaveBeenCalledExactlyOnceWith({ action: "ready" });
   expect(f.failure).not.toHaveBeenCalled();
   coordinator.dispose();
 });
