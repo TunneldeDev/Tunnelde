@@ -1733,3 +1733,17 @@ existing permissions. They do not admit raw arbitrary invoke, do not make
 factoryless/legacy plugin presentation movable, and do not replace the remaining
 physical pointer, Windows/Linux, mixed-DPI, real SSH/FUSE or final acceptance
 work tracked by the rollout issue.
+
+## Panel entry points and floating tab-strip dragging
+
+Files, monitoring and process management are peer session workspace panels, accessible from host
+details and the terminal toolbar. Host menus also expose monitoring. Reuse an eligible ordinary
+session and use the shared connection navigation for post-connect destinations; do not borrow
+forwarding-only sessions. Closing a connection clears related tabs. Hidden process pages suspend
+sampling without disconnecting SSH. Process management reuses the existing list, filters, sorting
+and termination confirmation instead of maintaining a second business implementation.
+
+Blank areas of a floating group's tab strip drag the window using the shared geometry control.
+Tabs, buttons and inputs do not start background dragging. The existing keyboard drag handle remains
+available. Release commits position; Escape or pointer cancellation rolls back. Moving the window
+must not remount its content.
