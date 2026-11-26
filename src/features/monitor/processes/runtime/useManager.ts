@@ -146,6 +146,21 @@ export function useProcessManager(sessionId: string, active = true) {
       setSelection(process ? { sessionId, key: processIdentity(process) } : null);
     },
     requestTerminate,
+    async launch(command: string, cwd: string) {
+      if (!live() || lock.current) throw new Error("plugin.processes.unavailable");
+      const request = {};
+      lock.current = request;
+      setAction({ sessionId, busy: true, error: null });
+      try {
+        const pid = await api.remoteProcessLaunch(sessionId, command, cwd);
+        if (!live()) return null;
+        sample.refresh();
+        return pid;
+      } finally {
+        if (lock.current === request) lock.current = null;
+        if (live()) setAction({ sessionId, busy: false, error: null });
+      }
+    },
     async openLocation(process: RemoteProcess) {
       const present = () =>
         live() &&
@@ -164,17 +179,15 @@ export function useProcessManager(sessionId: string, active = true) {
         );
         if (!present()) return;
         const session = useSsh.getState().sessions.find((item) => item.id === sessionId)!;
-        useWorkspace
-          .getState()
-          .openFilePane(
-            {
-              source: { kind: "remote", sessionId },
-              path: executable.slice(0, executable.lastIndexOf("/")) || "/",
-              ownerSessionId: sessionId,
-              remoteIdentity: { hostId: session.hostId, address: session.address },
-            },
-            process.name,
-          );
+        useWorkspace.getState().openFilePane(
+          {
+            source: { kind: "remote", sessionId },
+            path: executable.slice(0, executable.lastIndexOf("/")) || "/",
+            ownerSessionId: sessionId,
+            remoteIdentity: { hostId: session.hostId, address: session.address },
+          },
+          process.name,
+        );
         setAction({ sessionId, busy: false, error: null });
       } catch (cause) {
         if (live()) setAction({ sessionId, busy: false, error: presentError(cause) });

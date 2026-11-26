@@ -1,6 +1,7 @@
 use super::ApiMethod;
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("monitor.launch", ["monitor.write", "ssh.exec"], "{sessionId:string,command:string,cwd:string}", "Launch a noninteractive shell command with detached streams; returns launch PID, not completion status."),
     method!(
         "monitor.killTree",
         ["monitor.write"],

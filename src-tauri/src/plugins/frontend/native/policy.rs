@@ -136,7 +136,9 @@ fn policy(method: &str) -> Option<CallPolicy> {
         "files.content.observe" => Some(CallPolicy::StagedData),
         // Remote process termination is a committed network mutation. It stays
         // unavailable to scoped tools until its own target contract exists.
-        "monitor.kill" | "monitor.killTree" | "monitor.executable" => Some(CallPolicy::OwnedData),
+        "monitor.kill" | "monitor.killTree" | "monitor.executable" | "monitor.launch" => {
+            Some(CallPolicy::OwnedData)
+        }
         // Mutations await actual I/O; even keyring reads can prompt/perform OS
         // work, so they are NOT admitted during staging.
         "hosts.routes.save"

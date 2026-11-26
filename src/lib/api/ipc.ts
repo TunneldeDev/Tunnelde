@@ -317,6 +317,8 @@ export const api = {
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>
     invoke<RemoteProcess[]>("remote_processes", { sessionId }),
+  remoteProcessLaunch: (sessionId: string, command: string, cwd: string) =>
+    invoke<number>("remote_process_launch", { sessionId, command, cwd }),
   remoteKillTree: (sessionId: string, pid: number, expectedStartTicks: number) =>
     invoke<void>("remote_kill_tree", { sessionId, pid, expectedStartTicks }),
   remoteProcessExecutable: (sessionId: string, pid: number, expectedStartTicks: number) =>

@@ -119,6 +119,7 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "logs.read",
             "monitor.executable",
             "monitor.killTree",
+            "monitor.launch",
             "mounts.connections.get",
             "mounts.connections.list",
             "mounts.connections.observe",
@@ -317,4 +318,20 @@ fn panel_methods_are_explicit_experimental_permission_checked_additions() {
         assert_eq!(entry.permissions, [permission]);
         assert_eq!(entry.stability, "experimental");
     }
+}
+
+#[test]
+fn process_actions_advertise_the_actual_execution_permissions() {
+    assert_eq!(
+        method_info("monitor.killTree").unwrap().permissions,
+        ["monitor.write"]
+    );
+    assert_eq!(
+        method_info("monitor.executable").unwrap().permissions,
+        ["monitor.read"]
+    );
+    assert_eq!(
+        method_info("monitor.launch").unwrap().permissions,
+        ["monitor.write", "ssh.exec"]
+    );
 }

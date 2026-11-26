@@ -3,15 +3,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSsh } from "@/store/ssh";
 import type { RemoteProcess } from "@/lib/api/types";
 
-const { remoteProcesses, remoteKill, remoteKillTree, remoteProcessExecutable } = vi.hoisted(() => ({
+const {
+  remoteProcesses,
+  remoteKill,
+  remoteKillTree,
+  remoteProcessExecutable,
+  remoteProcessLaunch,
+} = vi.hoisted(() => ({
   remoteProcesses: vi.fn(),
   remoteKill: vi.fn(),
   remoteKillTree: vi.fn(),
   remoteProcessExecutable: vi.fn(),
+  remoteProcessLaunch: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({
   isTauri: () => false,
-  api: { remoteProcesses, remoteKill, remoteKillTree, remoteProcessExecutable },
+  api: {
+    remoteProcesses,
+    remoteKill,
+    remoteKillTree,
+    remoteProcessExecutable,
+    remoteProcessLaunch,
+  },
 }));
 import i18n from "@/i18n/i18n";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
@@ -48,6 +61,7 @@ beforeEach(async () => {
   });
   remoteProcesses.mockReset();
   remoteKill.mockReset().mockResolvedValue(undefined);
+  remoteProcessLaunch.mockReset().mockResolvedValue(888);
   remoteKillTree.mockReset().mockResolvedValue(undefined);
   remoteProcessExecutable.mockReset().mockResolvedValue("/opt/bin/worker");
   await i18n.changeLanguage("en-US");
@@ -285,4 +299,21 @@ it("resolves executable location on the remote session and opens its directory",
   );
   open.mockRestore();
   useContextMenu.getState().close();
+});
+
+it("submits a new remote task with the exact command and working directory", async () => {
+  remoteProcesses.mockResolvedValue([process()]);
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  await screen.findByText("worker");
+  fireEvent.click(screen.getByRole("button", { name: "Run new task" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Shell command" }), {
+    target: { value: "sleep 60 & wait" },
+  });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Working directory (optional, absolute path)" }),
+    { target: { value: "/tmp/with spaces" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+  expect(await screen.findByText("Task submitted · PID 888")).toBeTruthy();
+  expect(remoteProcessLaunch).toHaveBeenCalledWith("s", "sleep 60 & wait", "/tmp/with spaces");
 });
