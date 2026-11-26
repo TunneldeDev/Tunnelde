@@ -174,12 +174,12 @@ describe("workspace group actions", () => {
     expect(useWorkspace.getState().tabs.find((tab) => tab.id === "page:settings")?.pinned).toBe(
       false,
     );
-    act(() => useWorkspace.getState().openPage("about"));
-    fireEvent.contextMenu(screen.getByRole("tab", { name: "About" }));
+    act(() => useWorkspace.getState().openPage("knownHosts"));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "Trusted hosts" }));
     // The action is available independently of the old pinned-tab behavior.
     const action = useContextMenu.getState().menu?.items.find((item) => item.label === "Keep open");
     act(() => action?.onSelect?.());
-    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "page:about")?.preview).toBe(
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "page:knownHosts")?.preview).toBe(
       false,
     );
   });

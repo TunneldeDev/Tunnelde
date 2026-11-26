@@ -166,7 +166,9 @@ impl Drop for Effect {
     fn drop(&mut self) {
         let registry = self.app.state::<native::Registry>();
         native::lock(&registry).finish_native_action(&self.lease.panel_id, &self.id);
-        native::changed(&self.app);
+        // Update derived public movement availability only when it changed.
+        // Invalidating every private renderer for each key causes an IPC storm.
+        super::public::snapshot(&self.app);
     }
 }
 

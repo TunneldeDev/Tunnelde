@@ -22,6 +22,7 @@ export interface UpdateStatusServices {
   openRelease(): void;
   renderDiagnostics(failures: UpdateSourceFailure[]): ReactNode;
   renderNotes(state: UpdateState & { version: string }): ReactNode;
+  renderReleaseHistory?(): ReactNode;
 }
 export function UpdateStatusView({
   settings,
@@ -167,6 +168,7 @@ export function UpdateStatusView({
         <p className="settings-row__hint">{t("updates.waitForStable")}</p>
       ) : null}
       <p className="settings-row__hint">{t("updates.installHint")}</p>
+      {services.renderReleaseHistory?.()}
       {state?.available && state.version
         ? services.renderNotes({ ...state, version: state.version })
         : null}

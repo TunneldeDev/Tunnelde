@@ -5,3 +5,45 @@
 .host-transfer__select-all {
   margin-inline-end: auto;
 }
+
+.host-transfer__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--td-orange);
+  border-radius: var(--td-radius-sm);
+  color: var(--td-orange);
+  background: color-mix(in srgb, var(--td-orange) 8%, var(--td-panel));
+  font-size: 12px;
+  line-height: 1.6;
+}
+.host-transfer__warning p {
+  margin: 0;
+}
+.host-transfer__warning svg,
+.host-transfer__conflict svg {
+  flex: none;
+  margin-top: 2px;
+}
+.host-transfer__warning.is-error,
+.host-transfer .ssh-import__entry.is-conflict {
+  border-color: var(--td-red);
+  background: color-mix(in srgb, var(--td-red) 8%, var(--td-panel));
+}
+.host-transfer__warning.is-error,
+.host-transfer__conflict {
+  color: var(--td-red);
+}
+.host-transfer .ssh-import__entry.is-conflict {
+  box-shadow: inset 3px 0 var(--td-red);
+}
+.host-transfer__conflict {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-weight: 500;
+}
+#hosts-generated-password {
+  font-family: var(--td-mono);
+}

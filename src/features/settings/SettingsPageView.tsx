@@ -210,11 +210,17 @@ export function SettingsPageView({
                       key={group.id}
                       className="settings__nav-item settings__nav-item--child"
                       aria-controls={`${settingsId}-${group.id}`}
-                      onClick={() =>
-                        document
-                          .getElementById(`${settingsId}-${group.id}`)
-                          ?.scrollIntoView({ block: "start" })
-                      }
+                      onClick={() => {
+                        const scroller = body.current;
+                        const target = scroller?.ownerDocument.getElementById(
+                          `${settingsId}-${group.id}`,
+                        );
+                        if (!scroller || !target || !scroller.contains(target)) return;
+                        // scrollIntoView also scrolls clipped application ancestors.
+                        // Local layout offsets remain correct inside a scaled iframe.
+                        const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+                        scroller.scrollTop = target.offsetTop - margin;
+                      }}
                     >
                       {t(group.label)}
                     </button>
@@ -268,6 +274,27 @@ export function SettingsPageView({
                         id: "storage",
                         is: [],
                       }));
+                const showHabits =
+                  !modifiedRequested &&
+                  (!filtering
+                    ? section === "habits"
+                    : matchesSearch(
+                        search,
+                        [
+                          "habits",
+                          ...["en-US", "zh-CN"].flatMap((language) => {
+                            const translate = i18n.getFixedT(language);
+                            return [
+                              translate("habits.title"),
+                              translate("habits.description"),
+                              translate("habits.choose"),
+                            ];
+                          }),
+                        ]
+                          .join(" ")
+                          .toLocaleLowerCase(),
+                        { section: "habits", id: "habits", is: [] },
+                      ));
                 const visible = definitions.filter((item) => {
                   if (!filtering && item.section !== section) return false;
                   if (modifiedOnly && !isModified(item)) return false;
@@ -305,7 +332,11 @@ export function SettingsPageView({
                       <div className="settings-results">
                         <span>
                           {t("settings.resultCount", {
-                            count: visible.length + Number(showStorage) + configurationCount,
+                            count:
+                              visible.length +
+                              Number(showStorage) +
+                              Number(showHabits) +
+                              configurationCount,
                           })}
                         </span>
                         <Button size="sm" variant="ghost" onClick={clearFilters}>
@@ -317,6 +348,7 @@ export function SettingsPageView({
                       (item) =>
                         visible.some((definition) => definition.section === item) ||
                         (item === "advanced" && showStorage) ||
+                        (item === "habits" && showHabits) ||
                         (!filtering && item === section),
                     ).map((item) => (
                       <section
@@ -326,7 +358,10 @@ export function SettingsPageView({
                       >
                         <div className="settings-section__head">
                           <h2 className="settings-section__title">{t(SECTION_LABELS[item])}</h2>
-                          {item !== "plugins" && item !== "shortcuts" && item !== "about" ? (
+                          {item !== "habits" &&
+                          item !== "plugins" &&
+                          item !== "shortcuts" &&
+                          item !== "about" ? (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -350,6 +385,7 @@ export function SettingsPageView({
                               {t("settings.filePaneDefaultsHint")}
                             </p>
                           ) : null}
+                          {item === "habits" ? services.renderSpecial("habits") : null}
                           {item === "plugins" && !filtering
                             ? services.renderSpecial("plugins")
                             : null}

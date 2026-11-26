@@ -247,7 +247,9 @@
     "keySourceFile": "密钥文件",
     "keySourceContent": "粘贴密钥",
     "keyRequired": "请选择密钥文件或粘贴私钥内容",
-    "tagRemove": "移除标签"
+    "tagRemove": "移除标签",
+    "duplicateTitle": "复制主机",
+    "duplicateBody": "是否创建“{{name}}”及其连接路由的副本？"
   },
   "group": {
     "newTitle": "新建分组",
@@ -455,7 +457,10 @@
     "fileIconTheme": "文件图标主题",
     "fileIconThemeHint": "已安装的图标主题同时应用于本地与远端文件。自动选择可用主题，无需运行插件代码。",
     "transferCompression": "自动压缩传输数据",
-    "transferCompressionHint": "自动压缩有收益的数据以减少网络传输量。小任务或不支持的主机沿用普通传输，无需在远端安装程序。开始或继续传输时生效。"
+    "transferCompressionHint": "自动压缩有收益的数据以减少网络传输量。小任务或不支持的主机沿用普通传输，无需在远端安装程序。开始或继续传输时生效。",
+    "customValue": "自定义",
+    "customValueFor": "自定义{{name}}",
+    "unitFor": "{{name}}单位"
   },
   "updates": {
     "installInProgress": "更新正在安装，请等待完成后再更改更新渠道或来源。",
@@ -537,7 +542,10 @@
     "showLogs": "打开输出日志",
     "viewDiagnostics": "查看更新详情",
     "sourcesUnavailableNotification": "暂时无法检查更新，请查看详情了解失败原因和处理方式。",
-    "platformUnavailable": "更新清单中没有适用于当前系统与架构的安装包。"
+    "platformUnavailable": "更新清单中没有适用于当前系统与架构的安装包。",
+    "releaseHistory": "历史更新日志",
+    "releaseHistoryEmpty": "此通道暂无发布记录。",
+    "releaseHistoryHint": "浏览官方历史发布日志。安装使用为当前设备提供的已签名更新。"
   },
   "about": {
     "version": "版本",
@@ -884,7 +892,9 @@
     "retainedCreationInvalid": "保留的操作记录或主机身份不匹配。请保留记录并查看软件日志。",
     "retainedCreationLimit": "保留的未确认临时目录过多。请先完成或检查已有的恢复任务，再尝试新的传输代次。",
     "invalidEncoding": "请选择支持的文本编码",
-    "encodingEncodeFailed": "文件包含无法用所选编码表示的字符"
+    "encodingEncodeFailed": "文件包含无法用所选编码表示的字符",
+    "averageSpeed": "平均：{{value}}/s",
+    "averageRemainingTime": "平均预计剩余：{{value}}"
   },
   "processes": {
     "title": "进程",
@@ -1126,7 +1136,8 @@
     "copyFailed": "无法复制路径",
     "clear": "清空",
     "clearTitle": "清空历史",
-    "clearBody": "删除“{{name}}”的全部命令记录？"
+    "clearBody": "删除“{{name}}”的全部命令记录？",
+    "clickHint": "单击输入，双击输入并执行"
   },
   "monitor": {
     "title": "监控",
@@ -1334,7 +1345,9 @@
     "tlsHandshake": "当前线路 TLS 握手失败。请检查代理节点及 GitHub、release-assets.githubusercontent.com 规则，或在网络设置中选择其他代理。",
     "connectFailed": "无法通过插件市场所配置的线路连接，请检查网络设置。",
     "timeout": "插件下载超时，请检查当前代理线路后重试。",
-    "sourceChanged": "此软件源在编辑期间已发生变化，请重新打开并检查当前设置。"
+    "sourceChanged": "此软件源在编辑期间已发生变化，请重新打开并检查当前设置。",
+    "permissionsAndFeatures": "权限与功能",
+    "manifestAfterInstall": "插件目录未提供完整清单。安装后可查看权限、主题和工具，再决定是否启动插件。"
   },
   "node": {
     "required": "启动此插件前请配置 Node。",
@@ -2850,6 +2863,10 @@
     "hidePassword": "隐藏密码",
     "copyPassword": "复制密码",
     "generatedPasswordHint": "请先保存自动生成的密码，再导出文件。密码不会写入文件，也无法找回。请分开传递文件与密码。",
+    "savePasswordTitle": "请先保存导出密码",
+    "savedPasswordExport": "我已保存密码，继续导出",
+    "conflictCopyLabel": "将另存为副本，避免与现有主机冲突",
+    "dependencyConflictLabel": "依赖的跳板主机与现有主机冲突",
     "passwordSaved": "我已保存自动生成的密码",
     "importPassword": "文件密码",
     "encryptedFileHint": "此文件已加密，请输入导出时设置或生成的密码，解密后预览主机。",
@@ -2989,5 +3006,86 @@
     "tooLarge": "字体文件超过 64 MiB 限制。",
     "busy": "待处理的字体导入过多，请完成导入后重试。",
     "unavailableError": "字体管理暂时不可用。"
+  },
+  "habits": {
+    "title": "使用习惯",
+    "description": "使用习惯保存在应用数据目录中，重启和更新不会清除。可按类别管理或恢复默认值；主机、凭据和编辑草稿不受影响。",
+    "saving": "正在保存使用习惯…",
+    "saved": "已启用持久保存 · {{count}} 项界面记录",
+    "unavailable": "习惯数据尚未就绪，请检查上方错误；不会覆盖已有数据。",
+    "choose": "选择要重置的使用习惯",
+    "resetSelected": "重置所选习惯",
+    "manageFonts": "管理字体和外观",
+    "manageLayout": "管理工作区排版",
+    "manageFiles": "管理文件视图",
+    "confirmTitle": "重置所选使用习惯？",
+    "confirmBody": "仅重置下列类别。窗口和字体设置立即生效；文件视图在重新打开后生效。",
+    "workspaceCleared": "下次启动的工作区恢复记录已清除。当前打开内容保留，本次运行不再保存启动恢复记录。",
+    "windows": {
+      "title": "窗口大小和位置",
+      "hint": "重置主窗口和当前独立窗口的尺寸、位置、最大化及全屏状态。"
+    },
+    "panels": {
+      "title": "面板位置与状态",
+      "hint": "重置浮窗位置、尺寸、固定和打开状态、侧栏位置与工作区浮动排版。后台任务默认位于右下角。"
+    },
+    "typography": {
+      "title": "字体和字号",
+      "hint": "恢复界面、等宽及编辑器中文字体选择和字号；保留已导入的字体文件。"
+    },
+    "appearance": {
+      "title": "外观与排版风格",
+      "hint": "恢复主题、强调色、自定义样式、密度、侧栏宽度和主机列表风格。"
+    },
+    "files": {
+      "title": "文件视图习惯",
+      "hint": "清除各位置的列宽、排序、分组、分栏比例和预览方式；重新打开视图后生效。"
+    },
+    "workspace": {
+      "title": "打开的路径和面板",
+      "hint": "清除下次启动时恢复的文件路径、标签页和排版记录，不关闭当前编辑内容或删除文件。"
+    },
+    "fields": {
+      "uiFontSize": "界面字号",
+      "monoFontSize": "等宽字号",
+      "monoFont": "等宽字体",
+      "fontSelections": "各场景字体选择",
+      "theme": "主题",
+      "accent": "强调色",
+      "colors": "区域配色",
+      "density": "界面密度",
+      "motion": "动效",
+      "sidebarWidth": "侧栏宽度",
+      "rightPanel": "右侧面板",
+      "rightPanelWidth": "右侧面板宽度",
+      "hostList": "主机列表风格",
+      "userCss": "自定义样式",
+      "main": "主窗口",
+      "layout": "工作区排版",
+      "paths": "文件路径",
+      "tabs": "标签页",
+      "navigation": "侧栏选择",
+      "floating": "工作区浮窗",
+      "presentation": "呈现方式",
+      "bounds": "位置与尺寸",
+      "open": "打开状态",
+      "pinned": "固定状态",
+      "filePreview": "文件预览",
+      "tasks": "后台任务",
+      "hosts": "主机",
+      "knownHosts": "已知主机",
+      "plugins": "插件",
+      "forwarding": "转发",
+      "output": "输出",
+      "connections": "连接"
+    },
+    "details": "查看具体数据",
+    "refreshDetails": "刷新数据",
+    "loadingDetails": "正在读取数据…",
+    "emptyDetails": "此类别暂无保存记录，使用默认值。",
+    "savedValue": "已保存",
+    "currentValue": "当前值",
+    "defaultValue": "默认值",
+    "detailsHint": "按需读取；保存前当前值可能与磁盘记录不同。窗口当前值与保存值使用物理像素，默认尺寸使用逻辑像素。"
   }
 }

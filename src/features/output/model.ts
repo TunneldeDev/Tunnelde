@@ -104,6 +104,7 @@ export function localDiagnosticEntry(event: DiagnosticEvent, id: number): Output
         frames: event.frames,
         requestId: event.requestId,
         occurrences: event.occurrences,
+        ipc: event.ipc,
       },
     )}`,
     memoryOnly: true,

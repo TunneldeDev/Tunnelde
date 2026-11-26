@@ -44,7 +44,7 @@ it("keeps public preview metadata and the exact remote read above an absent pres
       <Owner visible />
     </StrictMode>,
   );
-  await screen.findByDisplayValue("same host-owned text");
+  expect((await screen.findByRole("textbox")).textContent).toBe("same host-owned text");
   const owner = previewOwners.snapshot()!;
   const attempt = owner.context.snapshot.attemptId;
   const readCount = vi.mocked(api.sftpReadText).mock.calls.length;
@@ -66,9 +66,7 @@ it("keeps public preview metadata and the exact remote read above an absent pres
       <Owner visible />
     </StrictMode>,
   );
-  await waitFor(() =>
-    expect(screen.getByRole("textbox")).toHaveProperty("value", "same host-owned text"),
-  );
+  await waitFor(() => expect(screen.getByRole("textbox").textContent).toBe("same host-owned text"));
   expect(api.sftpReadText).toHaveBeenCalledTimes(readCount);
   view.unmount();
   expect(filePreviewObservation().preview).toBeNull();

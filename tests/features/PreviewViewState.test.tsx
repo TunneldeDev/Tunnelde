@@ -1,3 +1,5 @@
+import { EditorView } from "@codemirror/view";
+import { EditorSelection } from "@codemirror/state";
 import "@/i18n/i18n";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -20,7 +22,7 @@ it("qualifies Markdown presentation by read attempt, and transports no text in t
     </PanelViewStateScope>,
   );
   fireEvent.click(screen.getByRole("button"));
-  expect(screen.getByRole("textbox")).toHaveProperty("value", "confidential source");
+  expect(screen.getByRole("textbox").textContent).toBe("confidential source");
   const capsule = first.capture();
   expect(capsule).toMatchObject({
     fields: { "preview:one": { fields: { "text.markdown": false } } },
@@ -52,10 +54,12 @@ it("marks text scroll/caret for the common panel restoration without focusing an
       />
     </div>,
   );
-  const field = screen.getByRole("textbox") as HTMLTextAreaElement;
-  expect(field.selectionStart).toBe(8);
+  const field = screen.getByRole("textbox");
+  expect(EditorView.findFromDOM(field)!.state.selection.main.from).toBe(8);
   expect(field.getAttribute("data-panel-focus")).toBe("preview.text");
-  expect(field.getAttribute("data-panel-scroll")).toBe("preview.text");
+  expect(EditorView.findFromDOM(field)!.scrollDOM.getAttribute("data-panel-scroll")).toBe(
+    "preview.text",
+  );
   expect(document.activeElement).not.toBe(field);
 });
 it.each(["audio", "video"] as const)(
@@ -172,14 +176,38 @@ it("keeps caret, scroll and another control's focus when native metadata recreat
     </>
   );
   const ui = render(tree(file));
-  const text = screen.getByRole("textbox", { name: "Preview file" }) as HTMLTextAreaElement;
-  text.setSelectionRange(4, 9);
-  text.scrollTop = 37;
+  const text = screen.getByRole("textbox", { name: "Preview file" });
+  const editor = EditorView.findFromDOM(text)!;
+  editor.dispatch({ selection: EditorSelection.single(4, 9) });
+  editor.scrollDOM.scrollTop = 37;
   const draft = screen.getByRole("textbox", { name: "Provider draft" });
   draft.focus();
   ui.rerender(tree({ ...file, source: { ...file.source } }));
   expect(document.activeElement).toBe(draft);
-  expect(text.selectionStart).toBe(4);
-  expect(text.selectionEnd).toBe(9);
-  expect(text.scrollTop).toBe(37);
+  expect(editor.state.selection.main.from).toBe(4);
+  expect(editor.state.selection.main.to).toBe(9);
+  expect(editor.scrollDOM.scrollTop).toBe(37);
+});
+
+it("restores the read-only code selection and scroll without transporting source text", () => {
+  const source = createPanelViewState();
+  const tree = (controller: typeof source) => (
+    <PanelViewStateScope controller={controller}>
+      <PreviewBody attemptId="code">
+        <TextContent file={file} content={"first\r\n😀second\r\nthird"} markdown={false} />
+      </PreviewBody>
+    </PanelViewStateScope>
+  );
+  const ui = render(tree(source));
+  const editor = EditorView.findFromDOM(screen.getByRole("textbox"))!;
+  editor.dispatch({ selection: EditorSelection.single(9, 6) });
+  editor.scrollDOM.scrollTop = 75;
+  const capsule = source.capture();
+  expect(JSON.stringify(capsule)).not.toContain("second");
+  ui.unmount();
+  render(tree(createPanelViewState(capsule)));
+  const restored = EditorView.findFromDOM(screen.getByRole("textbox"))!;
+  expect(restored.state.selection.main.anchor).toBe(9);
+  expect(restored.state.selection.main.head).toBe(6);
+  expect(restored.scrollDOM.scrollTop).toBe(75);
 });

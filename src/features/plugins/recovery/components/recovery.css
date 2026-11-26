@@ -141,3 +141,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.runner-recovery > details[open] > :not(summary) {
+  margin-inline-start: 7px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--td-border);
+}

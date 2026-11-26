@@ -873,3 +873,39 @@
     flex-wrap: wrap;
   }
 }
+
+.plugin-security > .settings-subtitle {
+  margin-bottom: 12px;
+}
+.plugin-security > .td-switch-row {
+  padding-block: 8px;
+  align-items: flex-start;
+}
+.plugin-security > .td-switch-row > .td-switch {
+  margin-top: 2px;
+}
+.plugin-security > .td-switch-row .td-switch-row__heading {
+  min-height: 22px;
+}
+
+.plugin-security__approvals > :not(summary) {
+  margin-inline-start: 7px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--td-border);
+}
+
+.extension-row > .extension-row__tags {
+  margin-inline-start: 39px;
+}
+.plugin-detail__capabilities {
+  margin-block: 20px;
+}
+.plugin-detail__capabilities h2 {
+  margin-block: 0 10px;
+  font-size: 13px;
+}
+.plugin-detail__capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

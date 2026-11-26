@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import "@/i18n/i18n";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -32,7 +33,9 @@ it("renders a complete supplied text model without acquiring any local/remote na
       />
     </PanelViewStateScope>,
   );
-  expect(screen.getByRole("textbox")).toHaveProperty("value", content);
+  expect(EditorView.findFromDOM(screen.getByRole("textbox"))!.state.doc.length).toBe(
+    content.length,
+  );
   expect(ready).toHaveBeenCalledOnce();
   expect(JSON.stringify(controller.capture())).not.toContain("private text");
   view.unmount();
@@ -68,7 +71,7 @@ it("accepts genuinely empty text as a decoded body, not as missing content", () 
       />
     </PanelViewStateScope>,
   );
-  expect(screen.getByRole("textbox")).toHaveProperty("value", "");
+  expect(EditorView.findFromDOM(screen.getByRole("textbox"))!.state.doc.length).toBe(0);
   expect(ready).toHaveBeenCalledOnce();
   expect(() => controller.capture()).not.toThrow();
 });

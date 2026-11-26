@@ -15,6 +15,7 @@ export interface TerminalCheckpoint {
 }
 
 export interface TerminalParticipant {
+  snapshot?: () => Promise<TerminalCheckpoint>;
   prepare: () => Promise<TerminalCheckpoint>;
   resume: () => Promise<void>;
 }
@@ -53,6 +54,23 @@ const reservations = new Map<string, object>();
 const recovering = new Set<TerminalHandoff>();
 let background: TerminalHandoff | undefined;
 let backgroundPreparing = false;
+
+/** A live save shares the handoff reservation, but never freezes input or PTY I/O. */
+export async function snapshotTerminalCheckpoint(sessionId: string, signal?: AbortSignal) {
+  const participant = terminals.get(sessionId);
+  if (!participant?.snapshot || reservations.has(sessionId) || signal?.aborted)
+    throw new Error("terminal.checkpointBusy");
+  const token = {};
+  reservations.set(sessionId, token);
+  try {
+    const checkpoint = await participant.snapshot();
+    if (signal?.aborted || terminals.get(sessionId) !== participant)
+      throw new Error("terminal.checkpointBusy");
+    return checkpoint;
+  } finally {
+    if (reservations.get(sessionId) === token) reservations.delete(sessionId);
+  }
+}
 
 /** Reserve exactly the requested PTYs, not every mounted terminal. This is the
  * document-local half of handoff; it does not grant native stream ownership.

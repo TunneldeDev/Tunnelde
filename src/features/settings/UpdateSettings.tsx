@@ -4,6 +4,8 @@ import { useSettings } from "@/store/settings";
 import { matchingUpdateState, updateHistoryKey, useUpdates } from "@/store/updates";
 import { toast } from "@/store/toasts";
 import { UpdateDiagnostics } from "./UpdateDiagnostics";
+import { ReleaseHistoryPanel } from "./components/ReleaseHistoryPanel";
+import { PluginMarkdown } from "@/features/plugins/PluginMarkdown";
 import { UpdateNotes } from "./UpdateNotes";
 import { UpdateSourceUrlView } from "./components/UpdateSourceUrlView";
 import { UpdateStatusView } from "./components/UpdateStatusView";
@@ -34,6 +36,13 @@ export function UpdateStatus() {
       services={{
         check,
         install,
+        renderReleaseHistory: () => (
+          <ReleaseHistoryPanel
+            channel={settings.updateChannel}
+            load={api.releaseHistory}
+            renderMarkdown={(source) => <PluginMarkdown source={source} />}
+          />
+        ),
         skip,
         openRelease: () => {
           void api.openReleasePage().catch((error) => toast(presentError(error), "error"));

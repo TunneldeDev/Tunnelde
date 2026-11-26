@@ -1,3 +1,4 @@
+import { HabitsSettings } from "./HabitsSettings";
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { AboutPage } from "@/features/about/AboutPage";
 import { MountHostDetailsSettings } from "@/features/plugins/MountHostDetailsSettings";
@@ -56,6 +57,8 @@ export const mainSettingsPageServices: SettingsPageServices = {
   renderProfiles: (props) => <SettingsProfiles {...props} />,
   renderSpecial(section, options) {
     switch (section) {
+      case "habits":
+        return <HabitsSettings />;
       case "plugins":
         return <PluginSettingsSection />;
       case "about":

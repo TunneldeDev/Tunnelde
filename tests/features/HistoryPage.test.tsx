@@ -46,6 +46,20 @@ beforeEach(() => {
 });
 
 describe("history changes from other views and plugins", () => {
+  it("inserts on click and executes only once after a double click", async () => {
+    render(<HistoryPage sessionId="session" />);
+    const command = await screen.findByRole("button", { name: "first command" });
+    fireEvent.click(command, { detail: 1 });
+    await waitFor(() => expect(mocks.sshWrite).toHaveBeenCalledOnce());
+    expect(atob(mocks.sshWrite.mock.calls[0]![1])).toBe("\u0015first command");
+    expect(mocks.historyRecord).not.toHaveBeenCalled();
+    fireEvent.click(command, { detail: 2 });
+    expect(mocks.sshWrite).toHaveBeenCalledOnce();
+    fireEvent.doubleClick(command);
+    await waitFor(() => expect(mocks.sshWrite).toHaveBeenCalledTimes(2));
+    expect(atob(mocks.sshWrite.mock.calls[1]![1])).toBe("\u0015first command\r");
+  });
+
   it("refreshes for its host while ignoring unrelated hosts", async () => {
     render(<HistoryPage sessionId="session" />);
     await screen.findByText("first command");

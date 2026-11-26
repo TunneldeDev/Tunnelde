@@ -27,6 +27,7 @@ import type { Group, Host } from "@/lib/api/types";
 import { PanelHeader } from "@/components/layout/WorkbenchPanel";
 import {
   builtinHostColumns,
+  hostTableLayout,
   visibleHostColumns,
   sortHostRows,
   type DisplayHostColumn,
@@ -76,6 +77,7 @@ function HostRow({
     operation:
       | "open"
       | "connect"
+      | "monitor"
       | "sftp"
       | "edit"
       | "export"
@@ -102,6 +104,7 @@ function HostRow({
     { label: t("host.open"), onSelect: () => command("open") },
     { label: t("terminal.connect"), onSelect: () => command("connect") },
     { label: t("sftp.title"), onSelect: () => command("sftp") },
+    { label: t("monitor.open"), onSelect: () => command("monitor") },
     {
       label: t("menu.edit"),
       separatorBefore: true,
@@ -180,6 +183,7 @@ function HostRow({
         { label: t("host.open"), onSelect: () => command("open") },
         { label: t("terminal.connect"), onSelect: () => command("connect") },
         { label: t("sftp.title"), onSelect: () => command("sftp") },
+        { label: t("monitor.open"), onSelect: () => command("monitor") },
         {
           label: t("hostSources.saveCopy"),
           separatorBefore: true,
@@ -703,7 +707,10 @@ function HostTreeView() {
           onDelete={() => void run({ operation: "deleteGroup", group: groupTarget(group.id)! })}
         />
         {!isCollapsed ? (
-          <>
+          <div
+            className="host-tree__children"
+            style={{ "--host-tree-depth": depth } as React.CSSProperties}
+          >
             {members.map((host) => (
               <HostRow
                 key={host.id}
@@ -713,8 +720,8 @@ function HostTreeView() {
                 {...rowProps(host)}
               />
             ))}
-            {children.map((child) => renderGroup(child, depth + 1))}
-          </>
+            {children.map((child) => renderGroup(child, depth + 1, readOnly))}
+          </div>
         ) : null}
       </div>
     );
@@ -766,8 +773,8 @@ function HostTreeView() {
         style={
           table
             ? ({
-                "--host-columns": columns.map((column) => `${column.width}px`).join(" "),
-                "--host-table-width": `${columns.reduce((sum, column) => sum + column.width, 0)}px`,
+                "--host-columns": hostTableLayout(columns, preferences.widths).columns,
+                "--host-table-width": `${hostTableLayout(columns, preferences.widths).minimum}px`,
               } as React.CSSProperties)
             : undefined
         }

@@ -7,7 +7,7 @@ import { useSsh } from "@/store/ssh";
 /** Session identity, never host identity: connecting twice creates independent
  * sessions. History and host-detail panels are not live connection consumers. */
 export function panelSessionIds(tab: WorkspaceTab): string[] {
-  if (tab.kind === "terminal" || tab.kind === "monitor")
+  if (tab.kind === "terminal" || tab.kind === "monitor" || tab.kind === "processes")
     return [tab.id.slice(tab.id.indexOf(":") + 1)];
   if (tab.kind === "editor") {
     const id = useEditors.getState().entries[tab.id]?.sessionId;

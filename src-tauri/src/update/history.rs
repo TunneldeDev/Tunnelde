@@ -54,6 +54,7 @@ struct HistoryBuilder {
     notes_bytes: usize,
     found_target: bool,
     limited: bool,
+    archive: bool,
 }
 
 impl HistoryBuilder {
@@ -74,6 +75,7 @@ impl HistoryBuilder {
             notes_bytes: 0,
             found_target: false,
             limited: false,
+            archive: false,
         };
         // Keep the selected manifest's notes even if history is offline or incomplete.
         let notes = this.bounded_notes(snapshot.notes.clone());
@@ -86,6 +88,21 @@ impl HistoryBuilder {
             },
         );
         Ok(this)
+    }
+
+    fn archive(current: &str, channel: &str) -> AppResult<Self> {
+        let current =
+            Version::parse(current).map_err(|_| AppError::Update("updates.checkAgain".into()))?;
+        Ok(Self {
+            target: current.clone(),
+            current,
+            channel: channel.to_owned(),
+            entries: BTreeMap::new(),
+            notes_bytes: 0,
+            found_target: false,
+            limited: false,
+            archive: true,
+        })
     }
 
     fn bounded_notes(&mut self, notes: Option<String>) -> Option<String> {
@@ -115,8 +132,7 @@ impl HistoryBuilder {
             };
             if release.draft
                 || release.prerelease == version.pre.is_empty()
-                || version <= self.current
-                || version > self.target
+                || (!self.archive && (version <= self.current || version > self.target))
                 || !channel_accepts(&version, &self.channel)
             {
                 continue;
@@ -165,10 +181,10 @@ impl HistoryBuilder {
     }
 
     fn finish(self, exhausted: bool, reason: Option<&str>) -> ReleaseHistory {
-        let complete = exhausted && self.found_target && !self.limited;
+        let complete = exhausted && (self.archive || self.found_target) && !self.limited;
         let reason = if self.limited {
             Some("updates.historyLimit")
-        } else if exhausted && !self.found_target {
+        } else if exhausted && !self.archive && !self.found_target {
             Some("updates.historyMissingTarget")
         } else {
             reason
@@ -223,6 +239,39 @@ async fn fetch(
         }
     }
     history.finish(false, Some("updates.historyLimit"))
+}
+
+/// Browse the official release archive independently of update availability.
+/// This read-only operation never selects an installation package.
+pub async fn archive(app: AppHandle) -> AppResult<ReleaseHistory> {
+    let service = app.state::<AppState>();
+    let settings = service.settings();
+    let history = HistoryBuilder::archive(
+        &service.update.snapshot().current_version,
+        &settings.update_channel,
+    )?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(25);
+    let result = match tokio::time::timeout_at(
+        deadline,
+        crate::network::http::prepare(&app, "updates", settings.network.clone()),
+    )
+    .await
+    {
+        Ok(Ok(route)) => {
+            fetch(
+                route.client(),
+                RELEASES_API,
+                history,
+                deadline.saturating_duration_since(tokio::time::Instant::now()),
+            )
+            .await
+        }
+        _ => history.finish(false, Some("updates.historyUnavailable")),
+    };
+    if service.settings().update_channel != settings.update_channel {
+        return Err(AppError::Update("updates.checkAgain".into()));
+    }
+    Ok(result)
 }
 
 /// Only reads history for the exact checked update. This command cannot select

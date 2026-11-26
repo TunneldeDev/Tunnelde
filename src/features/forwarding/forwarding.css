@@ -27,7 +27,19 @@
 }
 
 .forwarding__head > div:first-child {
+  flex: 1 1 180px;
   min-width: 0;
+}
+
+.forwarding__tools {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.forwarding__tools > * {
+  flex: 0 0 auto;
 }
 
 .forwarding__subtitle,
@@ -104,10 +116,18 @@
 }
 
 .forward-rule__identity {
-  flex: 1;
+  flex: 1 1 120px;
   min-width: 0;
   display: grid;
   gap: 4px;
+}
+
+.forward-rule__controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-inline-start: auto;
 }
 
 .forward-rule__identity strong {
@@ -335,6 +355,9 @@
   gap: 8px;
   min-height: 32px;
 }
+.forward-group__head > .forwarding__tools {
+  justify-content: flex-end;
+}
 .forward-group__title {
   min-width: 0;
   margin: 0;
@@ -347,13 +370,18 @@
   padding-inline-start: 16px;
   border-inline-start: 1px solid var(--td-border);
 }
+@container (max-width: 420px) {
+  .forwarding__head > .forwarding__tools,
+  .forward-group__head > .forwarding__tools {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
+
 @container (max-width: 320px) {
   .forward-rule__head {
     flex-wrap: wrap;
     gap: 6px;
-  }
-  .forward-rule__identity {
-    flex-basis: calc(100% - 100px);
   }
   .forward-rule__route {
     grid-template-columns: minmax(0, 1fr);
@@ -374,11 +402,9 @@
 }
 .proxy-section.card {
   padding: 14px;
-  border-top: 0;
 }
 .proxy-section__head,
 .proxy-section__tools,
-.proxy-section__actions,
 .proxy-group__head,
 .proxy-group__meta,
 .proxy-group__actions,
@@ -395,6 +421,10 @@
 }
 .proxy-section__head > div:first-child {
   min-width: 0;
+}
+.proxy-section__tools {
+  flex-wrap: wrap;
+  margin-inline-start: auto;
 }
 .proxy-section__head .card__title {
   margin: 0 0 4px;
@@ -420,20 +450,15 @@
   font-family: var(--td-mono);
   overflow-wrap: anywhere;
 }
-.proxy-section__actions {
-  flex-wrap: wrap;
-  justify-content: flex-start;
-}
-.proxy-section__actions > .td-btn {
-  flex: none;
-}
 .proxy-group {
   display: grid;
   gap: 8px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--td-border);
-  border-radius: var(--td-radius-sm);
+}
+.proxy-routes {
+  margin-inline-start: 3px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--td-border);
 }
 .proxy-group__identity,
 .proxy-route__identity {

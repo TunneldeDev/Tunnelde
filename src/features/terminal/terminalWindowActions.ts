@@ -31,12 +31,17 @@ export async function executeTerminalWindowAction(
       if (failure) throw failure;
       return null;
     }
+    case "openProcesses":
+    case "openMonitor":
     case "openSftp":
     case "openHistory":
       if (!useSsh.getState().sessions.some((item) => item.id === session.id))
         throw new Error("ssh.sessionMissing");
       await show();
       if (command.operation === "openSftp") useWorkspace.getState().openSftp(session);
+      else if (command.operation === "openProcesses")
+        useWorkspace.getState().openProcesses(session);
+      else if (command.operation === "openMonitor") useWorkspace.getState().openMonitor(session);
       else useWorkspace.getState().openHistory(session);
       return null;
     case "font":

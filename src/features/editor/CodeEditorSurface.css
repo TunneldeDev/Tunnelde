@@ -1,17 +1,28 @@
 .editor-large {
   flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
   min-height: 0;
   min-width: 0;
   display: flex;
   overflow: hidden;
+  contain: inline-size;
 }
 
 .editor-large .cm-editor {
   flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .editor-large .cm-scroller {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }

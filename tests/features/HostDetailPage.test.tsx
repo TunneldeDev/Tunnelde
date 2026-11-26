@@ -24,6 +24,8 @@ const host: Host = {
 const services = (): HostPageServices => ({
   connect: vi.fn(),
   sftp: vi.fn(),
+  monitor: vi.fn(),
+  processes: vi.fn(),
   favorite: vi.fn(),
   edit: vi.fn(),
   remove: vi.fn(),

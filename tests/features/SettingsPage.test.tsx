@@ -267,8 +267,13 @@ describe("settings discovery and scoped resets", () => {
     expect(rendering.querySelector('[data-setting="terminalCursorStyle"]')).toBeNull();
     const scroll = vi.fn();
     rendering.scrollIntoView = scroll;
+    Object.defineProperty(rendering, "offsetTop", { value: 320 });
+    rendering.style.scrollMarginTop = "12px";
+    const scroller = document.querySelector(".settings__body")!;
+    scroller.scrollTop = 90;
     fireEvent.click(screen.getByRole("button", { name: "Display and rendering" }));
-    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+    expect(scroller.scrollTop).toBe(308);
+    expect(scroll).not.toHaveBeenCalled();
     expect(useNavigation.getState().settingsSection).toBe("terminal");
   });
 
@@ -299,11 +304,13 @@ describe("settings discovery and scoped resets", () => {
     expect(preloading.querySelector('[data-setting="filesSortBy"]')).toBeNull();
     const scroll = vi.fn();
     preloading.scrollIntoView = scroll;
+    Object.defineProperty(preloading, "offsetTop", { value: 450 });
     fireEvent.click(screen.getByRole("button", { name: "Preloading" }));
-    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+    expect(scroll).not.toHaveBeenCalled();
     expect(useNavigation.getState().settingsSection).toBe("files");
     expect(document.querySelectorAll(".settings-section")).toHaveLength(1);
     const body = document.querySelector(".settings__body")!;
+    expect(body.scrollTop).toBe(450);
     body.scrollTop = 400;
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
     expect(body.scrollTop).toBe(0);

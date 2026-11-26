@@ -58,66 +58,71 @@ export function ForwardingEntries({
                 <strong>{rule.name}</strong>
                 <small>{t(local ? "forward.localPurpose" : "forward.remotePurpose")}</small>
               </div>
-              <span className={`forward-rule__status ${active ? "is-running" : ""}`} role="status">
-                {t(
-                  starting
-                    ? "forward.starting"
-                    : stopping
-                      ? "forward.stopping"
-                      : active
-                        ? "forward.running"
-                        : recovering
-                          ? "forward.retrying"
-                          : automation?.phase === "needsAttention"
-                            ? "forward.needsAttention"
-                            : "forward.stopped",
-                )}
-              </span>
-              <IconButton
-                size="sm"
-                label={t(
-                  stopping
-                    ? "forward.stopping"
-                    : manualStarting
+              <div className="forward-rule__controls">
+                <span
+                  className={`forward-rule__status ${active ? "is-running" : ""}`}
+                  role="status"
+                >
+                  {t(
+                    starting
                       ? "forward.starting"
-                      : stoppable
-                        ? "forward.stop"
-                        : "forward.start",
-                )}
-                disabled={busy}
-                onClick={() => (stoppable ? void stop(rule) : start([rule.id]))}
-              >
-                {stoppable ? <Square size={14} /> : <Play size={14} />}
-              </IconButton>
-              <Menu
-                label={t("forward.ruleActions", { name: rule.name })}
-                disabled={busy}
-                items={[
-                  {
-                    label: t("common.edit"),
-                    disabled: active,
-                    description: active ? t("forward.stopBeforeEdit") : undefined,
-                    onSelect: () => edit(rule),
-                  },
-                  ...(local
-                    ? [
-                        {
-                          label: t("forward.copyAddress"),
-                          onSelect: () =>
-                            actions.copyAddress(
-                              localConnectionAddress(rule.bindHost, rule.bindPort),
-                            ),
-                        },
-                      ]
-                    : []),
-                  {
-                    label: t("common.delete"),
-                    danger: true,
-                    separatorBefore: true,
-                    onSelect: () => requestRemove(rule),
-                  },
-                ]}
-              />
+                      : stopping
+                        ? "forward.stopping"
+                        : active
+                          ? "forward.running"
+                          : recovering
+                            ? "forward.retrying"
+                            : automation?.phase === "needsAttention"
+                              ? "forward.needsAttention"
+                              : "forward.stopped",
+                  )}
+                </span>
+                <IconButton
+                  size="sm"
+                  label={t(
+                    stopping
+                      ? "forward.stopping"
+                      : manualStarting
+                        ? "forward.starting"
+                        : stoppable
+                          ? "forward.stop"
+                          : "forward.start",
+                  )}
+                  disabled={busy}
+                  onClick={() => (stoppable ? void stop(rule) : start([rule.id]))}
+                >
+                  {stoppable ? <Square size={14} /> : <Play size={14} />}
+                </IconButton>
+                <Menu
+                  label={t("forward.ruleActions", { name: rule.name })}
+                  disabled={busy}
+                  items={[
+                    {
+                      label: t("common.edit"),
+                      disabled: active,
+                      description: active ? t("forward.stopBeforeEdit") : undefined,
+                      onSelect: () => edit(rule),
+                    },
+                    ...(local
+                      ? [
+                          {
+                            label: t("forward.copyAddress"),
+                            onSelect: () =>
+                              actions.copyAddress(
+                                localConnectionAddress(rule.bindHost, rule.bindPort),
+                              ),
+                          },
+                        ]
+                      : []),
+                    {
+                      label: t("common.delete"),
+                      danger: true,
+                      separatorBefore: true,
+                      onSelect: () => requestRemove(rule),
+                    },
+                  ]}
+                />
+              </div>
             </div>
             {rule.automation?.autoStart || rule.automation?.autoRetry ? (
               <p className="forward-rule__hint">

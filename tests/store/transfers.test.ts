@@ -5,6 +5,7 @@ import { api } from "@/lib/api/ipc";
 import { transferApi } from "@/lib/api/transfers";
 import * as ipc from "@/lib/api/ipc";
 import { useTransfers } from "@/store/transfers";
+import { transferProgress } from "@/lib/files/transferProgress";
 import type { TransferEvent } from "@/lib/api/types";
 
 const running: TransferEvent = {
@@ -379,4 +380,23 @@ describe("durable transfer controls", () => {
     ).toBe(true);
     expect(useTransfers.getState().items).toHaveLength(7);
   });
+});
+
+it("keeps the original average across pause/resume while resetting the rolling window", async () => {
+  let now = 1000;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+  const store = useTransfers.getState();
+  store.apply(running);
+  now = 2000;
+  store.apply({ ...running, transferred: 40 });
+  store.apply({ ...running, transferred: 40, status: "paused" });
+  now = 5000;
+  await store.resume(running.id);
+  now = 6000;
+  store.apply({ ...running, transferred: 80 });
+  const item = useTransfers.getState().items[0]!;
+  expect(transferProgress(item, now)).toMatchObject({ speed: 40, averageSpeed: 16, averageEta: 2 });
+  store.apply({ ...running, transferred: 100, status: "done" });
+  expect(useTransfers.getState().items[0]?.rate?.startedAt).toBe(1000);
 });

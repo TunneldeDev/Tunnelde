@@ -119,7 +119,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               rate:
                 item.status === "running"
                   ? (previous?.rate ?? sampleTransfer(undefined, item.transferred, Date.now()))
-                  : undefined,
+                  : previous?.rate,
             };
           }),
         ],
@@ -172,7 +172,11 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               cancelling: false,
               pausing: false,
               error: null,
-              rate: sampleTransfer(undefined, x.transferred, Date.now()),
+              rate: sampleTransfer(
+                x.rate ? { ...x.rate, samples: [] } : undefined,
+                x.transferred,
+                Date.now(),
+              ),
             }
           : x,
       ),
@@ -237,6 +241,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       next.backupRecovery = previous?.backupRecovery;
       next.artifactRecovery = previous?.artifactRecovery;
       next.total = Math.max(event.total, previous?.total ?? 0);
+      next.rate = previous?.rate;
       if (event.status === "running") {
         next.cancelling = previous?.cancelling;
         next.pausing = previous?.pausing;

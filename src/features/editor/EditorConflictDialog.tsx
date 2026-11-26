@@ -110,7 +110,6 @@ export function EditorConflictDialog({ tabId, onClose }: { tabId: string; onClos
         </>
       }
     >
-      <p>{t("editor.reviewDescription")}</p>
       {error || stale ? (
         <div>
           <p role="alert">{error ?? t("editor.reviewStale")}</p>

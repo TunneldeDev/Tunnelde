@@ -1,10 +1,11 @@
+import { habitStorage } from "@/lib/habits/storage";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { SplitPanels } from "@/components/ui/layout/SplitPanels";
 
 function readRatio(key: string) {
   try {
-    const stored = Number(localStorage.getItem(key) ?? 50);
+    const stored = Number(habitStorage.getItem(key) ?? 50);
     return Number.isFinite(stored) ? Math.max(20, Math.min(80, stored)) : 50;
   } catch {
     return 50;
@@ -50,7 +51,7 @@ function StoredFileSplit({
         const next = Number((ratio * 100).toFixed(8));
         setPercent(next);
         try {
-          localStorage.setItem(storageKey, String(next));
+          habitStorage.setItem(storageKey, String(next));
         } catch {
           /* Optional preference. */
         }

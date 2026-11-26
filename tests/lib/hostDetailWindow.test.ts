@@ -170,6 +170,11 @@ it("duplicates from the current canonical host and preserves its connection rout
     { operation: "duplicate", host: hostPanelSource.snapshot().hostTargets.a! },
     async () => {},
   );
+  expect(createHost).not.toHaveBeenCalled();
+  const dialog = useDialogs.getState().dialog;
+  expect(dialog.kind).toBe("confirm");
+  if (dialog.kind !== "confirm") throw new Error("confirmation missing");
+  await dialog.onConfirm();
   expect(createHost).toHaveBeenCalledWith(
     expect.objectContaining({
       name: "Alpha Duplicate",

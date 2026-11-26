@@ -320,10 +320,10 @@ describe("plugin workspace bridge authorization and live state", () => {
     expect(useWorkspace.getState().tabs.find((tab) => tab.id === "page:settings")?.preview).toBe(
       false,
     );
-    useWorkspace.getState().openPage("about");
+    useWorkspace.getState().openPage("knownHosts");
     await runPluginWorkspaceRequest(
       request("workspace.split", {
-        tabId: "page:about",
+        tabId: "page:knownHosts",
         direction: "column",
         position: "before",
         targetPaneId: "pane-1",
@@ -332,26 +332,29 @@ describe("plugin workspace bridge authorization and live state", () => {
     expect(pluginWorkspaceSnapshot().panes).toHaveLength(2);
     await runPluginWorkspaceRequest(
       request("workspace.move", {
-        tabId: "page:about",
+        tabId: "page:knownHosts",
         paneId: "pane-1",
         beforeTabId: "page:settings",
       }),
     );
-    expect(pluginWorkspaceSnapshot().panes[0]?.tabIds).toEqual(["page:about", "page:settings"]);
+    expect(pluginWorkspaceSnapshot().panes[0]?.tabIds).toEqual([
+      "page:knownHosts",
+      "page:settings",
+    ]);
     const result = await runPluginWorkspaceRequest(request("workspace.snapshot"));
     expect(result).toEqual(pluginWorkspaceSnapshot());
     expect(mocks.hostsSnapshot).not.toHaveBeenCalled();
   });
 
   it("validates page, sidebar, tab and pane targets before mutations", async () => {
-    useWorkspace.getState().openPage("about");
+    useWorkspace.getState().openPage("knownHosts");
     const before = pluginWorkspaceSnapshot();
     for (const [method, params] of [
       ["workspace.openPage", { kind: "vault" }],
       ["workspace.openSidebar", { view: "missing" }],
       ["workspace.activate", { tabId: "missing" }],
-      ["workspace.split", { tabId: "page:about", direction: "row", targetPaneId: "missing" }],
-      ["workspace.move", { tabId: "page:about", paneId: "pane-1", beforeTabId: "missing" }],
+      ["workspace.split", { tabId: "page:knownHosts", direction: "row", targetPaneId: "missing" }],
+      ["workspace.move", { tabId: "page:knownHosts", paneId: "pane-1", beforeTabId: "missing" }],
       ["invoke", {}],
     ] as Array<[string, Record<string, unknown>]>) {
       await expect(runPluginWorkspaceRequest(request(method, params))).rejects.toThrow();

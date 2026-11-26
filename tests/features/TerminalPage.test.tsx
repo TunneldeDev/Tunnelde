@@ -101,7 +101,9 @@ vi.mock("@xterm/xterm", () => ({
     write = vi.fn();
     dispose = vi.fn();
     paste = vi.fn();
-    input = vi.fn((data: string) => inputs[instances.indexOf(this)]?.(data));
+    input = vi.fn((data: string): void => {
+      inputs[instances.indexOf(this)]?.(data);
+    });
     selectAll = vi.fn();
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => "selected text");
@@ -1037,7 +1039,9 @@ describe("terminal clipboard", () => {
         const event = new KeyboardEvent("keydown", { key, [modifier]: true, cancelable: true });
         expect(keyboard[0]!(event)).toBe(false);
         expect(event.defaultPrevented).toBe(true);
-        expect(apiMock.sshWrite).toHaveBeenLastCalledWith("s1", encodeBase64(expected));
+        await waitFor(() =>
+          expect(apiMock.sshWrite).toHaveBeenLastCalledWith("s1", encodeBase64(expected)),
+        );
       }
       expect(instances[0]!.paste).not.toHaveBeenCalled();
       const composing = new KeyboardEvent("keydown", {
@@ -1094,7 +1098,7 @@ describe("terminal clipboard", () => {
         }),
       );
       expect(keyboard[0]!(press())).toBe(true);
-      expect(apiMock.sshWrite).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(apiMock.sshWrite).toHaveBeenCalledTimes(2));
     } finally {
       if (original) Object.defineProperty(navigator, "platform", original);
       else Reflect.deleteProperty(navigator, "platform");
@@ -1247,6 +1251,8 @@ function scopedServices(): TerminalViewServices {
     disconnect: vi.fn().mockResolvedValue(undefined),
     openSftp: vi.fn(),
     openHistory: vi.fn(),
+    openMonitor: vi.fn(),
+    openProcesses: vi.fn(),
     updateFont: vi.fn().mockResolvedValue(undefined),
     recordCommand: vi.fn().mockResolvedValue(undefined),
     copy: vi.fn(),
@@ -1258,6 +1264,27 @@ function scopedServices(): TerminalViewServices {
     Surface: ({ children }) => <>{children}</>,
   };
 }
+
+it("keeps input flowing during a live checkpoint and skips a save overtaken by output", async () => {
+  const services = scopedServices();
+  const view = render(<TerminalPageView sessionId="satellite" active services={services} />);
+  await waitFor(() => expect(services.io.sshAttach).toHaveBeenCalledOnce());
+  const participant = vi.mocked(services.checkpoints.register).mock.calls[0]![1];
+  const saving = participant.snapshot!();
+  const parsed = instances[0]!.write.mock.calls.at(-1)![1] as () => void;
+  inputs[0]!("typing during snapshot");
+  expect(services.io.sshWrite).toHaveBeenCalledWith(
+    "satellite",
+    encodeBase64("typing during snapshot"),
+  );
+  expect(services.io.sshDetach).not.toHaveBeenCalled();
+  const receive = vi.mocked(services.events.onSshData).mock.calls[0]![0];
+  receive({ sessionId: "satellite", sequence: 1, data: encodeBase64("new output") });
+  parsed();
+  await expect(saving).rejects.toThrow("terminal.checkpointBusy");
+  expect(services.io.sshAttach).toHaveBeenCalledOnce();
+  view.unmount();
+});
 
 it("renders a scoped PTY without reading main session/settings or using main I/O", async () => {
   const services = scopedServices();

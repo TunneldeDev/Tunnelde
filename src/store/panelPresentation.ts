@@ -1,3 +1,4 @@
+import { habitStorage } from "@/lib/habits/storage";
 import { create } from "zustand";
 import type { SidebarView } from "./navigation";
 import { isFloatingRect, type FloatingRect } from "@/lib/layout/floatingPanel";
@@ -33,10 +34,10 @@ function createFloatingPanelStore(view: SidebarView) {
   function readBounds(): FloatingRect | null {
     try {
       const raw =
-        localStorage.getItem(key) ??
+        habitStorage.getItem(key) ??
         (view === "tasks"
-          ? (localStorage.getItem("tunnelde.backgroundTasks.bounds") ??
-            localStorage.getItem("tunnelde.transferPanel.bounds"))
+          ? (habitStorage.getItem("tunnelde.backgroundTasks.bounds") ??
+            habitStorage.getItem("tunnelde.transferPanel.bounds"))
           : null);
       const value: unknown = JSON.parse(raw ?? "null");
       return isFloatingRect(value) ? value : null;
@@ -46,7 +47,7 @@ function createFloatingPanelStore(view: SidebarView) {
   }
   let preferred: PanelPresentation | null = null;
   try {
-    const value = localStorage.getItem(`tunnelde.panels.${view}.presentation`);
+    const value = habitStorage.getItem(`tunnelde.panels.${view}.presentation`);
     if (value === "sidebar" || value === "workspace" || value === "floating") preferred = value;
   } catch {
     /* Use the entry point default when storage is unavailable. */
@@ -55,24 +56,24 @@ function createFloatingPanelStore(view: SidebarView) {
     preferred,
     setPreferred: (location) => {
       try {
-        localStorage.setItem(`tunnelde.panels.${view}.presentation`, location);
+        habitStorage.setItem(`tunnelde.panels.${view}.presentation`, location);
       } catch {
         /* Session state still works. */
       }
       set({ preferred: location });
     },
-    open: false,
-    pinned: false,
+    open: habitStorage.getItem(`tunnelde.panels.${view}.open`) === "true",
+    pinned: habitStorage.getItem(`tunnelde.panels.${view}.pinned`) === "true",
     bounds: readBounds(),
     order: 0,
     setBounds: (bounds) => {
       if (bounds && !isFloatingRect(bounds)) return;
       try {
-        if (bounds) localStorage.setItem(key, JSON.stringify(bounds));
-        else localStorage.removeItem(key);
+        if (bounds) habitStorage.setItem(key, JSON.stringify(bounds));
+        else habitStorage.removeItem(key);
         if (view === "tasks") {
-          localStorage.removeItem("tunnelde.backgroundTasks.bounds");
-          localStorage.removeItem("tunnelde.transferPanel.bounds");
+          habitStorage.removeItem("tunnelde.backgroundTasks.bounds");
+          habitStorage.removeItem("tunnelde.transferPanel.bounds");
         }
       } catch {
         /* In-memory geometry still works without browser storage. */
@@ -85,11 +86,13 @@ function createFloatingPanelStore(view: SidebarView) {
     togglePinned: () => set((state) => ({ pinned: !state.pinned })),
     raise: () => set({ order: nextPanelOrder() }),
   }));
-  store.subscribe((state) =>
-    usePanelPresentations.setState((all) => ({
-      panels: { ...all.panels, [view]: state },
-    })),
-  );
+  store.subscribe((state, previous) => {
+    if (state.open !== previous.open)
+      habitStorage.setItem(`tunnelde.panels.${view}.open`, String(state.open));
+    if (state.pinned !== previous.pinned)
+      habitStorage.setItem(`tunnelde.panels.${view}.pinned`, String(state.pinned));
+    usePanelPresentations.setState((all) => ({ panels: { ...all.panels, [view]: state } }));
+  });
   return store;
 }
 
@@ -100,4 +103,17 @@ export function panelPresentation(view: SidebarView) {
     stores.set(view, store);
   }
   return store;
+}
+
+/** Rehydrate already-created stores after the durable cache has been read. */
+export function restorePanelHabits() {
+  for (const [view, store] of stores) {
+    const read = createFloatingPanelStore(view).getState();
+    store.setState({
+      preferred: read.preferred,
+      bounds: read.bounds,
+      open: read.open,
+      pinned: read.pinned,
+    });
+  }
 }

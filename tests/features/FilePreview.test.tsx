@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
@@ -48,7 +49,7 @@ describe("file preview", () => {
     const trigger = screen.getByRole("button", { name: "Preview" });
     trigger.focus();
     fireEvent.click(trigger);
-    expect((await screen.findByRole("textbox")).getAttribute("readonly")).not.toBeNull();
+    expect((await screen.findByRole("textbox")).getAttribute("aria-readonly")).toBe("true");
     expect(api.searchPreviewLocal).toHaveBeenCalledWith("C:\\notes.txt");
     expect(api.openLocalPath).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -82,9 +83,9 @@ describe("file preview", () => {
     expect(api.sftpReadText).toHaveBeenCalledWith("ssh-2", "/srv/readme.md", undefined);
     expect(api.searchPreviewLocal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Show source" }));
-    const source = screen.getByRole("textbox") as HTMLTextAreaElement;
-    expect(source.value).toBe("# Preview title");
-    expect(source.classList.contains("td-code-editor")).toBe(true);
+    const source = screen.getByRole("textbox");
+    expect(EditorView.findFromDOM(source)!.state.doc.toString()).toBe("# Preview title");
+    expect(source.closest(".file-preview__code")).toBeTruthy();
   });
 
   it("ignores a stale request when another file is selected", async () => {
@@ -108,7 +109,9 @@ describe("file preview", () => {
     await act(async () =>
       finish({ content: "old content", size: 11, encoding: "utf-8", bom: false }),
     );
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("new content");
+    expect(EditorView.findFromDOM(screen.getByRole("textbox"))!.state.doc.toString()).toBe(
+      "new content",
+    );
   });
 
   it("captures the selected session and reloads a fresh activation of the same text file", async () => {
@@ -117,7 +120,9 @@ describe("file preview", () => {
     useFilePreview.getState().show("/same.txt", 0, 0, source);
     source.sessionId = "unselected-session";
     render(<FilePreview />);
-    expect(((await screen.findByRole("textbox")) as HTMLTextAreaElement).value).toBe("first");
+    expect(EditorView.findFromDOM(await screen.findByRole("textbox"))!.state.doc.toString()).toBe(
+      "first",
+    );
     expect(api.sftpReadText).toHaveBeenCalledWith("selected-session", "/same.txt", undefined);
     let finish!: (value: {
       content: string;
@@ -138,7 +143,7 @@ describe("file preview", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByRole("status")).toBeTruthy();
     await act(async () => finish({ content: "fresh", size: 5, encoding: "utf-8", bom: false }));
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("fresh");
+    expect(EditorView.findFromDOM(screen.getByRole("textbox"))!.state.doc.toString()).toBe("fresh");
   });
 
   it.each([undefined, new Error("First read failed")])(
@@ -151,7 +156,9 @@ describe("file preview", () => {
       render(<FilePreview />);
       await screen.findByRole("alert");
       act(() => useFilePreview.getState().show("/same.txt"));
-      expect(((await screen.findByRole("textbox")) as HTMLTextAreaElement).value).toBe("recovered");
+      expect(EditorView.findFromDOM(await screen.findByRole("textbox"))!.state.doc.toString()).toBe(
+        "recovered",
+      );
       expect(screen.queryByRole("alert")).toBeNull();
     },
   );

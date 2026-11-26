@@ -1,5 +1,71 @@
 import { invoke } from "@tauri-apps/api/core";
-import { createDiagnosticSampler, reportError } from "@/lib/diagnostics";
+import { createDiagnosticSampler, reportError, type IpcDiagnosticContext } from "@/lib/diagnostics";
+
+export function ipcDiagnosticContext(
+  command: string,
+  args: unknown,
+  started: number,
+): IpcDiagnosticContext {
+  const context: IpcDiagnosticContext = {
+    command,
+    durationMs: Math.max(0, Math.round(performance.now() - started)),
+  };
+  if (!args || typeof args !== "object") return context;
+  const input = args as Record<string, unknown>;
+  const request = input.request;
+  if (
+    [
+      "panel_window_control",
+      "panel_window_plugin_view",
+      "panel_window_terminal",
+      "panel_window_files",
+    ].includes(command) &&
+    request &&
+    typeof request === "object"
+  ) {
+    const row = request as Record<string, unknown>;
+    if (typeof row.action === "string" && /^[a-zA-Z][a-zA-Z0-9]{0,63}$/.test(row.action))
+      context.action = row.action;
+    const lease = row.lease as { panelId?: unknown; generation?: unknown } | undefined;
+    const panelId = lease?.panelId ?? row.panelId;
+    if (typeof panelId === "string") {
+      const kind = panelId.split(":", 1)[0]!;
+      if (
+        [
+          "editor-view",
+          "host-view",
+          "settings-view",
+          "terminal",
+          "files",
+          "sftp",
+          "plugin",
+          "plugins",
+          "hosts",
+          "connections",
+          "tasks",
+          "output",
+          "knownHosts",
+          "forwarding",
+          "filePreview",
+        ].includes(kind)
+      )
+        context.panelKind = kind;
+    }
+    if (
+      typeof lease?.generation === "number" &&
+      Number.isSafeInteger(lease.generation) &&
+      lease.generation >= 0
+    )
+      context.generation = lease.generation;
+  } else if (
+    command === "plugin_run" &&
+    typeof input.command === "string" &&
+    /^[a-zA-Z0-9._:-]{1,128}$/.test(input.command)
+  ) {
+    context.action = input.command;
+  }
+  return context;
+}
 
 // These commands can repeat on a timer or for each terminal input chunk.
 // Avoid a single outage monopolizing the bounded log buffer.
@@ -16,9 +82,23 @@ const sampled = new Map(
 /** Ownership transitions intentionally reject stale panel documents and leases.
  * Preserve the rejection for feature logic without turning it into a generic IPC
  * outage or user-facing diagnostic. */
-function expectedPanelLifecycleRejection(command: string, error: unknown) {
+function expectedPanelLifecycleRejection(command: string, error: unknown, args: unknown) {
   if (command !== "panel_window_control" || !error || typeof error !== "object") return false;
   const message = (error as { message?: unknown }).message;
+  // A commit deletes the transfer before the destination has processed its
+  // invalidation. The model reader checks a fresh snapshot and reports genuine
+  // failures; do not preempt that check with a generic IPC warning.
+  if (
+    message === "transfer expired" &&
+    args &&
+    typeof args === "object" &&
+    "request" in args &&
+    args.request &&
+    typeof args.request === "object" &&
+    "action" in args.request &&
+    args.request.action === "stagedModel"
+  )
+    return true;
   return (
     typeof message === "string" &&
     [
@@ -40,16 +120,30 @@ export async function diagnosticInvoke<T>(
   command: string,
   ...options: Parameters<typeof invoke> extends [string, ...infer P] ? P : never
 ): Promise<T> {
+  if (
+    import.meta.env.DEV &&
+    import.meta.env.VITE_TUNNELDE_DEBUGGER === "1" &&
+    window.__TUNNELDE_DEBUGGER_MOCK__
+  ) {
+    const { invokeFixture } = await import("@/debugger/mock");
+    return invokeFixture<T>(command, options[0] as Record<string, unknown> | undefined);
+  }
   const sampler = sampled.get(command);
+  const started = performance.now();
   try {
     const value = await invoke<T>(command, ...options);
     sampler?.recovered();
     return value;
   } catch (error) {
-    if (expectedPanelLifecycleRejection(command, error)) throw error;
+    if (expectedPanelLifecycleRejection(command, error, options[0])) throw error;
     // Output samples the read failure as an outage instead of logging per poll.
     if (sampler) sampler.failed(error);
-    else if (command !== "logs_output_read") reportError("ipc", command, error);
+    else if (command !== "logs_output_read") {
+      const ipc = ipcDiagnosticContext(command, options[0], started);
+      reportError("ipc", ipc.action ? `${command}.${ipc.action}` : command, error, undefined, {
+        ipc,
+      });
+    }
     throw error;
   }
 }

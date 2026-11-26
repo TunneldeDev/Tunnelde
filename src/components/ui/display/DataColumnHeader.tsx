@@ -13,6 +13,7 @@ export function DataColumnHeader({
   scope,
   onSort,
   onResize,
+  onResizeCancel,
   onMove,
   resizeLabel,
   moveHint,
@@ -25,6 +26,7 @@ export function DataColumnHeader({
   scope: string;
   onSort: () => void;
   onResize: (width: number, commit: boolean) => void;
+  onResizeCancel?: () => void;
   onMove: (source: string, target: string) => void;
   resizeLabel: string;
   moveHint: string;
@@ -99,7 +101,13 @@ export function DataColumnHeader({
           event.preventDefault();
           event.stopPropagation();
           event.currentTarget.setPointerCapture(event.pointerId);
-          drag.current = { pointer: event.pointerId, x: event.clientX, width, next: width };
+          const actual = event.currentTarget.parentElement?.getBoundingClientRect().width || width;
+          drag.current = {
+            pointer: event.pointerId,
+            x: event.clientX,
+            width: actual,
+            next: bound(actual),
+          };
         }}
         onPointerMove={(event) => {
           const current = drag.current;
@@ -118,14 +126,16 @@ export function DataColumnHeader({
           const current = drag.current;
           if (current) {
             drag.current = null;
-            onResize(current.width, false);
+            if (onResizeCancel) onResizeCancel();
+            else onResize(current.width, false);
           }
         }}
         onPointerCancel={() => {
           const current = drag.current;
           if (current) {
             drag.current = null;
-            onResize(current.width, false);
+            if (onResizeCancel) onResizeCancel();
+            else onResize(current.width, false);
           }
         }}
         onKeyDown={(event) => {
@@ -134,15 +144,17 @@ export function DataColumnHeader({
             event.stopPropagation();
             const current = drag.current;
             drag.current = null;
-            onResize(current.width, false);
+            if (onResizeCancel) onResizeCancel();
+            else onResize(current.width, false);
             event.currentTarget.releasePointerCapture(current.pointer);
             return;
           }
+          const actual = event.currentTarget.parentElement?.getBoundingClientRect().width || width;
           const next =
             event.key === "ArrowLeft"
-              ? width - 10
+              ? actual - 10
               : event.key === "ArrowRight"
-                ? width + 10
+                ? actual + 10
                 : event.key === "Home"
                   ? 64
                   : event.key === "End"

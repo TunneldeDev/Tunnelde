@@ -12,6 +12,23 @@ const CATEGORIES = [
 ];
 const VERSION = BUILD_VERSION;
 
+const NON_PRODUCT_PATHS = [
+  /^docs\//,
+  /^tests\//,
+  /^scripts\/ci\//,
+  /^scripts\/release\//,
+  /^\.github\//,
+];
+
+export function requiresProductRelease(files) {
+  return files.some(
+    (file) =>
+      !NON_PRODUCT_PATHS.some((pattern) => pattern.test(file.filename)) &&
+      !/(^|\/)tests?\.rs$/.test(file.filename) &&
+      !/(^|\/)tests\//.test(file.filename),
+  );
+}
+
 function markdown(value) {
   return value
     .replace(/&/g, "&amp;")
@@ -179,6 +196,7 @@ export async function collectChanges({ github, repo, previousVersion, base, head
   )
     throw new Error("Invalid comparison range");
   const commits = [];
+  const files = new Map();
   let total;
   for (let page = 1; ; page++) {
     const { data } = await retryGithubRead(
@@ -195,6 +213,7 @@ export async function collectChanges({ github, repo, previousVersion, base, head
       throw new Error("Release source must descend from the previous version tag");
     total ??= data.total_commits;
     commits.push(...data.commits);
+    for (const file of data.files || []) files.set(file.filename, file);
     if (commits.length >= total) break;
     if (!data.commits.length) throw new Error("Incomplete release commit history");
   }
@@ -230,5 +249,5 @@ export async function collectChanges({ github, repo, previousVersion, base, head
       }),
     );
   }
-  return commits;
+  return { commits, files: [...files.values()] };
 }

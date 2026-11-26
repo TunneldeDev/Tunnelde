@@ -54,6 +54,8 @@ Historical Nightly version metadata remains readable for compatibility.
 `feat` increases minor. Other development changes, including docs, CI and tests, increase patch.
 Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
 and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
+Only product changes create a stable promotion. A batch containing solely tests, docs, CI or
+release-tooling changes does not create a release PR or stable version.
 Explicit Beta versions use the same next stable base with a unique sequence suffix.
 The suffix is **`beta.N`, where N is 1 through 9**. Do not publish `beta.10`
 or higher. For example, `0.28.0-beta.1`, `0.28.0-beta.2`, then stable `0.28.0`;
@@ -121,10 +123,9 @@ not publish a build, bypass CI, or stabilize experimental APIs. Use the finite
 [core contract boundary](core-contracts.md) and final package/upgrade acceptance
 to decide readiness before merging the stable promotion.
 
-Stable preparation and publication also require a published Beta with the same
-target version and exact product source, whose Release body carries the
-maintainer acceptance marker `<!-- tunnelde:beta-accepted -->`. Record acceptance
-through `acceptBeta`; CI and successful package builds do not satisfy this gate.
+Stable preparation and publication do not require a published Beta or a separate
+Release acceptance marker. Review the generated promotion PR, its exact-head CI
+and final package/upgrade evidence before merging it to `main`.
 
 ## Credentials and protection
 

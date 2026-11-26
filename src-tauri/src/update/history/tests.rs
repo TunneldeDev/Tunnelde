@@ -339,3 +339,25 @@ async fn live_history_through_selected_route() {
         result.version
     );
 }
+
+#[test]
+fn archive_includes_older_current_and_newer_releases_without_an_available_update() {
+    let mut history = HistoryBuilder::archive("0.28.0", "stable").unwrap();
+    history.add(batch(vec![
+        release("v0.27.0"),
+        release("v0.28.0"),
+        release("v0.29.0"),
+        release("v0.29.1-beta.1"),
+    ]));
+    let result = history.finish(true, None);
+    assert!(result.complete);
+    assert!(result.reason.is_none());
+    assert_eq!(
+        result
+            .entries
+            .iter()
+            .map(|entry| entry.version.as_str())
+            .collect::<Vec<_>>(),
+        ["0.29.0", "0.28.0", "0.27.0"]
+    );
+}

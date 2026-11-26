@@ -1,3 +1,5 @@
+import { usePlugins } from "@/store/plugins";
+import { usePluginSecurity } from "@/store/pluginSecurity";
 import { create } from "zustand";
 import type { PanelWindowClient } from "@/lib/panels/windowClient";
 import { usePanelWindows } from "@/store/panelWindows";
@@ -156,6 +158,8 @@ export function startPreviewWindowPublication(
     revision = 0;
     refresh();
   });
+  const stopPlugins = usePlugins.subscribe(refresh);
+  const stopSecurity = usePluginSecurity.subscribe(refresh);
   follow();
   return {
     refresh,
@@ -163,6 +167,8 @@ export function startPreviewWindowPublication(
       if (disposed) return;
       disposed = true;
       if (activeWriter === identity) usePreviewPublication.setState({ attemptId: null });
+      stopPlugins();
+      stopSecurity();
       stopOwners();
       stopPanels();
       stopSource?.();

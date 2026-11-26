@@ -61,7 +61,18 @@ export interface NativeEvents {
 }
 
 export const nativeEvents = createEventBus<NativeEvents>(
-  (name, receive) => listen(name, ({ payload }) => receive(payload)),
+  (name, receive) => {
+    if (
+      import.meta.env.DEV &&
+      import.meta.env.VITE_TUNNELDE_DEBUGGER === "1" &&
+      window.__TUNNELDE_DEBUGGER_MOCK__
+    ) {
+      return import("@/debugger/mock").then(({ listenFixture }) =>
+        listenFixture(name, receive as (payload: unknown) => void),
+      );
+    }
+    return listen(name, ({ payload }) => receive(payload));
+  },
   (name, error) => reportError("events.native", name, error),
 );
 

@@ -5,6 +5,8 @@ import { terminalPreferenceProjection } from "@/features/terminal/terminalViewSe
 import {
   registerTerminalCheckpoint,
   beginTerminalHandoff,
+  restoreTerminalCheckpoints,
+  takeTerminalCheckpoint,
 } from "@/features/terminal/terminalCheckpoint";
 import {
   encodeTerminalCheckpoint,
@@ -21,6 +23,7 @@ const dispose: Array<() => void> = [];
 afterEach(() => {
   for (const stop of dispose.splice(0).reverse()) stop();
   useWindowViews.setState({ entries: new Map() });
+  restoreTerminalCheckpoints({});
 });
 function fixture(staged = false, restored = false) {
   const id = "terminal:s1";
@@ -84,6 +87,7 @@ function fixture(staged = false, restored = false) {
     () => binding.dispose(),
   );
   const participant = {
+    snapshot: vi.fn().mockResolvedValue(terminalCheckpointFixture()),
     prepare: vi.fn().mockResolvedValue(terminalCheckpointFixture()),
     resume: vi.fn().mockResolvedValue(undefined),
   };
@@ -115,6 +119,14 @@ it("rejects a wrong session selector and a retired renderer before any effect", 
   await expect(f.binding.services.io.sshWrite("s1", "bytes")).rejects.toThrow("staleOwner");
   expect(f.client.terminals.write).not.toHaveBeenCalled();
 });
+it("lets accepted input drain during local move capture while keeping resize frozen", async () => {
+  const f = fixture();
+  useWindowViews.setState({ entries: new Map([[f.id, { ...f.record, moving: true }]]) });
+  await f.binding.services.io.sshWrite("s1", "queued bytes");
+  expect(f.client.terminals.write).toHaveBeenCalledWith(f.lease, "queued bytes");
+  await expect(f.binding.services.io.sshResize("s1", 80, 24)).rejects.toThrow("staleOwner");
+  expect(f.client.terminals.resize).not.toHaveBeenCalled();
+});
 it("restores a real lossless checkpoint before acknowledging parser readiness", async () => {
   const f = fixture(true, true);
   expect(f.binding.services.checkpoints.take("s1")).toEqual(terminalCheckpointFixture());
@@ -127,13 +139,25 @@ it("restores a real lossless checkpoint before acknowledging parser readiness", 
   expect(ready).toHaveBeenCalledOnce();
   expect(f.client.terminals.attach).not.toHaveBeenCalled();
 });
-it("ordinary checkpoints resume immediately and do not retain a move reservation", async () => {
+it("restores the final background checkpoint ahead of an older periodic panel snapshot", () => {
+  const latest = { ...terminalCheckpointFixture(), sequence: 18, data: "latest screen" };
+  restoreTerminalCheckpoints({ s1: latest });
+  const f = fixture(false, true);
+  expect(f.binding.services.checkpoints.take("s1")).toEqual(latest);
+  expect(takeTerminalCheckpoint("s1")).toBeUndefined();
+});
+it("ordinary checkpoints save the live parser without freezing input or detaching the stream", async () => {
   const f = fixture();
   const captured = await f.controller.captureAsync(undefined, { intent: "checkpoint" });
   expect(decodeTerminalCheckpoint(captured.fields.terminal, "panel")).toEqual(
     terminalCheckpointFixture(),
   );
-  expect(f.participant.resume).toHaveBeenCalledOnce();
+  expect(f.participant.snapshot).toHaveBeenCalledOnce();
+  expect(f.participant.prepare).not.toHaveBeenCalled();
+  expect(f.participant.resume).not.toHaveBeenCalled();
+  expect(f.client.terminals.detach).not.toHaveBeenCalled();
+  await f.binding.services.io.sshWrite("s1", "bytes");
+  expect(f.client.terminals.write).toHaveBeenCalledWith(f.lease, "bytes");
   const next = await beginTerminalHandoff(["s1"]);
   await next.rollback();
 });
