@@ -13,6 +13,7 @@ use crate::state::AppState;
 const SAMPLE_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub mod actions;
+pub mod details;
 mod execution;
 
 const SCRIPT: &str = r#"LANG=C
@@ -93,6 +94,7 @@ pub struct RemoteStats {
     pub disk_write_rate: Option<f32>,
     pub processes: Vec<RemoteProcess>,
     pub sampled_at: i64,
+    pub details: Option<details::PerformanceDetails>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -103,6 +105,7 @@ struct Counters {
     tx: u64,
     disks: HashMap<String, (u64, u64)>,
     at: Option<Instant>,
+    details: details::DetailCounters,
 }
 
 #[derive(Default)]
@@ -173,17 +176,26 @@ fn parse_kb(value: &str) -> u64 {
 
 pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats> {
     let _gate = app.state::<AppState>().monitor.gate(session_id).await?;
-    let raw = exec(app, session_id, &format!("{SCRIPT}\n{BASE_SCRIPT}")).await?;
+    let raw = exec(
+        app,
+        session_id,
+        &format!("{SCRIPT}\n{BASE_SCRIPT}\n{}", details::SCRIPT),
+    )
+    .await?;
     let cache = &app.state::<AppState>().monitor;
     let previous = cache.previous(session_id);
     let (mut stats, counters) = parse_sample(&raw, &previous, Instant::now(), now_ms());
-    stats.processes = cache
+    let processes = cache
         .processes
         .update(session_id, &raw, false)
-        .unwrap_or_default()
-        .into_iter()
-        .take(5)
-        .collect();
+        .unwrap_or_default();
+    if let Some(detail) = stats.details.as_mut() {
+        if !processes.is_empty() {
+            detail.processes = Some(processes.len() as u64);
+            detail.threads = processes.iter().map(|p| p.threads.map(u64::from)).sum();
+        }
+    }
+    stats.processes = processes.into_iter().take(5).collect();
     cache.store(session_id, counters);
     Ok(stats)
 }
@@ -319,6 +331,12 @@ fn parse_sample(
             stats.disk_write_rate = Some(written_sectors as f32 * 512.0 / seconds);
         }
     }
+    let seconds = previous
+        .at
+        .map(|at| now.duration_since(at).as_secs_f64().max(0.2));
+    let (details, next) = details::parse(raw, &previous.details, seconds);
+    stats.details = Some(details);
+    counters.details = next;
     counters.at = Some(now);
 
     (stats, counters)

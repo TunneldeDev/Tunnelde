@@ -39,3 +39,7 @@ system for all process traffic or shared resources.
 PID 1 is protected. The application checks the process start identifier immediately
 before sending the signal and rejects a process that has exited or been replaced.
 Closing the dialog or switching servers invalidates a pending confirmation.
+
+Process tables offer 25/50/100/200 rows, first/last navigation, direct page jumps and internal scrolling. Right-click or Shift+F10 opens process-tree termination, remote executable location and details. Tree termination requires confirmation. Run new task submits a background shell command as the SSH user with an optional working directory. Its PID acknowledges submission; there is no interactive terminal and input/output are discarded.
+
+The monitor page and panel provide CPU, memory, disk, adapter and available NVIDIA GPU details. CPU includes speed, processes, threads, Linux file handles and logical CPU usage. Disks include activity, response time and rates. Values come from readable remote sources; missing tools/drivers and initial rates remain unavailable.

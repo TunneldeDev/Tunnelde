@@ -1,0 +1,100 @@
+.performance-details {
+  display: grid;
+  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.performance-section {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius);
+  background: var(--td-panel);
+}
+.performance-section h3,
+.performance-section h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.performance-section p {
+  color: var(--td-muted);
+  font-size: 11px;
+}
+.performance-readings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.performance-readings > div {
+  min-width: 0;
+}
+.performance-readings dt {
+  color: var(--td-muted);
+  font-size: 10px;
+}
+.performance-readings dd {
+  font-family: var(--td-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.performance-device + .performance-device,
+.performance-device {
+  border-top: 1px solid var(--td-border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.performance-cores {
+  margin-top: 12px;
+  color: var(--td-muted);
+  font-size: 11px;
+}
+.performance-cores summary {
+  cursor: pointer;
+}
+.performance-cores > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+  padding-top: 10px;
+}
+.performance-core {
+  padding: 6px;
+  background: var(--td-hover);
+  min-width: 0;
+}
+.performance-core strong {
+  color: var(--td-text);
+  float: right;
+  font-size: 11px;
+}
+.performance-core .td-meter {
+  clear: both;
+  margin-top: 6px;
+}
+.performance-note {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--td-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.monitor-panel-metrics .performance-details {
+  grid-template-columns: minmax(0, 1fr);
+}
+.monitor-panel-metrics .performance-readings {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.monitor-performance {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}

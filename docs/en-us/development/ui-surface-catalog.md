@@ -92,3 +92,7 @@ acceptance. See [UI controls](ui-controls.md) for the shared conventions.
 ### Process pagination and height
 
 The process page passes bounded flex height to the table viewport. Its footer provides first/previous/next/last navigation, direct page entry and 25/50/100/200 rows per page. Search and sorting reset to page one; size changes retain the page containing the current first row, and shrinking samples clamp the page. Controls wrap at narrow widths; very short windows allow container scrolling. Selection details and expanded metric help have bounded heights. Providers share the same native entries surface.
+
+### Process actions and performance details
+
+Process rows share the application context menu and Shift+F10: details, remote file location, stop and stop tree. Destructive actions require confirmation and identity revalidation. Run new task sits next to stop; its form retains command/directory input and displays errors or launch PID. Monitor page and panel share token-based detail cards, muted labels, monospace readings, wrapping device information and adaptive columns. Logical CPUs use a bounded scrolling grid, collapsed by default above 32 processors. Narrow/short panels scroll vertically. Missing values use em dashes with source limitations explained. Presentation changes reuse existing history and sampling.
