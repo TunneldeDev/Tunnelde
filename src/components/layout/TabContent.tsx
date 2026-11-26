@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/ui/display/Misc";
 import { HistoryPage } from "@/features/history/HistoryPage";
+import { ProcessesPage } from "@/features/monitor/ProcessesPage";
 import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { PluginCommandPage } from "@/features/plugins/PluginCommandPage";
@@ -71,6 +72,8 @@ function TabBody({
       return <MainNativeEditorPage tabId={tab.id} active={active} />;
     case "history":
       return <HistoryPage sessionId={tab.id.replace("history:", "")} />;
+    case "processes":
+      return <ProcessesPage sessionId={tab.id.replace("processes:", "")} active={visible} />;
     case "monitor":
       return <MonitorPage sessionId={tab.id.replace("monitor:", "")} active={visible} />;
     case "pluginView": {

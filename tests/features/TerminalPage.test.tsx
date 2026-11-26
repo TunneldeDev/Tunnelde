@@ -1252,6 +1252,7 @@ function scopedServices(): TerminalViewServices {
     openSftp: vi.fn(),
     openHistory: vi.fn(),
     openMonitor: vi.fn(),
+    openProcesses: vi.fn(),
     updateFont: vi.fn().mockResolvedValue(undefined),
     recordCommand: vi.fn().mockResolvedValue(undefined),
     copy: vi.fn(),

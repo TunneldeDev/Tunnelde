@@ -513,7 +513,7 @@ describe("workspace tabs", () => {
     expect(useNavigation.getState().visitedSidebars).toContain("plugins");
   });
 
-  it.each(["sftp", "terminal", "monitor", "pluginView"] as const)(
+  it.each(["sftp", "terminal", "monitor", "processes", "pluginView"] as const)(
     "preserves the width of a sole %s tab when moving its group to the opposite edge",
     (kind) => {
       state().openPage("welcome", { preview: false });
@@ -1082,4 +1082,15 @@ it("routes About into the existing Settings tab and selects its About section", 
   expect(state().tabs.some((tab) => tab.kind === "about")).toBe(false);
   expect(state().activeId).toBe("page:settings");
   expect(useNavigation.getState().settingsSection).toBe("about");
+});
+
+it("opens monitoring and processes as unique peer tabs and closes them with their session", () => {
+  const ssh = session("s1", "Alpha");
+  state().openMonitor(ssh);
+  state().openProcesses(ssh);
+  state().openProcesses(ssh);
+  expect(state().tabs.map((tab) => tab.kind)).toEqual(["monitor", "processes"]);
+  state().openPage("welcome", { preview: false });
+  state().closeSession(ssh.id);
+  expect(state().tabs.map((tab) => tab.kind)).toEqual(["welcome"]);
 });

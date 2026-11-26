@@ -11,7 +11,7 @@ import { connectionPromptHost, type ConnectionPromptServices } from "./prompt";
 
 interface ConnectDialogProps {
   host: Host;
-  after?: "terminal" | "sftp" | "monitor" | "background";
+  after?: "terminal" | "sftp" | "monitor" | "processes" | "background";
   intent?: "connect" | "installKey";
   initialError?: string;
   onClose: () => void;
@@ -112,6 +112,7 @@ function LocalConnectDialog({
       after={after}
       onConnected={async (session) => {
         if (onConnected) await onConnected(session);
+        else if (after === "processes") useWorkspace.getState().openProcesses(session);
         else if (after === "monitor") useWorkspace.getState().openMonitor(session);
         else if (after === "sftp") useWorkspace.getState().openSftp(session);
         else if (after === "terminal") useWorkspace.getState().openTerminal(session);

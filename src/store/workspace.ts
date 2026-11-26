@@ -116,6 +116,7 @@ interface WorkspaceStore {
   restoreEditorDraft: (draft: EditorDraft) => void;
   openHistory: (session: SshSession) => void;
   openMonitor: (session: SshSession) => void;
+  openProcesses: (session: SshSession) => void;
   openPluginView: (
     pluginId: string,
     viewId: string,
@@ -713,6 +714,18 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       );
     },
 
+    openProcesses: (session) => {
+      set((state) =>
+        insert(state, {
+          id: `processes:${session.id}`,
+          kind: "processes",
+          title: session.title,
+          hostId: session.hostId,
+          pinned: false,
+        }),
+      );
+    },
+
     openPluginView: (pluginId, viewId, title, options) => {
       set((state) =>
         insert(state, {
@@ -750,7 +763,8 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             id === `sftp:${sessionId}` ||
             id.startsWith(`sftp:${sessionId}:copy:`) ||
             id === `history:${sessionId}` ||
-            id === `monitor:${sessionId}`;
+            id === `monitor:${sessionId}` ||
+            id === `processes:${sessionId}`;
 
       editors.markDisconnected(sessionId);
 

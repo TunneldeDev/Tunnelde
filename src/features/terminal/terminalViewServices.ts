@@ -63,6 +63,7 @@ export interface TerminalViewServices {
   openSftp(session: SshSession): void;
   openHistory(session: SshSession): void;
   openMonitor(session: SshSession): void;
+  openProcesses(session: SshSession): void;
   updateFont(font: MonoFont): Promise<unknown>;
   recordCommand(hostId: string, command: string): Promise<unknown>;
   copy(text: string): void;

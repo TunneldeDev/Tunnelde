@@ -12,9 +12,9 @@ import { processIdentity } from "@/lib/monitor/processes/model";
 import { readProcessSample } from "./sampling";
 
 const pageSize = 100;
-export function useProcessManager(sessionId: string) {
+export function useProcessManager(sessionId: string, active = true) {
   const { t, i18n } = useTranslation();
-  const sample = useProcesses(sessionId);
+  const sample = useProcesses(sessionId, active);
   const [query, setQueryState] = useState("");
   const [sort, setSortState] = useState<FrontendProcessSort>({ key: "cpuTotal", descending: true });
   const [page, setPage] = useState(0);

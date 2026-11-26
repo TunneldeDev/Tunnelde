@@ -208,6 +208,7 @@ export type TabKind =
   | "editor"
   | "history"
   | "monitor"
+  | "processes"
   | "pluginView"
   | "pluginDetail";
 

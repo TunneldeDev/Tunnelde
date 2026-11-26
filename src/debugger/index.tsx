@@ -30,7 +30,6 @@ import { Field, Input, Textarea } from "@/components/ui/form/Field";
 import { Button } from "@/components/ui/form/Button";
 import { SwitchRow } from "@/components/ui/form/Switch";
 import { Dialog } from "@/components/ui/overlay/Dialog";
-import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
 import { EditorConflictDialog } from "@/features/editor/EditorConflictDialog";
 import { initializeFixture, fixtureSnapshot, fixturePlugin } from "./mock";
 import type { DebugParameters, DebugScene } from "./contracts";
@@ -191,7 +190,8 @@ export async function prepareScene(scene: DebugScene, parameters: DebugParameter
     const loading = useEditors.getState().open(tab.id, null, "/debug/README.md");
     if (parameters.preset !== "loading") await loading;
     if (scene.id === "floating") workspace.floatTab(tab.id);
-  } else if (scene.id === "monitor" || scene.id === "processes") workspace.openMonitor(session);
+  } else if (scene.id === "monitor") workspace.openMonitor(session);
+  else if (scene.id === "processes") workspace.openProcesses(session);
   else if (scene.id === "history") workspace.openHistory(session);
   else if (scene.id === "plugin-details")
     workspace.openPluginDetail("local", plugin.id, plugin.name);
@@ -254,9 +254,6 @@ export function SceneView({
   return (
     <div data-debug-surface={scene.id} style={{ height: "100vh", width: "100%" }}>
       <AppShell />
-      {extraOpen && scene.id === "processes" && (
-        <ProcessesDialog sessionId={session.id} onClose={() => setExtraOpen(false)} />
-      )}
       {extraOpen && scene.id === "editor-conflict" && editor && (
         <EditorConflictDialog tabId={editor} onClose={() => setExtraOpen(false)} />
       )}

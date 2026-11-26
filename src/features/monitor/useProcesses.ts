@@ -3,7 +3,7 @@ import { acquireProcessSampler, readProcessSample } from "./processes/runtime/sa
 import { emptyProcessSample, type ProcessConsumer } from "./processes/runtime/model";
 
 /** React owns a consumer, never a separate SSH polling loop. */
-export function useProcesses(sessionId: string) {
+export function useProcesses(sessionId: string, active = true) {
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
   const lease = useRef<ProcessConsumer | null>(null);
@@ -11,22 +11,25 @@ export function useProcesses(sessionId: string) {
     (receive: () => void) => {
       const consumer = acquireProcessSampler(sessionId, receive);
       lease.current = consumer;
-      consumer.setPaused(pausedRef.current);
+      consumer.setPaused(pausedRef.current || !active);
       return () => {
         lease.current = null;
         consumer.release();
       };
     },
-    [sessionId],
+    [sessionId, active],
   );
   const read = useCallback(() => readProcessSample(sessionId), [sessionId]);
   const sample = useSyncExternalStore(subscribe, read, () => emptyProcessSample);
   const refresh = useCallback(() => lease.current?.refresh(), []);
-  const setSamplingPaused = useCallback((value: boolean) => {
-    pausedRef.current = value;
-    setPaused(value);
-    lease.current?.setPaused(value);
-  }, []);
+  const setSamplingPaused = useCallback(
+    (value: boolean) => {
+      pausedRef.current = value;
+      setPaused(value);
+      lease.current?.setPaused(value || !active);
+    },
+    [active],
+  );
   const togglePaused = useCallback(
     () => setSamplingPaused(!pausedRef.current),
     [setSamplingPaused],
