@@ -132,13 +132,13 @@ describe("preview navigation tabs", () => {
         },
       },
     });
-    state().openPage("about");
+    state().openPage("knownHosts");
     expect(state().tabs.find((tab) => tab.id === tabId)?.preview).toBe(false);
     expect(
       state()
         .tabs.filter((tab) => tab.preview)
         .map((tab) => tab.id),
-    ).toEqual(["page:about"]);
+    ).toEqual(["page:knownHosts"]);
     expect(useEditors.getState().isDirty(tabId)).toBe(true);
   });
 
@@ -157,8 +157,11 @@ describe("preview navigation tabs", () => {
     state().openPluginDetail("official", "uuid", "UUID");
     expect(state().tabs[0]).toMatchObject({ preview: false, pinned: false });
     state().openPluginDetail("official", "other", "Other");
-    state().openPage("about");
-    expect(state().tabs.map((tab) => tab.id)).toEqual(["extension:official:uuid", "page:about"]);
+    state().openPage("knownHosts");
+    expect(state().tabs.map((tab) => tab.id)).toEqual([
+      "extension:official:uuid",
+      "page:knownHosts",
+    ]);
   });
 
   it("uses an independent preview slot in each pane and respects the locked destination", () => {
@@ -166,13 +169,13 @@ describe("preview navigation tabs", () => {
     state().openPage("settings");
     state().splitTab("page:settings", "row");
     const second = state().activePaneId;
-    state().openPage("about");
+    state().openPage("knownHosts");
     state().activatePane("pane-1");
     state().openHost(host("a", "Alpha"));
     expect(state().tabs.filter((tab) => tab.preview)).toHaveLength(2);
     state().togglePaneLock(second);
     state().openPluginDetail("official", "uuid", "UUID");
-    expect(state().tabs.some((tab) => tab.id === "page:about")).toBe(false);
+    expect(state().tabs.some((tab) => tab.id === "page:knownHosts")).toBe(false);
     expect(state().tabs.some((tab) => tab.id === "host:a")).toBe(true);
     expect(state().panes.find((pane) => pane.id === second)?.tabIds).toContain(
       "extension:official:uuid",
@@ -194,8 +197,12 @@ describe("preview navigation tabs", () => {
     state().openTerminal(session("s1", "Terminal"));
     state().openSftp(session("s1", "Files"));
     state().openPage("settings");
-    state().openPage("about");
-    expect(state().tabs.map((tab) => tab.id)).toEqual(["terminal:s1", "sftp:s1", "page:about"]);
+    state().openPage("knownHosts");
+    expect(state().tabs.map((tab) => tab.id)).toEqual([
+      "terminal:s1",
+      "sftp:s1",
+      "page:knownHosts",
+    ]);
   });
 
   it("promotes previews when pinned, moved or merged so groups retain at most one preview", () => {
@@ -206,8 +213,8 @@ describe("preview navigation tabs", () => {
       preview: false,
       pinned: true,
     });
-    state().openPage("about");
-    state().splitTab("page:about", "row");
+    state().openPage("knownHosts");
+    state().splitTab("page:knownHosts", "row");
     state().openHost(host("a", "Alpha"));
     const second = state().activePaneId;
     state().activatePane("pane-1");
@@ -225,8 +232,8 @@ describe("preview navigation tabs", () => {
       preview: true,
       pinned: false,
     });
-    state().openPage("about");
-    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome", "page:about"]);
+    state().openPage("knownHosts");
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome", "page:knownHosts"]);
   });
 });
 
@@ -261,7 +268,7 @@ describe("workspace tabs", () => {
     state().splitTab("sidebar:knownHosts", "column", "after", "pane-1");
     state().toggleDockedSidebar("plugins");
     state().toggleDockedSidebar("knownHosts");
-    state().openPage("about", { preview: false });
+    state().openPage("knownHosts", { preview: false });
     expect(
       state()
         .tabs.filter((tab) => tab.hidden)
@@ -286,9 +293,9 @@ describe("workspace tabs", () => {
     expect(state().activeId).toBe("sidebar:plugins");
     expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).not.toBe(true);
     state().toggleDockedSidebar("plugins");
-    state().openPage("about", { preview: false });
-    state().closeOthers("page:about");
-    expect(state().tabs.map((tab) => tab.id)).toEqual(["sidebar:plugins", "page:about"]);
+    state().openPage("knownHosts", { preview: false });
+    state().closeOthers("page:knownHosts");
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["sidebar:plugins", "page:knownHosts"]);
     expect(state().tabs[0]?.hidden).toBe(true);
     state().activate("sidebar:plugins");
     expect(state().tabs[0]?.hidden).toBe(false);
@@ -300,7 +307,7 @@ describe("workspace tabs", () => {
     state().splitTab("page:settings", "row");
     const second = state().activePaneId;
     state().togglePaneLock("pane-1");
-    state().openPage("about", { preview: false });
+    state().openPage("knownHosts", { preview: false });
     expect(state().activePaneId).toBe("pane-1");
     state().openPage("settings", { preview: false });
     expect(state().activePaneId).toBe(second);
@@ -396,8 +403,8 @@ describe("workspace tabs", () => {
     expect(state().panes).toHaveLength(1);
     expect(state().tabs).toHaveLength(2);
     expect(state().panes.some((pane) => pane.locked)).toBe(false);
-    state().openPage("about", { preview: false });
-    expect(state().panes[0]?.tabIds).toContain("page:about");
+    state().openPage("knownHosts", { preview: false });
+    expect(state().panes[0]?.tabIds).toContain("page:knownHosts");
   });
 
   it("opens ordinary content in a collapsed default group while keeping its sidebar collapsed", () => {
@@ -943,10 +950,10 @@ describe("split placement", () => {
   it("nests another split inside a specific group", () => {
     state().openPage("welcome", { preview: false });
     state().openPage("settings", { preview: false });
-    state().openPage("about", { preview: false });
+    state().openPage("knownHosts", { preview: false });
     state().splitTab("page:settings", "row");
     const first = state().panes[0]!;
-    state().splitTab("page:about", "column", "before", first.id);
+    state().splitTab("page:knownHosts", "column", "before", first.id);
     expect(state().panes).toHaveLength(3);
     const layout = state().layout;
     expect(layout.kind).toBe("split");
@@ -958,7 +965,7 @@ describe("split placement", () => {
       state()
         .panes.flatMap((item) => item.tabIds)
         .sort(),
-    ).toEqual(["page:about", "page:settings", "page:welcome"]);
+    ).toEqual(["page:knownHosts", "page:settings", "page:welcome"]);
   });
 
   it("activates the owning pane and preserves pinned status when reopening a tab", () => {
@@ -979,9 +986,9 @@ describe("split placement", () => {
   it("restores nested layout, active tabs and displayed ordering", () => {
     state().openPage("welcome", { preview: false });
     state().openPage("settings", { preview: false });
-    state().openPage("about", { preview: false });
+    state().openPage("knownHosts", { preview: false });
     state().splitTab("page:settings", "row");
-    state().splitTab("page:about", "column", "before", state().panes[0]!.id);
+    state().splitTab("page:knownHosts", "column", "before", state().panes[0]!.id);
     const expected = {
       layout: state().layout,
       panes: state().panes,
@@ -1025,14 +1032,14 @@ describe("split placement", () => {
   it("only closes other unpinned tabs in the requested group", () => {
     state().openPage("welcome", { preview: false });
     state().openPage("settings", { preview: false });
-    state().openPage("about", { preview: false });
-    state().splitTab("page:about", "row");
+    state().openPage("knownHosts", { preview: false });
+    state().splitTab("page:knownHosts", "row");
     state().closeOthers("page:welcome");
     expect(
       state()
         .tabs.map((tab) => tab.id)
         .sort(),
-    ).toEqual(["page:about", "page:welcome"]);
+    ).toEqual(["page:knownHosts", "page:welcome"]);
   });
 
   it("asks once before closing a group of dirty editors", () => {
@@ -1066,4 +1073,13 @@ describe("split placement", () => {
     expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
     expect(useEditors.getState().entries[id]).toBeUndefined();
   });
+});
+
+it("routes About into the existing Settings tab and selects its About section", () => {
+  state().openPage("settings", { preview: false });
+  state().openPage("about");
+  expect(state().tabs.filter((tab) => tab.kind === "settings")).toHaveLength(1);
+  expect(state().tabs.some((tab) => tab.kind === "about")).toBe(false);
+  expect(state().activeId).toBe("page:settings");
+  expect(useNavigation.getState().settingsSection).toBe("about");
 });

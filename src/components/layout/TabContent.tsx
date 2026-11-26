@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/ui/display/Misc";
-import { AboutPage } from "@/features/about/AboutPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
@@ -45,7 +44,7 @@ function TabBody({
     case "knownHosts":
       return <KnownHostsPage />;
     case "about":
-      return <AboutPage />;
+      return <LegacyUpdates tabId={tab.id} visible={visible} section="about" />;
     case "updates":
       return <LegacyUpdates tabId={tab.id} visible={visible} />;
     case "terminal":
@@ -91,10 +90,18 @@ function TabBody({
   }
 }
 
-function LegacyUpdates({ visible, tabId }: { visible: boolean; tabId: string }) {
+function LegacyUpdates({
+  visible,
+  tabId,
+  section = "updates",
+}: {
+  visible: boolean;
+  tabId: string;
+  section?: "updates" | "about";
+}) {
   useLayoutEffect(() => {
-    useNavigation.getState().selectSettings("updates");
-  }, []);
+    useNavigation.getState().selectSettings(section);
+  }, [section]);
   return <MainNativeSettingsPage tabId={tabId} visible={visible} />;
 }
 
