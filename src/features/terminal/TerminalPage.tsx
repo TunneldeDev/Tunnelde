@@ -10,7 +10,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { Clock, FolderTree, X } from "lucide-react";
+import { Activity, Clock, FolderTree, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -72,6 +72,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         io: api,
         events,
         disconnect: (id) => useSsh.getState().disconnect(id),
+        openMonitor: (session) => useWorkspace.getState().openMonitor(session),
         openSftp: (session) => {
           useWorkspace.getState().openSftp(session);
         },
@@ -785,6 +786,13 @@ export function TerminalPageView({
           }}
         >
           <FolderTree size={15} />
+        </IconButton>
+        <IconButton
+          label={t("monitor.open")}
+          disabled={!session || closed}
+          onClick={() => session && services.openMonitor(session)}
+        >
+          <Activity size={15} />
         </IconButton>
         <IconButton
           label={t("terminal.disconnect")}

@@ -14,7 +14,9 @@ export async function executeHostDetailAction(
   if (
     !tab?.hostId ||
     command.host.id !== tab.hostId ||
-    !["connect", "sftp", "favorite", "edit", "delete", "duplicate"].includes(command.operation)
+    !["connect", "monitor", "sftp", "favorite", "edit", "delete", "duplicate"].includes(
+      command.operation,
+    )
   )
     throw new Error("panel.window.staleOwner");
   return executeHostPanelCommand(command, show);

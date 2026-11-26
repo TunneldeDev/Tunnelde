@@ -572,12 +572,12 @@ describe("HostTree keyboard navigation", () => {
     render(<HostTree />);
     fireEvent.contextMenu(screen.getAllByRole("treeitem")[0]!, { clientX: 20, clientY: 30 });
     const items = useContextMenu.getState().menu!.items;
-    expect(items).toHaveLength(11);
+    expect(items).toHaveLength(12);
     expect(items.flatMap((item, index) => (item.separatorBefore ? [index] : []))).toEqual([
-      3, 7, 10,
+      4, 8, 11,
     ]);
     fireEvent.click(screen.getAllByRole("button", { name: "More" })[0]!);
-    expect(screen.getAllByRole("menuitem")).toHaveLength(11);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(12);
     expect(screen.getAllByRole("separator")).toHaveLength(3);
     fireEvent.keyDown(screen.getAllByRole("menuitem")[0]!, { key: "Escape" });
     expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();

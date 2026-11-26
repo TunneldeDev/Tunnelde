@@ -311,6 +311,7 @@ export async function executeHostPanelCommand(
       if (useSettings.getState().settings.hostDirectConnect) void connectHostDirectly(host);
       else useDialogs.getState().openConnect(host, "terminal");
       break;
+    case "monitor":
     case "sftp": {
       const session = useSsh
         .getState()
@@ -318,8 +319,10 @@ export async function executeHostPanelCommand(
           (item) =>
             item.hostId === host.id && item.purpose !== "forwarding" && item.purpose !== "mounts",
         );
-      if (session) useWorkspace.getState().openSftp(session);
-      else useDialogs.getState().openConnect(host, "sftp");
+      if (session) {
+        if (command.operation === "monitor") useWorkspace.getState().openMonitor(session);
+        else useWorkspace.getState().openSftp(session);
+      } else useDialogs.getState().openConnect(host, command.operation);
       break;
     }
     case "installKey":
