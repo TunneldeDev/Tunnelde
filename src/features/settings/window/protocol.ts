@@ -1,6 +1,6 @@
 import type { HabitCategory, HabitDetail } from "@/lib/habits/types";
 import type { ProxyProfile } from "@/lib/api/network";
-import type { SettingsPatch } from "@/lib/api/types";
+import type { ReleaseHistory, SettingsPatch } from "@/lib/api/types";
 import type { FontSelections, FontReference, FontCatalogue, FontInfo } from "@/lib/fonts/types";
 import type { SettingsSection } from "@/store/navigation";
 import type { ConfirmOptions } from "@/store/dialogs";
@@ -49,6 +49,7 @@ export type SettingsCalls = {
   updateInstall: { args: []; result: void };
   updateSkip: { args: []; result: void };
   updateHistory: { args: [boolean?]; result: void };
+  releaseHistory: { args: []; result: ReleaseHistory };
   updateRelease: { args: []; result: void };
   provider: { args: [FrontendProviderTarget, string]; result: void };
   mountContributor: { args: [string]; result: void };

@@ -190,6 +190,7 @@ export const api = {
   updateState: () => invoke<UpdateState>("update_state"),
   checkUpdates: (force = true) => invoke<UpdateState>("update_check", { force }),
   installUpdate: () => invoke<UpdateState>("update_install"),
+  releaseHistory: () => invoke<ReleaseHistory>("release_history"),
   updateHistory: (version: string) => invoke<ReleaseHistory>("update_history", { version }),
   openReleasePage: () => invoke<void>("open_release_page"),
 

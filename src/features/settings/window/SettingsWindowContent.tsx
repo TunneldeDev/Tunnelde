@@ -1,3 +1,4 @@
+import { ReleaseHistoryPanel } from "../components/ReleaseHistoryPanel";
 import { HabitsSettingsView } from "../components/HabitsSettingsView";
 import {
   createContext,
@@ -227,6 +228,19 @@ function composition(
               failures={failures}
               onConfigureProxy={() => effect("section", "network")}
               onShowLogs={() => effect("showOutput")}
+            />
+          ),
+          renderReleaseHistory: () => (
+            <ReleaseHistoryPanel
+              channel={data.page.settings.updateChannel}
+              useViewState={useSettingsControlState}
+              load={method("releaseHistory")}
+              renderMarkdown={(source) => (
+                <PluginMarkdownView
+                  source={source}
+                  openLink={(url) => effect("externalLink", url)}
+                />
+              )}
             />
           ),
           renderNotes: (state) => (

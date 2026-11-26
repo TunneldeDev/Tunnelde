@@ -56,6 +56,8 @@ pub(crate) enum SettingsOperation {
     UpdateSkip,
     #[serde(rename = "updateHistory")]
     UpdateHistory,
+    #[serde(rename = "releaseHistory")]
+    ReleaseHistory,
     #[serde(rename = "updateRelease")]
     UpdateRelease,
     #[serde(rename = "provider")]
