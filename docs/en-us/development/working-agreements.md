@@ -93,3 +93,5 @@ replace native-window, real SSH, cross-platform or installer acceptance. Record 
 performed and their limits. Distinguish rolling-window transfer speed from average speed since the
 current observation baseline, with separate remaining-time estimates. Resume resets the rolling
 window but retains the observed average baseline; do not invent historical samples after restart.
+
+Use shared button styling for peer status entries. Explicit entry-point presentation takes precedence over history; only visible floating frames may persist floating geometry. Hidden or docked layouts must not pollute coordinates. Retiring a panel includes its navigation, settings and command entries while preserving frozen external contracts.

@@ -97,3 +97,23 @@ export function togglePanel(view: SidebarView, fallback: PanelPresentation = "si
     closePanel(view);
   else revealPanel(view, fallback);
 }
+
+/** Explicit entry points must not inherit a different presentation from history. */
+export function togglePanelAt(view: SidebarView, location: "sidebar" | "floating") {
+  if (focusRemotePanel(view)) return;
+  const state = panelPresentation(view).getState();
+  const navigation = useNavigation.getState();
+  const inWorkspace = useWorkspace.getState().tabs.some((tab) => tab.id === sidebarTabId(view));
+  const visibleHere =
+    !inWorkspace &&
+    (location === "floating"
+      ? state.open
+      : !state.open && navigation.sidebarVisible && navigation.activeSidebar === view);
+  if (visibleHere) closePanel(view);
+  else {
+    // A status entry opens an anchored popover, including after a tray restore.
+    // Saved coordinates from hidden/docked layouts must not displace it.
+    if (location === "floating") state.setBounds(null);
+    setPanelLocation(view, location);
+  }
+}

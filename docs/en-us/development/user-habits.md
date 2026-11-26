@@ -13,7 +13,7 @@ Important consequences use visible text and warning surfaces. Review selected ca
 | File views            | Private habits; per-location columns, widths, sorting, grouping, layout and split ratios                             | Clear matching cache; reopen views to apply                                                                                     |
 | Open paths and panels | Existing tabs and frozen workspace v1 layout; remote paths restore offline without connecting SSH                    | Clear the next-start snapshot, preserve current editors, pause snapshot saving for this session to prevent immediate recreation |
 
-Background tasks default to the bottom right above the status bar when no user geometry exists. Saved geometry takes priority and clamps to the available area.
+Each task status entry opening restores the bottom-right anchor above the status bar; the popover can be moved and resized during that opening. The activity entry always opens the sidebar panel. Other presentations keep saved geometry clamped to the available area, and hidden-window measurements must not overwrite it.
 Workspace floating geometry is a private extension and does not change the frozen public workspace v1 contract.
 
 Startup reads the native durable record before rehydrating already-created panel stores and restoring the workspace. Migrate legacy localStorage only when the native record is absent; an empty record is an intentional valid reset.
