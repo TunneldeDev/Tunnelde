@@ -3739,3 +3739,15 @@
   opacity: 0.65;
   cursor: progress;
 }
+
+.host-tree__children {
+  position: relative;
+}
+.host-tree__children::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(14px + var(--host-tree-depth) * 12px);
+  border-inline-start: 1px solid var(--td-border);
+  pointer-events: none;
+}
