@@ -479,12 +479,15 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     dependsOn: "preloadDirs",
   },
   toggle("editorWordWrap", "editor", "settings.editorWordWrapHint"),
-  select(
-    "editorTabSize",
-    "editor",
-    [2, 4, 8].map((value) => ({ value, label: String(value), literal: true })),
-    "settings.editorTabSizeHint",
-  ),
+  {
+    ...select(
+      "editorTabSize",
+      "editor",
+      [2, 4, 8].map((value) => ({ value, label: String(value), literal: true })),
+      "settings.editorTabSizeHint",
+    ),
+    customNumeric: { min: 1, max: 16 },
+  },
   toggle("editorSpellCheck", "editor"),
   toggle("editorDraftRecovery", "editor", "settings.editorDraftRecoveryHint"),
   select(
