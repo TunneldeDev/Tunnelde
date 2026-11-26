@@ -542,7 +542,10 @@
     "showLogs": "Open output logs",
     "viewDiagnostics": "View update details",
     "sourcesUnavailableNotification": "Unable to check for updates. View details for the cause and available next steps.",
-    "platformUnavailable": "The update manifest does not contain a package for this platform."
+    "platformUnavailable": "The update manifest does not contain a package for this platform.",
+    "releaseHistory": "Release history",
+    "releaseHistoryEmpty": "No releases in this channel.",
+    "releaseHistoryHint": "Browse official release notes. Installation uses the signed update offered for this device."
   },
   "about": {
     "version": "Version",

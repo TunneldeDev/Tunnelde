@@ -343,6 +343,11 @@ pub async fn update_history(
 }
 
 #[tauri::command]
+pub async fn release_history(app: AppHandle) -> AppResult<update::history::ReleaseHistory> {
+    update::history::archive(app).await
+}
+
+#[tauri::command]
 pub fn open_release_page(app: AppHandle) -> AppResult<()> {
     let state = app.state::<AppState>();
     let snapshot = state.update.snapshot();

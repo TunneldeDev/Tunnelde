@@ -233,6 +233,7 @@ export function SettingsWindowOwner({ show }: { show: () => Promise<unknown> }) 
       updateCheck: (force) => useUpdates.getState().check(force),
       updateInstall: () => useUpdates.getState().install(),
       updateSkip: () => useUpdates.getState().skip(),
+      releaseHistory: () => api.releaseHistory(),
       updateHistory: (retry) => useUpdates.getState().loadHistory(retry),
       updateRelease: () => api.openReleasePage(),
       provider: providers.choose,

@@ -484,6 +484,29 @@ export async function invokeFixture<T>(
         truncated: false,
       };
       break;
+    case "release_history":
+      value = {
+        currentVersion: "0.1.0",
+        version: "0.1.0",
+        complete: parameters.preset !== "error",
+        reason: parameters.preset === "error" ? "updates.historyUnavailable" : null,
+        entries:
+          parameters.preset === "empty"
+            ? []
+            : [
+                {
+                  version: "0.1.0",
+                  publishedAt: new Date(instant).toISOString(),
+                  notes: "## 合成日志 / Fixture notes\n\n- 当前版本",
+                },
+                {
+                  version: "0.0.9",
+                  publishedAt: new Date(instant - 86400000).toISOString(),
+                  notes: "## 合成历史日志\n\n- 历史版本",
+                },
+              ],
+      };
+      break;
     case "update_state":
     case "update_check":
       value = {

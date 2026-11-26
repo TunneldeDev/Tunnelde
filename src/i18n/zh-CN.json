@@ -542,7 +542,10 @@
     "showLogs": "打开输出日志",
     "viewDiagnostics": "查看更新详情",
     "sourcesUnavailableNotification": "暂时无法检查更新，请查看详情了解失败原因和处理方式。",
-    "platformUnavailable": "更新清单中没有适用于当前系统与架构的安装包。"
+    "platformUnavailable": "更新清单中没有适用于当前系统与架构的安装包。",
+    "releaseHistory": "历史更新日志",
+    "releaseHistoryEmpty": "此通道暂无发布记录。",
+    "releaseHistoryHint": "浏览官方历史发布日志。安装使用为当前设备提供的已签名更新。"
   },
   "about": {
     "version": "版本",
