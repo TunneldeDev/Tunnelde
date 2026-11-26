@@ -12,6 +12,7 @@ use crate::state::AppState;
 
 const SAMPLE_TIMEOUT: Duration = Duration::from_secs(8);
 
+pub mod actions;
 mod execution;
 
 const SCRIPT: &str = r#"LANG=C

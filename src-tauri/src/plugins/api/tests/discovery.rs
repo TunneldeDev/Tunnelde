@@ -117,6 +117,8 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "hosts.transfer.export",
             "hosts.transfer.preview",
             "logs.read",
+            "monitor.executable",
+            "monitor.killTree",
             "mounts.connections.get",
             "mounts.connections.list",
             "mounts.connections.observe",
