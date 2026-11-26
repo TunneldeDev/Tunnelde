@@ -422,6 +422,7 @@ pub fn run() {
             commands::remote_processes,
             commands::remote_kill,
             commands::remote_kill_tree,
+            commands::remote_process_launch,
             commands::remote_process_executable,
             commands::plugins_list,
             commands::plugin_start,

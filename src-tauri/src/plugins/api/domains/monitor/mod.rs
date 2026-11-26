@@ -40,6 +40,21 @@ pub(in crate::plugins::api) async fn dispatch(
             check(owned)?;
             value
         }
+        "monitor.launch" => {
+            let owned = crate::plugins::frontend::native::CallPolicy::OwnedData;
+            check(owned)?;
+            let value = encode(
+                commands::remote_process_launch(
+                    app.clone(),
+                    field(&params, "sessionId")?,
+                    field(&params, "command")?,
+                    field(&params, "cwd")?,
+                )
+                .await?,
+            );
+            check(owned)?;
+            value
+        }
         "monitor.killTree" | "monitor.executable" => {
             let owned = crate::plugins::frontend::native::CallPolicy::OwnedData;
             check(owned)?;

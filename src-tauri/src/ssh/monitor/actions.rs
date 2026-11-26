@@ -134,3 +134,85 @@ mod linux_tests {
     }
 }
 
+fn quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn launch_script(command: &str, cwd: &str) -> AppResult<String> {
+    if command.trim().is_empty()
+        || command.len() > 16384
+        || cwd.len() > 4096
+        || command.contains('\0')
+        || cwd.contains('\0')
+        || (!cwd.is_empty() && !cwd.starts_with('/'))
+    {
+        return Err(AppError::validation("monitor.invalidTask"));
+    }
+    let directory = if cwd.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "cd -- {} 2>/dev/null || {{ echo monitor.taskDirectory; exit 1; }}; ",
+            quote(cwd)
+        )
+    };
+    Ok(format!("{directory}command -v nohup >/dev/null 2>&1 || {{ echo monitor.noNohup; exit 1; }}; nohup sh -c {} </dev/null >/dev/null 2>&1 &\nprintf 'TUNNELDE_PID=%s\\n' \"$!\"", quote(command)))
+}
+
+pub async fn launch(app: &AppHandle, session: &str, command: &str, cwd: &str) -> AppResult<u32> {
+    let output = exec(app, session, &launch_script(command, cwd)?).await?;
+    output
+        .trim()
+        .strip_prefix("TUNNELDE_PID=")
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|pid| *pid > 1)
+        .ok_or_else(|| AppError::Ssh(format!("monitor.launchFailed: {}", output.trim())))
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+    #[test]
+    fn rejects_empty_nul_relative_and_oversized_tasks() {
+        for (command, cwd) in [
+            (" ", ""),
+            ("sleep 1", "relative"),
+            ("x\0y", "/"),
+            ("sleep 1", "/x\0y"),
+        ] {
+            assert!(launch_script(command, cwd).is_err());
+        }
+        assert!(launch_script(&"x".repeat(16385), "/").is_err());
+    }
+    #[test]
+    fn shell_arguments_are_quoted_and_background_streams_detached() {
+        let script = launch_script("printf '%s' \"$HOME\"", "/tmp/a'$(id)").unwrap();
+        assert!(script.contains("cd -- '/tmp/a'\\''$(id)'"));
+        assert!(script.contains("</dev/null >/dev/null 2>&1 &"));
+        assert!(script.contains("TUNNELDE_PID="));
+    }
+}
+#[cfg(all(test, target_os = "linux"))]
+mod launch_linux_tests {
+    use super::*;
+    use std::process::Command;
+    #[test]
+    fn launch_preserves_quoted_directory_and_command() {
+        let directory =
+            std::env::temp_dir().join(format!("tunnelde task '{}'", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let command = "printf '%s' 'literal $HOME' > result";
+        let script = launch_script(command, directory.to_str().unwrap()).unwrap();
+        let output = Command::new("sh").args(["-c", &script]).output().unwrap();
+        for _ in 0..100 {
+            if directory.join("result").exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let result = std::fs::read_to_string(directory.join("result"));
+        let _ = std::fs::remove_dir_all(&directory);
+        assert!(String::from_utf8_lossy(&output.stdout).starts_with("TUNNELDE_PID="));
+        assert_eq!(result.unwrap(), "literal $HOME");
+    }
+}

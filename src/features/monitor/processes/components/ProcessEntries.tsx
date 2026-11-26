@@ -11,6 +11,7 @@ import type { FrontendProcessColumn } from "@/lib/extensions/contracts/monitor/p
 import type messages from "@/i18n/en-US.json";
 import { processIdentity as identity } from "@/lib/monitor/processes/model";
 import type { ProcessManager } from "../runtime/useManager";
+import { RunTask } from "./RunTask";
 type Label = keyof typeof messages.processes;
 const columns: { key: FrontendProcessColumn; label: Label; hint?: Label }[] = [
   { key: "name", label: "name" },
@@ -129,14 +130,19 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
         }}
         status={t("processes.count", { count: filtered.length })}
         actions={
-          <Button
-            variant="ghost"
-            leading={<Trash2 size={13} />}
-            disabled={!selected || selected.pid <= 1 || selected.startedAtTicks == null || stopping}
-            onClick={kill}
-          >
-            {t("processes.kill")}
-          </Button>
+          <>
+            <RunTask key={manager.sessionId} manager={manager} />
+            <Button
+              variant="ghost"
+              leading={<Trash2 size={13} />}
+              disabled={
+                !selected || selected.pid <= 1 || selected.startedAtTicks == null || stopping
+              }
+              onClick={kill}
+            >
+              {t("processes.kill")}
+            </Button>
+          </>
         }
       />
       <div className="process-scroll" tabIndex={0} aria-label={t("processes.title")}>

@@ -947,7 +947,13 @@
     "go": "Go",
     "killTree": "Stop process tree",
     "killTreeBody": "Send TERM to {{name}} (PID {{pid}}) and its current descendants? Unsaved work may be lost. The action channel and its ancestors are protected.",
-    "openLocation": "Open file location"
+    "openLocation": "Open file location",
+    "runTask": "Run new task",
+    "command": "Shell command",
+    "cwd": "Working directory (optional, absolute path)",
+    "run": "Run",
+    "runHint": "Runs on the remote host as the SSH user via sh -c, without a terminal. Input and output are discarded. Leave the directory empty to use the SSH login directory. A launch PID confirms submission; the command may exit immediately.",
+    "launched": "Task submitted · PID {{pid}}"
   },
   "editor": {
     "open": "Edit",
