@@ -1224,7 +1224,12 @@
     "processUnsupported": "进程监控需要可读取的 Linux /proc 计数和兼容的 ps 命令。",
     "outputLimit": "监控响应超出安全大小限制。",
     "processChanged": "进程已退出或 PID 已被复用，请刷新后重新选择。",
-    "timeout": "远端监控请求超时。"
+    "timeout": "远端监控请求超时。",
+    "executableUnavailable": "无法获取远端可执行文件路径，进程可能已退出或访问被拒绝。",
+    "invalidTask": "请输入非空命令及绝对工作目录，并确保长度未超过限制。",
+    "taskDirectory": "远端工作目录不存在或无法访问。",
+    "noNohup": "远端主机需要 nohup 才能启动后台任务。",
+    "launchFailed": "无法启动远端任务"
   },
   "pluginView": {
     "hostChanged": "该主机已被修改或删除，请重新打开主机菜单后重试。",
