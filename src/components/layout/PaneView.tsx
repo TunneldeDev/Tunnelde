@@ -156,19 +156,13 @@ function TabStrip({
   const storedLayout = useWorkspace((state) => state.layout);
   const layout = visibleWorkspaceLayout(storedLayout, panes, tabs);
   const compact = useSettings((state) => state.settings.titleBarStyle === "compact");
-  const panelOpen = useSettings((state) => state.settings.rightPanel);
   const mac = useSettings((state) => state.info?.os === "macos");
   const sidebarRequested = useNavigation((state) => state.sidebarVisible);
   const activeSidebar = useNavigation((state) => state.activeSidebar);
   const sidebarOpen =
     sidebarRequested && !tabs.some((tab) => tab.id === sidebarTabId(activeSidebar));
   const reserveControls =
-    !pane.floating &&
-    isTauri() &&
-    compact &&
-    !mac &&
-    !panelOpen &&
-    topCornerPane(layout, "right") === pane.id;
+    !pane.floating && isTauri() && compact && !mac && topCornerPane(layout, "right") === pane.id;
   const reserveTrafficLights =
     !pane.floating &&
     isTauri() &&

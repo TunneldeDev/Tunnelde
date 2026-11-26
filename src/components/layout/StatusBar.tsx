@@ -1,9 +1,8 @@
 import { reportError } from "@/lib/diagnostics";
 import { useEffect, type ReactNode } from "react";
-import { RefreshCw, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/form/Button";
 import { StatusDot } from "@/components/ui/display/Misc";
 import { UpdatePill } from "@/components/layout/UpdatePill";
 import { PluginSecurityBadge } from "@/features/plugins/PluginSecuritySection";
@@ -20,12 +19,7 @@ import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { OutputStatusButton } from "@/features/output/OutputStatusButton";
 import { ConnectionStatus } from "./ConnectionStatus";
 
-interface StatusBarProps {
-  panelOpen: boolean;
-  onTogglePanel: () => void;
-}
-
-export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
+export function StatusBar() {
   const { t } = useTranslation();
   const pendingRestart = useStorage((state) => state.restartPending);
   const info = useSettings((state) => state.info);
@@ -93,14 +87,6 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
           <OutputStatusButton />
           <UpdatePill />
           <PluginSecurityBadge />
-          <IconButton
-            size="sm"
-            active={panelOpen}
-            label={panelOpen ? t("panel.hide") : t("panel.show")}
-            onClick={onTogglePanel}
-          >
-            {panelOpen ? <PanelRightClose size={13} /> : <PanelRightOpen size={13} />}
-          </IconButton>
           <button
             type="button"
             className="statusbar__link"
