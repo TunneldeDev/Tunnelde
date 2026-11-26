@@ -11,6 +11,7 @@ import type { MarketEntry, MarketSource, PluginView } from "@/lib/api/types";
 import { useNavigation } from "@/store/navigation";
 import { pluginSidebarId } from "@/lib/plugins/sidebars";
 import i18n from "@/i18n/i18n";
+import { PluginPermissionList } from "./components/PluginPermissionList";
 import { PluginError } from "./PluginError";
 import { PluginThemes } from "./PluginThemes";
 import { PluginFileIconThemes } from "./PluginFileIconThemes";
@@ -295,6 +296,37 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           </div>
         ) : null}
       </dl>
+      <section className="plugin-detail__capabilities">
+        <h2>{t("market.permissionsAndFeatures")}</h2>
+        {own ? (
+          <>
+            <PluginPermissionList permissions={installed.permissions} />
+            <div className="plugin-detail__capability-list">
+              {[
+                ...(installed.themes ?? []).map(
+                  (item) => `${t("plugins.themePack")}: ${item.name}`,
+                ),
+                ...(installed.fileIconThemes ?? []).map(
+                  (item) => `${t("settings.fileIconTheme")}: ${item.name}`,
+                ),
+                ...(installed.filePreviews ?? []).map(
+                  (item) => `${t("preview.providers")}: ${item.name}`,
+                ),
+                ...installed.views.map(
+                  (item) => `${item.provider ?? t("market.openTool")}: ${item.title}`,
+                ),
+                ...installed.commands.map((item) => item.title),
+              ].map((label) => (
+                <span key={label} className="td-tag">
+                  {label}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="settings-hint">{t("market.manifestAfterInstall")}</p>
+        )}
+      </section>
       {own && installed.themes?.length ? (
         <PluginThemes themes={installed.themes} disabled={busy || !!task} />
       ) : null}

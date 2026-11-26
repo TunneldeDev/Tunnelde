@@ -893,3 +893,19 @@
   padding-inline-start: 16px;
   border-inline-start: 1px solid var(--td-border);
 }
+
+.extension-row > .extension-row__tags {
+  margin-inline-start: 39px;
+}
+.plugin-detail__capabilities {
+  margin-block: 20px;
+}
+.plugin-detail__capabilities h2 {
+  margin-block: 0 10px;
+  font-size: 13px;
+}
+.plugin-detail__capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
