@@ -1342,7 +1342,9 @@
     "tlsHandshake": "TLS handshake failed through the selected route. Check the proxy node and rules for GitHub and release-assets.githubusercontent.com, or select another proxy in Network settings.",
     "connectFailed": "Could not connect through the configured marketplace route. Check Network settings.",
     "timeout": "Plugin download timed out. Check the selected proxy route and try again.",
-    "sourceChanged": "This source changed while it was being edited. Reopen it and review the current settings."
+    "sourceChanged": "This source changed while it was being edited. Reopen it and review the current settings.",
+    "permissionsAndFeatures": "Permissions and features",
+    "manifestAfterInstall": "The registry does not include the full manifest. Install to inspect permissions, themes and tools before starting the plugin."
   },
   "node": {
     "required": "Set up Node to start this plugin.",
