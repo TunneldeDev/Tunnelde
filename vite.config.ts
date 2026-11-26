@@ -45,5 +45,6 @@ export default defineConfig({
     include: ["tests/**/*.test.{ts,tsx}"],
     css: false,
     restoreMocks: true,
+    mockReset: true,
   },
 });

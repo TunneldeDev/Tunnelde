@@ -101,7 +101,9 @@ vi.mock("@xterm/xterm", () => ({
     write = vi.fn();
     dispose = vi.fn();
     paste = vi.fn();
-    input = vi.fn((data: string) => inputs[instances.indexOf(this)]?.(data));
+    input = vi.fn((data: string): void => {
+      inputs[instances.indexOf(this)]?.(data);
+    });
     selectAll = vi.fn();
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => "selected text");

@@ -20,7 +20,7 @@ it("reconciles opted-in subscriptions on first registration and retries reads wi
   const lifecycle = createEventLifecycle(
     [
       { register, recover, recoverOnStart: true },
-      { register: async () => vi.fn(), recover: unrelated },
+      { register: async () => vi.fn<() => void>(), recover: unrelated },
     ],
     report,
   );
