@@ -57,6 +57,9 @@ pub(crate) enum HostCommand {
     CopyAddress {
         host: HostTarget,
     },
+    Monitor {
+        host: HostTarget,
+    },
     Sftp {
         host: HostTarget,
     },
@@ -131,6 +134,7 @@ impl HostCommand {
     pub(super) fn detail_host(&self) -> Option<&str> {
         match self {
             Self::Connect { host }
+            | Self::Monitor { host }
             | Self::Sftp { host }
             | Self::Favorite { host }
             | Self::Edit { host }
@@ -153,6 +157,7 @@ impl HostCommand {
             | Self::Export { host }
             | Self::CopySsh { host }
             | Self::CopyAddress { host }
+            | Self::Monitor { host }
             | Self::Sftp { host }
             | Self::InstallKey { host } => host.valid(),
             Self::Move { host, target, .. } => {

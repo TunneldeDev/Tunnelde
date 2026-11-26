@@ -1251,6 +1251,7 @@ function scopedServices(): TerminalViewServices {
     disconnect: vi.fn().mockResolvedValue(undefined),
     openSftp: vi.fn(),
     openHistory: vi.fn(),
+    openMonitor: vi.fn(),
     updateFont: vi.fn().mockResolvedValue(undefined),
     recordCommand: vi.fn().mockResolvedValue(undefined),
     copy: vi.fn(),

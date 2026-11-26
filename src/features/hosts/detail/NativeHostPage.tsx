@@ -57,6 +57,7 @@ function Content({ client, record, model }: NativeViewProps & { model: HostDetai
   const services: HostPageServices = {
     connect: () => run("connect"),
     sftp: () => run("sftp"),
+    monitor: () => run("monitor"),
     favorite: () => run("favorite"),
     edit: () => run("edit"),
     remove: () => run("delete"),

@@ -77,6 +77,7 @@ function HostRow({
     operation:
       | "open"
       | "connect"
+      | "monitor"
       | "sftp"
       | "edit"
       | "export"
@@ -103,6 +104,7 @@ function HostRow({
     { label: t("host.open"), onSelect: () => command("open") },
     { label: t("terminal.connect"), onSelect: () => command("connect") },
     { label: t("sftp.title"), onSelect: () => command("sftp") },
+    { label: t("monitor.open"), onSelect: () => command("monitor") },
     {
       label: t("menu.edit"),
       separatorBefore: true,
@@ -181,6 +183,7 @@ function HostRow({
         { label: t("host.open"), onSelect: () => command("open") },
         { label: t("terminal.connect"), onSelect: () => command("connect") },
         { label: t("sftp.title"), onSelect: () => command("sftp") },
+        { label: t("monitor.open"), onSelect: () => command("monitor") },
         {
           label: t("hostSources.saveCopy"),
           separatorBefore: true,

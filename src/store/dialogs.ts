@@ -19,7 +19,7 @@ export type DialogState =
   | {
       kind: "connect";
       host: Host;
-      after: "terminal" | "sftp" | "background";
+      after: "terminal" | "sftp" | "monitor" | "background";
       intent: "connect" | "installKey";
       error?: string;
     }
@@ -31,7 +31,7 @@ interface DialogStore {
   openGroup: (group?: Group | null) => void;
   openConnect: (
     host: Host,
-    after?: "terminal" | "sftp" | "background",
+    after?: "terminal" | "sftp" | "monitor" | "background",
     intent?: "connect" | "installKey",
     error?: string,
   ) => void;

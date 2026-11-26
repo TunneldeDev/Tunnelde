@@ -1,7 +1,7 @@
 import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
 import { HostFieldsSection } from "./HostFieldsSection";
 import { HostDetailsSections } from "./HostDetailsSections";
-import { Copy, FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
+import { Activity, Copy, FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { usePanelLeaseAction } from "@/lib/panels/interaction";
 import { executeHostPanelCommand } from "./panel/execute";
 import { notifyError } from "@/lib/api/errors";
@@ -28,6 +28,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 export interface HostPageServices {
   connect(): void;
   sftp(): void;
+  monitor(): void;
   favorite(): void;
   edit(): void;
   remove(): void;
@@ -93,6 +94,14 @@ export function HostPageView({
             onClick={services.sftp}
           >
             {t("sftp.title")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leading={<Activity size={13} />}
+            onClick={services.monitor}
+          >
+            {t("monitor.open")}
           </Button>
           {!host.source && (
             <>
@@ -182,6 +191,7 @@ export function HostPage({ hostId }: { hostId: string | null }) {
       services={{
         connect: () => run("connect"),
         sftp: () => run("sftp"),
+        monitor: () => run("monitor"),
         favorite: () => run("favorite"),
         edit: () => run("edit"),
         remove: () => run("delete"),

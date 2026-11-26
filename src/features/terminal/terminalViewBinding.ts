@@ -205,6 +205,9 @@ export function createTerminalViewBinding(
     openSftp: () => {
       void action({ operation: "openSftp" }).catch(report);
     },
+    openMonitor: () => {
+      void action({ operation: "openMonitor" }).catch(report);
+    },
     openHistory: () => {
       void action({ operation: "openHistory" }).catch(report);
     },
