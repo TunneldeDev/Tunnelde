@@ -1344,3 +1344,12 @@
 .is-compact-chrome.is-macos .workbench-panel.is-sidebar > .workbench-panel__head {
   padding-left: 36px;
 }
+
+.pane__header--movable {
+  user-select: none;
+  cursor: grab;
+}
+.pane__header--movable .td-tab,
+.pane__header--movable button {
+  cursor: pointer;
+}
