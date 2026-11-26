@@ -873,3 +873,17 @@
     flex-wrap: wrap;
   }
 }
+
+.plugin-security > .settings-subtitle {
+  margin-bottom: 12px;
+}
+.plugin-security > .td-switch-row {
+  padding-block: 8px;
+  align-items: flex-start;
+}
+.plugin-security > .td-switch-row > .td-switch {
+  margin-top: 2px;
+}
+.plugin-security > .td-switch-row .td-switch-row__heading {
+  min-height: 22px;
+}
