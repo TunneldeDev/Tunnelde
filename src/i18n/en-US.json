@@ -247,7 +247,9 @@
     "keySourceFile": "Key file",
     "keySourceContent": "Paste key",
     "keyRequired": "Choose a key file or paste a private key",
-    "tagRemove": "Remove tag"
+    "tagRemove": "Remove tag",
+    "duplicateTitle": "Duplicate host",
+    "duplicateBody": "Create a copy of “{{name}}” and its connection route?"
   },
   "group": {
     "newTitle": "New group",

@@ -247,7 +247,9 @@
     "keySourceFile": "密钥文件",
     "keySourceContent": "粘贴密钥",
     "keyRequired": "请选择密钥文件或粘贴私钥内容",
-    "tagRemove": "移除标签"
+    "tagRemove": "移除标签",
+    "duplicateTitle": "复制主机",
+    "duplicateBody": "是否创建“{{name}}”及其连接路由的副本？"
   },
   "group": {
     "newTitle": "新建分组",
