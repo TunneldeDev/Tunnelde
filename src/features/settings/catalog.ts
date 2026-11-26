@@ -490,14 +490,14 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   },
   toggle("editorSpellCheck", "editor"),
   toggle("editorDraftRecovery", "editor", "settings.editorDraftRecoveryHint"),
-  select(
-    "monitorIntervalMs",
-    "monitor",
-    ([1, 2, 3, 5, 10, 30] as const).map((seconds) =>
-      choice(seconds * 1000, `settings.seconds${seconds}`),
-    ),
-    "settings.monitorIntervalMsHint",
-  ),
+  {
+    ...numeric("monitorIntervalMs", "monitor", 1000, 30000),
+    hint: "settings.monitorIntervalMsHint",
+    numericUnits: [
+      { label: "s", factor: 1000 },
+      { label: "ms", factor: 1 },
+    ],
+  },
   { ...toggle("autoCheckUpdates", "updates"), label: "settings.autoCheck" },
   {
     ...select("updateCheckInterval", "updates", [

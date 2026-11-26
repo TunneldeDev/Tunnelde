@@ -8,7 +8,7 @@ pub const ACCENTS: [&str; 5] = ["blue", "cyan", "green", "orange", "violet"];
 pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
 pub const MONO_FONTS: [&str; 4] = ["fira-code", "jetbrains-mono", "plex-mono", "system"];
 pub const TITLE_BAR_STYLES: [&str; 2] = ["system", "compact"];
-pub const MONITOR_INTERVALS: [u32; 6] = [1000, 2000, 3000, 5000, 10000, 30000];
+
 pub const COLOR_REGIONS: [&str; 11] = [
     "background",
     "activityBar",
@@ -467,7 +467,7 @@ impl Settings {
         if !(1..=16).contains(&self.editor_tab_size) {
             self.editor_tab_size = 4;
         }
-        if !MONITOR_INTERVALS.contains(&self.monitor_interval_ms) {
+        if !(1000..=30000).contains(&self.monitor_interval_ms) {
             self.monitor_interval_ms = 3000;
         }
         if self.user_css.len() > 200_000 {
@@ -1024,8 +1024,8 @@ mod tests {
     }
 
     #[test]
-    fn discrete_numeric_choices_reject_unsupported_values() {
-        for interval in MONITOR_INTERVALS {
+    fn custom_numeric_preferences_preserve_valid_values() {
+        for interval in [1000, 1001, 2000, 3000, 4000, 5000, 10000, 30000] {
             let mut settings = Settings {
                 monitor_interval_ms: interval,
                 ..Settings::default()
@@ -1033,7 +1033,7 @@ mod tests {
             settings.sanitize();
             assert_eq!(settings.monitor_interval_ms, interval);
         }
-        for interval in [0, 500, 1001, 4000, 30_001, u32::MAX] {
+        for interval in [0, 500, 999, 30_001, u32::MAX] {
             let mut settings = Settings {
                 monitor_interval_ms: interval,
                 ..Settings::default()
