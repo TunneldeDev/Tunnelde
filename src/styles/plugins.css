@@ -887,3 +887,9 @@
 .plugin-security > .td-switch-row .td-switch-row__heading {
   min-height: 22px;
 }
+
+.plugin-security__approvals > :not(summary) {
+  margin-inline-start: 7px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--td-border);
+}
