@@ -27,7 +27,19 @@
 }
 
 .forwarding__head > div:first-child {
+  flex: 1 1 180px;
   min-width: 0;
+}
+
+.forwarding__tools {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.forwarding__tools > * {
+  flex: 0 0 auto;
 }
 
 .forwarding__subtitle,
@@ -104,10 +116,18 @@
 }
 
 .forward-rule__identity {
-  flex: 1;
+  flex: 1 1 120px;
   min-width: 0;
   display: grid;
   gap: 4px;
+}
+
+.forward-rule__controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-inline-start: auto;
 }
 
 .forward-rule__identity strong {
@@ -335,6 +355,9 @@
   gap: 8px;
   min-height: 32px;
 }
+.forward-group__head > .forwarding__tools {
+  justify-content: flex-end;
+}
 .forward-group__title {
   min-width: 0;
   margin: 0;
@@ -347,13 +370,18 @@
   padding-inline-start: 16px;
   border-inline-start: 1px solid var(--td-border);
 }
+@container (max-width: 420px) {
+  .forwarding__head > .forwarding__tools,
+  .forward-group__head > .forwarding__tools {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
+
 @container (max-width: 320px) {
   .forward-rule__head {
     flex-wrap: wrap;
     gap: 6px;
-  }
-  .forward-rule__identity {
-    flex-basis: calc(100% - 100px);
   }
   .forward-rule__route {
     grid-template-columns: minmax(0, 1fr);
