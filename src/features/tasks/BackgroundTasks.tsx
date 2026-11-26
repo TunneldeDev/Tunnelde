@@ -72,7 +72,7 @@ export function BackgroundTaskStatusButton({ floating = false }: { floating?: bo
     <button
       type="button"
       className={cn(
-        "background-status",
+        "statusbar__link statusbar__panel-button background-status",
         floating && "is-floating",
         running.length > 0 && "is-running",
         paused.length > 0 && !running.length && "is-paused",

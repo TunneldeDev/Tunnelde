@@ -2108,6 +2108,29 @@
   color: var(--td-text);
 }
 
+/* Shared metrics and interaction states for adjacent status panel entries. */
+.statusbar__panel-button {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
+  height: 24px;
+  padding: 0 6px;
+  color: var(--td-muted);
+}
+.statusbar__panel-button[aria-expanded="true"] {
+  color: var(--td-text);
+  background: var(--td-active);
+}
+.statusbar__panel-button:hover {
+  color: var(--td-text);
+  background: var(--td-hover);
+}
+.statusbar__panel-button:focus-visible {
+  outline: 1px solid var(--td-accent);
+  outline-offset: -1px;
+}
+
 /* ---------- terminal ---------- */
 
 .tab-panel {
