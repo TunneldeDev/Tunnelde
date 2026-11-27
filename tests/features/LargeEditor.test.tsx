@@ -372,3 +372,17 @@ describe("LargeEditor", () => {
     expect(state.doc.toString()).toBe("a\r\nb");
   });
 });
+
+it("keeps selected syntax text inverted and removes the mark when the selection collapses", async () => {
+  const result = mount("const value", {
+    tokens: [{ start: 0, end: 5, type: "keyword" }],
+    tokensDocumentId: "document",
+    tokensVersion: 0,
+  });
+  await waitFor(() => expect(result.view.current).not.toBeNull());
+  const view = result.view.current!;
+  act(() => view.dispatch({ selection: EditorSelection.single(1, 4) }));
+  expect(view.contentDOM.querySelector(".cm-invertedSelection")?.textContent).toBe("ons");
+  act(() => view.dispatch({ selection: EditorSelection.single(4) }));
+  expect(view.contentDOM.querySelector(".cm-invertedSelection")).toBeNull();
+});
