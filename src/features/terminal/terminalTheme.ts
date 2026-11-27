@@ -65,6 +65,9 @@ export function terminalTheme(theme: ResolvedTheme, colors: ColorOverrides = {})
     ...base,
     background: background ?? base.background,
     foreground,
+    selectionBackground: foreground,
+    selectionInactiveBackground: foreground,
+    selectionForeground: background ?? base.background,
     cursor,
     cursorAccent: background ?? base.cursorAccent,
   };

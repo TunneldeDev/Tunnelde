@@ -497,7 +497,7 @@ describe("CommandPalette", () => {
     expect(useWorkspace.getState().tabs).toEqual([]);
   });
 
-  it("keeps the panel toggle accessible when the status bar is hidden", () => {
+  it("omits the retired monitoring inspector command", () => {
     const update = vi.fn().mockResolvedValue(true);
     useSettings.setState({ settings: { ...DEFAULT_SETTINGS, showStatusBar: false }, update });
     render(<CommandPalette />);
@@ -505,7 +505,8 @@ describe("CommandPalette", () => {
       "Search files, or type > commands, % content, @ hosts",
     );
     fireEvent.change(input, { target: { value: ">Show panel" } });
+    expect(screen.queryByText("Show panel")).toBeNull();
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(update).toHaveBeenCalledWith({ rightPanel: true });
+    expect(update).not.toHaveBeenCalled();
   });
 });

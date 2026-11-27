@@ -1,4 +1,7 @@
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { useContextMenu } from "@/store/contextMenu";
+import { useState } from "react";
+import { Select } from "@/components/ui/form/Select";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { SearchToolbar } from "@/components/ui/layout/SearchToolbar";
@@ -8,6 +11,7 @@ import type { FrontendProcessColumn } from "@/lib/extensions/contracts/monitor/p
 import type messages from "@/i18n/en-US.json";
 import { processIdentity as identity } from "@/lib/monitor/processes/model";
 import type { ProcessManager } from "../runtime/useManager";
+import { RunTask } from "./RunTask";
 type Label = keyof typeof messages.processes;
 const columns: { key: FrontendProcessColumn; label: Label; hint?: Label }[] = [
   { key: "name", label: "name" },
@@ -22,7 +26,6 @@ const columns: { key: FrontendProcessColumn; label: Label; hint?: Label }[] = [
   { key: "gpuPercent", label: "gpu", hint: "gpuHint" },
   { key: "gpuMemory", label: "gpuMemory", hint: "gpuHint" },
 ];
-const pageSize = 100;
 const percent = (value: number) => `${value.toFixed(1)}%`;
 const available = (value: number | undefined) =>
   value != null && Number.isFinite(value) && value >= 0;
@@ -34,6 +37,8 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
     setQuery,
     sort,
     setSort,
+    pageSize,
+    setPageSize,
     currentPage,
     lastPage,
     setPage,
@@ -46,8 +51,41 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
     loading,
     requestTerminate,
   } = manager;
+  const [jump, setJump] = useState("");
   const kill = () => {
     if (selected) requestTerminate(selected);
+  };
+  const openMenu = (process: RemoteProcess, target: HTMLElement, x: number, y: number) => {
+    select(process);
+    const disabled = process.pid <= 1 || process.startedAtTicks == null || stopping;
+    useContextMenu.getState().open(
+      x,
+      y,
+      [
+        { label: t("processes.details"), onSelect: () => select(process) },
+        {
+          label: t("processes.openLocation"),
+          disabled,
+          onSelect: () => {
+            void manager.openLocation(process);
+          },
+        },
+        {
+          label: t("processes.kill"),
+          danger: true,
+          separatorBefore: true,
+          disabled,
+          onSelect: () => requestTerminate(process),
+        },
+        {
+          label: t("processes.killTree"),
+          danger: true,
+          disabled,
+          onSelect: () => requestTerminate(process, undefined, true),
+        },
+      ],
+      target,
+    );
   };
   const cell = (process: RemoteProcess, key: FrontendProcessColumn) => {
     const value = process[key];
@@ -92,14 +130,19 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
         }}
         status={t("processes.count", { count: filtered.length })}
         actions={
-          <Button
-            variant="ghost"
-            leading={<Trash2 size={13} />}
-            disabled={!selected || selected.pid <= 1 || selected.startedAtTicks == null || stopping}
-            onClick={kill}
-          >
-            {t("processes.kill")}
-          </Button>
+          <>
+            <RunTask key={manager.sessionId} manager={manager} />
+            <Button
+              variant="ghost"
+              leading={<Trash2 size={13} />}
+              disabled={
+                !selected || selected.pid <= 1 || selected.startedAtTicks == null || stopping
+              }
+              onClick={kill}
+            >
+              {t("processes.kill")}
+            </Button>
+          </>
         }
       />
       <div className="process-scroll" tabIndex={0} aria-label={t("processes.title")}>
@@ -147,8 +190,16 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
                 tabIndex={0}
                 aria-selected={selected === process}
                 onClick={() => select(process)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  openMenu(process, event.currentTarget, event.clientX, event.clientY);
+                }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
+                  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                    event.preventDefault();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    openMenu(process, event.currentTarget, rect.left + 20, rect.bottom);
+                  } else if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     select(process);
                   }
@@ -188,6 +239,23 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
             total: filtered.length,
           })}
         </span>
+        <Select
+          label={t("processes.pageSize")}
+          value={String(pageSize)}
+          options={[25, 50, 100, 200].map((size) => ({
+            value: String(size),
+            label: t("processes.perPage", { count: size }),
+          }))}
+          onChange={(value) => setPageSize(Number(value))}
+        />
+        <IconButton
+          label={t("processes.firstPage")}
+          size="sm"
+          disabled={currentPage === 0}
+          onClick={() => setPage(0)}
+        >
+          <ChevronsLeft size={14} />
+        </IconButton>
         <IconButton
           label={t("processes.previousPage")}
           size="sm"
@@ -204,6 +272,40 @@ export function ProcessEntries({ manager }: { manager: ProcessManager }) {
         >
           <ChevronRight size={14} />
         </IconButton>
+        <IconButton
+          label={t("processes.lastPage")}
+          size="sm"
+          disabled={currentPage >= lastPage}
+          onClick={() => setPage(lastPage)}
+        >
+          <ChevronsRight size={14} />
+        </IconButton>
+        <span aria-live="polite">
+          {t("processes.pageNumber", { page: currentPage + 1, total: lastPage + 1 })}
+        </span>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const value = Number(jump);
+            if (Number.isInteger(value) && value >= 1 && value <= lastPage + 1) {
+              setPage(value - 1);
+              setJump("");
+            }
+          }}
+        >
+          <input
+            className="td-input"
+            aria-label={t("processes.jumpPage")}
+            type="number"
+            min={1}
+            max={lastPage + 1}
+            value={jump}
+            onChange={(event) => setJump(event.target.value)}
+          />
+          <Button size="sm" type="submit" disabled={!jump}>
+            {t("processes.go")}
+          </Button>
+        </form>
       </div>
       {selected ? (
         <section className="process-details" aria-label={t("processes.details")}>

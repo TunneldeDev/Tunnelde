@@ -120,10 +120,26 @@ export async function executeFileWindowAction(
     case "preview": {
       const s = source(command.data.source);
       text(command.data.path);
-      await show();
-      if (command.operation === "preview")
-        useFilePreview.getState().show(command.data.path, 0, 0, s);
-      else if (s.kind === "local") useWorkspace.getState().openLocalEditor(command.data.path);
+      if (command.data.follow !== undefined && typeof command.data.follow !== "boolean") invalid();
+      const browser = command.data.browser;
+      if (browser) {
+        text(browser.id, 4096);
+        if (!Array.isArray(browser.paths) || browser.paths.length > 100000) invalid();
+        for (const path of browser.paths) text(path);
+      }
+      if (!command.data.follow) await show();
+      if (command.operation === "preview") {
+        if (browser)
+          useFilePreview
+            .getState()
+            .browse(
+              command.data.path,
+              s,
+              { ...browser, id: `${lease.panelId}:${browser.id}` },
+              command.data.follow,
+            );
+        else useFilePreview.getState().show(command.data.path, 0, 0, s);
+      } else if (s.kind === "local") useWorkspace.getState().openLocalEditor(command.data.path);
       else {
         const session = useSsh.getState().sessions.find((a) => a.id === s.sessionId);
         if (!session) invalid();

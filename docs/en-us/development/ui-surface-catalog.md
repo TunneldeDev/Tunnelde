@@ -64,7 +64,7 @@ performed; do not imply unperformed cross-platform acceptance.
 
 ## Usage habit management
 
-Settings → Usage habits: `features/settings/components/HabitsSettingsView.tsx`. Use the settings section heading, save status, descriptive category checkbox cards and a footer action toolbar. Wrap actions at narrow widths and scroll tall content. Keep errors and reset consequences visible; explicitly review selected categories before resetting. Background tasks default to the bottom right, with persisted user geometry taking priority. See [User habits](user-habits.md) for category, upgrade retention and reset rules.
+Settings → Usage habits: `features/settings/components/HabitsSettingsView.tsx`. Use the settings section heading, save status, descriptive category checkbox cards and a footer action toolbar. Wrap actions at narrow widths and scroll tall content. Keep errors and reset consequences visible; explicitly review selected categories before resetting. Background tasks default to the bottom right; status entry opens reset this anchor, while other presentations retain user geometry. See [User habits](user-habits.md) for category, upgrade retention and reset rules.
 
 ## 2026-11-27 acceptance fix conventions
 
@@ -88,3 +88,38 @@ installation is not offered.
 This round uses synthetic browser scenes with production components and automated tests. Physical
 native-window dragging, real remote sampling, Windows/Linux and final installers require separate
 acceptance. See [UI controls](ui-controls.md) for the shared conventions.
+
+### Process pagination and height
+
+The process page passes bounded flex height to the table viewport. Its footer provides first/previous/next/last navigation, direct page entry and 25/50/100/200 rows per page. Search and sorting reset to page one; size changes retain the page containing the current first row, and shrinking samples clamp the page. Controls wrap at narrow widths; very short windows allow container scrolling. Selection details and expanded metric help have bounded heights. Providers share the same native entries surface.
+
+### Process actions and performance details
+
+Process rows share the application context menu and Shift+F10: details, remote file location, stop and stop tree. Destructive actions require confirmation and identity revalidation. Run new task sits next to stop; its form retains command/directory input and displays errors or launch PID. Monitor page and panel share token-based detail cards, muted labels, monospace readings, wrapping device information and adaptive columns. Logical CPUs use a bounded scrolling grid, collapsed by default above 32 processors. Narrow/short panels scroll vertically. Missing values use em dashes with source limitations explained. Presentation changes reuse existing history and sampling.
+
+Background tasks and Output share status button dimensions, typography, spacing, radii, hover, expanded and keyboard focus states. Running, paused, attention and aggregate progress enhance the same button without introducing a separate button style.
+
+The retired monitoring inspector is no longer mounted, sampled or allocated width. Its status, settings and command entries are removed; performance and processes use their dedicated session pages/panels. Legacy preference fields and the Inspector extension slot remain compatible without restoring the old inspector. Compact Windows chrome reserves window controls in the rightmost workspace pane.
+
+Task entry points determine presentation: the activity bar toggles the sidebar panel, while the status entry (including its standalone button when the status bar is hidden) toggles a bottom-right popover. Neither inherits the other entry’s presentation preference. Each status open resets the bottom-right anchor, recovering old invalid coordinates; dragging and resizing remain available during that opening, with content and task ownership retained. A panel transferred to another native window still focuses its sole owner. Only visible floating frames may commit geometry; docked, hidden, background or zero-size measurements must never overwrite it.
+
+Monitoring dashboard: keep each resource’s chart, current reading and hardware details in one card. Columns follow the panel container, not the window: below 640px use one column, otherwise a 12-column grid. Card bodies scroll independently; long device names, addresses and unavailable readings must not cause overflow. Normal mode shows business data; Edit layout reveals ordering, full/half width, reset and corner resize controls. Earlier/later buttons and arrow keys supplement drag ordering. Resize previews once per frame, saves on release and rolls back on Escape or interruption. Store a versioned layout per host and clear it with panel habits. Layout changes retain sampling, chart DOM and history.
+
+## Network connection test timings
+
+Settings → Network & proxies → Test connection: `features/settings/components/NetworkConnectionTestView.tsx`.
+Reuse themed cards, a responsive metric grid and monospace numbers. On port 443, primary timings, success
+counts and quality colors all use three independent HTTPS requests; other ports explicitly show TCP/tunnel
+setup. Failures never count as zero, zero spread shows 0 ms, and aggregate partial-success classification
+takes precedence over the final sample. Keep the explanation visible and collapse to one column in narrow
+panels. Invalidate old results when routes or measurement semantics change; never mix timing definitions.
+
+Text selections invert the region foreground and background across ordinary text, syntax-highlighted editors and terminals. Inactive selections remain legible; do not use a low-contrast accent tint.
+
+File-browser previews navigate the current pane’s visible sorted files, excluding folders. Arrow keys move between files; another Space closes the preview and held-key repeats do not close it. A docked preview follows single-file selection in its originating pane and reads only the current target. Target changes release old tickets and discard late results. Inputs, buttons and media controls retain their keys; Shift+arrows still select text. The host owns navigation without expanding plugin read authority.
+
+File-browser details draw one focus/drop frame on the fixed viewport, never an outline or shadow on scrolling content. Horizontal and vertical scrolling leave the frame in place. Column view marks the current column heading; row selection keeps its accent fill. Buttons and inputs retain their keyboard focus indicators.
+
+Copy path uses the same editable spelling as the path field: remote Windows OpenSSH `/C:/…` loses the slash before the drive letter, while POSIX absolute paths stay intact. File operations retain canonical SFTP paths; never strip slashes globally from read, delete or rename targets.
+
+Floating windows and splitters share pointer ownership: preview at most once per frame, synchronously apply release coordinates, then commit once without depending on a prior move or animation frame. A final WebView move reporting the primary button released completes the gesture. Escape, blur, pointer cancellation, capture interruption, hiding and unmounting still cancel and roll back. Resizing preserves content and connections without remounting.

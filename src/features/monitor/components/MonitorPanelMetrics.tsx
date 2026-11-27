@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { RemoteStats } from "@/lib/api/types";
 import { formatBytes, formatPercent, formatUptime } from "@/lib/text/format";
 import type { MonitorSample } from "@/store/monitorHistory";
+import { PerformanceDetails } from "./PerformanceDetails";
 import { MonitorChart } from "../MonitorChart";
 
 function Meter({ value }: { value: number }) {
@@ -120,6 +121,7 @@ export function MonitorPanelMetrics({
         <MonitorChart samples={samples} kind="disk" label={t("monitor.diskIo")} />
       </Card>
 
+      <PerformanceDetails stats={stats} />
       <div className="panel-grid">
         <Card
           icon={<Timer size={12} />}

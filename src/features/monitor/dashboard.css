@@ -1,0 +1,168 @@
+.monitor-dashboard {
+  min-width: 0;
+}
+.monitor-dashboard__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.monitor-dashboard__toolbar > span {
+  flex: 1 1 180px;
+  color: var(--td-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.monitor-dashboard__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+.monitor-widget {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  height: var(--widget-height, var(--widget-default-height, 460px));
+  min-width: 0;
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius);
+  background: var(--td-panel);
+}
+.monitor-widget__head {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--td-border);
+}
+.monitor-widget__head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.monitor-widget__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+.monitor-widget__grip {
+  cursor: grab;
+}
+.monitor-widget__body {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.monitor-widget .monitor-card {
+  --monitor-chart-height: var(--widget-chart-height, 132px);
+  padding: 0 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.monitor-widget .monitor-card__label {
+  display: none;
+}
+.monitor-widget .monitor-card__value {
+  font-size: 24px;
+  line-height: 1.25;
+}
+.monitor-widget .performance-details {
+  display: block;
+}
+.monitor-widget .performance-section {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.monitor-widget .performance-section h3 {
+  display: none;
+}
+.monitor-widget .performance-readings {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+  gap: 12px 16px;
+}
+.monitor-widget .performance-readings dd {
+  line-height: 1.4;
+}
+.monitor-widget .performance-section > h3 + .performance-device {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.monitor-dashboard > .performance-note {
+  margin-top: 12px;
+}
+.monitor-dashboard[data-editing] .monitor-widget {
+  border-style: dashed;
+}
+.monitor-widget[data-dragging] {
+  opacity: 0.55;
+}
+.monitor-widget[data-drop-target] {
+  outline: 2px solid var(--td-accent);
+  outline-offset: -2px;
+}
+.monitor-widget__resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  color: var(--td-muted);
+  background: var(--td-panel);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.monitor-widget__resize::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+.monitor-widget__resize:focus-visible {
+  outline: 2px solid var(--td-accent);
+  outline-offset: -2px;
+}
+.monitor-dashboard__grid[data-wide] {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+.monitor-dashboard__grid[data-wide] > .monitor-widget {
+  grid-column: span clamp(var(--widget-min-columns), var(--widget-columns, 6), 12);
+}
+
+.monitor-widget[data-widget="gpu"] {
+  --widget-default-height: 320px;
+}
+
+.monitor-dashboard > .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

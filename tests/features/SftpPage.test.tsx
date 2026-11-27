@@ -967,6 +967,8 @@ describe("SftpPage", () => {
     });
     expect(useWorkspace.getState().openEditor).not.toHaveBeenCalled();
     expect(fsMock.openLocal).not.toHaveBeenCalled();
+    expect(useFilePreview.getState().browser?.paths).toContain("/srv/app/readme.md");
+    expect(useFilePreview.getState().browser?.paths).not.toContain("/srv/app/logs");
   });
   it("opens a folder in the next column and preserves the parent for changing branches", async () => {
     fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
@@ -2852,3 +2854,25 @@ it("routes a real list proxy once through window capture with a non-modal panel 
     window.removeEventListener("keydown", capture, true);
   }
 });
+
+it.each(["/C:/Users/用户/report.txt", "/C:/", "/srv/report.txt"])(
+  "copies a remote path in its editable spelling: %s",
+  async (path) => {
+    const copy = vi.spyOn(clipboard, "copyText").mockImplementation(() => undefined);
+    fsMock.list.mockImplementation(async (source: FsSource) =>
+      source.kind === "remote"
+        ? {
+            path: "/",
+            entries: [{ name: "target-file", path, isDir: false, size: 1, modified: 0 }],
+          }
+        : localListing,
+    );
+    render(<SftpPage sessionId="session-1" />);
+    fireEvent.contextMenu((await screen.findByText("target-file")).closest(".sftp-row")!);
+    useContextMenu
+      .getState()
+      .menu!.items.find((item) => item.label === "Copy path")!
+      .onSelect();
+    expect(copy).toHaveBeenCalledExactlyOnceWith(path.startsWith("/C:/") ? path.slice(1) : path);
+  },
+);

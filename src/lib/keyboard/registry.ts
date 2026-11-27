@@ -46,7 +46,6 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("app.restart", "restart.command", "workbench", []),
   command("panel.restoreWorkbench", "providers.restore", "workbench", [], { input: true }),
   command("update.check", "updates.check", "workbench", []),
-  command("panel.toggle", "shortcuts.togglePanel", "workbench", []),
   command("transfers.show", "tasks.title", "workbench", [], { input: true }),
   command("theme.cycle", "shortcuts.cycleTheme", "workbench", []),
   command("font.increase", "shortcuts.fontIncrease", "workbench", [

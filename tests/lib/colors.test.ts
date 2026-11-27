@@ -104,6 +104,9 @@ describe("saved and preview colors", () => {
       background: "#112233",
       cursorAccent: "#112233",
       foreground: "#ddeeff",
+      selectionBackground: "#ddeeff",
+      selectionInactiveBackground: "#ddeeff",
+      selectionForeground: "#112233",
       cursor: "#ffaa22",
     });
     previewColors({ colors: { terminalBackground: "#445566" } });
@@ -252,3 +255,15 @@ describe("region contrast and isolation", () => {
     },
   );
 });
+
+it.each(["dark", "light"] as const)(
+  "inverts terminal selection in %s and custom regions",
+  (mode) => {
+    for (const colors of [{}, { terminalBackground: "#123456", terminalForeground: "#fefefe" }]) {
+      const theme = terminalTheme(mode, colors);
+      expect(theme.selectionBackground).toBe(theme.foreground);
+      expect(theme.selectionInactiveBackground).toBe(theme.foreground);
+      expect(theme.selectionForeground).toBe(theme.background);
+    }
+  },
+);

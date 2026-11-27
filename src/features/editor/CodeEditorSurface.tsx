@@ -338,6 +338,16 @@ export function CodeEditorSurface({
           bracketMatching(),
           closeBrackets(),
           drawSelection(),
+          EditorView.decorations.compute(["selection", "doc"], (state) =>
+            Decoration.set(
+              state.selection.ranges
+                .filter((range) => !range.empty)
+                .map((range) =>
+                  Decoration.mark({ class: "cm-invertedSelection" }).range(range.from, range.to),
+                ),
+              true,
+            ),
+          ),
           search({ top: true }),
           keymap.of([
             { key: "Mod-z", run: () => callbacks.current.onUndo() },
@@ -399,7 +409,11 @@ export function CodeEditorSurface({
             ".cm-cursor, .cm-dropCursor": {
               borderLeftColor: "var(--td-text)",
             },
-            ".cm-selectionBackground": { backgroundColor: "var(--td-accent-soft)" },
+            ".cm-selectionBackground": { backgroundColor: "var(--td-text)" },
+            ".cm-invertedSelection, .cm-invertedSelection *": {
+              color: "var(--td-bg) !important",
+              backgroundColor: "var(--td-text) !important",
+            },
             ".cm-searchMatch": { backgroundColor: "var(--td-accent-soft)" },
             ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "var(--td-accent)" },
             ".cm-matchingBracket": {
@@ -429,7 +443,10 @@ export function CodeEditorSurface({
             // Keep the caret clear of the sticky gutter, including empty lines.
             ".cm-line": { padding: "0 12px 0 6px" },
             "&.cm-focused": { outline: "none" },
-            ".cm-selectionBackground, ::selection": { backgroundColor: "var(--td-accent-soft)" },
+            ".cm-content ::selection": {
+              backgroundColor: "var(--td-text)",
+              color: "var(--td-bg)",
+            },
           }),
           EditorView.domEventHandlers({
             beforeinput: (event, view) => {

@@ -55,9 +55,7 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "update.check") {
     workspace.openPage("updates");
     void useUpdates.getState().check(true);
-  } else if (id === "panel.toggle")
-    void settings.update({ rightPanel: !settings.settings.rightPanel });
-  else if (id === "theme.cycle")
+  } else if (id === "theme.cycle")
     void settings.update({
       theme:
         settings.settings.theme === "dark"

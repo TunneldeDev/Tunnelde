@@ -59,39 +59,92 @@ it("tests the feature-specific marketplace route and clearly reports TCP success
 });
 
 it.each([
-  ["en-US", "TCP/tunnel setup (median)", "HTTPS probe elapsed time", "<1 ms", "1,658 ms"],
-  ["zh-CN", "TCP/代理通道建立（中位数）", "HTTPS 探测总耗时", "<1 毫秒", "1,658 毫秒"],
+  ["en-US", "HTTPS request (median)", "352 ms", "HTTPS responded · slow request"],
+  ["zh-CN", "HTTPS 请求耗时（中位数）", "352 毫秒", "HTTPS 已响应 · 请求较慢"],
 ])(
-  "distinguishes sub-millisecond tunnel setup from HTTPS elapsed time in %s",
-  async (language, tcpLabel, httpsLabel, tcpTime, httpsTime) => {
+  "uses HTTPS samples for every primary metric and classification in %s",
+  async (language, label, time, status) => {
     await i18n.changeLanguage(language);
     vi.mocked(api.testProxyQuality).mockResolvedValue({
+      measurement: "https",
       attempts: 3,
       successful: 3,
-      samplesMs: [1, 0, 0],
-      medianMs: 0,
-      minMs: 0,
-      maxMs: 1,
-      spreadMs: 1,
-      quality: "fast",
+      samplesMs: [352, 400, 320],
+      medianMs: 352,
+      minMs: 320,
+      maxMs: 400,
+      spreadMs: 80,
+      quality: "slow",
       lastError: null,
-      https: { success: true, elapsedMs: 1658, status: 200, error: null },
+      https: { success: true, elapsedMs: 320, status: 200, error: null },
     });
     render(<NetworkConnectionTest settings={settings} />);
     fireEvent.submit(document.querySelector("form")!);
-    expect(
-      (await screen.findByText(tcpLabel)).parentElement?.querySelector("dd")?.textContent,
-    ).toBe(tcpTime);
-    expect(screen.getByText(httpsLabel).parentElement?.querySelector("dd")?.textContent).toBe(
-      httpsTime,
+    expect((await screen.findByText(label)).parentElement?.querySelector("dd")?.textContent).toBe(
+      time,
     );
+    expect(screen.getByRole("status").textContent).toBe(status);
+    expect(document.querySelector(".network-quality.is-slow")).not.toBeNull();
     expect(screen.getByText("3 / 3")).not.toBeNull();
-    expect(screen.getByText(/HTTP 200/)).not.toBeNull();
-    // The classification describes connection setup, never end-to-end RTT.
-    expect(screen.queryByText(/low latency|延迟较低/)).toBeNull();
-    expect(screen.getByText(/transparent proxies|透明代理/)).not.toBeNull();
+    expect(screen.queryByText("TCP/tunnel setup (median)")).toBeNull();
+    expect(screen.queryByText("<1 ms")).toBeNull();
+    expect(screen.getByText(/200/)).not.toBeNull();
   },
 );
+
+it("does not let a failed final HTTPS sample override aggregate partial-success classification", async () => {
+  vi.mocked(api.testProxyQuality).mockResolvedValue({
+    measurement: "https",
+    attempts: 3,
+    successful: 2,
+    samplesMs: [352, 352, null],
+    medianMs: 352,
+    minMs: 352,
+    maxMs: 352,
+    spreadMs: 0,
+    quality: "unstable",
+    lastError: { code: "validation", message: "network.timeout" },
+    https: {
+      success: false,
+      elapsedMs: 9000,
+      status: null,
+      error: { code: "validation", message: "network.timeout" },
+    },
+  });
+  render(<NetworkConnectionTest settings={settings} />);
+  fireEvent.submit(document.querySelector("form")!);
+  await screen.findByText("Some HTTPS requests failed");
+  expect(document.querySelector(".network-quality.is-unstable")).not.toBeNull();
+  expect(screen.getByText("0 ms")).not.toBeNull();
+  expect(screen.getByText("2 / 3")).not.toBeNull();
+  expect(screen.getByText("Failed")).not.toBeNull();
+  expect(screen.queryByText(/TCP proxy tunnel works/)).toBeNull();
+});
+
+it("never shows failed HTTPS requests as zero-millisecond successful connections", async () => {
+  vi.mocked(api.testProxyQuality).mockResolvedValue({
+    measurement: "https",
+    attempts: 3,
+    successful: 0,
+    samplesMs: [null, null, null],
+    medianMs: null,
+    minMs: null,
+    maxMs: null,
+    spreadMs: null,
+    quality: "unreachable",
+    lastError: { code: "validation", message: "network.httpsRequestFailed" },
+  });
+  render(<NetworkConnectionTest settings={settings} />);
+  fireEvent.submit(document.querySelector("form")!);
+  await screen.findByText("HTTPS connection failed");
+  expect(screen.getByText("0 / 3")).not.toBeNull();
+  expect(screen.getAllByText("—")).toHaveLength(4);
+  expect(screen.queryByText("<1 ms")).toBeNull();
+  expect(
+    screen.getByText("HTTPS request failed. Check the selected route, proxy and destination."),
+  ).not.toBeNull();
+  expect(screen.queryByText(/TCP proxy tunnel works/)).toBeNull();
+});
 
 it("does not invent an HTTPS measurement for TCP-only endpoints", async () => {
   vi.mocked(api.testProxyQuality).mockResolvedValue({

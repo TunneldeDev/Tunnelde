@@ -583,6 +583,9 @@ function mockPanelRect() {
         height: parseFloat(panel.style.height || "300"),
       }) as DOMRect,
   );
+  vi.spyOn(panel, "getClientRects").mockImplementation(
+    () => [panel.getBoundingClientRect()] as unknown as DOMRectList,
+  );
   return panel;
 }
 
@@ -624,20 +627,26 @@ it("clamps a restored layout and repositions it when the viewport shrinks", () =
   expect(useTransferPanel.getState().bounds?.x).toBe(parseFloat(panel.style.left));
 });
 
-it("previews pointer movement without persisting each step and Escape cancels without closing", () => {
+it("previews pointer movement without persisting each step and Escape cancels without closing", async () => {
   render(<FileTransfers />);
   const panel = mockPanelRect();
   const handle = screen.getByRole("button", { name: "Background tasks" });
   Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false });
   const pointer = (name: string, x: number, y: number) => {
-    const event = new MouseEvent(name, { bubbles: true, clientX: x, clientY: y, button: 0 });
+    const event = new MouseEvent(name, {
+      bubbles: true,
+      clientX: x,
+      clientY: y,
+      button: 0,
+      buttons: name === "pointerup" ? 0 : 1,
+    });
     Object.defineProperty(event, "pointerId", { value: 1 });
     fireEvent(handle, event);
   };
   pointer("pointerdown", 350, 220);
   expect(viewIsBusy()).toBe(true);
   pointer("pointermove", 250, 120);
-  expect(panel.style.left).toBe("200px");
+  await waitFor(() => expect(panel.style.left).toBe("200px"));
   expect(useTransferPanel.getState().bounds).toBeNull();
   fireEvent.keyDown(handle, { key: "Escape" });
   expect(useTransferPanel.getState().open).toBe(true);

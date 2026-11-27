@@ -1,14 +1,5 @@
 .background-status {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 6px;
-  border: 0;
-  color: var(--td-muted);
-  background: transparent;
-  font-size: 11px;
   overflow: hidden;
 }
 .background-status.is-running {
@@ -77,11 +68,6 @@
   .background-status__progress > span {
     transition: none;
   }
-}
-.background-status:hover,
-.background-status[aria-expanded="true"] {
-  background: var(--td-hover);
-  color: var(--td-text);
 }
 .background-status__badge {
   min-width: 16px;

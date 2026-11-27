@@ -1,6 +1,19 @@
 use super::ApiMethod;
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("monitor.launch", ["monitor.write", "ssh.exec"], "{sessionId:string,command:string,cwd:string}", "Launch a noninteractive shell command with detached streams; returns launch PID, not completion status."),
+    method!(
+        "monitor.killTree",
+        ["monitor.write"],
+        "{sessionId:string,pid:number,expectedStartTicks:number}",
+        "Send TERM to an identity-checked process tree, children first."
+    ),
+    method!(
+        "monitor.executable",
+        ["monitor.read"],
+        "{sessionId:string,pid:number,expectedStartTicks:number}",
+        "Resolve an identity-checked remote executable path."
+    ),
     method!(
         "monitor.system",
         ["monitor.read"],

@@ -1,3 +1,4 @@
+import type { PerformanceDetails } from "./performance";
 import type { FontSelections } from "@/lib/fonts/types";
 import type { HostSourceReference } from "@/lib/hosts/sources";
 import type { HostFieldsSchema } from "@/lib/hosts/fields";
@@ -435,6 +436,7 @@ export interface RemoteProcess {
 }
 
 export interface RemoteStats {
+  details?: PerformanceDetails | null;
   cpuPercent: number;
   cpuCount: number;
   memoryUsed: number;
