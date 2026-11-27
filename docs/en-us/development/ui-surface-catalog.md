@@ -113,3 +113,5 @@ counts and quality colors all use three independent HTTPS requests; other ports 
 setup. Failures never count as zero, zero spread shows 0 ms, and aggregate partial-success classification
 takes precedence over the final sample. Keep the explanation visible and collapse to one column in narrow
 panels. Invalidate old results when routes or measurement semantics change; never mix timing definitions.
+
+Text selections invert the region foreground and background across ordinary text, syntax-highlighted editors and terminals. Inactive selections remain legible; do not use a low-contrast accent tint.

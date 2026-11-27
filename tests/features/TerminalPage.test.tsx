@@ -639,6 +639,7 @@ describe("local terminal preview", () => {
     expect(terminal.options.theme).toEqual({
       ...initial,
       background: "#445566",
+      selectionForeground: "#445566",
       cursorAccent: "#445566",
       cursor: "#ffaa00",
     });
