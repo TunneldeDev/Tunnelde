@@ -186,23 +186,18 @@ describe("sidebar panel docking", () => {
     expect(
       screen.getByRole("region", { name: "Background tasks" }).closest('[data-docked="true"]'),
     ).toBeTruthy();
-    const layout = useWorkspace.getState().layout;
     const status = document.querySelector<HTMLButtonElement>("[data-task-trigger]")!;
     fireEvent.click(status);
-    expect(useWorkspace.getState().tabs.find((tab) => tab.id === id)?.hidden).toBe(true);
-    fireEvent.click(status);
-    expect(useWorkspace.getState().tabs.find((tab) => tab.id === id)?.hidden).toBe(false);
-    expect(useWorkspace.getState().layout).toEqual(layout);
-    expect(workspaceRecords().some((record) => record.id === id)).toBe(true);
-    drop(screen.getByRole("navigation", { name: "Workspace" }), 20, 60, id);
-    expect(
-      screen.getByRole("region", { name: "Background tasks" }).closest(".sidebar-view"),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Move into workspace" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Open as a floating window" }));
-    expect(screen.queryByRole("region", { name: "Background tasks" })).toBeNull();
-    expect(screen.getByRole("dialog", { name: "Background tasks" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Background tasks" })).toBe(dialog);
     expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(false);
+    const nav = screen.getByRole("navigation", { name: "Workspace" });
+    fireEvent.click(within(nav).getByRole("button", { name: "Background tasks" }));
+    expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Background tasks" })).toBe(dialog);
+    expect(dialog.closest(".sidebar-view")).toBeTruthy();
+    expect(status.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(status);
+    expect(screen.getByRole("dialog", { name: "Background tasks" })).toBe(dialog);
     fireEvent.click(
       within(screen.getByRole("dialog", { name: "Background tasks" })).getByRole("button", {
         name: "Close",
@@ -424,10 +419,7 @@ describe("sidebar panel docking", () => {
     },
   );
 
-  it.each([
-    ["tasks", "Background tasks"],
-    ["output", "Output"],
-  ] as const)(
+  it.each([["output", "Output"]] as const)(
     "keeps %s closed after closing its pane and restores it through the status bar",
     (view, title) => {
       const rendered = render(
@@ -450,9 +442,7 @@ describe("sidebar panel docking", () => {
       expect(panel.closest(".sidebar-view")).toBeNull();
       expect(useWorkspace.getState().layout).toEqual(layout);
       expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
-      const status = document.querySelector(
-        view === "tasks" ? "[data-task-trigger]" : ".output-status",
-      )!;
+      const status = document.querySelector(".output-status")!;
       expect(status.getAttribute("aria-expanded")).toBe("false");
       fireEvent.click(status);
       expect(panel.hasAttribute("hidden")).toBe(false);

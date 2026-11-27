@@ -44,6 +44,7 @@ pub enum Quality {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionQuality {
+    measurement: &'static str,
     attempts: usize,
     successful: usize,
     samples_ms: Vec<Option<u64>>,
@@ -66,15 +67,14 @@ struct HttpsQuality {
     error: Option<AppError>,
 }
 
-async fn check_https(host: &str, url: &str) -> HttpsQuality {
-    let started = std::time::Instant::now();
+async fn check_https(host: &str, url: &str, deadline: tokio::time::Instant) -> HttpsQuality {
+    let mut started = std::time::Instant::now();
     let result = async {
-        let deadline = tokio::time::Instant::now() + BUDGET;
         let proxy = url.to_owned();
         let client = tokio::time::timeout_at(
             deadline,
             crate::services::credentials::inspect(move || {
-                super::http_client_for_proxy(Some(&proxy))
+                super::http::diagnostic_client_for_proxy(&proxy)
             }),
         )
         .await
@@ -86,6 +86,8 @@ async fn check_https(host: &str, url: &str) -> HttpsQuality {
             return Err(AppError::validation("network.timeout"));
         }
         // Complete TLS and HTTP through the same explicit route as the TCP test.
+        // Client/platform initialization is bounded but is not network latency.
+        started = std::time::Instant::now();
         let response = client
             .head(target)
             .timeout(remaining)
@@ -95,7 +97,7 @@ async fn check_https(host: &str, url: &str) -> HttpsQuality {
                 if error.is_timeout() {
                     AppError::validation("network.timeout")
                 } else {
-                    AppError::validation("network.httpsFailed")
+                    AppError::validation("network.httpsRequestFailed")
                 }
             })?;
         Ok::<_, AppError>(response.status().as_u16())
@@ -125,6 +127,7 @@ fn summarize(samples_ms: Vec<Option<u64>>, last_error: Option<AppError>) -> Conn
         _ => Quality::Slow,
     };
     ConnectionQuality {
+        measurement: "tcp",
         attempts: samples_ms.len(),
         successful: values.len(),
         median_ms,
@@ -136,6 +139,43 @@ fn summarize(samples_ms: Vec<Option<u64>>, last_error: Option<AppError>) -> Conn
         last_error,
         https: None,
     }
+}
+
+async fn measure_https<F, Fut>(mut probe: F, deadline: tokio::time::Instant) -> ConnectionQuality
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = HttpsQuality>,
+{
+    let mut samples = Vec::with_capacity(SAMPLES);
+    let mut last_error = None;
+    let mut https = None;
+    for _ in 0..SAMPLES {
+        if tokio::time::Instant::now() >= deadline {
+            last_error = Some(AppError::validation("network.timeout"));
+            break;
+        }
+        match tokio::time::timeout_at(deadline, probe()).await {
+            Ok(result) => {
+                samples.push(result.success.then_some(result.elapsed_ms));
+                if let Some(error) = &result.error {
+                    last_error = Some(AppError::validation(error.to_string()));
+                }
+                https = Some(result);
+            }
+            Err(_) => {
+                samples.push(None);
+                last_error = Some(AppError::validation("network.timeout"));
+                break;
+            }
+        }
+    }
+    let mut quality = summarize(samples, last_error);
+    if quality.successful > 0 && quality.successful < SAMPLES {
+        quality.quality = Quality::Unstable;
+    }
+    quality.measurement = "https";
+    quality.https = https;
+    quality
 }
 
 async fn measure<F, Fut>(mut connect: F, budget: Duration) -> AppResult<ConnectionQuality>
@@ -208,17 +248,16 @@ pub async fn proxy_test_quality(
     )
     .await
     .map_err(|_| AppError::validation("network.timeout"))??;
-    let mut quality = measure_route(
+    if port == 443 {
+        return Ok(measure_https(|| check_https(&host, route.proxy(), deadline), deadline).await);
+    }
+    measure_route(
         &host,
         port,
         route.proxy(),
         deadline.saturating_duration_since(tokio::time::Instant::now()),
     )
-    .await?;
-    if port == 443 && quality.successful > 0 {
-        quality.https = Some(check_https(&host, route.proxy()).await);
-    }
-    Ok(quality)
+    .await
 }
 
 #[cfg(test)]

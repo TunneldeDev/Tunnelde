@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { FilePreview } from "@/features/sftp/FilePreview";
+import { usePanelWindows } from "@/store/panelWindows";
 import { useFilePreview } from "@/store/filePreview";
 import { api } from "@/lib/api/ipc";
 import { usePlugins } from "@/store/plugins";
@@ -26,7 +27,11 @@ vi.mock("@/lib/api/ipc", () => ({
 
 beforeEach(async () => {
   await i18n.changeLanguage("en-US");
-  useFilePreview.setState({ file: null, id: null, presentation: "quickLook" });
+  useFilePreview.setState({ file: null, id: null, browser: null, presentation: "quickLook" });
+  usePanelWindows.setState({
+    available: false,
+    snapshot: { windows: [], panels: [], transfers: [] },
+  });
   usePlugins.setState({ items: [] });
   vi.clearAllMocks();
   vi.mocked(api.filePreviewClose).mockResolvedValue();
@@ -274,4 +279,111 @@ describe("file preview", () => {
     await screen.findByLabelText("movie.mp4");
     expect(api.filePreviewOpen).toHaveBeenCalledTimes(2);
   });
+});
+
+it("loads only the current browser file, navigates from preview and toggles closed with Space", async () => {
+  vi.mocked(api.searchPreviewLocal).mockImplementation(async (path) => ({
+    content: path,
+    size: path.length,
+    encoding: "utf-8",
+    bom: false,
+  }));
+  useFilePreview
+    .getState()
+    .browse("/a.txt", { kind: "local" }, { id: "pane", paths: ["/a.txt", "/b.txt", "/c.txt"] });
+  render(<FilePreview />);
+  const text = await screen.findByRole("textbox");
+  expect(api.searchPreviewLocal).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(text, { key: "ArrowDown" });
+  await screen.findByText("b.txt");
+  expect(useFilePreview.getState().file?.path).toBe("/b.txt");
+  expect(api.searchPreviewLocal).toHaveBeenCalledTimes(2);
+  fireEvent.keyDown(await screen.findByRole("textbox"), { key: "ArrowLeft" });
+  await screen.findByText("a.txt");
+  fireEvent.keyDown(await screen.findByRole("textbox"), { key: " ", repeat: true });
+  expect(useFilePreview.getState().file).not.toBeNull();
+  fireEvent.keyDown(screen.getByRole("textbox"), { key: " " });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("does not steal preview buttons' activation or modified navigation keys", async () => {
+  vi.mocked(api.searchPreviewLocal).mockResolvedValue({
+    content: "hello",
+    size: 5,
+    encoding: "utf-8",
+    bom: false,
+  });
+  useFilePreview
+    .getState()
+    .browse("/a.txt", { kind: "local" }, { id: "pane", paths: ["/a.txt", "/b.txt"] });
+  render(<FilePreview />);
+  const text = await screen.findByRole("textbox");
+  fireEvent.keyDown(text, { key: "ArrowDown", shiftKey: true });
+  fireEvent.keyDown(screen.getByRole("button", { name: "Edit text" }), { key: " " });
+  expect(useFilePreview.getState().file?.path).toBe("/a.txt");
+});
+
+it("follows only its originating visible docked pane and retains the selected session", () => {
+  useFilePreview.setState({ presentation: "docked" });
+  useFilePreview
+    .getState()
+    .browse(
+      "/a.txt",
+      { kind: "remote", sessionId: "one" },
+      { id: "pane", paths: ["/a.txt", "/b.txt"] },
+    );
+  const before = useFilePreview.getState().id;
+  useFilePreview
+    .getState()
+    .browse(
+      "/b.txt",
+      { kind: "remote", sessionId: "two" },
+      { id: "pane", paths: ["/b.txt"] },
+      true,
+    );
+  useFilePreview
+    .getState()
+    .browse(
+      "/b.txt",
+      { kind: "remote", sessionId: "one" },
+      { id: "other", paths: ["/b.txt"] },
+      true,
+    );
+  expect(useFilePreview.getState().id).toBe(before);
+  useFilePreview
+    .getState()
+    .browse(
+      "/b.txt",
+      { kind: "remote", sessionId: "one" },
+      { id: "pane", paths: ["/a.txt", "/b.txt"] },
+      true,
+    );
+  expect(useFilePreview.getState().file?.path).toBe("/b.txt");
+  useFilePreview.getState().navigate(1);
+  expect(useFilePreview.getState().file?.path).toBe("/b.txt");
+  useFilePreview.getState().show("/c.txt");
+  expect(useFilePreview.getState().browser).toBeNull();
+});
+
+it("updates a preview owned by a native window without pulling it back into main", () => {
+  useFilePreview
+    .getState()
+    .browse("/a.txt", { kind: "local" }, { id: "pane", paths: ["/a.txt", "/b.txt"] });
+  useFilePreview.setState({ presentation: "docked" });
+  usePanelWindows.setState({
+    available: true,
+    snapshot: {
+      windows: [],
+      panels: [{ panelId: "filePreview", windowId: "satellite", generation: 1 }],
+      transfers: [],
+    },
+  });
+  const activate = vi.spyOn(useWorkspace.getState(), "activate");
+  useFilePreview
+    .getState()
+    .browse("/b.txt", { kind: "local" }, { id: "pane", paths: ["/a.txt", "/b.txt"] }, true);
+  expect(useFilePreview.getState().file?.path).toBe("/b.txt");
+  useFilePreview.getState().navigate(-1);
+  expect(useFilePreview.getState().file?.path).toBe("/a.txt");
+  expect(activate).not.toHaveBeenCalled();
 });

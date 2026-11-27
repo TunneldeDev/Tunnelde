@@ -6,6 +6,48 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.10.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.9.0...v2.10.0) - 2026-11-27
+
+### 更新概览 | Highlights
+
+- **processes:** add context actions and identity-checked tree termination
+- **processes:** run new remote tasks with a working directory
+- **monitor:** expose detailed Linux performance and hardware metrics
+- **monitor:** add adaptive cards with persistent layout editing
+- navigate and dynamically follow file browser previews
+
+<details open>
+<summary>详细变更 | Details (17)</summary>
+
+### 新增 | New
+
+- **processes:** add context actions and identity-checked tree termination ([#572](https://github.com/TunneldeDev/Tunnelde/pull/572), [e5dff43](https://github.com/TunneldeDev/Tunnelde/commit/e5dff433c9b149c8a85669408b5d817a40612235)) @quyansiyuanwang
+- **processes:** run new remote tasks with a working directory ([#572](https://github.com/TunneldeDev/Tunnelde/pull/572), [f4de2c0](https://github.com/TunneldeDev/Tunnelde/commit/f4de2c065cc394d36e55f28e8c601e1e34e770e0)) @quyansiyuanwang
+- **monitor:** expose detailed Linux performance and hardware metrics ([#572](https://github.com/TunneldeDev/Tunnelde/pull/572), [7f51c47](https://github.com/TunneldeDev/Tunnelde/commit/7f51c47f86d6015742fb414f806a8661f1835efe)) @quyansiyuanwang
+- **monitor:** add adaptive cards with persistent layout editing ([#575](https://github.com/TunneldeDev/Tunnelde/pull/575)) @quyansiyuanwang
+- navigate and dynamically follow file browser previews ([#577](https://github.com/TunneldeDev/Tunnelde/pull/577)) @quyansiyuanwang
+- support remote process management on macOS and Windows ([#579](https://github.com/TunneldeDev/Tunnelde/pull/579)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **processes:** bound table height and add complete pagination ([#572](https://github.com/TunneldeDev/Tunnelde/pull/572), [d006875](https://github.com/TunneldeDev/Tunnelde/commit/d006875703fea3f1793ab51358225552cfe6a651)) @quyansiyuanwang
+- **processes:** localize remote action failures ([#572](https://github.com/TunneldeDev/Tunnelde/pull/572), [8498b9a](https://github.com/TunneldeDev/Tunnelde/commit/8498b9a89e5bc229e2cf447f2e78012176dee903)) @quyansiyuanwang
+- **processes:** exclude unrelated entries from process tree snapshot ([#572](https://github.com/TunneldeDev/Tunnelde/pull/572)) @quyansiyuanwang
+- **statusbar:** unify task and output button styling ([#574](https://github.com/TunneldeDev/Tunnelde/pull/574), [45020e9](https://github.com/TunneldeDev/Tunnelde/commit/45020e97c62172a46ef568ce549e7e5377a528d4)) @quyansiyuanwang
+- **workbench:** remove the retired monitoring inspector ([#574](https://github.com/TunneldeDev/Tunnelde/pull/574), [620829e](https://github.com/TunneldeDev/Tunnelde/commit/620829e0985b64a56c6331616ba5212ad39baf6b)) @quyansiyuanwang
+- **tasks:** honor panel entry points and prevent hidden geometry corruption ([#574](https://github.com/TunneldeDev/Tunnelde/pull/574)) @quyansiyuanwang
+- **network:** measure HTTPS requests instead of proxy acknowledgements ([#576](https://github.com/TunneldeDev/Tunnelde/pull/576)) @quyansiyuanwang
+- invert text selections across editor and terminal surfaces ([#577](https://github.com/TunneldeDev/Tunnelde/pull/577), [c774a74](https://github.com/TunneldeDev/Tunnelde/commit/c774a743ee375427326bb47f338a4c720e807b96)) @quyansiyuanwang
+- keep file browser focus frame anchored to its viewport ([#578](https://github.com/TunneldeDev/Tunnelde/pull/578), [187c0de](https://github.com/TunneldeDev/Tunnelde/commit/187c0de38391df5639a2b69e0d06b8b6157d4ceb)) @quyansiyuanwang
+- copy Windows SFTP paths without a leading slash ([#578](https://github.com/TunneldeDev/Tunnelde/pull/578), [e4b7c39](https://github.com/TunneldeDev/Tunnelde/commit/e4b7c390c9ae11c4c7207c80291d0651224820c8)) @quyansiyuanwang
+- commit final resize coordinates before releasing pointer gestures ([#578](https://github.com/TunneldeDev/Tunnelde/pull/578)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [2.9.0](https://github.com/TunneldeDev/Tunnelde/compare/v2.8.0...v2.9.0) - 2026-11-26
 
 ### 更新概览 | Highlights

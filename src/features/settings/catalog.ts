@@ -112,7 +112,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "layout",
       label: "settings.groups.layout",
-      keys: ["showStatusBar", "sidebarWidth", "rightPanel", "rightPanelWidth", "hostList"],
+      keys: ["showStatusBar", "sidebarWidth", "hostList"],
     },
     {
       id: "startup",
@@ -355,11 +355,9 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     "settings.motionHint",
   ),
   toggle("showStatusBar", "workspace"),
-  toggle("rightPanel", "workspace", "settings.rightPanelHint"),
   toggle("restoreWorkspace", "workspace", "settings.restoreWorkspaceHint"),
   toggle("disconnectOnPanelClose", "workspace", "settings.disconnectOnPanelCloseHint"),
   numeric("sidebarWidth", "workspace", 220, 420, 1, "px"),
-  numeric("rightPanelWidth", "workspace", 240, 460, 1, "px"),
   select(
     "hostActivation",
     "workspace",

@@ -55,3 +55,9 @@ eight-second deadline. Cancelled or timed-out unconfirmed opens retain their slo
 until a reply or session disposal; late channels close without running a sample.
 Cleanup closes only the sampling channel and preserves the parent SSH connection.
 Closing a channel does not prove that an already dispatched remote command exited.
+
+## Detailed performance metrics
+
+Experimental RPC `monitor.stats` adds optional `details`, sharing the existing SSH sample channel, eight-second total deadline and counter lifecycle. The UI SDK latest/history projections retain their contract; custom plugins can read details through RPC. Sources are `/proc`, `/sys`, optional `ip`, and optional `nvidia-smi` limited to one second. Sampling is read-only and unprivileged. Missing values, initial rates and reset counters stay unavailable. Samples are bounded to 4096 logical CPUs, 32 leaf disks, 64 adapters and 16 GPUs. Process/thread counts precede the top-five truncation.
+
+CPU details include average reported frequency, base/maximum frequency, model, sockets, physical/logical cores, reported cache, processes, threads, allocated Linux file handles and limit, uptime and per-logical-processor usage. File handles do not represent Windows kernel handles. Memory includes available, cached, buffered, slab, committed/limit, page tables, kernel stack and swap. Disk activity uses busy-millisecond deltas; response time divides read/write duration deltas by completed operations, remaining unavailable without operations. Adapters expose independent rates, link capacity, MAC, state and IPv4/IPv6. Available NVIDIA drivers expose utilization, VRAM, temperature and driver version. Windows-only fields are not fabricated.

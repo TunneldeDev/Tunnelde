@@ -189,3 +189,57 @@
   max-height: none;
   flex: 1;
 }
+
+/* Each flex owner must pass a bounded height to the scroll viewport. */
+.process-page {
+  overflow: auto;
+}
+.process-page > .process-surface {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+.process-page .process-surface > .provider-content:not([hidden]) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.process-page .process-scroll {
+  min-height: 80px;
+  flex: 1 1 0;
+}
+.process-toolbar,
+.process-pagination,
+.process-help,
+.process-details {
+  flex-shrink: 0;
+}
+.process-pagination {
+  flex-wrap: wrap;
+}
+.process-pagination > span:first-child {
+  margin-right: auto;
+}
+.process-pagination > span:not(:first-child) {
+  margin-right: 0;
+}
+.process-pagination form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.process-pagination input {
+  width: 64px;
+}
+.process-pagination .td-select {
+  width: 120px;
+}
+.process-page .process-details {
+  max-height: 150px;
+  overflow: auto;
+}
+.process-page .process-help[open] {
+  max-height: 130px;
+  overflow: auto;
+}

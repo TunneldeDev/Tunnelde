@@ -266,7 +266,8 @@ export function createFileWindowBinding(
         operation: "editor",
         data: { source: { kind: "remote", sessionId: session.id }, path },
       }),
-    preview: (path, source) => send({ operation: "preview", data: { source, path } }),
+    preview: (path, source, browser, follow) =>
+      send({ operation: "preview", data: { source, path, browser, follow } }),
     previewKind(path) {
       return (
         store.getState().model.files.previews.find((p) => matchesPreview(p, path))?.renderer ??

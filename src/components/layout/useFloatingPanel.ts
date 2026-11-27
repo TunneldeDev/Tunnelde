@@ -12,6 +12,7 @@ import {
   type FloatingAction,
   type FloatingRect,
 } from "@/lib/layout/floatingPanel";
+import { usePointerDragController } from "@/lib/session/usePointerDrag";
 import { useBackgroundGuard } from "@/lib/session/viewState";
 
 function availableArea(): FloatingRect {
@@ -32,17 +33,13 @@ export function useFloatingPanel(
   panel: RefObject<HTMLElement | null>,
   bounds: FloatingRect | null,
   onCommit: (bounds: FloatingRect | null) => void,
+  enabled: boolean,
 ) {
   const [active, setActive] = useState(false);
+  const { begin: beginDrag, cancel: cancelDrag } = usePointerDragController();
   useBackgroundGuard(active);
   const gesture = useRef<{
-    pointerId: number;
-    target: HTMLElement;
-    start: FloatingRect;
     latest: FloatingRect;
-    action: FloatingAction;
-    x: number;
-    y: number;
     saved: FloatingRect | null;
     cursor: string;
     userSelect: string;
@@ -77,34 +74,32 @@ export function useFloatingPanel(
       availableArea(),
     );
   }
-  function finish(cancel: boolean, updateState = true) {
+  function finish(cancel: boolean) {
     const drag = gesture.current;
     if (!drag) return;
     gesture.current = null;
     document.body.style.cursor = drag.cursor;
     document.body.style.userSelect = drag.userSelect;
-    if (drag.target.hasPointerCapture(drag.pointerId))
-      drag.target.releasePointerCapture(drag.pointerId);
     paint(
       cancel ? (drag.saved ? clampFloatingRect(drag.saved, availableArea()) : null) : drag.latest,
     );
     if (!cancel) commit.current(drag.latest);
-    if (updateState) setActive(false);
+    setActive(false);
   }
-  const finishRef = useRef(finish);
   useLayoutEffect(() => {
-    finishRef.current = finish;
-  });
-  useLayoutEffect(() => {
-    paint(bounds ? clampFloatingRect(bounds, availableArea()) : null);
+    if (!enabled) cancelDrag();
+    paint(enabled && bounds ? clampFloatingRect(bounds, availableArea()) : null);
     // Geometry is committed only on release, reset or viewport changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bounds]);
+  }, [bounds, enabled]);
   useLayoutEffect(() => {
+    if (!enabled) return;
     const resize = () => {
-      finishRef.current(false);
+      if (document.hidden || !panel.current?.getClientRects().length) return;
+      cancelDrag();
       if (panel.current?.style.left) {
         const rect = panel.current.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
         const next = clampFloatingRect(
           { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           availableArea(),
@@ -113,76 +108,61 @@ export function useFloatingPanel(
         commit.current(next);
       }
     };
-    const escape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape" && gesture.current) {
-        event.preventDefault();
-        event.stopPropagation();
-        finishRef.current(true);
-      }
-    };
     window.addEventListener("resize", resize);
-    document.addEventListener("keydown", escape, true);
     return () => {
-      finishRef.current(true, false);
+      cancelDrag();
       window.removeEventListener("resize", resize);
-      document.removeEventListener("keydown", escape, true);
     };
-    // The handlers read the latest gesture/commit through refs.
+    // Shared pointer ownership handles release, Escape, capture loss and blur.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel]);
+  }, [panel, enabled]);
 
   return {
     reset() {
-      finish(true);
+      cancelDrag();
       paint(null);
       onCommit(null);
     },
     handle(action: FloatingAction) {
       return {
         onPointerDown(event: PointerEvent<HTMLElement>) {
-          if (event.button !== 0 || gesture.current || !panel.current) return;
-          event.preventDefault();
+          if (!enabled || event.button !== 0 || gesture.current || !panel.current) return;
           const start = read();
+          const origin = { x: event.clientX, y: event.clientY };
           gesture.current = {
-            pointerId: event.pointerId,
-            target: event.currentTarget,
-            start,
             latest: start,
-            action,
-            x: event.clientX,
-            y: event.clientY,
             saved: bounds ? start : null,
             cursor: document.body.style.cursor,
             userSelect: document.body.style.userSelect,
           };
           document.body.style.cursor = action === "move" ? "grabbing" : `${action}-resize`;
           document.body.style.userSelect = "none";
-          event.currentTarget.setPointerCapture(event.pointerId);
           setActive(true);
-        },
-        onPointerMove(event: PointerEvent<HTMLElement>) {
-          const drag = gesture.current;
-          if (!drag || drag.pointerId !== event.pointerId) return;
-          drag.latest = adjustFloatingRect(
-            drag.start,
-            action,
-            event.clientX - drag.x,
-            event.clientY - drag.y,
-            availableArea(),
-          );
-          paint(drag.latest);
-        },
-        onPointerUp(event: PointerEvent<HTMLElement>) {
-          if (gesture.current?.pointerId === event.pointerId) finish(false);
-        },
-        onPointerCancel(event: PointerEvent<HTMLElement>) {
-          if (gesture.current?.pointerId === event.pointerId) finish(true);
-        },
-        onLostPointerCapture(event: PointerEvent<HTMLElement>) {
-          if (gesture.current?.pointerId === event.pointerId) finish(false);
+          beginDrag(event, {
+            move(next) {
+              const drag = gesture.current;
+              if (!drag) return;
+              drag.latest = adjustFloatingRect(
+                start,
+                action,
+                next.clientX - origin.x,
+                next.clientY - origin.y,
+                availableArea(),
+              );
+              paint(drag.latest);
+            },
+            commit: () => finish(false),
+            cancel: () => finish(true),
+          });
         },
         onKeyDown(event: KeyboardEvent<HTMLElement>) {
-          if (!event.key.startsWith("Arrow") || event.altKey || event.ctrlKey || event.metaKey)
+          if (
+            !enabled ||
+            !event.key.startsWith("Arrow") ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey
+          )
             return;
           const step = event.shiftKey ? 1 : 10;
           const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;

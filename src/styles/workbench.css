@@ -882,22 +882,30 @@
   background: var(--td-hover);
   box-shadow: inset 2px 0 0 var(--td-border);
 }
+/* Focus belongs to the fixed details viewport, never the scrolling content. */
+.sftp-pane__body:focus-visible,
 .sftp-pane__body:focus-within {
+  outline: none;
+  box-shadow: none;
+}
+.sftp-details {
+  position: relative;
+}
+.sftp-details:focus-within::after,
+.sftp-details.is-drop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
   box-shadow: inset 0 0 0 1px var(--td-accent);
 }
-/* The details viewport owns its frame; its wider rows move underneath it. */
-.sftp-details .sftp-pane__scroll:focus-within,
-.sftp-details .sftp-pane__scroll.is-drop {
-  outline: 1px solid var(--td-accent);
-  outline-offset: -1px;
+.sftp-miller__column:focus-within > .sftp-miller__heading {
+  color: var(--td-text);
+  border-bottom-color: var(--td-accent);
 }
-.sftp-pane__body:focus-within {
-  outline: 1px solid var(--td-accent);
-  outline-offset: -1px;
-}
-.sftp-details .sftp-pane__body.is-drop,
 .sftp-miller .sftp-pane__body.is-drop {
-  box-shadow: inset 0 0 0 1px var(--td-accent);
+  background: var(--td-accent-soft);
 }
 .sftp-pane__body {
   position: relative;

@@ -1,3 +1,4 @@
+import { previewKeyDown } from "./previewKeyboard";
 import { SYNTAX_TOKEN_TYPES } from "@/lib/plugins/syntax";
 import {
   createContext,
@@ -227,7 +228,26 @@ function Attempt({
   const url =
     owner.client.windowId === "main" ? mainUrl : handle.status === "ready" ? handle.url : undefined;
   return (
-    <div className="sidebar file-preview-panel">
+    <div
+      className="sidebar file-preview-panel"
+      tabIndex={-1}
+      onKeyDownCapture={(event) => {
+        if (!active) return;
+        previewKeyDown(
+          event,
+          (direction) => {
+            void action({
+              kind: "preview",
+              id: snapshot.id,
+              attemptId: snapshot.attemptId,
+              revision: snapshot.revision,
+              command: { operation: "navigate", direction },
+            }).catch((error) => reportError("panels.preview", "navigate", error));
+          },
+          context.close,
+        );
+      }}
+    >
       <PanelHeader view="filePreview" managed>
         <div className="sidebar__actions">
           <Button

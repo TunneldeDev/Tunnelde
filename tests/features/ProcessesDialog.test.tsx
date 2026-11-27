@@ -3,11 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSsh } from "@/store/ssh";
 import type { RemoteProcess } from "@/lib/api/types";
 
-const { remoteProcesses, remoteKill } = vi.hoisted(() => ({
+const {
+  remoteProcesses,
+  remoteKill,
+  remoteKillTree,
+  remoteProcessExecutable,
+  remoteProcessLaunch,
+} = vi.hoisted(() => ({
   remoteProcesses: vi.fn(),
   remoteKill: vi.fn(),
+  remoteKillTree: vi.fn(),
+  remoteProcessExecutable: vi.fn(),
+  remoteProcessLaunch: vi.fn(),
 }));
-vi.mock("@/lib/api/ipc", () => ({ isTauri: () => false, api: { remoteProcesses, remoteKill } }));
+vi.mock("@/lib/api/ipc", () => ({
+  isTauri: () => false,
+  api: {
+    remoteProcesses,
+    remoteKill,
+    remoteKillTree,
+    remoteProcessExecutable,
+    remoteProcessLaunch,
+  },
+}));
 import i18n from "@/i18n/i18n";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
 import { useDialogs } from "@/store/dialogs";
@@ -43,6 +61,9 @@ beforeEach(async () => {
   });
   remoteProcesses.mockReset();
   remoteKill.mockReset().mockResolvedValue(undefined);
+  remoteProcessLaunch.mockReset().mockResolvedValue(888);
+  remoteKillTree.mockReset().mockResolvedValue(undefined);
+  remoteProcessExecutable.mockReset().mockResolvedValue("/opt/bin/worker");
   await i18n.changeLanguage("en-US");
 });
 afterEach(() => {
@@ -206,4 +227,98 @@ it("does not act on a reused PID while confirmation is open", async () => {
   await waitFor(() => expect(screen.queryByRole("region", { name: "Process details" })).toBeNull());
   await act(async () => confirmation.onConfirm());
   expect(remoteKill).not.toHaveBeenCalled();
+});
+
+it("supports page sizes, first/last navigation and validated direct jumps", async () => {
+  remoteProcesses.mockResolvedValue(
+    Array.from({ length: 245 }, (_, i) => process({ pid: i + 2, name: `task-${i}`, cpuTotal: i })),
+  );
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  await screen.findByText("task-244");
+  fireEvent.click(screen.getByRole("button", { name: "Rows per page" }));
+  fireEvent.click(screen.getByRole("option", { name: "25 / page" }));
+  expect(screen.getAllByRole("row")).toHaveLength(26);
+  expect(screen.getByText("Page 1 of 10")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Last page" }));
+  expect(screen.getAllByRole("row")).toHaveLength(21);
+  expect(screen.getByText("Page 10 of 10")).toBeTruthy();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Go to page" }), {
+    target: { value: "3" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /^Go$/ }));
+  expect(screen.getByText("Page 3 of 10")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "First page" }));
+  expect(screen.getByText("Page 1 of 10")).toBeTruthy();
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "task-244" } });
+  expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+  expect(screen.getAllByRole("row")).toHaveLength(2);
+});
+
+it("opens row actions with pointer and keyboard, and confirms tree termination", async () => {
+  remoteProcesses.mockResolvedValue([process()]);
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  const row = (await screen.findByText("worker")).closest("tr")!;
+  fireEvent.contextMenu(row, { clientX: 40, clientY: 50 });
+  const { useContextMenu } = await import("@/store/contextMenu");
+  let menu = useContextMenu.getState().menu!;
+  expect(menu.items.map((item) => item.label)).toEqual([
+    "Process details",
+    "Open file location",
+    "Stop",
+    "Stop process tree",
+  ]);
+  act(() => menu.items[3]!.onSelect());
+  expect(useDialogs.getState().dialog.kind).toBe("confirm");
+  const confirm = useDialogs.getState().dialog;
+  if (confirm.kind !== "confirm") throw Error("missing confirmation");
+  expect(confirm.body).toContain("current descendants");
+  await act(async () => confirm.onConfirm());
+  expect(remoteKillTree).toHaveBeenCalledWith("s", 42, 123);
+  fireEvent.keyDown(row, { key: "F10", shiftKey: true });
+  menu = useContextMenu.getState().menu!;
+  expect(menu.trigger).toBe(row);
+  useContextMenu.getState().close();
+});
+
+it.each([
+  ["/opt/bin/worker", "/opt/bin"],
+  ["/C:/Program Files/Worker/worker.exe", "/C:/Program Files/Worker"],
+  ["/C:/worker.exe", "/C:/"],
+])("opens the remote executable directory for %s", async (executable, directory) => {
+  remoteProcessExecutable.mockResolvedValue(executable);
+  remoteProcesses.mockResolvedValue([process()]);
+  const { useWorkspace } = await import("@/store/workspace");
+  const open = vi.spyOn(useWorkspace.getState(), "openFilePane");
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  fireEvent.contextMenu((await screen.findByText("worker")).closest("tr")!);
+  const { useContextMenu } = await import("@/store/contextMenu");
+  await act(async () => useContextMenu.getState().menu!.items[1]!.onSelect());
+  expect(remoteProcessExecutable).toHaveBeenCalledWith("s", 42, 123);
+  expect(open).toHaveBeenCalledWith(
+    expect.objectContaining({
+      source: { kind: "remote", sessionId: "s" },
+      path: directory,
+      ownerSessionId: "s",
+    }),
+    "worker",
+  );
+  open.mockRestore();
+  useContextMenu.getState().close();
+});
+
+it("submits a new remote task with the exact command and working directory", async () => {
+  remoteProcesses.mockResolvedValue([process()]);
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  await screen.findByText("worker");
+  fireEvent.click(screen.getByRole("button", { name: "Run new task" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Shell command" }), {
+    target: { value: "sleep 60 & wait" },
+  });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Working directory (optional, absolute path)" }),
+    { target: { value: "/tmp/with spaces" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+  expect(await screen.findByText("Task submitted · PID 888")).toBeTruthy();
+  expect(remoteProcessLaunch).toHaveBeenCalledWith("s", "sleep 60 & wait", "/tmp/with spaces");
 });

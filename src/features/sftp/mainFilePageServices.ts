@@ -70,7 +70,10 @@ export const mainFilePageServices: FilePageServices = {
   confirm: (options) => useDialogs.getState().confirm(options),
   openConnect: (host, after) => useDialogs.getState().openConnect(host, after),
   openEditor: (session, path) => useWorkspace.getState().openEditor(session, path),
-  preview: (path, source) => useFilePreview.getState().show(path, 0, 0, source),
+  preview: (path, source, browser, follow) => {
+    if (browser) useFilePreview.getState().browse(path, source, browser, follow);
+    else useFilePreview.getState().show(path, 0, 0, source);
+  },
   previewKind(path) {
     const provider = previewProviders(usePlugins.getState().items).find((item) =>
       matchesPreview(item, path),

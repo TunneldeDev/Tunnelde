@@ -199,6 +199,7 @@ pub(crate) enum PreviewCommand {
     Edit {},
     SelectProvider { provider_id: String },
     Syntax { from: u32, to: u32 },
+    Navigate { direction: i8 },
 }
 impl PreviewCommand {
     pub(super) fn provider_action(&self) -> bool {
@@ -377,6 +378,7 @@ impl ViewAction {
                     .iter()
                     .all(|value| uuid::Uuid::parse_str(value).is_ok())
                     && match command {
+                        PreviewCommand::Navigate { direction } => matches!(direction, -1 | 1),
                         PreviewCommand::Syntax { from, to } => to > from && to - from <= 32768,
                         PreviewCommand::SelectProvider { provider_id } => {
                             bounded(provider_id, 129) && !provider_id.contains('\0')
@@ -1479,6 +1481,30 @@ mod tests {
             serde_json::to_value(preview_request(PreviewCommand::Syntax { from: 0, to: 5 }))
                 .unwrap();
         value["command"]["source"] = json!("arbitrary text");
+        assert!(serde_json::from_value::<ViewAction>(value).is_err());
+    }
+    #[test]
+    fn preview_navigation_is_host_only_bounded_and_exactly_leased() {
+        let mut f = preview_fixture();
+        for direction in [-1, 1] {
+            let command = PreviewCommand::Navigate { direction };
+            assert!(!command.provider_action());
+            let request = preview_request(command);
+            assert!(request.validate().is_ok());
+            assert!(f
+                .registry
+                .request_action("source", &f.source, &f.lease, request, f.now)
+                .is_ok());
+        }
+        for direction in [-2, 0, 2] {
+            assert!(preview_request(PreviewCommand::Navigate { direction })
+                .validate()
+                .is_err());
+        }
+        let mut value =
+            serde_json::to_value(preview_request(PreviewCommand::Navigate { direction: 1 }))
+                .unwrap();
+        value["command"]["path"] = json!("/arbitrary");
         assert!(serde_json::from_value::<ViewAction>(value).is_err());
     }
     #[test]

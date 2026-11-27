@@ -51,3 +51,13 @@ Private projection, context and authorization live under
 `extensions/monitor/processes/`. The feature separates `data/`, `runtime/` and
 `components/`; internal process identity stays host-owned. Neither plugin code
 nor generated SDK declarations import those internal stores or feature modules.
+
+## Native process actions
+
+Shared Entries supports pointer context menus and Shift+F10: details, remote executable directory, stop, and stop process tree. Tree termination requires explicit confirmation and sends TERM from children to parent, checking start ticks and parent PID for every target. The action channel and its ancestors are protected. Vanished or reused identities cannot continue; permission and unavailable executable failures remain visible.
+
+New experimental RPC `monitor.killTree({sessionId,pid,expectedStartTicks})` requires `monitor.write`; `monitor.executable` accepts the same parameters, requires `monitor.read`, and returns a remote absolute path. Both retain native origin and session ownership checks. The existing `monitor.kill` contract stays unchanged. Directories open in the same session's file browser.
+
+Run new task shares the native toolbar and provides a shell command and optional absolute working directory, visible errors and launch PID, keyboard access and focus restoration. Tasks run remotely as the SSH user using detached `nohup sh -c`, with no terminal, discarded streams and no privilege escalation. An empty directory uses the login directory. Command and directory are quoted separately. A PID acknowledges submission, not successful completion. Experimental RPC `monitor.launch({sessionId,command,cwd})` requires `monitor.write` and `ssh.exec`, returns the PID and validates lengths, empty commands, NULs and directory paths.
+
+Tree snapshots include only discovered subtree members with positive depth. Zero-depth placeholders introduced by AWK parent lookups are never targets. Linux regression tests use real parent/child processes to verify mismatched start-time rejection, actual descendant termination, and no false action-channel protection.

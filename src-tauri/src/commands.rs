@@ -831,6 +831,36 @@ pub async fn remote_kill(
 }
 
 #[tauri::command]
+pub async fn remote_process_launch(
+    app: AppHandle,
+    session_id: String,
+    command: String,
+    cwd: String,
+) -> AppResult<u32> {
+    monitor::actions::launch(&app, &session_id, &command, &cwd).await
+}
+
+#[tauri::command]
+pub async fn remote_kill_tree(
+    app: AppHandle,
+    session_id: String,
+    pid: u32,
+    expected_start_ticks: u64,
+) -> AppResult<()> {
+    monitor::actions::kill_tree(&app, &session_id, pid, expected_start_ticks).await
+}
+
+#[tauri::command]
+pub async fn remote_process_executable(
+    app: AppHandle,
+    session_id: String,
+    pid: u32,
+    expected_start_ticks: u64,
+) -> AppResult<String> {
+    monitor::actions::executable(&app, &session_id, pid, expected_start_ticks).await
+}
+
+#[tauri::command]
 pub async fn local_read_text(path: String, encoding: Option<String>) -> AppResult<sftp::TextFile> {
     sftp::local_read_text(&path, encoding.as_deref()).await
 }
