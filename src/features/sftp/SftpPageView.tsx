@@ -867,6 +867,13 @@ export function SftpPageView({
     return visibleEntries(id).find((entry) => entry.path === path) ?? null;
   };
 
+  const previewBrowser = (id: PaneId) => ({
+    id: `${tabId ?? "files"}:${id}`,
+    paths: visibleEntries(id)
+      .filter((entry) => !entry.isDir)
+      .map((entry) => entry.path),
+  });
+
   const selectEntry = (id: PaneId, entry: FileEntry, mode: "single" | "toggle" | "range") => {
     const state = panesRef.current[id].state;
     const entries = visibleEntries(id);
@@ -891,6 +898,8 @@ export function SftpPageView({
       cursor: entry.path,
       anchor: mode === "range" ? state.anchor : entry.path,
     });
+    if (!entry.isDir && mode === "single")
+      services.preview(entry.path, panesRef.current[id].source, previewBrowser(id), true);
     bodies.current[id]?.focus({ preventScroll: true });
     reveal(id);
   };
@@ -1443,7 +1452,7 @@ export function SftpPageView({
     const source = panesRef.current[id].source;
     const kind = services.previewKind(entry.path);
     if (kind !== "text") {
-      services.preview(entry.path, source);
+      previewEntry(id, entry);
       return;
     }
     if (source.kind === "local") {
@@ -1461,7 +1470,7 @@ export function SftpPageView({
   };
 
   const previewEntry = (id: PaneId, entry: FileEntry) => {
-    if (!entry.isDir) services.preview(entry.path, panesRef.current[id].source);
+    if (!entry.isDir) services.preview(entry.path, panesRef.current[id].source, previewBrowser(id));
   };
 
   const toggleHidden = (id: PaneId) =>

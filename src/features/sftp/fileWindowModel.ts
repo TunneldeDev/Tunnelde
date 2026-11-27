@@ -41,7 +41,15 @@ export type FileWindowCommand =
   | { operation: "clipboard"; data: { text: string } }
   | { operation: "clip"; data: { clip: PasteClip | null } }
   | { operation: "pickRemote" | "openLog"; data: Record<string, never> }
-  | { operation: "editor" | "preview"; data: { source: FsSource; path: string } }
+  | {
+      operation: "editor" | "preview";
+      data: {
+        source: FsSource;
+        path: string;
+        browser?: { id: string; paths: string[] };
+        follow?: boolean;
+      };
+    }
   | { operation: "reveal" | "openLocal"; data: { path: string } }
   | { operation: "setSession"; data: { sessionId: string | null; sessionIds: string[] } }
   | { operation: "rename"; data: { title: string } }

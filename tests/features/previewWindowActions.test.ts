@@ -1,3 +1,4 @@
+import { useFilePreview } from "@/store/filePreview";
 import { api } from "@/lib/api/ipc";
 import { usePlugins } from "@/store/plugins";
 import { usePluginSecurity } from "@/store/pluginSecurity";
@@ -163,3 +164,21 @@ it.each([false, true])(
     await expect(pending).resolves.toBeNull();
   },
 );
+
+it("routes file navigation through the exact current native preview lease", () => {
+  const f = fixture();
+  const navigate = vi.spyOn(useFilePreview.getState(), "navigate");
+  executePreviewWindowAction(f.lease, {
+    ...f.request,
+    command: { operation: "navigate", direction: 1 },
+  });
+  expect(navigate).toHaveBeenCalledWith(1);
+  expect(() =>
+    executePreviewWindowAction(f.lease, {
+      ...f.request,
+      revision: "old",
+      command: { operation: "navigate", direction: -1 },
+    }),
+  ).toThrow("changed");
+  expect(navigate).toHaveBeenCalledOnce();
+});

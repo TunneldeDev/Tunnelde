@@ -6,6 +6,7 @@ import { captureFileTarget } from "@/lib/files/resources/target";
 import type { FsSource } from "@/lib/api/types";
 import { useWorkspace } from "@/store/workspace";
 import { useNavigation } from "@/store/navigation";
+import { usePanelWindows } from "@/store/panelWindows";
 
 export type PreviewPresentation = "quickLook" | "docked";
 const presentationKey = "tunnelde.filePreview.presentation";
@@ -64,9 +65,22 @@ export interface PreviewFile {
   source: FsSource;
 }
 
+export interface PreviewBrowserContext {
+  id: string;
+  paths: string[];
+}
+
 export const useFilePreview = create<{
   file: PreviewFile | null;
   id: string | null;
+  browser: PreviewBrowserContext | null;
+  navigate: (direction: -1 | 1) => void;
+  browse: (
+    path: string,
+    source: FsSource,
+    browser: PreviewBrowserContext,
+    follow?: boolean,
+  ) => void;
   presentation: PreviewPresentation;
   show: (path: string, line?: number, column?: number, source?: FsSource) => void;
   dock: () => void;
@@ -75,11 +89,54 @@ export const useFilePreview = create<{
 }>((set, get) => ({
   file: null,
   id: null,
+  browser: null,
+  browse: (path, source, browser, follow = false) => {
+    const current = get();
+    const native = usePanelWindows.getState();
+    const nativeOpen =
+      native.available &&
+      native.snapshot.panels.some(
+        (panel) => panel.panelId === "filePreview" && panel.windowId !== "main",
+      );
+    if (
+      follow &&
+      (!current.file ||
+        current.browser?.id !== browser.id ||
+        current.file.source.kind !== source.kind ||
+        (current.file.source.kind === "remote" &&
+          source.kind === "remote" &&
+          current.file.source.sessionId !== source.sessionId) ||
+        current.presentation !== "docked" ||
+        (!previewPanelOpen() && !nativeOpen))
+    )
+      return;
+    if (follow && current.file?.path === path) return;
+    if (follow)
+      set({
+        id: crypto.randomUUID(),
+        file: { ...captureFileTarget(path, source), line: 0, column: 0 },
+      });
+    else get().show(path, 0, 0, source);
+    set({ browser: { id: browser.id, paths: [...new Set(browser.paths)] } });
+  },
+  navigate: (direction) => {
+    const { file, browser } = get();
+    if (!file || !browser) return;
+    const index = browser.paths.indexOf(file.path);
+    const path = index < 0 ? undefined : browser.paths[index + direction];
+    // Navigation changes the target in the current surface, including native windows.
+    if (path)
+      set({
+        id: crypto.randomUUID(),
+        file: { ...captureFileTarget(path, file.source), line: 0, column: 0 },
+      });
+  },
   presentation: preferredPresentation(),
   show: (path, line = 0, column = 0, source = { kind: "local" }) => {
     const target = captureFileTarget(path, source);
     if (get().presentation === "docked") openPanel();
     set({
+      browser: null,
       id: crypto.randomUUID(),
       file: {
         ...target,
@@ -107,7 +164,7 @@ export const useFilePreview = create<{
     hidePanel();
   },
   close: () => {
-    set({ file: null, id: null });
+    set({ file: null, id: null, browser: null });
     hidePanel();
   },
 }));

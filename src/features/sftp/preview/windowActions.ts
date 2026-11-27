@@ -1,3 +1,4 @@
+import { useFilePreview } from "@/store/filePreview";
 import { SYNTAX_TOKEN_TYPES } from "@/lib/plugins/syntax";
 import { previewSyntaxSource } from "./previewSyntax";
 import type { PanelLease } from "@/lib/panels/windowProtocol";
@@ -11,6 +12,7 @@ export type PreviewSyntaxReply = readonly (readonly [number, number, number])[] 
 
 export type PreviewCommand =
   | { operation: "ready" | "decodeError" | "close" | "retry" | "dock" | "undock" | "edit" }
+  | { operation: "navigate"; direction: -1 | 1 }
   | { operation: "selectProvider"; providerId: string }
   | { operation: "syntax"; from: number; to: number };
 export interface PreviewWindowAction {
@@ -43,6 +45,11 @@ export function executePreviewWindowAction(lease: PanelLease, request: PreviewWi
     throw new Error("plugin.filePreview.changed");
   owner.context.validate();
   switch (request.command.operation) {
+    case "navigate":
+      if (request.command.direction !== -1 && request.command.direction !== 1)
+        throw new Error("plugin.filePreview.invalid");
+      useFilePreview.getState().navigate(request.command.direction);
+      break;
     case "syntax": {
       const { from, to } = request.command;
       const read = owner.source.snapshot();
