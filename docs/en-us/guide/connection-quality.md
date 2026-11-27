@@ -5,19 +5,30 @@
 ## Network and proxy tests
 
 In **Settings → Network & proxies → Test connection**, choose a route and destination,
-then select **Test connection**. Results appear directly below the button: median connection
-latency, fastest and slowest setup, spread and successful attempts. Expand individual results
-to inspect each timing or failure. **Test again** repeats the measurement. Editing the
-destination, proxy or default route invalidates previous results.
+then select **Test connection**. Results appear below the button: median, fastest and slowest
+times, spread and successful attempts. Expand individual results to inspect each timing or failure.
+**Test again** repeats the measurement. Editing the destination, proxy or default route invalidates results.
 
-The test makes up to three TCP connections within a total 15-second budget, using the selected
-direct, system-proxy or saved-proxy route. It never falls back to direct after a proxy failure.
-Timings include DNS, TCP setup and required proxy negotiation; they are not ping RTT, packet
-loss or bandwidth measurements and do not verify TLS or application functionality. Temporary
-connections close after measurement. Failures are excluded from timing statistics;
-sub-millisecond values display as `<1 ms`, and unavailable timings as `—`.
-Median setup at most 100 ms is low latency, at most 300 ms is moderate, and higher is high;
-partial failures are reported separately.
+On port 443, the test makes up to three independent HTTPS HEAD requests through the selected route.
+All primary timing statistics and quality labels use successful requests. Each duration includes DNS,
+connection setup, verified TLS and waiting for response headers. Connections are not reused, redirects
+are not followed, and client initialization is excluded from network timings. Any HTTP status proves a
+response, without proving login, download or application success. Even when a local or transparent proxy
+immediately acknowledges TCP setup, success requires an HTTPS response; a local `<1 ms` acknowledgement
+cannot stand in for the destination request time.
+
+Other ports measure up to three TCP/proxy tunnel setups, including DNS, TCP and proxy negotiation.
+They send no application data and do not verify TLS. Local or transparent proxies may acknowledge before
+the destination is ready, so these values describe tunnel setup only. Neither test measures ping RTT,
+packet loss or bandwidth, and neither tests target login.
+
+Route resolution and all samples share a 15-second budget. Tests use the selected direct, system or
+saved proxy route, never falling back to direct after proxy failure. Temporary connections close after
+measurement. Failures are excluded rather than counted as zero; sub-millisecond values display as
+`<1 ms`, zero spread as `0 ms`, and unavailable timings as `—`. A median at most 100 ms is fast, at most
+300 ms is moderate, and higher is slow. Partial failures or incomplete HTTPS sampling are reported
+separately. Success counts refer to the displayed measurement type; HTTPS failures cannot appear as
+successful TCP samples.
 
 ## SSH host tests
 
@@ -54,9 +65,7 @@ at once. Temporary SSH connections are closed after probing.
 
 The proxy test defaults to the marketplace route, including its feature override.
 You may instead select the update route, inherited default, system, direct, or an
-explicit profile. TCP latency and HTTPS availability are separate results. On port
-443, a verified HTTPS HEAD request also checks TLS/HTTP through the selected route;
-other ports remain TCP-only. A successful CONNECT response alone cannot prove that
+explicit profile. Port 443 shows three HTTPS request statistics; other ports remain TCP-only. A successful CONNECT response alone cannot prove that
 GitHub or its redirected release-asset host is reachable. No certificate validation
 is disabled and a failed proxy route never silently switches to direct access.
 Premature TLS EOF in plugin GET requests is retried at most twice through the same

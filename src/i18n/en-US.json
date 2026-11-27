@@ -2164,7 +2164,7 @@
     "qualityLatency": "TCP/tunnel setup (median)",
     "qualityFastest": "Fastest",
     "qualitySlowest": "Slowest",
-    "qualityHint": "Measures three TCP/proxy tunnel setup times, not ping RTT or bandwidth. Local or transparent proxies may acknowledge connections before the destination is ready; sub-millisecond results do not prove low end-to-end latency. On port 443, the separate HTTPS probe includes connection setup, TLS and waiting for response headers; it is not a download speed test. Other ports send no application data; login is not tested.",
+    "qualityHint": "On port 443, measures up to three independent HTTPS HEAD requests through the selected route, including DNS, connection setup, verified TLS and waiting for response headers. No connection reuse or redirects. Successful requests determine all timing statistics and quality; failures are excluded. Other ports measure TCP/proxy tunnel setup only; local or transparent proxies can acknowledge before the destination is ready. These times are not ping RTT or bandwidth. No target login is tested. Total budget: 15 seconds.",
     "quality": {
       "fast": "TCP/tunnel established · fast setup",
       "normal": "TCP/tunnel established · moderate setup time",
@@ -2172,10 +2172,20 @@
       "unstable": "Some connection attempts failed",
       "unreachable": "Connection failed"
     },
+    "httpsRequestFailed": "HTTPS request failed. Check the selected route, proxy and destination.",
     "httpsFailed": "The TCP proxy tunnel works, but HTTPS/TLS failed. Check proxy routing, the node and destination before downloading plugins.",
     "httpsPassed": "HTTPS responded (HTTP {{status}}); other download domains may differ.",
     "testMarketplaceRoute": "Current marketplace route",
     "testUpdatesRoute": "Current update route",
+    "httpsLatency": "HTTPS request (median)",
+    "httpsLastResponse": "Last HTTP response: {{status}}; other download domains may differ.",
+    "httpsQuality": {
+      "fast": "HTTPS responded · fast request",
+      "normal": "HTTPS responded · moderate request time",
+      "slow": "HTTPS responded · slow request",
+      "unstable": "Some HTTPS requests failed",
+      "unreachable": "HTTPS connection failed"
+    },
     "httpsDuration": "HTTPS probe elapsed time"
   },
   "pluginErrors": {

@@ -190,9 +190,17 @@ async fn tcp_success_does_not_imply_https_success() {
         .await
         .unwrap();
     assert_eq!(tcp.successful, 3);
-    let https = check_https("archive.example", &proxy).await;
+    let https = check_https(
+        "archive.example",
+        &proxy,
+        tokio::time::Instant::now() + BUDGET,
+    )
+    .await;
     assert!(!https.success);
-    assert_eq!(https.error.unwrap().to_string(), "network.httpsFailed");
+    assert_eq!(
+        https.error.unwrap().to_string(),
+        "network.httpsRequestFailed"
+    );
     server.await.unwrap();
 }
 
@@ -211,5 +219,94 @@ async fn expired_measurement_budget_never_starts_another_tcp_sample() {
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(result.attempts, 0);
     assert_eq!(result.quality, Quality::Unreachable);
+    assert_eq!(result.last_error.unwrap().to_string(), "network.timeout");
+}
+
+#[tokio::test]
+async fn https_statistics_use_completed_requests_and_exclude_failures() {
+    let calls = AtomicUsize::new(0);
+    let result = measure_https(
+        || {
+            let index = calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                HttpsQuality {
+                    elapsed_ms: [352, 5, 448][index],
+                    success: index != 1,
+                    status: (index != 1).then_some(200),
+                    error: (index == 1).then(|| AppError::validation("network.httpsRequestFailed")),
+                }
+            }
+        },
+        tokio::time::Instant::now() + BUDGET,
+    )
+    .await;
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(result.measurement, "https");
+    assert_eq!(result.samples_ms, vec![Some(352), None, Some(448)]);
+    assert_eq!(result.median_ms, Some(400));
+    assert_eq!(result.spread_ms, Some(96));
+    assert_eq!(result.quality, Quality::Unstable);
+    assert!(result.last_error.is_some());
+}
+
+#[tokio::test]
+async fn instant_connect_acknowledgement_cannot_claim_https_success() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        for _ in 0..SAMPLES {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                header.push(stream.read_u8().await.unwrap());
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            let mut hello = [0; 8192];
+            assert!(stream.read(&mut hello).await.unwrap() > 0);
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
+    });
+    let deadline = tokio::time::Instant::now() + BUDGET;
+    let result = measure_https(
+        || check_https("archive.example", &proxy, deadline),
+        deadline,
+    )
+    .await;
+    assert_eq!(result.attempts, 3);
+    assert_eq!(result.successful, 0);
+    assert_eq!(result.median_ms, None);
+    assert_eq!(result.samples_ms, vec![None; 3]);
+    assert_eq!(result.quality, Quality::Unreachable);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn https_deadline_includes_all_samples_and_preserves_partial_success() {
+    let calls = AtomicUsize::new(0);
+    let result = measure_https(
+        || {
+            let index = calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if index > 0 {
+                    std::future::pending::<()>().await;
+                }
+                HttpsQuality {
+                    elapsed_ms: 352,
+                    success: true,
+                    status: Some(200),
+                    error: None,
+                }
+            }
+        },
+        tokio::time::Instant::now() + Duration::from_millis(20),
+    )
+    .await;
+    assert_eq!(result.attempts, 2);
+    assert_eq!(result.successful, 1);
+    assert_eq!(result.median_ms, Some(352));
+    assert_eq!(result.quality, Quality::Unstable);
     assert_eq!(result.last_error.unwrap().to_string(), "network.timeout");
 }
