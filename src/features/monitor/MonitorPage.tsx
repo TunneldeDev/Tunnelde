@@ -4,8 +4,7 @@ import { useRemoteMonitor } from "./runtime/sampling";
 import { useMonitor } from "@/store/monitor";
 import { useMonitorHistory, type MonitorSample } from "@/store/monitorHistory";
 import { useSsh } from "@/store/ssh";
-import { PerformanceDetails } from "./components/PerformanceDetails";
-import { MonitorCharts } from "./components/MonitorCharts";
+import { MonitorDashboard } from "./components/MonitorDashboard";
 import { MonitorSurface } from "./components/MonitorSurface";
 
 const EMPTY: MonitorSample[] = [];
@@ -38,10 +37,12 @@ export function MonitorPage({ sessionId, active = true }: { sessionId: string; a
       </header>
       {entry?.error ? <p className="panel__error">{entry.error}</p> : null}
       <MonitorSurface session={session} samples={samples} entry={entry} visible={active}>
-        <div className="monitor-performance">
-          <MonitorCharts samples={samples} />
-          <PerformanceDetails stats={entry?.stats ?? null} />
-        </div>
+        <MonitorDashboard
+          key={session.hostId}
+          hostId={session.hostId}
+          stats={entry?.stats ?? null}
+          samples={samples}
+        />
       </MonitorSurface>
     </div>
   );

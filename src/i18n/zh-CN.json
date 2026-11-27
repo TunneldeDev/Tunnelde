@@ -3161,5 +3161,21 @@
     "currentValue": "当前值",
     "defaultValue": "默认值",
     "detailsHint": "按需读取；保存前当前值可能与磁盘记录不同。窗口当前值与保存值使用物理像素，默认尺寸使用逻辑像素。"
+  },
+  "monitorLayout": {
+    "edit": "编辑布局",
+    "done": "完成",
+    "reset": "恢复默认布局",
+    "autoHint": "卡片随面板宽度自动排列。",
+    "editHint": "拖动标题左侧手柄排序，拖动右下角调整大小，修改自动保存。",
+    "reorder": "调整{{name}}顺序 · 上下方向键移动",
+    "earlier": "将{{name}}前移",
+    "later": "将{{name}}后移",
+    "full": "将{{name}}设为整行宽度",
+    "half": "将{{name}}设为半行宽度",
+    "resetWidget": "重置{{name}}大小",
+    "resize": "调整{{name}}大小 · 方向键调整宽高 · Escape 取消拖动",
+    "moved": "已移动{{name}}",
+    "saveError": "无法保存监控布局，请检查本地存储后重试。"
   }
 }

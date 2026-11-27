@@ -26,3 +26,5 @@ Acceptance covers legacy migration, native restoration after an update, rehydrat
 See the [UI surface catalog](ui-surface-catalog.md) for visual conventions.
 
 Each category has an independent disclosure that loads concrete records on demand, labels saved/current/default values, and allows selecting long paths. Expanding never selects a reset. Failed reads show an error and refresh action. Reset invalidates old details. Current/saved window geometry uses physical pixels; default sizes use logical pixels, as explained in the details. Workspace details expose only known layout/path fields, never editor content.
+
+Monitoring card order, column spans and heights are panel habits stored per host and retained across upgrades. Resetting panel habits clears all monitor layouts. Narrow panels temporarily use one column without replacing saved wide-panel dimensions.

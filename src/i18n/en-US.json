@@ -3161,5 +3161,21 @@
     "currentValue": "Current",
     "defaultValue": "Default",
     "detailsHint": "Loaded on demand. Current values can differ from disk until saved. Current and saved window geometry uses physical pixels; default sizes use logical pixels."
+  },
+  "monitorLayout": {
+    "edit": "Edit layout",
+    "done": "Done",
+    "reset": "Reset layout",
+    "autoHint": "Cards adapt to the panel width.",
+    "editHint": "Drag a header grip to reorder; drag the bottom-right corner to resize. Changes save automatically.",
+    "reorder": "Reorder {{name}} · use Up/Down arrows",
+    "earlier": "Move {{name}} earlier",
+    "later": "Move {{name}} later",
+    "full": "Make {{name}} full width",
+    "half": "Make {{name}} half width",
+    "resetWidget": "Reset {{name}} size",
+    "resize": "Resize {{name}} · arrow keys adjust width and height · Escape cancels dragging",
+    "moved": "{{name}} moved",
+    "saveError": "Could not save the monitor layout. Check local storage and try again."
   }
 }
