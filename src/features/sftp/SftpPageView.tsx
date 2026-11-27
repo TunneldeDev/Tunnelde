@@ -2444,7 +2444,12 @@ export function SftpPageView({
             open: (entry, preview) => (preview ? previewEntry(id, entry) : applyEntry(id, entry)),
           }}
         >
-          <div className={columnView ? "sftp-miller" : "sftp-details"}>
+          <div
+            className={cn(
+              columnView ? "sftp-miller" : "sftp-details",
+              dropTarget?.pane === id && dropTarget.path === "" && "is-drop",
+            )}
+          >
             {columnView
               ? state.ancestors.map((listing, columnIndex) => (
                   <div className="sftp-miller__column" key={listing.path}>
