@@ -111,15 +111,15 @@ describe("pointer drag lifecycle", () => {
     expect(view.move.mock.lastCall![0].clientX).toBe(180);
   });
 
-  it("cancels when motion reports that the primary button was already released", () => {
+  it("commits the release position when a WebView reports a buttonless final move", () => {
     const view = setup();
     fireEvent(view.handle, pointer("pointerdown", 100));
     const hover = new MouseEvent("pointermove", { bubbles: true, clientX: 150, buttons: 0 });
     Object.defineProperty(hover, "pointerId", { value: 1 });
     fireEvent(window, hover);
     fireEvent(window, pointer("pointerup", 150));
-    expect(view.cancel).toHaveBeenCalledOnce();
-    expect(view.commit).not.toHaveBeenCalled();
-    expect(view.move).not.toHaveBeenCalled();
+    expect(view.cancel).not.toHaveBeenCalled();
+    expect(view.commit).toHaveBeenCalledOnce();
+    expect(view.move.mock.lastCall![0].clientX).toBe(150);
   });
 });
