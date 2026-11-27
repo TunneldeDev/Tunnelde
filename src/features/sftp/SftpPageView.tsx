@@ -1465,8 +1465,8 @@ export function SftpPageView({
     }
   };
 
-  const copyPath = (entry: FileEntry) => {
-    copyText(entry.path);
+  const copyPath = (id: PaneId, entry: FileEntry) => {
+    copyText(pathForEditing(entry.path, panesRef.current[id].source));
   };
 
   const previewEntry = (id: PaneId, entry: FileEntry) => {
@@ -1552,7 +1552,7 @@ export function SftpPageView({
         separatorBefore: true,
         onSelect: () => startRename(id, entry),
       });
-      items.push({ label: t("sftp.copyPath"), onSelect: () => copyPath(entry) });
+      items.push({ label: t("sftp.copyPath"), onSelect: () => copyPath(id, entry) });
       items.push({
         label: t("common.delete"),
         separatorBefore: true,
