@@ -104,3 +104,12 @@ The retired monitoring inspector is no longer mounted, sampled or allocated widt
 Task entry points determine presentation: the activity bar toggles the sidebar panel, while the status entry (including its standalone button when the status bar is hidden) toggles a bottom-right popover. Neither inherits the other entry’s presentation preference. Each status open resets the bottom-right anchor, recovering old invalid coordinates; dragging and resizing remain available during that opening, with content and task ownership retained. A panel transferred to another native window still focuses its sole owner. Only visible floating frames may commit geometry; docked, hidden, background or zero-size measurements must never overwrite it.
 
 Monitoring dashboard: keep each resource’s chart, current reading and hardware details in one card. Columns follow the panel container, not the window: below 640px use one column, otherwise a 12-column grid. Card bodies scroll independently; long device names, addresses and unavailable readings must not cause overflow. Normal mode shows business data; Edit layout reveals ordering, full/half width, reset and corner resize controls. Earlier/later buttons and arrow keys supplement drag ordering. Resize previews once per frame, saves on release and rolls back on Escape or interruption. Store a versioned layout per host and clear it with panel habits. Layout changes retain sampling, chart DOM and history.
+
+## Network connection test timings
+
+Settings → Network & proxies → Test connection: `features/settings/components/NetworkConnectionTestView.tsx`.
+Reuse themed cards, a responsive metric grid and monospace numbers. On port 443, primary timings, success
+counts and quality colors all use three independent HTTPS requests; other ports explicitly show TCP/tunnel
+setup. Failures never count as zero, zero spread shows 0 ms, and aggregate partial-success classification
+takes precedence over the final sample. Keep the explanation visible and collapse to one column in narrow
+panels. Invalidate old results when routes or measurement semantics change; never mix timing definitions.

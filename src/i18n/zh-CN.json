@@ -2164,7 +2164,7 @@
     "qualityLatency": "TCP/代理通道建立（中位数）",
     "qualityFastest": "最快",
     "qualitySlowest": "最慢",
-    "qualityHint": "测试三次 TCP/代理通道建立耗时，不是 ping 往返延迟或带宽。本地或透明代理可能在目标就绪前确认连接，低于 1 毫秒不代表端到端延迟低。443 端口单独的 HTTPS 探测包含连接建立、TLS 握手及等待响应头，不是下载测速。其他端口不发送应用数据，不测试登录。",
+    "qualityHint": "443 端口沿所选线路最多测试三次独立 HTTPS HEAD 请求，包含 DNS、连接建立、证书验证的 TLS 握手及等待响应头；不复用连接、不跟随重定向。所有耗时统计及质量判定均基于成功请求，失败不计为零。其他端口仅测 TCP/代理通道建立，本地或透明代理可能在目标就绪前确认连接。不是 ping 往返延迟或带宽测试，不测试目标登录。总时限 15 秒。",
     "quality": {
       "fast": "TCP/代理通道已建立 · 建立较快",
       "normal": "TCP/代理通道已建立 · 建立耗时一般",
@@ -2172,10 +2172,20 @@
       "unstable": "部分连接尝试失败",
       "unreachable": "连接失败"
     },
+    "httpsRequestFailed": "HTTPS 请求失败，请检查所选线路、代理及目标地址。",
     "httpsFailed": "TCP 代理通道已连通，但 HTTPS/TLS 握手失败；此线路暂不能证明可下载插件。请检查代理规则、节点与目标站点。",
     "httpsPassed": "HTTPS 已响应（HTTP {{status}}）；不代表其他下载域名也可达。",
     "testMarketplaceRoute": "插件市场当前线路",
     "testUpdatesRoute": "软件更新当前线路",
+    "httpsLatency": "HTTPS 请求耗时（中位数）",
+    "httpsLastResponse": "最近一次 HTTP 响应：{{status}}；其他下载域名可能不同。",
+    "httpsQuality": {
+      "fast": "HTTPS 已响应 · 请求较快",
+      "normal": "HTTPS 已响应 · 请求耗时一般",
+      "slow": "HTTPS 已响应 · 请求较慢",
+      "unstable": "部分 HTTPS 请求失败",
+      "unreachable": "HTTPS 连接失败"
+    },
     "httpsDuration": "HTTPS 探测总耗时"
   },
   "pluginErrors": {

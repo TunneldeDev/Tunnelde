@@ -46,9 +46,16 @@ export function NetworkConnectionTestView({
   const feature = proxy.startsWith("feature:") ? proxy.slice("feature:".length) : null;
   const selected =
     (feature ? settings.features[feature] : proxy) || settings.defaultProxy || "system";
-  const scope = JSON.stringify([selected, settings.profiles, host.trim(), port]);
+  const scope = JSON.stringify([
+    "https-samples-v1",
+    selected,
+    settings.profiles,
+    host.trim(),
+    port,
+  ]);
   const quality = result?.scope === scope ? result.quality : null;
   const error = result?.scope === scope ? result.error : null;
+  const isHttps = quality?.measurement === "https";
   const valid =
     host.trim().length > 0 && /^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535;
   const choices = [
@@ -148,16 +155,18 @@ export function NetworkConnectionTestView({
               : (error ??
                 (quality
                   ? t(
-                      quality.https?.success === false
-                        ? "network.httpsFailed"
-                        : `network.quality.${quality.quality}`,
+                      isHttps
+                        ? `network.httpsQuality.${quality.quality}`
+                        : quality.https?.success === false
+                          ? "network.httpsFailed"
+                          : `network.quality.${quality.quality}`,
                     )
                   : ""))}
           </p>
         </div>
         {quality ? (
           <section
-            className={`network-quality is-${quality.https?.success === false ? "unreachable" : quality.quality}`}
+            className={`network-quality is-${!isHttps && quality.https?.success === false ? "unreachable" : quality.quality}`}
             aria-label={t("connect.testTitle")}
           >
             <div className="network-quality__title">
@@ -166,12 +175,20 @@ export function NetworkConnectionTestView({
             </div>
             <dl className="network-quality__metrics">
               {[
-                [t("network.qualityLatency"), ms(quality.medianMs)],
+                [
+                  t(isHttps ? "network.httpsLatency" : "network.qualityLatency"),
+                  ms(quality.medianMs),
+                ],
                 [t("connect.testSuccess"), `${quality.successful} / ${quality.attempts}`],
                 [t("network.qualityFastest"), ms(quality.minMs)],
                 [t("network.qualitySlowest"), ms(quality.maxMs)],
-                [t("connect.testSpread"), ms(quality.spreadMs)],
-                ...(quality.https
+                [
+                  t("connect.testSpread"),
+                  quality.spreadMs === 0
+                    ? t("connect.testMs", { value: "0" })
+                    : ms(quality.spreadMs),
+                ],
+                ...(!isHttps && quality.https
                   ? [[t("network.httpsDuration"), ms(quality.https.elapsedMs)]]
                   : []),
               ].map(([label, value]) => (
@@ -189,14 +206,14 @@ export function NetworkConnectionTestView({
                 ))}
               </ol>
             </details>
-            {quality.https ? (
+            {quality.https && (!isHttps || quality.https.success) ? (
               <p
                 className={
                   quality.https.success ? "network-settings__result" : "network-quality__error"
                 }
               >
                 {quality.https.success
-                  ? t("network.httpsPassed", {
+                  ? t(isHttps ? "network.httpsLastResponse" : "network.httpsPassed", {
                       status: quality.https.status,
                     })
                   : quality.https.error

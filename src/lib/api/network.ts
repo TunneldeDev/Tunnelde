@@ -14,6 +14,7 @@ export interface NetworkSettings {
   features: Record<string, string>;
 }
 export interface NetworkConnectionQuality {
+  measurement?: "tcp" | "https";
   https?: {
     elapsedMs: number;
     success: boolean;

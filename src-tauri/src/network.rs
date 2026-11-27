@@ -17,6 +17,7 @@ pub(crate) mod proxy;
 pub(crate) use process::ProcessEnvironment;
 pub(crate) mod requests;
 mod transport;
+#[cfg(test)]
 pub(super) use http::client_for_proxy as http_client_for_proxy;
 pub(crate) use http::{http_client, HttpClients};
 pub use proxy::url as proxy_url;

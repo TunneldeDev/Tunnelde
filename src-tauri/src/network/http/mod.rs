@@ -167,12 +167,27 @@ pub(crate) async fn http_client(app: &AppHandle, feature: &str) -> AppResult<req
 /// Shared HTTPS transport for real requests and proxy diagnostics. Explicit
 /// routes always disable ambient proxy inheritance; TLS verification stays on.
 pub(crate) fn client_for_proxy(url: Option<&str>) -> AppResult<reqwest::Client> {
+    build_client(url, false)
+}
+
+pub(crate) fn diagnostic_client_for_proxy(url: &str) -> AppResult<reqwest::Client> {
+    build_client(Some(url), true)
+}
+
+fn build_client(url: Option<&str>, diagnostic: bool) -> AppResult<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .https_only(true)
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(300))
         .redirect(reqwest::redirect::Policy::limited(5))
         .user_agent(concat!("Tunnelde/", env!("CARGO_PKG_VERSION")));
+    if diagnostic {
+        // Measure the selected endpoint, without redirecting to a different host
+        // or reusing an already established connection between samples.
+        builder = builder
+            .redirect(reqwest::redirect::Policy::none())
+            .pool_max_idle_per_host(0);
+    }
     // Some Windows proxy routes close the Rustls handshake even when the same
     // verified HTTPS request succeeds through Schannel. Use the native backend
     // consistently for diagnostics and real traffic; never disable verification
