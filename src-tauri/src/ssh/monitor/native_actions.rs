@@ -50,7 +50,7 @@ fn win_guard(pid: u32, start: Option<u64>) -> String {
 }
 
 fn win_script(body: &str, error: &str) -> String {
-    powershell(&format!("$ErrorActionPreference='Stop'; [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); try {{ {body} }} catch {{ if ($_.Exception.Message -like 'monitor.*') {{ [Console]::Write($_.Exception.Message) }} else {{ [Console]::Write('{error}') }}; exit 1 }}"))
+    powershell(&format!("$ErrorActionPreference='Stop'; [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); try {{ {body} }} catch {{ if ($_.Exception.Message -like 'monitor.*') {{ [Console]::Write($_.Exception.Message) }} else {{ [Console]::Write('{error}: '+$_.Exception.Message) }}; exit 1 }}"))
 }
 
 pub(super) fn win_kill(pid: u32, start: Option<u64>) -> String {
@@ -65,11 +65,7 @@ pub(super) fn win_kill(pid: u32, start: Option<u64>) -> String {
 
 pub(super) fn win_tree(pid: u32, start: u64) -> String {
     let guard = win_guard(pid, Some(start));
-    let ongoing = guard.replacen(
-        "if ($null -eq $target) { throw 'monitor.processChanged' }",
-        "if ($null -eq $target) { break }",
-        1,
-    );
+    let ongoing = format!("try {{ {guard} }} catch {{ if ($null -eq $target -or $target.HasExited) {{ break }}; throw }}");
     win_script(
         &format!(
             r#"
@@ -96,11 +92,19 @@ foreach ($id in @($depth.Keys | Sort-Object -Property {{ $depth[$_] }} -Descendi
     $row=$rows[$id]; if ($null -eq $row -or $null -eq $row.CreationDate) {{ continue }}
     $child=Get-Process -Id $id -ErrorAction SilentlyContinue
     if ($null -eq $child) {{ continue }}
+    try {{
     $null=$child.Handle
+    if ($child.HasExited) {{ continue }}
     if (([DateTimeOffset]$child.StartTime).ToUnixTimeMilliseconds() -ne ([DateTimeOffset]$row.CreationDate).ToUnixTimeMilliseconds()) {{ continue }}
     $currentRow=Get-CimInstance Win32_Process -Filter "ProcessId=$id"
     if ($null -eq $currentRow -or $currentRow.ParentProcessId -ne $row.ParentProcessId) {{ continue }}
     $child.Kill()
+    }} catch {{
+        # A child may exit between enumeration, opening its handle and termination.
+        # HasExited refers to the same process object, so PID reuse is not accepted.
+        if ($child.HasExited) {{ continue }}
+        throw ('monitor.killFailed: '+$id+': '+$_.Exception.Message)
+    }}
 }}
 [Console]::Write('TUNNELDE_OK')
 "#
@@ -287,6 +291,59 @@ mod windows_tests {
         for child in children.trim().split(',') {
             let alive = run(&powershell(&format!("if (Get-Process -Id {child} -ErrorAction SilentlyContinue) {{ [Console]::Write('alive') }}")));
             assert!(alive.is_empty(), "child {child} survived tree termination");
+        }
+    }
+
+    #[test]
+    fn windows_tree_ignores_exits_while_opening_handles_and_terminating() {
+        use base64::Engine;
+        let command = win_tree(42, 1795831323000);
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(command.split_whitespace().last().unwrap())
+            .unwrap();
+        let body = String::from_utf16(
+            &bytes
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        for mode in ["handle", "kill"] {
+            // Deterministic exits at the two race boundaries in the production script.
+            let mock = format!(
+                r#"
+$script:mode='{mode}'
+$stamp=[DateTimeOffset]::FromUnixTimeMilliseconds(1795831323000).LocalDateTime
+$script:root=[pscustomobject]@{{Handle=1;StartTime=$stamp;HasExited=$false}}
+$script:root | Add-Member -MemberType ScriptMethod -Name Kill -Value {{}}
+$script:child=[pscustomobject]@{{StartTime=$stamp;HasExited=$false}}
+$script:child | Add-Member -MemberType ScriptProperty -Name Handle -Value {{
+    if ($script:mode -eq 'handle') {{ $this.HasExited=$true; throw 'process exited during handle acquisition' }}
+    1
+}}
+$script:child | Add-Member -MemberType ScriptMethod -Name Kill -Value {{
+    $this.HasExited=$true; throw 'process exited during termination'
+}}
+$script:rootRow=[pscustomobject]@{{ProcessId=[uint32]42;ParentProcessId=[uint32]1;CreationDate=$stamp}}
+$script:childRow=[pscustomobject]@{{ProcessId=[uint32]43;ParentProcessId=[uint32]42;CreationDate=$stamp}}
+function Get-Process {{
+    param($Id,$ErrorAction)
+    if ($Id -eq 42) {{ return $script:root }}
+    if ($Id -eq 43) {{ return $script:child }}
+}}
+function Get-CimInstance {{
+    param($ClassName,$Filter)
+    if ($Filter -eq 'ProcessId=42') {{ return $script:rootRow }}
+    if ($Filter -eq 'ProcessId=43') {{ return $script:childRow }}
+    @($script:rootRow,$script:childRow)
+}}
+"#
+            );
+            assert_eq!(
+                run(&powershell(&format!("{mock}\n{body}"))),
+                "TUNNELDE_OK",
+                "{mode}"
+            );
         }
     }
 }
