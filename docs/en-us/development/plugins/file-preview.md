@@ -102,3 +102,5 @@ and retains its layout slot. Reopening a saved empty slot never rereads an old
 remote file. The command palette offers **Show file preview panel**. Discovery
 reports `filePreview.presentations`; applications without dock/undock support must
 not be inferred to support it from the schema version alone.
+
+Previews opened from the host file browser support arrow-key navigation through visible sorted files, excluding folders, and Space to close. Docked previews follow single-file selection in their originating pane. Only the current target is read; changing targets releases old reads and media tickets. Inputs, buttons and media controls retain their keyboard behavior. The host implements these interactions, so declarative Common File Previews providers need no scripts or extra permissions.

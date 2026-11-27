@@ -967,6 +967,8 @@ describe("SftpPage", () => {
     });
     expect(useWorkspace.getState().openEditor).not.toHaveBeenCalled();
     expect(fsMock.openLocal).not.toHaveBeenCalled();
+    expect(useFilePreview.getState().browser?.paths).toContain("/srv/app/readme.md");
+    expect(useFilePreview.getState().browser?.paths).not.toContain("/srv/app/logs");
   });
   it("opens a folder in the next column and preserves the parent for changing branches", async () => {
     fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {

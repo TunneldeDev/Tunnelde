@@ -1,10 +1,11 @@
+import { previewKeyDown } from "./preview/previewKeyboard";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useWindowViews, windowViews, renderablePanel } from "@/lib/panels/windowViews";
 import { usePanelWindows } from "@/store/panelWindows";
 import { usePreviewReadSource } from "./preview/usePreviewReadSource";
 import { previewWindowData } from "./preview/windowModel";
 import { NativePreviewContent } from "./preview/NativePreviewContent";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarPortal } from "@/components/layout/SidebarDock";
 import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
@@ -63,7 +64,7 @@ export function FilePreview() {
       current.close();
   }, [file, id, presentation, panel, sidebarVisible, activeSidebar, preserveNative]);
   return file && (presentation === "quickLook" || panelOpen || preserveNative) ? (
-    <Preview key={id} id={id!} file={file} presentation={presentation} />
+    <Preview id={id!} file={file} presentation={presentation} />
   ) : (
     <SidebarPortal view="filePreview">
       <PreviewPlaceholder />
@@ -93,6 +94,12 @@ function Preview({
 }) {
   const { t } = useTranslation();
   const resolveFileIcon = useFileIconResolver();
+  const focusPreview = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node && presentation === "quickLook") node.focus({ preventScroll: true });
+    },
+    [presentation],
+  );
   const plugins = usePlugins((state) => state.items);
   const providers = useMemo(
     () => previewProviders(plugins).filter((provider) => matchesPreview(provider, file.path)),
@@ -177,7 +184,14 @@ function Preview({
         </>
       }
     >
-      <div className="file-preview__content">
+      <div
+        className="file-preview__content"
+        tabIndex={-1}
+        ref={focusPreview}
+        onKeyDownCapture={(event) =>
+          previewKeyDown(event, useFilePreview.getState().navigate, context.close)
+        }
+      >
         <div className="file-preview__target">
           <FileTypeIcon icon={resolveFileIcon(file.path)} />
           <div>

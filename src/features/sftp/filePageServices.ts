@@ -69,7 +69,12 @@ export interface FilePageServices {
   confirm(options: ConfirmOptions): void;
   openConnect(host: Host, after: "sftp"): void;
   openEditor(session: SshSession, path: string): void;
-  preview(path: string, source: FsSource): void;
+  preview(
+    path: string,
+    source: FsSource,
+    browser?: { id: string; paths: string[] },
+    follow?: boolean,
+  ): void;
   previewKind(path: string): string;
   setClip(clip: PasteClip | null): void;
   copyText(text: string): void;
