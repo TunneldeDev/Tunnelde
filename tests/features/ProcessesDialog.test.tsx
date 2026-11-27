@@ -280,7 +280,12 @@ it("opens row actions with pointer and keyboard, and confirms tree termination",
   useContextMenu.getState().close();
 });
 
-it("resolves executable location on the remote session and opens its directory", async () => {
+it.each([
+  ["/opt/bin/worker", "/opt/bin"],
+  ["/C:/Program Files/Worker/worker.exe", "/C:/Program Files/Worker"],
+  ["/C:/worker.exe", "/C:/"],
+])("opens the remote executable directory for %s", async (executable, directory) => {
+  remoteProcessExecutable.mockResolvedValue(executable);
   remoteProcesses.mockResolvedValue([process()]);
   const { useWorkspace } = await import("@/store/workspace");
   const open = vi.spyOn(useWorkspace.getState(), "openFilePane");
@@ -292,7 +297,7 @@ it("resolves executable location on the remote session and opens its directory",
   expect(open).toHaveBeenCalledWith(
     expect.objectContaining({
       source: { kind: "remote", sessionId: "s" },
-      path: "/opt/bin",
+      path: directory,
       ownerSessionId: "s",
     }),
     "worker",

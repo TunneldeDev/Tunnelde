@@ -179,10 +179,12 @@ export function useProcessManager(sessionId: string, active = true) {
         );
         if (!present()) return;
         const session = useSsh.getState().sessions.find((item) => item.id === sessionId)!;
+        const parent = executable.slice(0, executable.lastIndexOf("/")) || "/";
+        const directory = /^\/[A-Za-z]:$/.test(parent) ? `${parent}/` : parent;
         useWorkspace.getState().openFilePane(
           {
             source: { kind: "remote", sessionId },
-            path: executable.slice(0, executable.lastIndexOf("/")) || "/",
+            path: directory,
             ownerSessionId: sessionId,
             remoteIdentity: { hostId: session.hostId, address: session.address },
           },

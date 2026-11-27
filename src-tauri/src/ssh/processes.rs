@@ -3,7 +3,10 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use super::monitor::RemoteProcess;
+
+pub(super) mod platform;
 use crate::error::{AppError, AppResult};
+use platform::Platform;
 
 // Read-only Linux sampling. ps supplies identity; /proc supplies interval counters.
 // A disappearing or inaccessible process is skipped by getline without aborting the scan.
@@ -87,6 +90,7 @@ struct Socket {
 
 #[derive(Default)]
 struct Sample {
+    platform: Platform,
     cpu: u64,
     cores: u32,
     uptime: f64,
@@ -199,6 +203,13 @@ fn parse(raw: &str) -> AppResult<Sample> {
         }
         let fields: Vec<_> = line.split_whitespace().collect();
         match section {
+            "process-native-meta" if fields.len() == 3 && fields[0] == "macos" => {
+                sample.platform = Platform::Macos;
+                sample.cores = fields[1].parse().unwrap_or(0);
+                sample.memory = fields[2].parse().unwrap_or(0);
+            }
+            "process-macos" => parse_macos(&fields, &mut sample),
+            "process-windows" => parse_windows(line, &mut sample)?,
             "processes" if fields.len() >= 10 => {
                 let Some(pid) = fields[0].parse::<u32>().ok() else {
                     continue;
@@ -329,9 +340,8 @@ fn parse(raw: &str) -> AppResult<Sample> {
             _ => {}
         }
     }
-    if sample.cpu == 0
+    if (sample.platform == Platform::Linux && (sample.cpu == 0 || sample.uptime <= 0.0))
         || sample.cores == 0
-        || sample.uptime <= 0.0
         || sample.items.is_empty()
         || sample.items.len() > 20_000
     {
@@ -357,6 +367,122 @@ fn parse(raw: &str) -> AppResult<Sample> {
     Ok(sample)
 }
 
+// lstart is intentionally encoded as local calendar digits on macOS. The action
+// guard uses the same representation; it is stable and within JavaScript's safe integers.
+fn macos_start(value: &str) -> Option<u64> {
+    chrono::NaiveDateTime::parse_from_str(value, "%a %b %e %H:%M:%S %Y")
+        .ok()?
+        .format("%Y%m%d%H%M%S")
+        .to_string()
+        .parse()
+        .ok()
+}
+
+fn macos_cpu(value: &str) -> Option<u64> {
+    let (days, clock) = value
+        .split_once('-')
+        .map_or(Some((0, value)), |(days, clock)| {
+            Some((days.parse::<u64>().ok()?, clock))
+        })?;
+    let mut parts = clock.rsplit(':');
+    let seconds: f64 = parts.next()?.parse().ok()?;
+    let minutes: u64 = parts.next()?.parse().ok()?;
+    let hours: u64 = parts.next().map(str::parse).transpose().ok()?.unwrap_or(0);
+    if parts.next().is_some() || !seconds.is_finite() || !(0.0..60.0).contains(&seconds) {
+        return None;
+    }
+    let whole = days
+        .checked_mul(86400)?
+        .checked_add(hours.checked_mul(3600)?)?
+        .checked_add(minutes.checked_mul(60)?)?;
+    whole
+        .checked_mul(1000)?
+        .checked_add((seconds * 1000.0).round() as u64)
+}
+
+fn parse_macos(fields: &[&str], sample: &mut Sample) {
+    if fields.len() < 15 {
+        return;
+    }
+    let Ok(pid) = fields[0].parse::<u32>() else {
+        return;
+    };
+    sample.items.push(RemoteProcess {
+        pid,
+        name: fields[14..].join(" "),
+        rss: fields[7].parse::<u64>().unwrap_or(0).saturating_mul(1024),
+        uid: fields[1].parse().ok(),
+        gid: fields[2].parse().ok(),
+        user_name: Some(fields[3].into()),
+        group_name: Some(fields[4].into()),
+        parent_pid: fields[5].parse().ok(),
+        state: Some(fields[6].into()),
+        ..RemoteProcess::default()
+    });
+    if let (Some(start), Some(cpu)) = (macos_start(&fields[8..13].join(" ")), macos_cpu(fields[13]))
+    {
+        sample.counters.insert(
+            pid,
+            Counter {
+                start,
+                cpu,
+                ..Counter::default()
+            },
+        );
+    }
+}
+
+fn parse_windows(line: &str, sample: &mut Sample) -> AppResult<()> {
+    #[derive(serde::Deserialize)]
+    struct Snapshot {
+        cores: u32,
+        memory: u64,
+        items: Vec<Entry>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Entry {
+        pid: u32,
+        name: String,
+        rss: u64,
+        parent_pid: Option<u32>,
+        threads: Option<u32>,
+        user_name: Option<String>,
+        start: Option<u64>,
+        cpu: Option<u64>,
+        read: Option<u64>,
+        written: Option<u64>,
+    }
+    let snapshot: Snapshot = serde_json::from_str(line)
+        .map_err(|_| AppError::Ssh("monitor.processUnsupported".into()))?;
+    sample.platform = Platform::Windows;
+    sample.cores = snapshot.cores;
+    sample.memory = snapshot.memory;
+    for entry in snapshot.items {
+        if let (Some(start), Some(cpu)) = (entry.start, entry.cpu) {
+            sample.counters.insert(
+                entry.pid,
+                Counter {
+                    start,
+                    cpu,
+                    read: entry.read,
+                    written: entry.written,
+                },
+            );
+        }
+        sample.items.push(RemoteProcess {
+            pid: entry.pid,
+            name: entry.name,
+            rss: entry.rss,
+            parent_pid: entry.parent_pid,
+            threads: entry.threads,
+            user_name: entry.user_name,
+            ..RemoteProcess::default()
+        });
+    }
+    Ok(())
+}
+
 fn rate(current: Option<u64>, previous: Option<u64>, seconds: f64) -> Option<f32> {
     let delta = current?.checked_sub(previous?)?;
     let result = (delta as f64 / seconds) as f32;
@@ -364,8 +490,22 @@ fn rate(current: Option<u64>, previous: Option<u64>, seconds: f64) -> Option<f32
 }
 
 fn calculate(next: &mut Sample, previous: Option<&Sample>, optional: bool) {
+    // Native counters use milliseconds of CPU time and a monotonic sampling interval.
+    // Unlike Linux, they do not require /proc system tick counters.
+    if next.platform != Platform::Linux {
+        next.uptime = previous.map_or(1.0, |old| {
+            old.uptime
+                + next
+                    .observed_at
+                    .unwrap()
+                    .duration_since(old.observed_at.unwrap())
+                    .as_secs_f64()
+        });
+        next.cpu = (next.uptime * 1000.0 * f64::from(next.cores)) as u64;
+    }
     let baseline = previous.filter(|old| {
-        next.uptime > old.uptime
+        next.platform == old.platform
+            && next.uptime > old.uptime
             && next.uptime - old.uptime <= 30.0
             && next.cpu > old.cpu
             && next.cores == old.cores
@@ -687,3 +827,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod native_tests;
