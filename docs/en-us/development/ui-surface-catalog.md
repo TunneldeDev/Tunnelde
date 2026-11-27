@@ -117,3 +117,5 @@ panels. Invalidate old results when routes or measurement semantics change; neve
 Text selections invert the region foreground and background across ordinary text, syntax-highlighted editors and terminals. Inactive selections remain legible; do not use a low-contrast accent tint.
 
 File-browser previews navigate the current pane’s visible sorted files, excluding folders. Arrow keys move between files; another Space closes the preview and held-key repeats do not close it. A docked preview follows single-file selection in its originating pane and reads only the current target. Target changes release old tickets and discard late results. Inputs, buttons and media controls retain their keys; Shift+arrows still select text. The host owns navigation without expanding plugin read authority.
+
+File-browser details draw one focus/drop frame on the fixed viewport, never an outline or shadow on scrolling content. Horizontal and vertical scrolling leave the frame in place. Column view marks the current column heading; row selection keeps its accent fill. Buttons and inputs retain their keyboard focus indicators.
