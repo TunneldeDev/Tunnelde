@@ -25,7 +25,13 @@ function Metric({ label, value, caption, samples, kind }: MetricProps) {
   );
 }
 
-export function MonitorCharts({ samples }: { samples: MonitorSample[] }) {
+export function MonitorMetric({
+  samples,
+  kind,
+}: {
+  samples: MonitorSample[];
+  kind: MetricProps["kind"];
+}) {
   const { t } = useTranslation();
 
   const last = samples[samples.length - 1];
@@ -47,40 +53,40 @@ export function MonitorCharts({ samples }: { samples: MonitorSample[] }) {
   const percentCaption = (summary: typeof cpuSummary) =>
     `${t("monitor.average")} ${formatPercent(summary.average)} · ${t("monitor.peak")} ${formatPercent(summary.max)}`;
 
+  const metrics = {
+    cpu: {
+      label: t("panel.cpu"),
+      value: last ? formatPercent(last.cpu) : "—",
+      caption: percentCaption(cpuSummary),
+    },
+    memory: {
+      label: t("panel.memory"),
+      value: last ? formatPercent(last.memory) : "—",
+      caption: percentCaption(memorySummary),
+    },
+    network: {
+      label: t("panel.network"),
+      value: last ? `${formatBytes(last.rx + last.tx)}/s` : "—",
+      caption: rateCaption(rateSummary),
+    },
+    disk: {
+      label: t("monitor.diskIo"),
+      value:
+        last && last.diskRead !== null && last.diskWrite !== null
+          ? `${formatBytes(last.diskRead + last.diskWrite)}/s`
+          : "—",
+      caption: diskRates.length ? rateCaption(diskSummary) : t("monitor.unavailable"),
+    },
+  };
+  return <Metric {...metrics[kind]} samples={samples} kind={kind} />;
+}
+
+export function MonitorCharts({ samples }: { samples: MonitorSample[] }) {
   return (
     <div className="monitor-grid">
-      <Metric
-        label={t("panel.cpu")}
-        value={formatPercent(last?.cpu ?? 0)}
-        caption={percentCaption(cpuSummary)}
-        samples={samples}
-        kind="cpu"
-      />
-      <Metric
-        label={t("panel.memory")}
-        value={formatPercent(last?.memory ?? 0)}
-        caption={percentCaption(memorySummary)}
-        samples={samples}
-        kind="memory"
-      />
-      <Metric
-        label={t("panel.network")}
-        value={last ? `${formatBytes(last.rx + last.tx)}/s` : "—"}
-        caption={rateCaption(rateSummary)}
-        samples={samples}
-        kind="network"
-      />
-      <Metric
-        label={t("monitor.diskIo")}
-        value={
-          last && last.diskRead !== null && last.diskWrite !== null
-            ? `${formatBytes(last.diskRead + last.diskWrite)}/s`
-            : "—"
-        }
-        caption={diskRates.length ? rateCaption(diskSummary) : t("monitor.unavailable")}
-        samples={samples}
-        kind="disk"
-      />
+      {(["cpu", "memory", "network", "disk"] as const).map((kind) => (
+        <MonitorMetric key={kind} samples={samples} kind={kind} />
+      ))}
     </div>
   );
 }

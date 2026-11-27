@@ -112,3 +112,16 @@ describe("durable user habits", () => {
     cleanup();
   });
 });
+
+it("persists per-host dashboard layouts and clears them with panel habits", async () => {
+  stop = await startHabits();
+  const key = "tunnelde.panels.monitor-dashboard.host-a.layout";
+  const value = JSON.stringify({ version: 1, widgets: [{ id: "cpu", columns: 12, height: 500 }] });
+  habitStorage.setItem(key, value);
+  await vi.waitFor(() =>
+    expect(api.saveHabits).toHaveBeenLastCalledWith(expect.objectContaining({ [key]: value })),
+  );
+  await resetHabits(["panels"]);
+  expect(localStorage.getItem(key)).toBeNull();
+  await vi.waitFor(() => expect(api.saveHabits.mock.lastCall?.[0][key]).toBeUndefined());
+});

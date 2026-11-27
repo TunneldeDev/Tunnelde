@@ -2,6 +2,8 @@
 
 [简体中文](../../zh-cn/guide/monitoring.md)
 
+The monitor page groups CPU, memory, network, disk and GPU into resource cards, combining each chart with its details and adapting to the current panel width. Choose **Edit layout** to drag the heading grip to reorder and the bottom corner to resize. Earlier/later, full/half width and reset buttons provide alternatives. Use Up/Down on the ordering grip and arrow keys on the resize handle; Escape cancels resizing. Narrow panels become one column while retaining desktop width preferences, and long details scroll inside cards. Layouts save per host and restore after reconnection. **Reset layout** affects the current host; resetting panel habits clears every host layout. Custom monitoring plugins manage their own interface; these controls apply to the built-in dashboard.
+
 CPU, memory, network and disk I/O charts share a timestamped history. Dashed
 horizontal lines show the scale; hover a chart to inspect the sample time and exact
 values. Keyboard users can focus a chart and use Left/Right or Home/End to inspect
