@@ -121,3 +121,5 @@ File-browser previews navigate the current pane’s visible sorted files, exclud
 File-browser details draw one focus/drop frame on the fixed viewport, never an outline or shadow on scrolling content. Horizontal and vertical scrolling leave the frame in place. Column view marks the current column heading; row selection keeps its accent fill. Buttons and inputs retain their keyboard focus indicators.
 
 Copy path uses the same editable spelling as the path field: remote Windows OpenSSH `/C:/…` loses the slash before the drive letter, while POSIX absolute paths stay intact. File operations retain canonical SFTP paths; never strip slashes globally from read, delete or rename targets.
+
+Floating windows and splitters share pointer ownership: preview at most once per frame, synchronously apply release coordinates, then commit once without depending on a prior move or animation frame. A final WebView move reporting the primary button released completes the gesture. Escape, blur, pointer cancellation, capture interruption, hiding and unmounting still cancel and roll back. Resizing preserves content and connections without remounting.

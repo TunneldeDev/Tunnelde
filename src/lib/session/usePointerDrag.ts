@@ -8,11 +8,16 @@ interface PointerDrag {
 
 /** Owns one pointer gesture; previews are frame-bound and are discarded on interruption. */
 export function usePointerDrag() {
+  return usePointerDragController().begin;
+}
+
+/** Shared controller also exposes explicit cancellation to geometry owners. */
+export function usePointerDragController() {
   const active = useRef<(() => void) | null>(null);
   const cancel = useCallback(() => active.current?.(), []);
   useEffect(() => cancel, [cancel]);
 
-  return useCallback((event: ReactPointerEvent<HTMLElement>, drag: PointerDrag) => {
+  const begin = useCallback((event: ReactPointerEvent<HTMLElement>, drag: PointerDrag) => {
     if (event.button !== 0 || active.current) return;
     event.preventDefault();
     event.stopPropagation();
@@ -52,8 +57,10 @@ export function usePointerDrag() {
     };
     const move = (next: PointerEvent) => {
       if (next.pointerId !== pointerId) return;
-      if (!target.isConnected || (next.buttons & 1) === 0) return abort();
+      if (!target.isConnected) return abort();
       pending = next;
+      // Some WebViews report the released button on the final move before pointerup.
+      if ((next.buttons & 1) === 0) return finish(true);
       if (frame === null) frame = requestAnimationFrame(flush);
     };
     const up = (next: PointerEvent) => {
@@ -82,4 +89,5 @@ export function usePointerDrag() {
       /* The pointer may have ended before capture was acquired. */
     }
   }, []);
+  return { begin, cancel };
 }
