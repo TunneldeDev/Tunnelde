@@ -5,7 +5,10 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-use super::processes::{ProcessCache, BASE_SCRIPT, OPTIONAL_SCRIPT};
+use super::processes::{
+    platform::{self, Platform},
+    ProcessCache,
+};
 use crate::error::{AppError, AppResult};
 use crate::models::now_ms;
 use crate::state::AppState;
@@ -15,6 +18,7 @@ const SAMPLE_TIMEOUT: Duration = Duration::from_secs(8);
 pub mod actions;
 pub mod details;
 mod execution;
+mod native_actions;
 
 const SCRIPT: &str = r#"LANG=C
 echo '#cpu'; head -1 /proc/stat
@@ -110,6 +114,7 @@ struct Counters {
 
 #[derive(Default)]
 pub struct MonitorCache {
+    pub(in crate::ssh) platforms: Mutex<HashMap<String, Platform>>,
     samples: Mutex<HashMap<String, Counters>>,
     processes: ProcessCache,
     gates: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -142,6 +147,9 @@ impl MonitorCache {
 
     pub fn forget(&self, session_id: &str) {
         self.processes.forget(session_id);
+        if let Ok(mut platforms) = self.platforms.lock() {
+            platforms.remove(session_id);
+        }
         if let Ok(mut gates) = self.gates.lock() {
             gates.remove(session_id);
         }
@@ -151,7 +159,7 @@ impl MonitorCache {
     }
 }
 
-async fn exec(app: &AppHandle, session_id: &str, command: &str) -> AppResult<String> {
+pub(super) async fn exec(app: &AppHandle, session_id: &str, command: &str) -> AppResult<String> {
     let handle = app.state::<AppState>().ssh.handle(session_id)?;
     static CAPACITY: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
     execution::run(
@@ -176,12 +184,14 @@ fn parse_kb(value: &str) -> u64 {
 
 pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats> {
     let _gate = app.state::<AppState>().monitor.gate(session_id).await?;
-    let raw = exec(
-        app,
-        session_id,
-        &format!("{SCRIPT}\n{BASE_SCRIPT}\n{}", details::SCRIPT),
-    )
-    .await?;
+    let platform = platform::detect(app, session_id).await?;
+    let process_script = platform.script(false);
+    let script = if platform == Platform::Linux {
+        format!("{SCRIPT}\n{process_script}\n{}", details::SCRIPT)
+    } else {
+        process_script
+    };
+    let raw = exec(app, session_id, &script).await?;
     let cache = &app.state::<AppState>().monitor;
     let previous = cache.previous(session_id);
     let (mut stats, counters) = parse_sample(&raw, &previous, Instant::now(), now_ms());
@@ -363,18 +373,14 @@ fn parse_process(line: &str) -> Option<RemoteProcess> {
 
 pub async fn processes(app: &AppHandle, session_id: &str) -> AppResult<Vec<RemoteProcess>> {
     let _gate = app.state::<AppState>().monitor.gate(session_id).await?;
+    let platform = platform::detect(app, session_id).await?;
     let cache = &app.state::<AppState>().monitor.processes;
     if !cache.ready(session_id) {
-        let raw = exec(app, session_id, BASE_SCRIPT).await?;
+        let raw = exec(app, session_id, &platform.script(false)).await?;
         cache.update(session_id, &raw, false)?;
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    let raw = exec(
-        app,
-        session_id,
-        &format!("{BASE_SCRIPT}\n{OPTIONAL_SCRIPT}"),
-    )
-    .await?;
+    let raw = exec(app, session_id, &platform.script(true)).await?;
     cache.update(session_id, &raw, true)
 }
 
@@ -387,13 +393,14 @@ pub async fn kill(
     if pid <= 1 {
         return Err(AppError::Ssh("monitor.killProtected".into()));
     }
-    let guard = expected_start_ticks.map(|start| format!(
-        "line=$(cat /proc/{pid}/stat 2>/dev/null); rest=${{line##*) }}; set -- $rest; [ \"${{20}}\" = \"{start}\" ] || {{ echo monitor.processChanged; exit 1; }}; "
-    )).unwrap_or_default();
-    let output = exec(app, session_id, &format!("{guard}kill -TERM {pid} 2>&1")).await?;
+    let platform = platform::detect(app, session_id).await?;
+    let command = actions::kill_script(platform, pid, expected_start_ticks)?;
+    let output = exec(app, session_id, &command).await?;
     if output.trim() == "monitor.processChanged" {
         Err(AppError::Ssh("monitor.processChanged".into()))
-    } else if output.trim().is_empty() {
+    } else if (platform == Platform::Windows && output.trim() == "TUNNELDE_OK")
+        || (platform != Platform::Windows && output.trim().is_empty())
+    {
         Ok(())
     } else {
         Err(AppError::Ssh(format!(

@@ -543,6 +543,7 @@ jobs:
           echo "::endgroup::"
           echo "::group::29-lib"
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::monitor
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::processes
           echo "::endgroup::"
           echo "::group::30-lib"
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
@@ -697,6 +698,7 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib mounts::negotiation
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::monitor
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib ssh::processes
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::local
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file

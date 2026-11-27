@@ -1,5 +1,6 @@
 //! Identity-checked remote process actions. No local filesystem paths are used.
-use super::exec;
+use super::super::processes::platform::{self, Platform};
+use super::{exec, native_actions};
 use crate::error::{AppError, AppResult};
 use tauri::AppHandle;
 
@@ -42,18 +43,92 @@ done
     ))
 }
 
-pub async fn kill_tree(app: &AppHandle, session: &str, pid: u32, start: u64) -> AppResult<()> {
-    let output = exec(app, session, &tree_script(pid, start)?).await?;
-    if output.trim().is_empty() {
-        Ok(())
-    } else {
-        Err(AppError::Ssh(output.trim().to_owned()))
+pub(super) fn kill_script(platform: Platform, pid: u32, start: Option<u64>) -> AppResult<String> {
+    if pid <= 1 {
+        return Err(AppError::Ssh("monitor.killProtected".into()));
+    }
+    Ok(match platform {
+        Platform::Windows => native_actions::win_kill(pid, start),
+        Platform::Macos => format!(
+            "{}kill -TERM {pid} 2>&1",
+            start
+                .map(|start| native_actions::mac_guard(pid, start))
+                .unwrap_or_default()
+        ),
+        Platform::Linux => format!(
+            "{}kill -TERM {pid} 2>&1",
+            start
+                .map(|start| guard(pid, start))
+                .transpose()?
+                .unwrap_or_default()
+        ),
+    })
+}
+
+fn native_tree_script(platform: Platform, pid: u32, start: u64) -> AppResult<String> {
+    if pid <= 1 {
+        return Err(AppError::Ssh("monitor.killProtected".into()));
+    }
+    match platform {
+        Platform::Linux => tree_script(pid, start),
+        Platform::Macos => Ok(native_actions::mac_tree(pid, start)),
+        Platform::Windows => Ok(native_actions::win_tree(pid, start)),
     }
 }
 
+pub async fn kill_tree(app: &AppHandle, session: &str, pid: u32, start: u64) -> AppResult<()> {
+    let platform = platform::detect(app, session).await?;
+    let output = exec(app, session, &native_tree_script(platform, pid, start)?).await?;
+    if (platform == Platform::Windows && output.trim() == "TUNNELDE_OK")
+        || (platform != Platform::Windows && output.trim().is_empty())
+    {
+        Ok(())
+    } else {
+        Err(AppError::Ssh(if output.trim().is_empty() {
+            "monitor.killFailed".into()
+        } else {
+            output.trim().to_owned()
+        }))
+    }
+}
+
+fn executable_script(platform: Platform, pid: u32, start: u64) -> AppResult<String> {
+    if pid <= 1 {
+        return Err(AppError::Ssh("monitor.killProtected".into()));
+    }
+    Ok(match platform {
+        Platform::Linux => {
+            let check = guard(pid, start)?;
+            format!("{check}path=$(readlink /proc/{pid}/exe 2>/dev/null) || {{ echo monitor.executableUnavailable; exit 1; }}; {check}printf '%s' \"$path\"")
+        }
+        Platform::Macos => {
+            let check = native_actions::mac_guard(pid, start);
+            format!("{check}path=$(/usr/sbin/lsof -a -p {pid} -d txt -Fn 2>/dev/null | awk '/^n/ {{print substr($0,2); exit}}'); {check}printf '%s' \"$path\"")
+        }
+        Platform::Windows => native_actions::win_executable(pid, start),
+    })
+}
+
 pub async fn executable(app: &AppHandle, session: &str, pid: u32, start: u64) -> AppResult<String> {
-    let check = guard(pid, start)?;
-    let output = exec(app, session, &format!("{check}path=$(readlink /proc/{pid}/exe 2>/dev/null) || {{ echo monitor.executableUnavailable; exit 1; }}; {check}printf '%s' \"$path\"")).await?;
+    let platform = platform::detect(app, session).await?;
+    let output = exec(app, session, &executable_script(platform, pid, start)?).await?;
+    executable_path(platform, output)
+}
+
+fn executable_path(platform: Platform, output: String) -> AppResult<String> {
+    if output.trim() == "monitor.processChanged" {
+        return Err(AppError::Ssh("monitor.processChanged".into()));
+    }
+    let output = if platform == Platform::Windows {
+        let path = output.replace('\\', "/");
+        if path.as_bytes().get(1) == Some(&b':') {
+            format!("/{path}")
+        } else {
+            path
+        }
+    } else {
+        output
+    };
     if !output.starts_with('/')
         || output.contains(['\n', '\r', '\0'])
         || output.ends_with(" (deleted)")
@@ -169,7 +244,20 @@ fn launch_script(command: &str, cwd: &str) -> AppResult<String> {
 }
 
 pub async fn launch(app: &AppHandle, session: &str, command: &str, cwd: &str) -> AppResult<u32> {
-    let output = exec(app, session, &launch_script(command, cwd)?).await?;
+    if command.trim().is_empty()
+        || command.len() > 16384
+        || cwd.len() > 4096
+        || command.contains('\0')
+        || cwd.contains('\0')
+    {
+        return Err(AppError::validation("monitor.invalidTask"));
+    }
+    let platform = platform::detect(app, session).await?;
+    let script = match platform {
+        Platform::Windows => native_actions::win_launch(command, cwd)?,
+        _ => launch_script(command, cwd)?,
+    };
+    let output = exec(app, session, &script).await?;
     output
         .trim()
         .strip_prefix("TUNNELDE_PID=")
@@ -201,8 +289,8 @@ mod launch_tests {
         assert!(script.contains("TUNNELDE_PID="));
     }
 }
-#[cfg(all(test, target_os = "linux"))]
-mod launch_linux_tests {
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod launch_unix_tests {
     use super::*;
     use std::process::Command;
     #[test]
@@ -223,5 +311,83 @@ mod launch_linux_tests {
         let _ = std::fs::remove_dir_all(&directory);
         assert!(String::from_utf8_lossy(&output.stdout).starts_with("TUNNELDE_PID="));
         assert_eq!(result.unwrap(), "literal $HOME");
+    }
+}
+
+#[cfg(test)]
+mod native_path_tests {
+    use super::*;
+
+    #[test]
+    fn windows_executables_are_canonical_sftp_paths() {
+        for (raw, expected) in [
+            (
+                r"C:\Program Files\worker.exe",
+                "/C:/Program Files/worker.exe",
+            ),
+            (r"\\server\share\worker.exe", "//server/share/worker.exe"),
+        ] {
+            assert_eq!(
+                executable_path(Platform::Windows, raw.into()).unwrap(),
+                expected
+            );
+        }
+        for raw in [
+            "",
+            "monitor.executableUnavailable",
+            "C:\\bad\npath",
+            "C:\\bad\0path",
+        ] {
+            assert!(executable_path(Platform::Windows, raw.into()).is_err());
+        }
+        assert!(
+            executable_path(Platform::Macos, "monitor.processChanged".into())
+                .unwrap_err()
+                .to_string()
+                .contains("monitor.processChanged")
+        );
+        for platform in [Platform::Linux, Platform::Macos, Platform::Windows] {
+            assert!(kill_script(platform, 1, Some(10)).is_err());
+            assert!(native_tree_script(platform, 0, 10).is_err());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_resolves_real_executable_and_rejects_stale_identity() {
+        use std::process::Command;
+        let pid = std::process::id();
+        let output = Command::new("sh")
+            .args(["-c", &format!("id={pid}; {}", native_actions::MAC_START)])
+            .output()
+            .unwrap();
+        let start = String::from_utf8(output.stdout)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let output = Command::new("sh")
+            .args([
+                "-c",
+                &executable_script(Platform::Macos, pid, start).unwrap(),
+            ])
+            .output()
+            .unwrap();
+        let path =
+            executable_path(Platform::Macos, String::from_utf8(output.stdout).unwrap()).unwrap();
+        assert_eq!(
+            std::path::Path::new(&path),
+            std::env::current_exe().unwrap()
+        );
+        let output = Command::new("sh")
+            .args([
+                "-c",
+                &executable_script(Platform::Macos, pid, start + 1).unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            executable_path(Platform::Macos, String::from_utf8(output.stdout).unwrap()).is_err()
+        );
     }
 }
