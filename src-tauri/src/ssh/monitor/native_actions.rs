@@ -168,7 +168,7 @@ mod tests {
             win_kill(42, Some(1795831323000)),
             win_tree(42, 1795831323000),
             win_executable(42, 1795831323000),
-            win_launch("Write-Output '中文'", "C:\\Users\\Alice Smith").unwrap(),
+            win_launch("Write-Output '中文'", "C:\\Program Files\\Example App").unwrap(),
         ] {
             assert!(command.len() < 8000, "command length: {}", command.len());
             assert!(!command.contains(['\n', '\r', '\'', '"', '$']));
